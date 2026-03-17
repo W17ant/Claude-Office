@@ -1,0 +1,11 @@
+node_modules/
+dist/
+release/
+.env
+.env.*
+/tmp/
+*.log
+.DS_Store
+remotion/
+office.config.json
+.claude/settings.local.json
