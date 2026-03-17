@@ -31,6 +31,8 @@ A pixel art virtual office that visualizes your AI agents working in real-time. 
 
 ![Night Mode](docs/images/night-mode.png)
 
+![Waiting for tokens...](docs/images/entertainment-waiting-tokenreset.png)
+
 ## How It Works
 
 Claude Code hooks capture agent spawns, tool calls, and completions via `PreToolUse` and `PostToolUse` hooks. Events are sent to a local Express + WebSocket server, which broadcasts them to the React frontend.
