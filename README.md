@@ -107,15 +107,15 @@ The boss character (you) is configurable via `office.config.json`:
 
 Use the Helper sprite sheet as a reference for the 4-direction layout:
 
-<img src="docs/images/Helper.png" alt="Helper Sprite Template" height="200">
-
-Here's an example — a custom boss character and Mini Claude, both generated from the Helper template:
-
 <p>
-  <img src="docs/images/Me-1-front-right.png" alt="Custom Boss — Front Right" height="128">
-  <img src="docs/images/Me-1-rear-left.png" alt="Custom Boss — Rear Left" height="128">
-  <img src="docs/images/mini-claude.png" alt="Mini Claude" height="128">
+  <img src="docs/images/Helper.png" alt="Helper Sprite Template" height="250">
+  <img src="docs/images/Me-1-front-right.png" alt="Custom Boss — Front Right" height="250">
+  <img src="docs/images/Me-1-rear-left.png" alt="Custom Boss — Rear Left" height="250">
 </p>
+
+Here's Mini Claude — generated from the same template using the prompt below:
+
+<img src="docs/images/mini-claude.png" alt="Mini Claude" height="500">
 
 1. Open ChatGPT (with DALL-E image generation)
 2. Upload `public/sprites/characters/Helper.png` as a reference
