@@ -2,6 +2,7 @@
 
 A pixel art virtual office that visualizes your AI agents working in real-time. Watch Claude Code agents spawn, sit at desks, take coffee breaks, and chat — all rendered in an isometric pixel art office.
 
+### Full office — agents working, chatting, and taking coffee breaks
 ![Day Mode](docs/images/Day-Mode.png)
 
 ## Features
@@ -29,9 +30,11 @@ A pixel art virtual office that visualizes your AI agents working in real-time. 
 - Conversation memory — remembers the last 10 messages
 - AI On/Off toggle to control token usage
 
+### Night mode — the office after dark, agents still grinding
 ![Night Mode](docs/images/night-mode.png)
 
-![Waiting for tokens...](docs/images/entertainment-waiting-tokenreset.png)
+### Waiting for tokens... the office keeps itself entertained
+![Waiting for tokens](docs/images/entertainment-waiting-tokenreset.png)
 
 ## How It Works
 
@@ -138,6 +141,7 @@ The chat AI routes your messages to specialist agents based on keywords:
 | APIs, REST, webhooks | Fullstack |
 | architecture, patterns | Architect |
 
+### Just me and Claude — chatting in the office
 ![Me & Claude](docs/images/Me%20&%20Claude.png)
 
 ## Modes
