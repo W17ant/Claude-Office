@@ -105,6 +105,10 @@ The boss character (you) is configurable via `office.config.json`:
 
 ### Creating a custom sprite
 
+Use the Helper sprite sheet as a reference for the 4-direction layout:
+
+![Helper Sprite Template](docs/images/Helper.png)
+
 1. Open ChatGPT (with DALL-E image generation)
 2. Upload `public/sprites/characters/Helper.png` as a reference
 3. Ask it to generate a pixel art character in the same style and layout (4 directions: front-left, rear-right, front-right, rear-left)
