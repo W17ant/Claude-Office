@@ -1,7 +1,7 @@
 /**
  * chat-db.js - SQLite-backed chat history for Agent Office
  *
- * DB location: ~/.agent-office/chat.db
+ * DB location: ~/.agent-office/chat.db (or $AGENT_OFFICE_HOME/chat.db)
  * Uses WAL mode for concurrent read performance.
  */
 
@@ -14,7 +14,7 @@ import { mkdirSync } from 'fs'
 // Initialise DB
 // ---------------------------------------------------------------------------
 
-const RUNTIME_DIR = join(homedir(), '.agent-office')
+const RUNTIME_DIR = process.env.AGENT_OFFICE_HOME || join(homedir(), '.agent-office')
 try { mkdirSync(RUNTIME_DIR, { recursive: true }) } catch {}
 
 const DB_PATH = join(RUNTIME_DIR, 'chat.db')

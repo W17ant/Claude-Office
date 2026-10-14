@@ -12,7 +12,7 @@
 import express from 'express'
 import { createServer } from 'http'
 import { WebSocketServer, WebSocket } from 'ws'
-import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'fs'
+import { readFileSync, existsSync, writeFileSync, mkdirSync, realpathSync } from 'fs'
 import { homedir } from 'os'
 import { join } from 'path'
 import { randomBytes } from 'crypto'
@@ -36,18 +36,25 @@ function sendNotification(title, msg) {
 const PORT = 3334
 
 // ---------------------------------------------------------------------------
-// Auth token — generated on startup, written to /tmp/agent-office-token
+// Runtime dir + auth token
+//
+// Everything the server writes (auth token, agents.json, chat.db, inbox/...)
+// lives in ~/.agent-office, or AGENT_OFFICE_HOME when set (tests point it at
+// a temp dir). The token is generated here but only written to disk by
+// start(), so importing this module has no side effects outside RUNTIME_DIR.
 // ---------------------------------------------------------------------------
 
 const AUTH_TOKEN = randomBytes(32).toString('hex')
-const RUNTIME_DIR = join(homedir(), '.agent-office')
+const RUNTIME_DIR = process.env.AGENT_OFFICE_HOME || join(homedir(), '.agent-office')
 try { mkdirSync(RUNTIME_DIR, { recursive: true }) } catch {}
 const TOKEN_FILE = join(RUNTIME_DIR, 'auth-token')
 
-try {
-  writeFileSync(TOKEN_FILE, AUTH_TOKEN, { mode: 0o600 })
-} catch (err) {
-  console.warn('[auth] Could not write token file:', err.message)
+function writeTokenFile() {
+  try {
+    writeFileSync(TOKEN_FILE, AUTH_TOKEN, { mode: 0o600 })
+  } catch (err) {
+    console.warn('[auth] Could not write token file:', err.message)
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -183,7 +190,7 @@ function leastUsedGeneralRole() {
 // Agent persistence — survive a server restart while agents are still working
 // ---------------------------------------------------------------------------
 
-const AGENTS_FILE = join(homedir(), '.agent-office', 'agents.json')
+const AGENTS_FILE = join(RUNTIME_DIR, 'agents.json')
 
 function saveAgents() {
   try {
@@ -412,7 +419,7 @@ app.post('/chat', (req, res) => {
 
   // Write to webhook file so Claude can detect new messages
   try {
-    const webhookPath = join(homedir(), '.agent-office', 'last-chat')
+    const webhookPath = join(RUNTIME_DIR, 'last-chat')
     writeFileSync(webhookPath, JSON.stringify(msg), 'utf8')
   } catch {}
 
@@ -760,7 +767,7 @@ app.post('/chat/typing', (req, res) => {
 // Cron/chat-monitor state — toggle from the frontend UI
 // ---------------------------------------------------------------------------
 
-const cronStatePath = join(homedir(), '.agent-office', 'chat-poll-state')
+const cronStatePath = join(RUNTIME_DIR, 'chat-poll-state')
 
 app.get('/chat/cron-state', (_req, res) => {
   try {
@@ -1001,9 +1008,13 @@ function broadcast(payload) {
 // Boot
 // ---------------------------------------------------------------------------
 
-httpServer.listen(PORT, '127.0.0.1', () => {
-  const mcpServers = discoverMcpServers()
-  console.log(`
+/** Write the auth token, bind the port and print the banner. */
+export function start() {
+  writeTokenFile()
+
+  httpServer.listen(PORT, '127.0.0.1', () => {
+    const mcpServers = discoverMcpServers()
+    console.log(`
 ╔═══════════════════════════════════════════╗
 ║         Agent Office Server v1.0          ║
 ╠═══════════════════════════════════════════╣
@@ -1015,21 +1026,49 @@ httpServer.listen(PORT, '127.0.0.1', () => {
 ║  POST  http://localhost:${PORT}/a2a          ║
 ╚═══════════════════════════════════════════╝`)
 
-  console.log(`  Auth token written to: ${TOKEN_FILE}`)
+    console.log(`  Auth token written to: ${TOKEN_FILE}`)
 
-  if (mcpServers.length > 0) {
-    console.log(`  MCP servers discovered: ${mcpServers.join(', ')}`)
-  } else {
-    console.log('  No MCP servers found in ~/.claude/settings.json')
-  }
-  console.log()
-})
+    if (mcpServers.length > 0) {
+      console.log(`  MCP servers discovered: ${mcpServers.join(', ')}`)
+    } else {
+      console.log('  No MCP servers found in ~/.claude/settings.json')
+    }
+    console.log()
+  })
 
-httpServer.on('error', (err) => {
-  if (err.code === 'EADDRINUSE') {
-    console.error(`[error] Port ${PORT} is already in use. Is the server already running?`)
-  } else {
-    console.error('[error]', err)
+  httpServer.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`[error] Port ${PORT} is already in use. Is the server already running?`)
+    } else {
+      console.error('[error]', err)
+    }
+    process.exit(1)
+  })
+}
+
+// Only bind the port when run directly (`node server/index.js`, `npm run
+// server`, the Electron child process). Importing the module — e.g. from the
+// tests — builds the app without listening or writing the token file.
+function isMainModule() {
+  try {
+    return !!process.argv[1] && realpathSync(process.argv[1]) === realpathSync(__filename)
+  } catch {
+    return false
   }
-  process.exit(1)
-})
+}
+
+if (isMainModule()) start()
+
+export {
+  app,
+  httpServer,
+  wss,
+  AUTH_TOKEN,
+  RUNTIME_DIR,
+  TOKEN_FILE,
+  PORT,
+  activeAgents,
+  processEvent,
+  sendAgentMessage,
+  broadcast,
+}

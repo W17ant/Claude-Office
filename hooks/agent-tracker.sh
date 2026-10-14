@@ -30,7 +30,7 @@ PAYLOAD=$(cat)
 
 # Auth token (optional — read from file if present)
 AUTH_HEADER=""
-TOKEN_FILE="$HOME/.agent-office/auth-token"
+TOKEN_FILE="${AGENT_OFFICE_HOME:-$HOME/.agent-office}/auth-token"
 if [ -f "$TOKEN_FILE" ]; then
     TOKEN=$(cat "$TOKEN_FILE" 2>/dev/null)
     if [ -n "$TOKEN" ]; then
