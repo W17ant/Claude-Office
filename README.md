@@ -218,6 +218,12 @@ Now spawn agents in Claude Code and watch them appear in the office.
 
 **Sessions.** Every hook payload names the Claude Code session it fired in (`session_id`, `cwd`, `transcript_path`), and the tracker forwards that on every event, so the office knows which terminal each agent works for. `SessionStart` adds a pill to the title bar (`SessionEnd` removes it and walks that session's agents out); a session the server first hears of mid-way — hooks installed while Claude was already running, or a server restart — is picked up from its next event. Sessions that go quiet for `AGENT_OFFICE_STALE_MINUTES` end the same way.
 
+### Payroll, electricity and memory
+
+A wall panel appears above the chat the moment Claude Code sends its first status line, and not before (an office without one looks exactly as it did). **PAYROLL** is what the open sessions have cost, with the $/min burn over the last five minutes underneath; **ELECTRICITY** is the tokens the API chews through per minute (context re-reads included — that is what you pay for) as a gauge whose stripes flow faster the harder it burns; **MEMORY** is the context-window fill — amber past 70 %, red past 90 %, and once a session passes 85 % the chat gets a "Claude's desk is getting cluttered" line (once per session). claude.ai subscribers also get a **5h** pill with the five-hour rate-limit utilisation. Hover any meter for the exact numbers and the model; with several terminals open the panel stacks one row per session (up to four).
+
+The numbers are Claude Code's own: `npm run install-hooks` registers `hooks/status-line.sh` as the [`statusLine`](https://code.claude.com/docs/en/statusline) command (and as `subagentStatusLine`, which adds per-worker token counts) next to the hooks. It forwards the JSON to `POST /status` (same bearer token as `/event`) and prints `<model> · ctx <used>% · $<cost>`. **If you already had a status line, you keep it**: the installer saves your command in `~/.agent-office/statusline-prev` and `status-line.sh` runs it with the same input and prints its output, so what you see does not change. `bash hooks/install-hooks.sh --no-status-line` skips the status line altogether. `GET /status` returns the sessions and the totals (cost today, tokens/min, $/min); nothing is persisted, and a session that goes quiet for `AGENT_OFFICE_STALE_MINUTES` drops off the panel.
+
 ## Customise Your Character
 
 The boss character (you) is configurable via `office.config.json`:
@@ -370,6 +376,7 @@ Claude-Office/
 │   └── App.tsx             # Main app (agent lifecycle, events, chat)
 ├── server/                 # Express + WebSocket server
 │   ├── index.js            # HTTP endpoints + WS broadcast
+│   ├── status.js           # /status: payroll / electricity / memory feed
 │   └── chat-db.js          # SQLite wrapper
 ├── scripts/                # Shell scripts
 │   ├── start-office.sh     # Start everything (writes pid files)
@@ -378,7 +385,8 @@ Claude-Office/
 │   ├── notify.sh           # Desktop notification (osascript / notify-send)
 │   └── gather-context.sh   # Git/agent context for prompts
 ├── hooks/                  # Claude Code hooks
-│   └── agent-tracker.sh    # Forwards events to server
+│   ├── agent-tracker.sh    # Forwards events to server
+│   └── status-line.sh      # Claude Code status line → /status (meters)
 ├── public/                 # Static assets
 │   └── sprites/            # Pixel art characters + effects
 └── electron/               # Optional Electron wrapper
