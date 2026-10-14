@@ -1319,22 +1319,11 @@ const App: React.FC = () => {
     }).catch(() => {})
   }, [addMsg])
 
+  // Reactions added in the UI stay local: POST /chat/react is an agent route
+  // (bearer token) since the server hardening, and the browser has no token.
+  // Reactions the server broadcasts land on the right row by its id (C34).
   const handleReaction = useCallback((messageId: number, reactions: string[]) => {
-    let toggled: string | undefined
-    setMessages(prev => prev.map(m => {
-      if (m.id !== messageId) return m
-      const before = m.reactions ?? []
-      toggled = reactions.find(r => !before.includes(r)) ?? before.find(r => !reactions.includes(r))
-      return { ...m, reactions }
-    }))
-    // A reaction on one of the server's rows is shared with everyone else (C34)
-    if (messageId > 0 && toggled && !isSimMode) {
-      fetch('http://127.0.0.1:3334/chat/react', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messageId, emoji: toggled }),
-      }).catch(() => {})
-    }
+    setMessages(prev => prev.map(m => (m.id === messageId ? { ...m, reactions } : m)))
   }, [])
 
   // Why: a new items array every frame would re-render all 24 furniture sprites
