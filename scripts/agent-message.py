@@ -15,6 +15,19 @@ import argparse, json, os, sys, urllib.error, urllib.parse, urllib.request
 
 PORT = os.environ.get("AGENT_OFFICE_PORT", "3334")
 BASE = "http://127.0.0.1:" + PORT
+# The office token, written by the server once it is up — the same file the
+# hook reads. Every call that speaks as an agent (/chat/reply, /chat/inbox/read)
+# needs it; reads (/agents, /chat) do not.
+TOKEN_FILE = os.path.join(os.environ.get("AGENT_OFFICE_HOME") or os.path.expanduser("~/.agent-office"), "auth-token")
+
+
+def auth_header():
+    try:
+        with open(TOKEN_FILE) as f:
+            token = f.read().strip()
+    except OSError:
+        return {}
+    return {"Authorization": "Bearer " + token} if token else {}
 
 
 def call(path, body=None):
@@ -22,7 +35,7 @@ def call(path, body=None):
     req = urllib.request.Request(
         BASE + path,
         data=data,
-        headers={"Content-Type": "application/json"},
+        headers={"Content-Type": "application/json", **auth_header()},
         method="POST" if body is not None else "GET",
     )
     try:
@@ -33,6 +46,8 @@ def call(path, body=None):
             err = json.loads(e.read().decode()).get("error", e.reason)
         except Exception:
             err = e.reason
+        if e.code == 401:
+            err = f"{err} — the office token at {TOKEN_FILE} is missing or stale (is the server running?)"
         sys.exit(f"office refused: {err}")
     except urllib.error.URLError:
         sys.exit(f"office server is not running on port {PORT}")

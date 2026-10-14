@@ -13,10 +13,10 @@
 import express from 'express'
 import { createServer } from 'http'
 import { WebSocketServer, WebSocket } from 'ws'
-import { readFileSync, existsSync, writeFileSync, mkdirSync, realpathSync } from 'fs'
+import { readFileSync, existsSync, writeFileSync, mkdirSync, realpathSync, chmodSync } from 'fs'
 import { homedir } from 'os'
 import { join, basename } from 'path'
-import { randomBytes } from 'crypto'
+import { randomBytes, timingSafeEqual } from 'crypto'
 import { execFile } from 'child_process'
 import { fileURLToPath } from 'url'
 import { dirname } from 'path'
@@ -43,20 +43,84 @@ const PORT = 3334
 // Everything the server writes (auth token, agents.json, chat.db, inbox/...)
 // lives in ~/.agent-office, or AGENT_OFFICE_HOME when set (tests point it at
 // a temp dir). The token is generated here but only written to disk by
-// start(), so importing this module has no side effects outside RUNTIME_DIR.
+// start(), once the port is bound, so importing this module has no side
+// effects outside RUNTIME_DIR and a second instance that loses the port race
+// never clobbers the running instance's token.
+//
+// Threat model. The server only listens on 127.0.0.1. Browsers are kept out
+// by the origin allowlist below (every other origin gets 403 / a 1008 close)
+// and by the JSON content type, which makes cross-site POSTs preflight. What
+// is left is any other process on this machine, which can reach the port
+// freely. So: everything that acts *as an agent* or destroys state needs the
+// bearer token in ~/.agent-office/auth-token — the file only this user can
+// read, which the hook, the office scripts and A2A clients send as
+// `Authorization: Bearer <token>`. Reads (GET routes), a person's plain chat
+// line (POST /chat), the typing indicator and the chat-monitor pause toggle
+// stay open: the office UI has no token, and the worst a local process can
+// do with them is read what the office already shows and post a chat line.
+//
+//   token required   POST /event, /chat/reply, /a2a, /chat/inbox/read,
+//                    /chat/seen, /chat/react, /chat/video-mode,
+//                    and POST /chat for a destructive slash command (/clear)
+//   open             every GET, POST /chat (plain lines + read-only /status,
+//                    /agents, /help and the incident toggles), /chat/typing,
+//                    POST /chat/cron-state (the UI's pause button)
+//
+// GET /roster and GET /agents do show each agent's task text and the names of
+// the configured MCP servers; that is the office's purpose, and anything on
+// this machine can already read ~/.claude/settings.json.
 // ---------------------------------------------------------------------------
 
 const AUTH_TOKEN = randomBytes(32).toString('hex')
 const RUNTIME_DIR = process.env.AGENT_OFFICE_HOME || join(homedir(), '.agent-office')
-try { mkdirSync(RUNTIME_DIR, { recursive: true }) } catch {}
+try { mkdirSync(RUNTIME_DIR, { recursive: true, mode: 0o700 }) } catch {}
 const TOKEN_FILE = join(RUNTIME_DIR, 'auth-token')
+
+/**
+ * Write a file only this user can read. The mode applies when the file is
+ * created, so a file an older version left world-readable is fixed as well.
+ */
+function writePrivate(path, data) {
+  writeFileSync(path, data, { mode: 0o600 })
+  try { chmodSync(path, 0o600) } catch {}
+}
 
 function writeTokenFile() {
   try {
-    writeFileSync(TOKEN_FILE, AUTH_TOKEN, { mode: 0o600 })
+    writePrivate(TOKEN_FILE, AUTH_TOKEN)
   } catch (err) {
     console.warn('[auth] Could not write token file:', err.message)
   }
+}
+
+/** Constant-time comparison of a supplied token with ours. */
+function tokenMatches(supplied) {
+  if (typeof supplied !== 'string' || supplied.length === 0) return false
+  const a = Buffer.from(supplied, 'utf8')
+  const b = Buffer.from(AUTH_TOKEN, 'utf8')
+  return a.length === b.length && timingSafeEqual(a, b)
+}
+
+function bearerToken(req) {
+  const header = req.headers['authorization'] ?? ''
+  return header.startsWith('Bearer ') ? header.slice(7).trim() : ''
+}
+
+function unauthorized(res, body) {
+  res.setHeader('WWW-Authenticate', 'Bearer realm="agent-office"')
+  return res.status(401).json(body)
+}
+
+/** Express middleware: the route needs the office's bearer token. */
+function requireToken(req, res, next) {
+  if (tokenMatches(bearerToken(req))) return next()
+  unauthorized(res, { error: 'Unauthorized' })
+}
+
+/** Same, answering in the JSON-RPC envelope for the A2A endpoint. */
+function requireTokenRpc(req, res, next) {
+  if (tokenMatches(bearerToken(req))) return next()
+  unauthorized(res, { jsonrpc: '2.0', id: req.body?.id ?? null, error: { code: -32001, message: 'Unauthorized: send the office auth token as Authorization: Bearer <token>' } })
 }
 
 // ---------------------------------------------------------------------------
@@ -307,8 +371,12 @@ function endSession(session, reason, now = Date.now()) {
  */
 function resolveAgentId(agent) {
   if (agent.id) return agent.id
-  const slug = `${agent.name ?? 'agent'}-${agent.role ?? 'worker'}`
-  return slug.toLowerCase().replace(/[^a-z0-9-]/g, '-')
+  const slug = `${agent.name ?? 'agent'}-${agent.role ?? 'worker'}`.toLowerCase().replace(/[^a-z0-9-]/g, '-')
+  // A derived id must not collide with an agent still in the office, or the
+  // second spawn would be taken for a replay of the first and its task dropped
+  let id = slug
+  for (let n = 2; activeAgents.has(id); n++) id = `${slug}-${n}`
+  return id
 }
 
 /** Map an office id or a subagent id to the office agent id, if known. */
@@ -325,6 +393,12 @@ function linkSubagent(officeId, subagentId) {
   // A guessed binding may have attached this subagent to another agent first
   for (const other of activeAgents.values()) {
     if (other !== agent && other.subagentId === subagentId) delete other.subagentId
+  }
+  // Relinking: the subagent this agent was guessed onto before is somebody
+  // else's — drop its alias, or its tool calls and its SubagentStop would
+  // keep landing here and walk this agent out while its own subagent runs
+  if (agent.subagentId && agent.subagentId !== subagentId && subagentAliases.get(agent.subagentId) === officeId) {
+    subagentAliases.delete(agent.subagentId)
   }
   agent.subagentId = subagentId
   subagentAliases.set(subagentId, officeId)
@@ -379,6 +453,16 @@ function adoptPendingStart(agent) {
   return true
 }
 
+/**
+ * The agents a client should draw: not the transient MCP records, not an
+ * agent in its completed grace window (still in the map so late events find
+ * it, but already announced as gone — a client that first sees it now would
+ * seat a ghost that never leaves).
+ */
+function liveAgents() {
+  return Array.from(activeAgents.values()).filter(a => !a.server && a.state !== 'completed')
+}
+
 function forgetAgent(id) {
   const agent = activeAgents.get(id)
   if (agent?.subagentId && subagentAliases.get(agent.subagentId) === id) {
@@ -424,9 +508,9 @@ function saveAgents() {
   try {
     // MCP entries are transient (one per call), only persist real agents;
     // ended sessions are on their way out and are not kept either
-    const agents = Array.from(activeAgents.values()).filter(a => !a.server && a.state !== 'completed')
+    const agents = liveAgents()
     const saved = Array.from(sessions.values()).filter(s => s.state === 'active').map(sessionToRecord)
-    writeFileSync(AGENTS_FILE, JSON.stringify({ agents, sessions: saved }), { mode: 0o600 })
+    writePrivate(AGENTS_FILE, JSON.stringify({ agents, sessions: saved }))
   } catch (err) {
     console.warn('[agents] Could not save agent state:', err.message)
   }
@@ -526,19 +610,21 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok', agents: activeAgents.size, clients: wss?.clients.size ?? 0 })
 })
 
-// MCP server roster
+// MCP server roster + the agents in the office (same view as the WS snapshot)
 app.get('/roster', (_req, res) => {
   const mcpServers = discoverMcpServers()
   res.json({
     mcpServers,
-    activeAgents: Array.from(activeAgents.values()),
+    activeAgents: liveAgents(),
   })
 })
 
 /**
  * POST /event — receives hook events from agent-tracker.sh
  *
- * Requires Authorization: Bearer <token> header (token is in /tmp/agent-office-token).
+ * Requires Authorization: Bearer <token> (the token in ~/.agent-office/auth-token).
+ * Answers { ok: true, agentId? } — agentId is the office id of a spawned agent,
+ * which matters when the spawn carried no id and one was derived.
  *
  * Accepted body shapes:
  *   { type: "agent_spawned",   agent: { name, role, task, id? } }
@@ -558,14 +644,7 @@ app.get('/roster', (_req, res) => {
  * Every event may carry sessionId, project, cwd and transcriptPath — the
  * Claude Code session the hook fired in. Agents are filed under it.
  */
-app.post('/event', (req, res) => {
-  // Auth check
-  const authHeader = req.headers['authorization'] ?? ''
-  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : ''
-  if (token !== AUTH_TOKEN) {
-    return res.status(401).json({ error: 'Unauthorized' })
-  }
-
+app.post('/event', requireToken, (req, res) => {
   const body = req.body
 
   // Validate event type
@@ -614,7 +693,7 @@ app.post('/event', (req, res) => {
     broadcast(event)
   }
 
-  res.json({ ok: true })
+  res.json({ ok: true, ...(event?.type === 'agent_spawned' ? { agentId: event.agent.id } : {}) })
 })
 
 // ---------------------------------------------------------------------------
@@ -651,11 +730,16 @@ function handleSlashCommand(cmd) {
       return '✅ ALL CLEAR — incident over. Postmortem at 10, blameless, bring pizza.'
     }
     case '/help':
-      return '📋 Commands: /status — office stats, /agents — list agents, /incident — declare an incident, /all-clear — end it, /clear — wipe chat history, /help — this message'
+      return '📋 Commands: /status — office stats, /agents — list agents, /incident — declare an incident, /all-clear — end it, /clear — wipe chat history (needs the auth token), /help — this message'
     default:
       return null
   }
 }
+
+// Slash commands that destroy state need the office token. POST /chat itself
+// is open because the office UI (a person typing) has no token — but so does
+// any other local process, and it must not be able to truncate the chat.
+const PRIVILEGED_COMMANDS = new Set(['/clear'])
 
 // ---------------------------------------------------------------------------
 // Chat — user messages from the office UI
@@ -663,7 +747,8 @@ function handleSlashCommand(cmd) {
 
 /**
  * POST /chat — receives a message typed in the office Slack panel
- * No auth required (comes from the UI, not hooks)
+ * No auth required for a plain line or a read-only slash command (comes from
+ * the UI, not hooks); a privileged command (/clear) needs the bearer token.
  */
 app.post('/chat', (req, res) => {
   const { sender, text } = req.body ?? {}
@@ -675,6 +760,14 @@ app.post('/chat', (req, res) => {
   if (typeof text === 'string' && text.startsWith('/')) {
     const parts = text.split(' ')
     const cmd = parts[0]
+    if (PRIVILEGED_COMMANDS.has(cmd) && !tokenMatches(bearerToken(req))) {
+      // Tell the person in the chat panel why nothing happened (the UI ignores
+      // the HTTP status), and the caller through the status
+      const sysMsg = addMessage({ sender: 'system', text: `🔒 ${cmd} needs the office auth token — send it as Authorization: Bearer <token> (see README › Security)`, isSystem: true })
+      broadcast({ type: 'chat_message', ...sysMsg, isSystem: true })
+      console.warn(`[chat] Refused ${cmd} from ${clampString(sender)}: no auth token`)
+      return unauthorized(res, { error: `${cmd} needs the office auth token` })
+    }
     const cmdResult = handleSlashCommand(cmd)
     if (cmdResult) {
       const userMsg = addMessage({ sender: clampString(sender), text: clampString(text, 2000) })
@@ -700,8 +793,7 @@ app.post('/chat', (req, res) => {
 
   // Write to webhook file so Claude can detect new messages
   try {
-    const webhookPath = join(RUNTIME_DIR, 'last-chat')
-    writeFileSync(webhookPath, JSON.stringify(msg), 'utf8')
+    writePrivate(join(RUNTIME_DIR, 'last-chat'), JSON.stringify(msg))
   } catch {}
 
   console.log(`[chat] ${msg.sender}: ${msg.text}`)
@@ -711,12 +803,13 @@ app.post('/chat', (req, res) => {
 // ---------------------------------------------------------------------------
 // Video mode — when enabled, GET /chat filters out scripted video messages
 // so external Claude sessions only see real agent messages.
-// Toggle via POST /chat/video-mode  { enabled: true/false }
+// Toggle via POST /chat/video-mode  { enabled: true/false }  (needs the token:
+// it hides messages from every polling session)
 // ---------------------------------------------------------------------------
 let videoPaused = false
 let videoPausedSince = 0
 
-app.post('/chat/video-mode', (req, res) => {
+app.post('/chat/video-mode', requireToken, (req, res) => {
   videoPaused = !!req.body?.enabled
   videoPausedSince = videoPaused ? Date.now() : 0
   console.log(`[video-mode] chat polling ${videoPaused ? 'PAUSED' : 'RESUMED'}`)
@@ -840,8 +933,8 @@ function sendAgentMessage({ sender, role, text, recipient, type, replyTo, sender
   if (to) {
     try {
       const inboxDir = join(RUNTIME_DIR, 'inbox')
-      mkdirSync(inboxDir, { recursive: true })
-      writeFileSync(join(inboxDir, `${inboxSlug(to)}.json`), JSON.stringify(msg), 'utf8')
+      mkdirSync(inboxDir, { recursive: true, mode: 0o700 })
+      writePrivate(join(inboxDir, `${inboxSlug(to)}.json`), JSON.stringify(msg))
     } catch {}
     if (recipientAgent) {
       recipientAgent.unread = (recipientAgent.unread ?? 0) + 1
@@ -892,8 +985,9 @@ app.get('/sessions', (_req, res) => {
  * it is stored with the recipient, readable via GET /chat?recipient=<name>, and
  * the latest one is written to ~/.agent-office/inbox/<recipient>.json so the
  * recipient's session can pick it up like last-chat.
+ * Needs the bearer token: this speaks as an agent and writes to another agent's inbox.
  */
-app.post('/chat/reply', (req, res) => {
+app.post('/chat/reply', requireToken, (req, res) => {
   const result = sendAgentMessage(req.body ?? {})
   if (result.error) return res.status(result.status).json({ error: result.error })
   res.json({ ok: true, id: result.msg.id, recipient: result.to, delivered: !!result.recipientAgent })
@@ -902,9 +996,9 @@ app.post('/chat/reply', (req, res) => {
 /**
  * POST /chat/inbox/read — the recipient has read its directed messages.
  * Body: { recipient: "Debugger" }  (office id, subagent id, name or role)
- * Clears the unread badge on the agent's desk.
+ * Clears the unread badge on the agent's desk. Needs the bearer token.
  */
-app.post('/chat/inbox/read', (req, res) => {
+app.post('/chat/inbox/read', requireToken, (req, res) => {
   const recipient = clampString(req.body?.recipient)?.trim()
   if (!recipient) return res.status(400).json({ error: 'Missing recipient' })
   const agent = findAgent(recipient)
@@ -929,10 +1023,17 @@ app.post('/chat/inbox/read', (req, res) => {
 // the sender is message.metadata.from. Replies thread via referenceTaskIds or
 // metadata.replyTo (an office message id). Tasks/streaming aren't supported —
 // every message is delivered as-is and answered with the stored message.
+// POST /a2a needs the office bearer token; the cards advertise it.
 // ---------------------------------------------------------------------------
 
 const A2A_PROTOCOL_VERSION = '0.3.0'
 const A2A_URL = `http://localhost:${PORT}/a2a`
+const A2A_SECURITY = {
+  securitySchemes: {
+    bearer: { type: 'http', scheme: 'bearer', description: 'The office auth token — the contents of ~/.agent-office/auth-token' },
+  },
+  security: [{ bearer: [] }],
+}
 
 function officeAgentCard(agent) {
   const cfgTitle = agent.name ?? 'Agent'
@@ -945,6 +1046,7 @@ function officeAgentCard(agent) {
     capabilities: { streaming: false, pushNotifications: false },
     defaultInputModes: ['text/plain'],
     defaultOutputModes: ['text/plain'],
+    ...A2A_SECURITY,
     skills: [{ id: agent.role, name: agent.role, description: agent.task || agent.role, tags: [agent.role] }],
     // Office-specific: how to address this agent in message.metadata.to
     metadata: { officeId: agent.id, state: agent.state, unread: agent.unread ?? 0 },
@@ -973,6 +1075,7 @@ app.get('/.well-known/agent-card.json', (_req, res) => {
     capabilities: { streaming: false, pushNotifications: false },
     defaultInputModes: ['text/plain'],
     defaultOutputModes: ['text/plain'],
+    ...A2A_SECURITY,
     skills: [{
       id: 'office-message',
       name: 'Message an office agent',
@@ -989,7 +1092,7 @@ app.get('/a2a/agents', (_req, res) => {
   res.json({ agents: cards })
 })
 
-app.post('/a2a', (req, res) => {
+app.post('/a2a', requireTokenRpc, (req, res) => {
   const rpc = req.body ?? {}
   const id = rpc.id ?? null
   const fail = (code, message) => res.json({ jsonrpc: '2.0', id, error: { code, message } })
@@ -1020,13 +1123,23 @@ app.post('/a2a', (req, res) => {
 })
 
 /**
- * POST /chat/seen — mark a message as seen
- * Body: { messageId: number }
+ * A message id from a request body: a positive integer (or a string of
+ * digits), else null. Anything else used to reach the prepared statement and
+ * throw from inside better-sqlite3.
  */
-app.post('/chat/seen', (req, res) => {
-  const { messageId } = req.body ?? {}
+function parseMessageId(value) {
+  if (typeof value === 'string' && /^\d{1,15}$/.test(value)) value = Number(value)
+  return Number.isSafeInteger(value) && value > 0 ? value : null
+}
+
+/**
+ * POST /chat/seen — mark a message as seen (the Claude watcher read it)
+ * Body: { messageId: number }. Needs the bearer token.
+ */
+app.post('/chat/seen', requireToken, (req, res) => {
+  const messageId = parseMessageId(req.body?.messageId)
   if (!messageId) {
-    return res.status(400).json({ error: 'Missing messageId' })
+    return res.status(400).json({ error: 'messageId must be a positive integer' })
   }
   markSeen(messageId)
   broadcast({ type: 'chat_seen', messageId })
@@ -1035,14 +1148,16 @@ app.post('/chat/seen', (req, res) => {
 
 /**
  * POST /chat/react — add or toggle an emoji reaction on a message
- * Body: { messageId: number, emoji: string }
+ * Body: { messageId: number, emoji: string }. Needs the bearer token.
+ * A message holds at most MAX_REACTIONS distinct emoji (see chat-db.js).
  */
-app.post('/chat/react', (req, res) => {
-  const { messageId, emoji } = req.body ?? {}
+app.post('/chat/react', requireToken, (req, res) => {
+  const messageId = parseMessageId(req.body?.messageId)
+  const emoji = clampString(req.body?.emoji, 10)
   if (!messageId || !emoji) {
-    return res.status(400).json({ error: 'Missing messageId or emoji' })
+    return res.status(400).json({ error: 'messageId must be a positive integer and emoji a non-empty string' })
   }
-  const reactions = addReaction(messageId, clampString(emoji, 10))
+  const reactions = addReaction(messageId, emoji)
   broadcast({ type: 'chat_reaction', messageId, reactions })
   res.json({ ok: true, reactions })
 })
@@ -1075,16 +1190,19 @@ app.get('/chat/cron-state', (_req, res) => {
   }
 })
 
+// Open on purpose: the office UI's pause button posts here with no token, and
+// all it can do is flip the chat monitor's `paused` flag.
 app.post('/chat/cron-state', (req, res) => {
   try {
     let state = {}
     try { state = JSON.parse(readFileSync(cronStatePath, 'utf8')) } catch {}
     state.paused = !!req.body?.paused
-    writeFileSync(cronStatePath, JSON.stringify(state), 'utf8')
+    writePrivate(cronStatePath, JSON.stringify(state))
     console.log(`[cron] Chat monitor ${state.paused ? 'PAUSED' : 'RESUMED'}`)
     res.json({ ok: true, paused: state.paused })
   } catch (err) {
-    res.status(500).json({ error: err.message })
+    console.error('[cron] Could not write chat monitor state:', err.message)
+    res.status(500).json({ error: 'Could not update chat monitor state' })
   }
 })
 
@@ -1102,6 +1220,11 @@ function processEvent(body) {
       if (activeAgents.has(id)) {
         // Replayed spawn (e.g. hook retry) — keep the existing record
         const existing = activeAgents.get(id)
+        if (existing.state === 'completed') {
+          // ...unless it already clocked out: re-announcing it would seat a ghost
+          console.log(`[~] Ignoring replayed spawn of completed agent ${id}`)
+          return null
+        }
         if (session && !existing.sessionId) attachAgentToSession(existing, session)
         if (!existing.subagentId && adoptPendingStart(existing)) saveAgents()
         return { type: 'agent_spawned', agent: existing, timestamp: Date.now() }
@@ -1221,6 +1344,14 @@ function processEvent(body) {
 
       if (id) {
         const agent = activeAgents.get(id)
+        if (agent.state === 'completed') {
+          // A straggling tool event for an agent already announced as done
+          // and walking out (its forgetAgent timer is pending): a resurrected
+          // record would be dropped by that timer without a word, and the
+          // office would be told it is working while it stands at the door.
+          console.log(`[~] Ignoring ${body.type} for completed agent ${id}`)
+          return null
+        }
         agent.state = 'working'
         agent.status = body.status ?? ''
         agent.lastActivityAt = Date.now()
@@ -1262,7 +1393,13 @@ function processEvent(body) {
     case 'agent_completed': {
       touchSession(body)
       const id = lookupAgentId(body.agentId)
-      if (id && activeAgents.get(id).state !== 'completed') {
+      if (id && activeAgents.get(id).state === 'completed') {
+        // Already announced and walking out — a foreground agent's SubagentStop
+        // and its PostToolUse(Agent) both report it; the second says nothing
+        console.log(`[-] Agent already completed: ${id}`)
+        return null
+      }
+      if (id) {
         const agent = activeAgents.get(id)
         agent.state = 'completed'
         saveAgents()
@@ -1378,22 +1515,45 @@ function processEvent(body) {
   }
 }
 
-// Walk out agents that went silent (lost hand-back, killed session, ...) and
-// end sessions nothing has been heard from for as long (missed SessionEnd)
-setInterval(() => {
-  const cutoff = Date.now() - STALE_AGENT_MS
+// An MCP record lives for one call. When its mcp_done never arrives (the tool
+// was denied in PreToolUse, the session was interrupted, the hook's curl was
+// dropped) it is forgotten after this long instead of lingering until restart.
+const MCP_STALE_MS = (Number(process.env.AGENT_OFFICE_MCP_STALE_MINUTES) || 5) * 60_000
+
+/**
+ * Walk out agents that went silent (lost hand-back, killed session, ...), end
+ * sessions nothing has been heard from for as long (missed SessionEnd), and
+ * drop MCP calls that never reported done. Runs every minute; `now` is a
+ * parameter so tests can sweep a future.
+ */
+function sweepStale(now = Date.now()) {
+  const cutoff = now - STALE_AGENT_MS
   for (const session of Array.from(sessions.values())) {
     if (session.state === 'active' && session.lastActivityAt < cutoff) {
       broadcast(processEvent({ type: 'session_ended', sessionId: session.id, reason: 'stale' }))
     }
   }
   for (const agent of Array.from(activeAgents.values())) {
-    if (agent.server || agent.state === 'completed') continue
+    if (agent.state === 'completed') continue
+    if (agent.server) {
+      if ((agent.spawnedAt ?? 0) < now - MCP_STALE_MS) {
+        activeAgents.delete(agent.id)
+        console.log(`[mcp] ${agent.server} / ${agent.tool} never reported done — dropped after ${MCP_STALE_MS / 60_000} min`)
+        broadcast({
+          type: 'mcp_done', server: agent.server, agentId: agent.id, reason: 'stale',
+          ...(agent.sessionId ? { sessionId: agent.sessionId } : {}),
+          timestamp: now,
+        })
+      }
+      continue
+    }
     if ((agent.lastActivityAt ?? agent.spawnedAt) < cutoff) {
       broadcast(processEvent({ type: 'agent_completed', agentId: agent.id, result: 'went quiet, clocking out' }))
     }
   }
-}, 5 * 60_000).unref()
+}
+
+setInterval(() => sweepStale(), 5 * 60_000).unref()
 
 // ---------------------------------------------------------------------------
 // Static UI — registered after every API route so /health, /chat, ... win
@@ -1408,6 +1568,33 @@ if (UI_AVAILABLE) {
     })
   })
 }
+
+// ---------------------------------------------------------------------------
+// Errors — registered last, after every route and the static UI (a route
+// added below this line is not covered). Only errors come here: a request
+// nothing matched still falls through to Express's plain 404.
+// ---------------------------------------------------------------------------
+
+const BODY_ERROR_MESSAGES = {
+  'entity.parse.failed': 'Malformed JSON body',
+  'entity.too.large': 'Request body too large',
+}
+
+/**
+ * Every error becomes a small JSON body. Without this Express answers an
+ * uncaught exception with its stack trace — absolute install paths and all —
+ * whenever NODE_ENV is unset. body-parser's errors carry a status and a type;
+ * anything else is a 500, logged here and nowhere else.
+ */
+function jsonErrorHandler(err, req, res, next) {
+  if (res.headersSent) return next(err)
+  const status = Number.isInteger(err?.status) && err.status >= 400 && err.status < 600 ? err.status : 500
+  const error = BODY_ERROR_MESSAGES[err?.type] ?? (status < 500 ? 'Bad request' : 'Internal error')
+  if (status >= 500) console.error(`[error] ${req.method} ${req.path}:`, err)
+  res.status(status).json({ error })
+}
+
+app.use(jsonErrorHandler)
 
 // ---------------------------------------------------------------------------
 // WebSocket server
@@ -1429,10 +1616,12 @@ wss.on('connection', (ws, req) => {
   const ip = req.socket.remoteAddress ?? 'unknown'
   console.log(`[ws] Client connected from ${ip} (total: ${wss.clients.size})`)
 
-  // Send current state snapshot immediately on connect
+  // Send current state snapshot immediately on connect: the agents to draw
+  // (not MCP transients, not agents in their completed grace window — a
+  // client seats every entry, and nothing would ever walk those out)
   const snapshot = {
     type: 'snapshot',
-    activeAgents: Array.from(activeAgents.values()),
+    activeAgents: liveAgents(),
     sessions: Array.from(sessions.values()).map(sessionToJSON),
     statuses: status.summary(),
     mcpServers: discoverMcpServers(),
@@ -1450,9 +1639,11 @@ wss.on('connection', (ws, req) => {
 })
 
 /**
- * Broadcast a JSON message to all connected WebSocket clients.
+ * Broadcast a JSON message to all connected WebSocket clients. A null payload
+ * (processEvent had nothing to say) is skipped rather than sent as "null".
  */
 function broadcast(payload) {
+  if (!payload) return
   const msg = JSON.stringify(payload)
   let sent = 0
   for (const client of wss.clients) {
@@ -1470,23 +1661,51 @@ function broadcast(payload) {
 // Boot
 // ---------------------------------------------------------------------------
 
-/** Write the auth token, bind the port and print the banner. */
-export function start() {
-  writeTokenFile()
+/**
+ * Bind the port, then write the auth token and print the banner.
+ *
+ * The token is written only once the port is ours: a second instance started
+ * while the first is running (`npm run server` twice, Electron plus the CLI)
+ * used to overwrite the file with its own token and then die on EADDRINUSE,
+ * so every hook event to the surviving server was a 401 until it was
+ * restarted. Now the loser exits without touching the file.
+ * @param {{ port?: number, host?: string }} [opts] — tests bind an ephemeral port
+ */
+export function start({ port = PORT, host = '127.0.0.1' } = {}) {
+  // A listen failure (EADDRINUSE: another instance already holds the port)
+  // surfaces on the http server, but ws re-emits it on the WebSocketServer —
+  // and an unhandled 'error' there throws. Handle it in one place, once,
+  // whichever object delivers it, so the banner prints and we exit cleanly
+  // without having written the token (writeTokenFile runs only on success).
+  let fatal = false
+  const onFatal = (err) => {
+    if (fatal) return
+    fatal = true
+    if (err?.code === 'EADDRINUSE') {
+      console.error(`[error] Port ${port} is already in use. Is the server already running? (its token in ${TOKEN_FILE} is left as it was)`)
+    } else {
+      console.error('[error]', err)
+    }
+    process.exit(1)
+  }
+  httpServer.on('error', onFatal)
+  wss.on('error', onFatal)
 
-  httpServer.listen(PORT, '127.0.0.1', () => {
+  httpServer.listen(port, host, () => {
+    writeTokenFile()
+    const bound = httpServer.address()?.port ?? port
     const mcpServers = discoverMcpServers()
     console.log(`
 ╔═══════════════════════════════════════════╗
 ║         Agent Office Server v1.0          ║
 ╠═══════════════════════════════════════════╣
-║  HTTP  http://localhost:${PORT}              ║
-║  WS    ws://localhost:${PORT}/ws             ║
-║  POST  http://localhost:${PORT}/event        ║
-║  GET   http://localhost:${PORT}/roster       ║
-║  GET   http://localhost:${PORT}/agents       ║
-║  GET   http://localhost:${PORT}/sessions     ║
-║  POST  http://localhost:${PORT}/a2a          ║
+║  HTTP  http://localhost:${bound}              ║
+║  WS    ws://localhost:${bound}/ws             ║
+║  POST  http://localhost:${bound}/event        ║
+║  GET   http://localhost:${bound}/roster       ║
+║  GET   http://localhost:${bound}/agents       ║
+║  GET   http://localhost:${bound}/sessions     ║
+║  POST  http://localhost:${bound}/a2a          ║
 ╚═══════════════════════════════════════════╝`)
 
     console.log(`  Auth token written to: ${TOKEN_FILE}`)
@@ -1502,15 +1721,6 @@ export function start() {
       console.log('  No MCP servers found in ~/.claude/settings.json')
     }
     console.log()
-  })
-
-  httpServer.on('error', (err) => {
-    if (err.code === 'EADDRINUSE') {
-      console.error(`[error] Port ${PORT} is already in use. Is the server already running?`)
-    } else {
-      console.error('[error]', err)
-    }
-    process.exit(1)
   })
 }
 
@@ -1542,5 +1752,6 @@ export {
   sessions,
   processEvent,
   sendAgentMessage,
+  sweepStale,
   broadcast,
 }

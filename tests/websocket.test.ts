@@ -5,7 +5,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import request from 'supertest'
 import WebSocket from 'ws'
-import { listen, loadOffice, postEvent, removeOffice, spawnAgent, type Office } from './helpers'
+import { listen, loadOffice, postAuthed, postEvent, removeOffice, spawnAgent, type Office } from './helpers'
 
 type Message = Record<string, any>
 
@@ -97,7 +97,7 @@ describe('WebSocket /ws', () => {
     }
 
     // Directed messages fan out as chat_message + inbox_update
-    await request(office.server.app).post('/chat/reply').send({ sender: 'Tester', recipient: 'Debugger', text: 'hi' })
+    await postAuthed(office.server, '/chat/reply', { sender: 'Tester', recipient: 'Debugger', text: 'hi' })
     const inbox = await a.next(m => m.type === 'inbox_update')
     expect(inbox).toEqual({ type: 'inbox_update', agentId: 'agent-ws-1', unread: 1 })
   })

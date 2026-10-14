@@ -7,7 +7,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import request from 'supertest'
-import { loadOffice, removeOffice, spawnAgent, type Office, type OfficeServer } from './helpers'
+import { loadOffice, postAuthed, removeOffice, spawnAgent, type Office, type OfficeServer } from './helpers'
 
 function spawnPair(server: OfficeServer) {
   spawnAgent(server, { id: 'agent-rev', name: 'Reviewer', role: 'code-reviewer', task: 'review auth.ts' })
@@ -32,7 +32,7 @@ describe('POST /chat/reply', () => {
   afterAll(() => removeOffice(office))
 
   it('delivers a directed message, stores it with its type and writes the inbox file under the runtime dir', async () => {
-    const res = await request(office.server.app).post('/chat/reply').send({
+    const res = await postAuthed(office.server, '/chat/reply', {
       sender: 'Reviewer', role: 'code-reviewer', recipient: 'Debugger', type: 'review_request',
       text: 'can you check the token refresh in auth.ts?',
     })
@@ -55,7 +55,7 @@ describe('POST /chat/reply', () => {
   })
 
   it('treats a leading @Name as the recipient when that agent is in the office', async () => {
-    const res = await request(office.server.app).post('/chat/reply').send({
+    const res = await postAuthed(office.server, '/chat/reply', {
       sender: 'Reviewer', role: 'code-reviewer', text: '@Debugger: the retry loop looks wrong',
     })
     expect(res.status).toBe(200)
@@ -66,7 +66,7 @@ describe('POST /chat/reply', () => {
     expect(stored).toMatchObject({ text: 'the retry loop looks wrong', recipient: 'Debugger', msg_type: 'message' })
 
     // A mention of someone who is not in the office stays a plain reply
-    const nobody = await request(office.server.app).post('/chat/reply').send({ sender: 'Reviewer', text: '@Nobody hi there' })
+    const nobody = await postAuthed(office.server, '/chat/reply', { sender: 'Reviewer', text: '@Nobody hi there' })
     expect(nobody.status).toBe(200)
     expect(nobody.body).toMatchObject({ recipient: null, delivered: false })
     const all = await request(office.server.app).get('/chat')
@@ -74,28 +74,28 @@ describe('POST /chat/reply', () => {
   })
 
   it('rejects a self-message with 400', async () => {
-    const byName = await request(office.server.app).post('/chat/reply').send({
+    const byName = await postAuthed(office.server, '/chat/reply', {
       sender: 'Debugger', recipient: 'Debugger', text: 'note to self',
     })
     expect(byName.status).toBe(400)
     expect(byName.body).toEqual({ error: 'An agent cannot message itself' })
 
     // Resolving to the same agent through its role counts too
-    const byRole = await request(office.server.app).post('/chat/reply').send({
+    const byRole = await postAuthed(office.server, '/chat/reply', {
       sender: 'Debugger', recipient: 'debugger', text: 'still me',
     })
     expect(byRole.status).toBe(400)
   })
 
   it('rejects a reply without text', async () => {
-    const res = await request(office.server.app).post('/chat/reply').send({ sender: 'Reviewer' })
+    const res = await postAuthed(office.server, '/chat/reply', { sender: 'Reviewer' })
     expect(res.status).toBe(400)
     expect(res.body).toEqual({ error: 'Missing text' })
   })
 
   it('GET /chat?recipient= returns only that agent\'s messages, case-insensitively', async () => {
-    await request(office.server.app).post('/chat/reply').send({ sender: 'Debugger', recipient: 'Reviewer', text: 'for the reviewer' })
-    await request(office.server.app).post('/chat/reply').send({ sender: 'Claude', text: 'for everyone' })
+    await postAuthed(office.server, '/chat/reply', { sender: 'Debugger', recipient: 'Reviewer', text: 'for the reviewer' })
+    await postAuthed(office.server, '/chat/reply', { sender: 'Claude', text: 'for everyone' })
 
     const forReviewer = await request(office.server.app).get('/chat').query({ recipient: 'reviewer' })
     expect(forReviewer.body.messages.map((m: any) => m.text)).toEqual(['for the reviewer'])
@@ -120,9 +120,9 @@ describe('unread badges and the inbox', () => {
   it('increments unread per directed message and POST /chat/inbox/read clears it', async () => {
     expect(await unreadOf(office.server, 'agent-dbg')).toBe(0)
 
-    await request(office.server.app).post('/chat/reply').send({ sender: 'Reviewer', recipient: 'Debugger', text: 'one' })
+    await postAuthed(office.server, '/chat/reply', { sender: 'Reviewer', recipient: 'Debugger', text: 'one' })
     expect(await unreadOf(office.server, 'agent-dbg')).toBe(1)
-    await request(office.server.app).post('/chat/reply').send({ sender: 'Reviewer', recipient: 'Debugger', text: 'two' })
+    await postAuthed(office.server, '/chat/reply', { sender: 'Reviewer', recipient: 'Debugger', text: 'two' })
     expect(await unreadOf(office.server, 'agent-dbg')).toBe(2)
     // A2A cards carry the same counter
     const cards = await request(office.server.app).get('/a2a/agents')
@@ -132,7 +132,7 @@ describe('unread badges and the inbox', () => {
     const saved = JSON.parse(readFileSync(join(office.dir, 'agents.json'), 'utf8'))
     expect(saved.agents.find((a: any) => a.id === 'agent-dbg').unread).toBe(2)
 
-    const read = await request(office.server.app).post('/chat/inbox/read').send({ recipient: 'Debugger' })
+    const read = await postAuthed(office.server, '/chat/inbox/read', { recipient: 'Debugger' })
     expect(read.status).toBe(200)
     expect(read.body).toEqual({ ok: true })
     expect(await unreadOf(office.server, 'agent-dbg')).toBe(0)
@@ -143,13 +143,13 @@ describe('unread badges and the inbox', () => {
   })
 
   it('accepts the office id as the recipient and rejects a missing one', async () => {
-    await request(office.server.app).post('/chat/reply').send({ sender: 'Debugger', recipient: 'Reviewer', text: 'ping' })
+    await postAuthed(office.server, '/chat/reply', { sender: 'Debugger', recipient: 'Reviewer', text: 'ping' })
     expect(await unreadOf(office.server, 'agent-rev')).toBe(1)
-    const read = await request(office.server.app).post('/chat/inbox/read').send({ recipient: 'agent-rev' })
+    const read = await postAuthed(office.server, '/chat/inbox/read', { recipient: 'agent-rev' })
     expect(read.status).toBe(200)
     expect(await unreadOf(office.server, 'agent-rev')).toBe(0)
 
-    const missing = await request(office.server.app).post('/chat/inbox/read').send({})
+    const missing = await postAuthed(office.server, '/chat/inbox/read', {})
     expect(missing.status).toBe(400)
     expect(missing.body).toEqual({ error: 'Missing recipient' })
   })
@@ -165,7 +165,7 @@ describe('A2A loop budget', () => {
 
   it('returns 429 once a pair has exchanged AGENT_OFFICE_A2A_LIMIT messages in a minute, in either direction', async () => {
     const send = (sender: string, recipient: string, text: string) =>
-      request(office.server.app).post('/chat/reply').send({ sender, recipient, text })
+      postAuthed(office.server, '/chat/reply', { sender, recipient, text })
 
     expect((await send('Reviewer', 'Debugger', '1')).status).toBe(200)
     expect((await send('Debugger', 'Reviewer', '2')).status).toBe(200)
@@ -225,7 +225,7 @@ describe('A2A protocol surface', () => {
   })
   afterAll(() => removeOffice(office))
 
-  const rpc = (body: object) => request(office.server.app).post('/a2a').send(body)
+  const rpc = (body: object) => postAuthed(office.server, '/a2a', body)
   const message = (text: string, metadata: object, extra: object = {}) => ({
     jsonrpc: '2.0', id: 7, method: 'message/send',
     params: { message: { kind: 'message', messageId: 'm1', role: 'agent', parts: [{ kind: 'text', text }], metadata, ...extra } },
