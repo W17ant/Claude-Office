@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import { ROLE_TO_CHAR } from '../config'
 import { getSpritePath, useTheme, toggleTheme, getTheme, themedDisplayName } from '../theme'
+import IncidentBadge from './IncidentBadge'
 
 function getAvatarSrc(role: string, agentId?: string): string {
   const charBase = ROLE_TO_CHAR[role] ?? 'employee-3'
@@ -162,6 +163,8 @@ const SlackChat: React.FC<SlackChatProps> = ({ messages, muted, volume, onToggle
         </div>
       </div>
 
+      <IncidentBadge />
+
       <div className="slack-body" ref={bodyRef}>
         {displayed.map((msg) => {
           const isProactive = !msg.isSystem && PROACTIVE_PATTERN.test(msg.text)
@@ -253,6 +256,8 @@ const SlackChat: React.FC<SlackChatProps> = ({ messages, muted, volume, onToggle
             <span className="slack-slash-cmd">/agents</span>
             <span className="slack-slash-cmd">/help</span>
             <span className="slack-slash-cmd">/the-office</span>
+            <span className="slack-slash-cmd">/incident</span>
+            <span className="slack-slash-cmd">/all-clear</span>
           </div>
         )}
         <div className="slack-input-bar">

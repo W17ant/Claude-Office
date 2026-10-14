@@ -1,6 +1,7 @@
 /** theme.ts — Office TV theme pack (characters, rooms, chatter, names, events) */
 
 import { useSyncExternalStore } from 'react'
+import { getVariant, pickIncidentLine, type IncidentLineKind } from './incident'
 
 export type ThemeName = 'default' | 'office'
 
@@ -227,11 +228,19 @@ const DEFAULT_WATER = [
   'hydration check', 'quick water break',
 ]
 
-export function themedSpawn(): string  { return pick(state.name === 'office' ? OFFICE_SPAWN  : DEFAULT_SPAWN) }
-export function themedWork(): string   { return pick(state.name === 'office' ? OFFICE_WORK   : DEFAULT_WORK) }
-export function themedDone(): string   { return pick(state.name === 'office' ? OFFICE_DONE   : DEFAULT_DONE) }
-export function themedCoffee(): string { return pick(state.name === 'office' ? OFFICE_COFFEE : DEFAULT_COFFEE) }
-export function themedWater(): string  { return pick(state.name === 'office' ? OFFICE_WATER  : DEFAULT_WATER) }
+// Pool order: incident variant (while active) → theme → default. Under
+// Dunder Mifflin + incident it is 50/50 so Michael stays in character.
+function variantLine(kind: IncidentLineKind): string | null {
+  if (getVariant() !== 'incident') return null
+  if (state.name === 'office' && Math.random() < 0.5) return null
+  return pickIncidentLine(kind)
+}
+
+export function themedSpawn(): string  { return variantLine('spawn')  ?? pick(state.name === 'office' ? OFFICE_SPAWN  : DEFAULT_SPAWN) }
+export function themedWork(): string   { return variantLine('work')   ?? pick(state.name === 'office' ? OFFICE_WORK   : DEFAULT_WORK) }
+export function themedDone(): string   { return variantLine('done')   ?? pick(state.name === 'office' ? OFFICE_DONE   : DEFAULT_DONE) }
+export function themedCoffee(): string { return variantLine('coffee') ?? pick(state.name === 'office' ? OFFICE_COFFEE : DEFAULT_COFFEE) }
+export function themedWater(): string  { return variantLine('water')  ?? pick(state.name === 'office' ? OFFICE_WATER  : DEFAULT_WATER) }
 
 // ===== SIM / VIDEO MODE OFFICE SCRIPT =====
 // Parallel tool-output messages keyed by role — used when ?sim or ?video loads with Office theme.

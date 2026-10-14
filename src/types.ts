@@ -38,6 +38,7 @@ export interface Agent {
   unread?: number           // directed agent-to-agent messages not yet read
   sessionId?: string        // the Claude Code session (terminal) this agent works for
   project?: string          // that session's project (basename of its cwd)
+  lastFailed?: boolean      // the last agent_working for this agent was a tool failure
 }
 
 /**
@@ -61,7 +62,7 @@ export interface SessionInfo {
 }
 
 export interface OfficeEvent {
-  type: 'agent_spawned' | 'agent_working' | 'agent_completed' | 'mcp_call' | 'mcp_done' | 'new_hire' | 'chat_message' | 'chat_typing' | 'chat_reaction' | 'chat_seen' | 'inbox_update' | 'session_started' | 'session_ended'
+  type: 'agent_spawned' | 'agent_working' | 'agent_completed' | 'mcp_call' | 'mcp_done' | 'new_hire' | 'chat_message' | 'chat_typing' | 'chat_reaction' | 'chat_seen' | 'inbox_update' | 'variant_change' | 'session_started' | 'session_ended'
   agent?: Partial<Agent>
   agentId?: string
   status?: string
@@ -74,7 +75,6 @@ export interface OfficeEvent {
   source?: string
   model?: string
   title?: string
-  reason?: string
   state?: 'active' | 'ended'
   startedAt?: number
   lastActivityAt?: number
@@ -92,6 +92,10 @@ export interface OfficeEvent {
   unread?: number
   // agent_working: the tool call errored (PostToolUseFailure)
   failed?: boolean
+  // variant_change: the server relayed /incident or /all-clear to every client
+  // (reason is also why a session_ended session ended)
+  variant?: 'none' | 'incident'
+  reason?: string
 }
 
 import { BOSS_NAME, BOSS_COLOR, BOSS_EMOJI } from './config'

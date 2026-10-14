@@ -27,6 +27,8 @@
 import { Agent, AgentState, Position } from './types'
 import { AgentSpot, Waypoint } from './rooms'
 import { themedSpawn, themedWork, themedDone, themedCoffee, themedWater, getOfficePropForRole } from './theme'
+import { getVariant } from './incident'
+import { incidentAssetUrl } from './incidentAssets'
 
 // ---------------------------------------------------------------------------
 // Spot assignment
@@ -231,7 +233,13 @@ export function getEffect(
   agentId?: string,
   task?: string,
   role?: string,
+  lastFailed?: boolean,
 ): string | null {
+  // Incident mode: an agent whose last tool call failed wears the build-failed bubble
+  if (lastFailed && state === 'working' && getVariant() === 'incident') {
+    return incidentAssetUrl('failedBubble')
+  }
+
   // Office theme: prop overlays replace energy drinks for mapped cast members.
   // Why: Dwight → CPR mask, Michael → Golden Ticket, etc. Still gated to "working" + break states.
   const officeProp = role ? getOfficePropForRole(role) : null

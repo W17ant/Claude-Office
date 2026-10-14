@@ -1,0 +1,207 @@
+/* ===== INCIDENT MODE ("Prod Is Down") =====
+   Everything here is scoped to the variant: .room-tint, .incident-*, .days-sign
+   (drawn in every mode) and the chat banner. Motion is disabled under
+   prefers-reduced-motion at the bottom. */
+
+/* Red room tint: multiplied over everything (agents included), pulsing ~1.2 Hz */
+.room-tint {
+  position: absolute;
+  inset: 0;
+  z-index: 100;
+  pointer-events: none;
+  background: #ff2a2a;
+  mix-blend-mode: multiply;
+  opacity: 0.16;
+  animation: incidentPulse 0.83s ease-in-out infinite alternate;
+}
+@keyframes incidentPulse {
+  from { opacity: 0.10; }
+  to   { opacity: 0.22; }
+}
+.room-container.incident {
+  box-shadow: inset 0 0 40px rgba(255, 40, 40, 0.35);
+}
+
+/* Beacon above the door: two frames (A/B) alternating, plus a glow pulse */
+.incident-beacon {
+  position: absolute;
+  width: 3.2%;
+  transform: translate(-50%, -50%);
+  z-index: 101;
+  pointer-events: none;
+  animation: beaconGlow 0.83s ease-in-out infinite alternate;
+}
+.incident-beacon img {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: auto;
+  display: block;
+  image-rendering: pixelated;
+}
+.incident-beacon img.frame-a { position: relative; }
+.incident-beacon img.frame-b { animation: beaconFrame 0.83s steps(1) infinite; }
+@keyframes beaconFrame {
+  0%, 49%   { opacity: 0; }
+  50%, 100% { opacity: 1; }
+}
+@keyframes beaconGlow {
+  from { filter: drop-shadow(0 0 2px rgba(255, 60, 60, 0.6)); }
+  to   { filter: drop-shadow(0 0 8px rgba(255, 60, 60, 1)); }
+}
+
+/* Sweeping light cone, anchored at the beacon */
+.incident-beacon-sweep {
+  position: absolute;
+  width: 70%;
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  z-index: 100;
+  pointer-events: none;
+  mix-blend-mode: screen;
+  opacity: 0.35;
+  background: conic-gradient(from 0deg,
+    rgba(255, 50, 50, 0.55) 0deg, rgba(255, 50, 50, 0) 35deg,
+    transparent 180deg,
+    rgba(255, 50, 50, 0.55) 180deg, rgba(255, 50, 50, 0) 215deg);
+  animation: beaconSpin 1.2s linear infinite;
+}
+@keyframes beaconSpin {
+  from { transform: translate(-50%, -50%) rotate(0deg); }
+  to   { transform: translate(-50%, -50%) rotate(360deg); }
+}
+
+/* Status page on the wall TV */
+.incident-tv {
+  position: absolute;
+  width: 8%;
+  transform: translate(-50%, -50%);
+  z-index: 101;
+  pointer-events: none;
+  filter: drop-shadow(0 0 6px rgba(255, 40, 40, 0.8));
+  animation: incidentTvFlicker 2.4s ease-in-out infinite;
+}
+.incident-tv img {
+  width: 100%;
+  height: auto;
+  display: block;
+  image-rendering: pixelated;
+}
+.incident-tv-label {
+  position: absolute;
+  left: 50%;
+  bottom: 12%;
+  transform: translateX(-50%);
+  font-family: 'Press Start 2P', monospace;
+  font-size: 5px;
+  color: #ff4d4d;
+  letter-spacing: 1px;
+  text-shadow: 0 0 3px #ff0000;
+  white-space: nowrap;
+}
+@keyframes incidentTvFlicker {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.85; }
+}
+
+/* Art slots that stay empty until the real PNGs land (see incidentAssets.ts) */
+.incident-board {
+  position: absolute;
+  width: 9%;
+  transform: translate(-50%, -50%);
+  z-index: 101;
+  pointer-events: none;
+  image-rendering: pixelated;
+}
+.incident-pizza {
+  position: absolute;
+  width: 5%;
+  transform: translate(-50%, -100%);
+  z-index: 54;
+  pointer-events: none;
+  image-rendering: pixelated;
+}
+
+/* "Days since last incident" sign on the left wall — digit drawn live over the art */
+.days-sign {
+  position: absolute;
+  width: 7.2%;
+  transform: translate(-50%, -50%);
+  z-index: 15;
+  pointer-events: auto;
+}
+.days-sign img {
+  width: 100%;
+  height: auto;
+  display: block;
+  image-rendering: pixelated;
+}
+.days-sign-digits {
+  position: absolute;
+  right: 4%;
+  top: 15%;
+  width: 18%;
+  height: 32%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #0d0d12;
+  color: #ff3b3b;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 7px;
+  line-height: 1;
+  text-shadow: 0 0 3px rgba(255, 59, 59, 0.8);
+  transform: skewY(-24deg);
+}
+.days-sign-digits.two   { font-size: 5px; }
+.days-sign-digits.three { font-size: 4px; }
+.days-sign.incident .days-sign-digits { animation: daysBlink 1s steps(1) infinite; }
+@keyframes daysBlink {
+  0%, 60%   { opacity: 1; }
+  61%, 100% { opacity: 0.25; }
+}
+
+/* Chat: incident banner under the channel header, with the live timer */
+.slack-incident-banner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  background: rgba(255, 50, 50, 0.12);
+  border-bottom: 1px solid rgba(255, 50, 50, 0.35);
+  color: #ff6b6b;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  font-family: 'JetBrains Mono', monospace;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.slack-incident-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #ff3b3b;
+  box-shadow: 0 0 6px #ff3b3b;
+  animation: incidentDot 1s ease-in-out infinite;
+}
+@keyframes incidentDot {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.3; }
+}
+
+/* Reduced motion: static tint, no sweep, nothing blinks */
+@media (prefers-reduced-motion: reduce) {
+  .room-tint,
+  .incident-beacon,
+  .incident-beacon img.frame-b,
+  .incident-tv,
+  .days-sign.incident .days-sign-digits,
+  .slack-incident-dot {
+    animation: none;
+  }
+  .incident-beacon-sweep { display: none; }
+  .incident-beacon img.frame-b { opacity: 0; }
+}

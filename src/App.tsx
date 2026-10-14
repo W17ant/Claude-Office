@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react'
 import './styles/office.css'
 import './styles/rooms.css'
+import './styles/incident.css'
 import SlackChat, { ChatMessage } from './components/SlackChat'
 import Character from './components/Character'
 import FurnitureRenderer from './components/FurnitureRenderer'
@@ -33,6 +34,11 @@ import {
   OFFICE_SIM_TOOL_MESSAGES, OFFICE_SIM_BOSS_PROMPTS,
   assignCharacterToRole, releaseRole, nextUnusedOfficeCharacter, displayNameFromSlug,
 } from './theme'
+import {
+  dispatchIncident, subscribeIncidentTransitions, incidentTransitionLines,
+  useVariant, getVariant, getIncident, pickIncidentLine, pinIncidentFromUrl, failureToolFromStatus,
+} from './incident'
+import IncidentLayer from './components/IncidentLayer'
 
 // ---------------------------------------------------------------------------
 // Placement helper — loaded via ?helper query param
@@ -45,6 +51,8 @@ const isVideoMode = params.has('video')
 // Why: allow ?theme=office on demo/sim URLs to preload Dunder Mifflin mode
 import { setTheme as _setTheme } from './theme'
 if (params.get('theme') === 'office') { _setTheme('office') }
+// Why: ?variant=incident pins incident mode on (auto-exit off) for screenshots
+if (params.get('variant') === 'incident') { pinIncidentFromUrl() }
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -305,6 +313,7 @@ const OFFICE_SIM_CHATTER = [
 const App: React.FC = () => {
   // All hooks must be at the top — before any conditional returns.
   const theme = useTheme() // Why: re-render rooms + agents when /the-office toggles
+  const variant = useVariant() // Why: forced night + incident overlays while prod is down
   const [agents, setAgents] = useState<Agent[]>(() => [createBoss(), createClaude()])
   const agentMetaRef = useRef<Map<string, AgentMeta>>(new Map([
     [BOSS_ID, { spawnedAt: Date.now(), arrivedAtDeskAt: Date.now(), idleSince: null, onBreak: false, breakStartedAt: null }],
@@ -531,6 +540,32 @@ const App: React.FC = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Incident mode: chat lines + sounds for every entry/exit, whatever triggered it
+  // (failures, random events, /incident relayed by the server, the 10 min timeout)
+  const incidentIntroRef = useRef(false)
+  useEffect(() => {
+    const unsubscribe = subscribeIncidentTransitions(t => {
+      // Why: the postmortem card follows the server's own all-clear line (which the
+      // chat_message handler posts on a timeout), so give the scribe a beat to write it
+      const delay = t.exited ? 600 : 0
+      const lines = incidentTransitionLines(t, agentsRef.current)
+      setTimeout(() => { for (const line of lines) addMsg('system', 'default', '#8b8d91', line, true) }, delay)
+      if (!sfx.isMuted()) {
+        if (t.entered) sfx.playAlarm()
+        if (t.exited) sfx.playCelebration()
+      }
+    })
+    // Pinned by ?variant=incident or restored from localStorage: announce once on mount
+    const current = getIncident()
+    if (!incidentIntroRef.current && current.variant === 'incident') {
+      incidentIntroRef.current = true
+      for (const line of incidentTransitionLines({ state: current, entered: current.reason ?? 'restored' })) {
+        addMsg('system', 'default', '#8b8d91', line, true)
+      }
+    }
+    return unsubscribe
+  }, [addMsg])
+
   // ---------------------------------------------------------------------------
   // Day/night cycle — compressed: 10 min = 24 hours
   // Timeline (600s total):
@@ -589,6 +624,20 @@ const App: React.FC = () => {
 
   const handleEvent = useCallback((event: OfficeEvent) => {
     const effects: PendingEffect[] = []
+
+    // Incident mode: count failed tool calls here, outside the updater (StrictMode
+    // double-invokes updaters), and apply /incident + /all-clear relayed by the server
+    if (event.type === 'agent_working' && event.failed) {
+      const failedAgent = event.agentId ? agentsRef.current.find(a => a.id === event.agentId) : undefined
+      dispatchIncident({
+        type: 'failure', at: Date.now(), tool: failureToolFromStatus(event.status),
+        agentId: failedAgent?.id, agentName: failedAgent?.name,
+      })
+    }
+    if (event.type === 'variant_change') {
+      dispatchIncident({ type: 'command', at: Date.now(), cmd: event.variant === 'incident' ? 'incident' : 'all-clear', reason: 'remote' })
+      return
+    }
 
     setAgents(prev => {
       switch (event.type) {
@@ -660,7 +709,7 @@ const App: React.FC = () => {
               effects.push({
                 msg: { sender: a.name, role: a.role, color: cfg.color, text: `${icon} ${statusMsg}` },
               })
-              return { ...a, state: 'working' as const, statusText: statusMsg }
+              return { ...a, state: 'working' as const, statusText: statusMsg, lastFailed: !!event.failed }
             })
           }
 
@@ -679,7 +728,7 @@ const App: React.FC = () => {
               msg: { sender: target.name, role: target.role, color: cfg.color, text: `${icon} ${statusMsg}` },
             })
             return prev.map(a =>
-              a.id === target.id ? { ...a, statusText: statusMsg } : a
+              a.id === target.id ? { ...a, statusText: statusMsg, lastFailed: !!event.failed } : a
             )
           }
 
@@ -727,7 +776,10 @@ const App: React.FC = () => {
             ]
             // Why: when Office theme is on, Michael Scott occasionally lands his signature line.
             const isMichael = getTheme() === 'office'
-            const reply = isMichael && Math.random() < 0.25
+            // Why: during an incident the boss is the Incident Commander 40% of the time
+            const reply = getVariant() === 'incident' && Math.random() < 0.4
+              ? pickIncidentLine('bossReply')
+              : isMichael && Math.random() < 0.25
               ? `That's what she said 😏`
               : bossReplies[Math.floor(Math.random() * bossReplies.length)]
             effects.push({
@@ -837,6 +889,13 @@ const App: React.FC = () => {
           if (recentChatKeysRef.current.size > 50) {
             const first = recentChatKeysRef.current.values().next().value
             if (first !== undefined) recentChatKeysRef.current.delete(first)
+          }
+
+          // Server-side slash command replies (/status, /incident, ...) are system cards.
+          // Why: after the dedup above, so StrictMode's double-run of this updater posts once.
+          if ((event as any).isSystem) {
+            setTimeout(() => addMsg('system', 'default', '#8b8d91', text, true), 0)
+            return prev
           }
 
           const role = (event as any).role as string | undefined
@@ -1635,6 +1694,10 @@ const App: React.FC = () => {
       // Post main slack announcement (system message)
       addMsg('system', 'default', '#8b8d91', event.slackAnnouncement, true)
 
+      // Incident mode: deploy-fail / who-broke-build start a 90 s mini-incident,
+      // deploy-success ends one (the transition subscriber posts the chat lines)
+      dispatchIncident({ type: 'random-event', id: event.id, at: Date.now() })
+
       // Play associated sound
       if (event.sound && !sfx.isMuted()) {
         switch (event.sound) {
@@ -1804,8 +1867,11 @@ const App: React.FC = () => {
   // Misc handlers
   // ---------------------------------------------------------------------------
 
-  // Effective day phase (respects manual override)
-  const effectivePhase: DayPhase = dayNightMode === 'auto' ? dayPhase
+  // Effective day phase (respects manual override; incident mode forces night —
+  // a red room at noon reads as a bug)
+  const forcedNight = variant === 'incident'
+  const effectivePhase: DayPhase = forcedNight ? 'night'
+    : dayNightMode === 'auto' ? dayPhase
     : dayNightMode === 'day' ? 'morning' : 'night'
   const isNight = effectivePhase === 'night' || effectivePhase === 'dusk'
 
@@ -1841,7 +1907,7 @@ const App: React.FC = () => {
         <div className="title-bar-dot" style={{ background: '#ff5f57' }} />
         <div className="title-bar-dot" style={{ background: '#febc2e' }} />
         <div className="title-bar-dot" style={{ background: '#28c840' }} />
-        <span className="title-bar-text">CLAUDE CODE — AGENT OFFICE</span>
+        <span className="title-bar-text">{variant === 'incident' ? '🔥 PROD IS DOWN — AGENT OFFICE' : 'CLAUDE CODE — AGENT OFFICE'}</span>
         <SessionStrip sessions={sessions} agents={agents} />
         <button
           className="title-bar-daynight"
@@ -1858,7 +1924,7 @@ const App: React.FC = () => {
       <div className="app-body">
       <div className="office-view">
         <div
-          className={`room-container${flickering ? ' flickering' : ''}`}
+          className={`room-container${flickering ? ' flickering' : ''}${variant === 'incident' ? ' incident' : ''}`}
           style={{
             aspectRatio: '4800/3584',
             width: '100%',
@@ -1877,7 +1943,7 @@ const App: React.FC = () => {
             className="room-background room-background-night"
             style={{
               backgroundImage: `url(${getRoomImage('night')})`,
-              opacity: dayNightMode === 'auto' ? nightOpacity : dayNightMode === 'night' ? 1 : 0,
+              opacity: forcedNight ? 1 : dayNightMode === 'auto' ? nightOpacity : dayNightMode === 'night' ? 1 : 0,
             }}
           />
 
@@ -1976,6 +2042,9 @@ const App: React.FC = () => {
               </div>
             )
           })()}
+
+          {/* Incident mode: days-since sign (every mode), tint / beacon / status TV (incident only) */}
+          <IncidentLayer />
 
           {/* Day/night overlay */}
           <div className={`day-overlay ${effectivePhase}`} />

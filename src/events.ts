@@ -326,10 +326,151 @@ export const OFFICE_EVENTS: RandomOfficeEvent[] = [
   },
 ]
 
+// Incident-mode events — SAME ids as RANDOM_EVENTS so EVENT_TARGETS in App.tsx
+// resolves without new entries; only the copy and sounds change. deploy-fail /
+// who-broke-build start a mini-incident and deploy-success ends one (incident.ts).
+export const INCIDENT_EVENTS: RandomOfficeEvent[] = [
+  {
+    id: 'fire-drill',
+    name: 'War Room',
+    slackAnnouncement: '🚨 everyone to the door — bridge call starting',
+    duration: 6000,
+    type: 'all-move',
+    targetPosition: { x: 114, y: 105 },
+    managerMessage: 'joining the bridge. who has context?',
+    agentMessages: ['joining the bridge', 'is this the sev1?', 'muting myself, kids are asleep'],
+    sound: 'alarm',
+  },
+  {
+    id: 'pizza',
+    name: 'Incident Pizza',
+    slackAnnouncement: '🍕 pizza has arrived (expense code: OUTAGE)',
+    duration: 5000,
+    type: 'all-move',
+    targetPosition: { x: 114, y: 105 },
+    managerMessage: 'eat fast',
+    agentMessages: ['incident pizza hits different', 'second pizza of the night', 'eating over the keyboard, sorry'],
+    sound: 'celebration',
+  },
+  {
+    id: 'standup',
+    name: 'Status Update',
+    slackAnnouncement: '📢 @here what do we know, what are we doing, who is blocked',
+    duration: 7000,
+    type: 'all-move',
+    targetPosition: { x: 411, y: 417 },
+    managerMessage: 'go around the room',
+    agentMessages: ['error rate 40% and dropping', 'rollback halfway', 'I need a DBA', 'still not DNS. probably DNS.'],
+    sound: 'notification',
+  },
+  {
+    id: 'deploy',
+    name: 'Rollback Deploy',
+    slackAnnouncement: '🚀 ROLLING BACK...',
+    duration: 5000,
+    type: 'slack-only',
+    managerMessage: 'hold',
+    agentMessages: ['please', 'watching the graph', 'if this fails we roll back the rollback'],
+    sound: 'notification',
+  },
+  {
+    id: 'deploy-success',
+    name: 'Rollback Complete',
+    slackAnnouncement: '✅ rollback complete — error rate normal',
+    duration: 3000,
+    type: 'slack-only',
+    managerMessage: 'starting the all-clear timer',
+    agentMessages: ['breathing again', 'graph is flat', 'who wants the postmortem doc'],
+    sound: 'celebration',
+  },
+  {
+    id: 'deploy-fail',
+    name: 'Rollback Failed',
+    slackAnnouncement: '💥 rollback failed — rolling back the rollback',
+    duration: 4000,
+    type: 'slack-only',
+    managerMessage: 'ok. ok. ok.',
+    agentMessages: ['of course', 'migration was not reversible', 'checking the backup'],
+    sound: 'error',
+  },
+  {
+    id: 'power-flicker',
+    name: 'Rack Power Blip',
+    slackAnnouncement: '⚡ UPS kicked in. again.',
+    duration: 3000,
+    type: 'visual-only',
+    agentMessages: ['was that us?', 'the DC is also having a night'],
+    sound: 'powerDown',
+  },
+  {
+    id: 'birthday',
+    name: 'Shift Change',
+    slackAnnouncement: '🕑 EU on-call is awake — handover in the break room',
+    duration: 4000,
+    type: 'all-move',
+    targetPosition: { x: 287, y: 129 },
+    managerMessage: 'brief them, then sleep',
+    agentMessages: ['handover doc is 3 lines', 'good luck', 'it is Tuesday there'],
+    sound: 'notification',
+  },
+  {
+    id: 'who-broke-build',
+    name: 'Bisect',
+    slackAnnouncement: '🔴 bisecting main — 12 commits between good and bad',
+    duration: 5000,
+    type: 'slack-only',
+    managerMessage: 'blameless. find the commit, not the person.',
+    agentMessages: ['4f2a1c is bad', 'a1b2c3 is good', 'it was the config change', 'I blame DNS'],
+    sound: 'error',
+  },
+  {
+    id: 'friday',
+    name: 'Friday Deploy',
+    slackAnnouncement: '📅 reminder: this started as a Friday deploy',
+    duration: 3000,
+    type: 'slack-only',
+    managerMessage: 'never again',
+    agentMessages: ['never again', 'we said that last time', 'read-only Fridays from now on'],
+    sound: 'notification',
+  },
+  {
+    id: 'printer-jam',
+    name: 'Printing The Error Log',
+    slackAnnouncement: '🖨️ someone piped kubectl logs to lp',
+    duration: 4000,
+    type: 'single-agent',
+    targetPosition: { x: 424, y: 132 },
+    agentMessages: ['it is 400 pages', 'PC LOAD STACKTRACE', 'unplug it'],
+    sound: 'error',
+  },
+  {
+    id: 'slack-down',
+    name: 'Status Page Is Down',
+    slackAnnouncement: '💀 the status page is down. the status page.',
+    duration: 3000,
+    type: 'slack-only',
+    agentMessages: ['of course it is', 'tweet it', 'carrier pigeon time'],
+    sound: 'notification',
+  },
+]
+
 import { getTheme } from './theme'
+import { getVariant } from './incident'
 
 export function pickEvent(): RandomOfficeEvent {
   const isOffice = getTheme() === 'office'
+
+  // Incident mode: the deploy chain runs hotter (0.35 vs 0.15) and every
+  // event reads as part of the outage. Same ids, so movement targets resolve.
+  if (getVariant() === 'incident') {
+    if (Math.random() < 0.35) {
+      return Math.random() < 0.7
+        ? INCIDENT_EVENTS.find(e => e.id === 'deploy-success')!
+        : INCIDENT_EVENTS.find(e => e.id === 'deploy-fail')!
+    }
+    const pool = INCIDENT_EVENTS.filter(e => e.id !== 'deploy-success' && e.id !== 'deploy-fail')
+    return pool[Math.floor(Math.random() * pool.length)]
+  }
 
   // Deploy events chain together (kept for both themes)
   if (Math.random() < 0.15) {
