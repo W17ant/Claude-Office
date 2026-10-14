@@ -12,12 +12,13 @@
 #   kill $(cat ~/.agent-office/chat-watcher.pid)
 # =============================================================================
 
-SERVER="http://127.0.0.1:3334"
+SERVER="http://127.0.0.1:${AGENT_OFFICE_PORT:-3334}"
 POLL_INTERVAL=30
 LAST_TS=0
-PID_FILE="$HOME/.agent-office/chat-watcher.pid"
+STATE_DIR="${AGENT_OFFICE_HOME:-$HOME/.agent-office}"
+PID_FILE="$STATE_DIR/chat-watcher.pid"
 
-mkdir -p "$HOME/.agent-office"
+mkdir -p "$STATE_DIR"
 echo $$ > "$PID_FILE"
 
 # Get initial timestamp so we don't reply to old messages
@@ -41,14 +42,17 @@ while true; do
         continue
     fi
 
-    # Parse and find messages from Antony (not from Claude/system)
+    # Only messages a person typed: role 'default', not a system line, not
+    # directed at an agent, not a slash command. Our own replies and the
+    # server's starting:/done: announcements carry an agent role.
     NEW_MSG=$(echo "$RESPONSE" | python3 -c "
 import json, sys
 try:
     msgs = json.load(sys.stdin)['messages']
     for m in msgs:
         sender = m.get('sender', '')
-        if sender and sender != 'Claude' and sender != 'system':
+        if (sender and m.get('role', 'default') == 'default' and not m.get('is_system')
+                and not m.get('recipient') and not m.get('text', '').lstrip().startswith('/')):
             print(f\"{m['timestamp']}|{sender}|{m['text']}\")
 except:
     pass
@@ -111,7 +115,7 @@ import urllib.request, json, os
 text = os.environ['CHAT_REPLY']
 server = os.environ['CHAT_SERVER']
 data = json.dumps({'sender':'Claude','role':'assistant','text':text}).encode()
-req = urllib.request.Request(server + '/chat', data=data, headers={'Content-Type':'application/json'}, method='POST')
+req = urllib.request.Request(server + '/chat/reply', data=data, headers={'Content-Type':'application/json'}, method='POST')
 resp = urllib.request.urlopen(req)
 print('[chat-watcher] POST:', resp.read().decode())
 PYEOF

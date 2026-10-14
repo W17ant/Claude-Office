@@ -11,9 +11,10 @@ Read messages addressed to you (clears your unread badge unless --peek):
 See who is in the office:
     python3 agent-message.py --who
 """
-import argparse, json, sys, urllib.error, urllib.parse, urllib.request
+import argparse, json, os, sys, urllib.error, urllib.parse, urllib.request
 
-BASE = "http://127.0.0.1:3334"
+PORT = os.environ.get("AGENT_OFFICE_PORT", "3334")
+BASE = "http://127.0.0.1:" + PORT
 
 
 def call(path, body=None):
@@ -34,7 +35,7 @@ def call(path, body=None):
             err = e.reason
         sys.exit(f"office refused: {err}")
     except urllib.error.URLError:
-        sys.exit("office server is not running on port 3334")
+        sys.exit(f"office server is not running on port {PORT}")
 
 
 p = argparse.ArgumentParser(description="Message other agents in the office")
