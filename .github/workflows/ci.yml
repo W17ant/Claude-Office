@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+        env:
+          # The Electron binary is not needed for type-checking or tests
+          ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+
+      - name: Type-check
+        # src/config.ts imports office.config.json, which is gitignored
+        run: |
+          cp office.config.example.json office.config.json
+          npx tsc --noEmit -p .
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npx vite build
