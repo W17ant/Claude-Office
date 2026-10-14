@@ -15,7 +15,10 @@ import { mkdirSync } from 'fs'
 // ---------------------------------------------------------------------------
 
 const RUNTIME_DIR = process.env.AGENT_OFFICE_HOME || join(homedir(), '.agent-office')
-try { mkdirSync(RUNTIME_DIR, { recursive: true }) } catch {}
+try { mkdirSync(RUNTIME_DIR, { recursive: true, mode: 0o700 }) } catch {}
+
+/** Distinct emoji a message can carry; a toggle past this is ignored. */
+export const MAX_REACTIONS = 20
 
 const DB_PATH = join(RUNTIME_DIR, 'chat.db')
 
@@ -164,7 +167,10 @@ export function markSeen(messageId) {
 
 /**
  * Toggle an emoji reaction on a message.
- * Adds the emoji if not present, removes it if already there.
+ * Adds the emoji if not present, removes it if already there. A message holds
+ * at most MAX_REACTIONS distinct emoji: a new one past that is not added (the
+ * array would otherwise grow without bound, and every change is re-broadcast
+ * whole to every client).
  * @param {number} messageId
  * @param {string} emoji
  * @returns {string[]} Updated reactions array
@@ -183,6 +189,7 @@ export function addReaction(messageId, emoji) {
 
   const idx = reactions.indexOf(emoji)
   if (idx === -1) {
+    if (reactions.length >= MAX_REACTIONS) return reactions
     reactions.push(emoji)
   } else {
     reactions.splice(idx, 1)
