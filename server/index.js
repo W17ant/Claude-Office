@@ -22,6 +22,7 @@ import { fileURLToPath } from 'url'
 import { dirname } from 'path'
 import { addMessage, getMessages, markSeen, addReaction, markInboxRead } from './chat-db.js'
 import db from './chat-db.js'
+import { mountStatus } from './status.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -515,6 +516,10 @@ app.use((req, res, next) => {
 })
 
 app.options('*', (_req, res) => res.sendStatus(204))
+
+// Payroll / electricity / memory: POST /status + GET /status (server/status.js),
+// fed by the Claude Code status line and keyed by the same session ids as `sessions`
+const status = mountStatus(app, { authToken: AUTH_TOKEN, broadcast, staleMs: STALE_AGENT_MS, sessions })
 
 // Health check
 app.get('/health', (_req, res) => {
@@ -1429,6 +1434,7 @@ wss.on('connection', (ws, req) => {
     type: 'snapshot',
     activeAgents: Array.from(activeAgents.values()),
     sessions: Array.from(sessions.values()).map(sessionToJSON),
+    statuses: status.summary(),
     mcpServers: discoverMcpServers(),
     timestamp: Date.now(),
   }
