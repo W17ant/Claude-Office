@@ -5,6 +5,7 @@ import './styles/incident.css'
 import SlackChat, { ChatMessage } from './components/SlackChat'
 import Character from './components/Character'
 import FurnitureRenderer from './components/FurnitureRenderer'
+import SessionStrip from './components/SessionStrip'
 import { Agent, OfficeEvent, AGENT_CONFIGS } from './types'
 import { getCurrentPhase, getPhaseLabel, type DayPhase } from './daylight'
 import { ROOMS } from './rooms'
@@ -671,6 +672,8 @@ const App: React.FC = () => {
           const agentBase = createAgent({ id, name, role, task, spot })
           const agent = {
             ...agentBase,
+            sessionId: raw.sessionId,
+            project: raw.project,
             pathQueue: computePath(agentBase.position, agentBase.targetPosition),
           }
 
@@ -710,8 +713,14 @@ const App: React.FC = () => {
             })
           }
 
-          // No agentId — broadcast to a random working agent (tool use from main thread)
-          const workers = prev.filter(a => a.state === 'working' && a.id !== BOSS_ID)
+          // No agentId — tool use from a main thread. With a sessionId, only
+          // that session's workers may show it; a session with none keeps the
+          // status on its pill (SessionStrip) rather than on another session's
+          // worker. Without a sessionId (old hook, sim mode) any worker will do.
+          const allWorkers = prev.filter(a => a.state === 'working' && a.id !== BOSS_ID)
+          const workers = event.sessionId
+            ? allWorkers.filter(a => a.sessionId === event.sessionId)
+            : allWorkers
           if (workers.length > 0) {
             const target = workers[Math.floor(Math.random() * workers.length)]
             const cfg = AGENT_CONFIGS[target.role] ?? AGENT_CONFIGS['default']
@@ -964,7 +973,8 @@ const App: React.FC = () => {
   // WebSocket connection
   // ---------------------------------------------------------------------------
 
-  useAgentSocket({ onEvent: handleEvent, url: 'ws://localhost:3334/ws', disabled: isSimMode })
+  const { sessions } = useAgentSocket({ onEvent: handleEvent, url: 'ws://localhost:3334/ws', disabled: isSimMode })
+  const activeSessionCount = sessions.filter(s => s.state === 'active').length
 
   // ---------------------------------------------------------------------------
   // Simulation loop — spawns/completes fake agents (only in ?sim mode)
@@ -1898,6 +1908,7 @@ const App: React.FC = () => {
         <div className="title-bar-dot" style={{ background: '#febc2e' }} />
         <div className="title-bar-dot" style={{ background: '#28c840' }} />
         <span className="title-bar-text">{variant === 'incident' ? '🔥 PROD IS DOWN — AGENT OFFICE' : 'CLAUDE CODE — AGENT OFFICE'}</span>
+        <SessionStrip sessions={sessions} agents={agents} />
         <button
           className="title-bar-daynight"
           onClick={() => setDayNightMode(prev =>
@@ -1974,6 +1985,7 @@ const App: React.FC = () => {
                 idleDurationMs={idleDurationMs}
                 zIndex={zOverride}
                 isTyping={typingAgents.has(agent.id)}
+                showProject={activeSessionCount > 1}
               />
             )
           })}

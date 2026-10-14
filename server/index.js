@@ -7,6 +7,7 @@
  * - GET /roster returns discovered MCP servers
  * - GET /agents lists agents in the office; POST /chat/reply with a recipient
  *   sends a directed agent-to-agent message
+ * - GET /sessions lists the Claude Code sessions (terminals) the agents belong to
  */
 
 import express from 'express'
@@ -14,7 +15,7 @@ import { createServer } from 'http'
 import { WebSocketServer, WebSocket } from 'ws'
 import { readFileSync, existsSync, writeFileSync, mkdirSync, realpathSync } from 'fs'
 import { homedir } from 'os'
-import { join } from 'path'
+import { join, basename } from 'path'
 import { randomBytes } from 'crypto'
 import { execFile } from 'child_process'
 import { fileURLToPath } from 'url'
@@ -59,17 +60,41 @@ function writeTokenFile() {
 
 // ---------------------------------------------------------------------------
 // Allowed origins
+//
+// The office UI is served from this server (port 3334: `npm run build`, the
+// packaged desktop app) or from the Vite dev server (port 3333), and browsers
+// reach either as localhost, 127.0.0.1 or ::1 — the Origin header spells it
+// whichever way the page was opened, so match the loopback host rather than
+// a fixed string. Anything else (other ports, `null`, `file://`) is refused.
 // ---------------------------------------------------------------------------
 
-const ALLOWED_ORIGINS = new Set([
-  'http://localhost:3333',
-  'http://localhost:3334',
-])
+const UI_DEV_PORT = 3333
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'])
+const ALLOWED_ORIGIN_PORTS = new Set([String(UI_DEV_PORT), String(PORT)])
 
 function isAllowedOrigin(origin) {
-  if (!origin) return true  // null origin (Electron, file://, curl)
-  return ALLOWED_ORIGINS.has(origin)
+  if (!origin) return true  // no Origin header: curl, the hook script, same-origin GETs
+  try {
+    const { protocol, hostname, port } = new URL(origin)
+    return protocol === 'http:' && LOOPBACK_HOSTS.has(hostname) && ALLOWED_ORIGIN_PORTS.has(port)
+  } catch {
+    return false  // not a URL (`null`)
+  }
 }
+
+// ---------------------------------------------------------------------------
+// Built UI
+//
+// `vite build` writes the React app, plus everything in public/, to dist/.
+// When that directory exists the server serves it from its root, so
+// http://127.0.0.1:3334/ is the whole office on one port: the packaged
+// Electron app loads this URL, and `npm run build && npm run server` works in
+// a plain browser. `npm run dev` keeps using Vite on 3333 instead. Tests point
+// AGENT_OFFICE_UI_DIR at a temp dir.
+// ---------------------------------------------------------------------------
+
+const UI_DIR = process.env.AGENT_OFFICE_UI_DIR || join(__dirname, '..', 'dist')
+const UI_AVAILABLE = existsSync(join(UI_DIR, 'index.html'))
 
 // ---------------------------------------------------------------------------
 // MCP server discovery
@@ -123,9 +148,10 @@ const subagentAliases = new Map()
 /**
  * SubagentStart events that arrived before the agent_spawned they belong to.
  * The hook POSTs from backgrounded curls, so the order is a race: such a start
- * is parked here (subagentId -> { agentType, parentId, at }) and consumed by
- * the next spawn of that agentType, or dropped after PENDING_START_MS.
- * @type {Map<string, {agentType: string, parentId?: string, at: number}>}
+ * is parked here (subagentId -> { agentType, parentId, sessionId, at }) and
+ * consumed by the next spawn of that agentType (from the same session, when
+ * both say which), or dropped after PENDING_START_MS.
+ * @type {Map<string, {agentType: string, parentId?: string, sessionId?: string, at: number}>}
  */
 const pendingStarts = new Map()
 const PENDING_START_MS = 15_000
@@ -133,6 +159,146 @@ const PENDING_START_MS = 15_000
 // Agents with no activity for this long are assumed gone (missed hand-back,
 // Claude Code killed mid-task) and are walked out of the office.
 const STALE_AGENT_MS = (Number(process.env.AGENT_OFFICE_STALE_MINUTES) || 120) * 60_000
+
+// ---------------------------------------------------------------------------
+// Session tracking — one Claude Code session (terminal) per session_id
+//
+// Every hook payload carries session_id / cwd / transcript_path, which the
+// tracker forwards as sessionId / project / cwd / transcriptPath on every
+// event. Agents are filed under the session that spawned them, so two
+// terminals never share workers, and main-thread tool calls (agent_working
+// without an agentId) are attributed to their session instead of to a random
+// worker. A session the office has not seen is created implicitly by its
+// first event (hooks installed mid-session, server restarted).
+// ---------------------------------------------------------------------------
+
+/** @type {Map<string, object>} sessionId -> session record */
+const sessions = new Map()
+
+/** @type {Map<string, ReturnType<typeof setTimeout>>} sessionId -> timer that forgets an ended session */
+const sessionTimers = new Map()
+
+// An ended session stays listed (state 'ended') this long so UIs can show it leaving
+const SESSION_FORGET_MS = 60_000
+
+/** Display name of a session: the tracker's project, else the last path segment of cwd. */
+function projectName(project, cwd) {
+  if (project) return project
+  if (!cwd) return undefined
+  return basename(cwd.replace(/\/+$/, '')) || cwd
+}
+
+/** Session record -> persistable object (the agentIds Set becomes an array). */
+function sessionToRecord(session) {
+  return { ...session, agentIds: Array.from(session.agentIds) }
+}
+
+/** Session record -> API/WS shape: the record plus live agent counts. */
+function sessionToJSON(session) {
+  const live = Array.from(activeAgents.values())
+    .filter(a => a.sessionId === session.id && !a.server && a.state !== 'completed')
+  return {
+    ...sessionToRecord(session),
+    agentCount: live.length,
+    workingCount: live.filter(a => a.state === 'working').length,
+  }
+}
+
+/** Broadcast shape of a session lifecycle event. */
+function sessionEvent(session, type = 'session_started') {
+  const { id, ...json } = sessionToJSON(session)
+  return { type, sessionId: id, ...json, timestamp: Date.now() }
+}
+
+function createSession({ id, project, cwd, source, model, title, now = Date.now() }) {
+  const session = {
+    id,
+    project: projectName(project, cwd),
+    cwd,
+    source: source || 'implicit',
+    state: 'active',
+    startedAt: now,
+    lastActivityAt: now,
+    agentIds: new Set(),
+  }
+  if (model) session.model = model
+  if (title) session.title = title
+  sessions.set(id, session)
+  console.log(`[session] ${session.source}: ${session.project ?? id} (${id})`)
+  return session
+}
+
+/**
+ * The session an event belongs to, created on the fly (source 'implicit')
+ * when the office has not seen it. Bumps the session's activity clock. A
+ * straggling event does not revive an ended session — only session_started
+ * (a resume) does that.
+ */
+function touchSession(body, now = Date.now()) {
+  const id = body.sessionId
+  if (!id) return null
+  let session = sessions.get(id)
+  if (!session) {
+    session = createSession({ id, project: body.project, cwd: body.cwd, source: 'implicit', now })
+    saveAgents()
+    broadcast(sessionEvent(session))
+    return session
+  }
+  if (session.state === 'active') session.lastActivityAt = now
+  if (!session.project) session.project = projectName(body.project, body.cwd)
+  if (!session.cwd && body.cwd) session.cwd = body.cwd
+  return session
+}
+
+/** File an agent under a session (and show the session's project on its nameplate). */
+function attachAgentToSession(agent, session) {
+  if (!agent || !session) return
+  if (agent.sessionId && agent.sessionId !== session.id) {
+    sessions.get(agent.sessionId)?.agentIds.delete(agent.id)
+  }
+  agent.sessionId = session.id
+  agent.project = session.project
+  session.agentIds.add(agent.id)
+}
+
+function clearSessionTimer(id) {
+  const timer = sessionTimers.get(id)
+  if (!timer) return
+  clearTimeout(timer)
+  sessionTimers.delete(id)
+}
+
+function forgetSession(id) {
+  clearSessionTimer(id)
+  const session = sessions.get(id)
+  if (!session) return
+  sessions.delete(id)
+  saveAgents()
+  console.log(`[session] forgot ${session.project ?? id} (${id})`)
+}
+
+/**
+ * Mark a session ended (SessionEnd hook, or no events for STALE_AGENT_MS):
+ * its still-active agents clock out through the usual agent_completed path
+ * (10 s grace), and the session itself is forgotten after SESSION_FORGET_MS.
+ */
+function endSession(session, reason, now = Date.now()) {
+  session.state = 'ended'
+  session.endedAt = now
+  session.reason = reason
+  session.lastActivityAt = now
+  for (const agentId of Array.from(session.agentIds)) {
+    const agent = activeAgents.get(agentId)
+    if (!agent || agent.server || agent.state === 'completed') continue
+    broadcast(processEvent({ type: 'agent_completed', agentId, result: 'session ended' }))
+  }
+  saveAgents()
+  clearSessionTimer(session.id)
+  const timer = setTimeout(() => forgetSession(session.id), SESSION_FORGET_MS)
+  timer.unref?.()
+  sessionTimers.set(session.id, timer)
+  console.log(`[session] ended (${reason}): ${session.project ?? session.id} (${session.id})`)
+}
 
 /**
  * Generate a stable agent ID from the event payload.
@@ -163,10 +329,20 @@ function linkSubagent(officeId, subagentId) {
   subagentAliases.set(subagentId, officeId)
 }
 
-/** Oldest unlinked, not-completed, non-MCP agent of this Claude Code agent type. */
-function oldestUnlinkedAgent(agentType) {
+/** Both unknown, or the same: an event and an agent may belong together. */
+function sameSession(a, b) {
+  return !a || !b || a === b
+}
+
+/**
+ * Oldest unlinked, not-completed, non-MCP agent of this Claude Code agent
+ * type — from the same session when the event names one, so a SubagentStart
+ * in one terminal never binds to an older spawn in another.
+ */
+function oldestUnlinkedAgent(agentType, sessionId) {
   return Array.from(activeAgents.values())
     .filter(a => !a.server && !a.subagentId && a.state !== 'completed' && a.agentType === agentType)
+    .filter(a => sameSession(a.sessionId, sessionId))
     .sort((a, b) => a.spawnedAt - b.spawnedAt)[0] ?? null
 }
 
@@ -191,7 +367,8 @@ function prunePendingStarts(now = Date.now()) {
 function adoptPendingStart(agent) {
   let oldest = null
   for (const [subagentId, pending] of pendingStarts) {
-    if (pending.agentType === agent.agentType && (!oldest || pending.at < oldest.at)) oldest = { subagentId, ...pending }
+    if (pending.agentType !== agent.agentType || !sameSession(pending.sessionId, agent.sessionId)) continue
+    if (!oldest || pending.at < oldest.at) oldest = { subagentId, ...pending }
   }
   if (!oldest) return false
   pendingStarts.delete(oldest.subagentId)
@@ -206,6 +383,7 @@ function forgetAgent(id) {
   if (agent?.subagentId && subagentAliases.get(agent.subagentId) === id) {
     subagentAliases.delete(agent.subagentId)
   }
+  if (agent?.sessionId) sessions.get(agent.sessionId)?.agentIds.delete(id)
   activeAgents.delete(id)
   saveAgents()
 }
@@ -235,16 +413,19 @@ function leastUsedGeneralRole() {
 }
 
 // ---------------------------------------------------------------------------
-// Agent persistence — survive a server restart while agents are still working
+// Agent + session persistence — survive a server restart while agents are
+// still working. agents.json holds { agents, sessions }.
 // ---------------------------------------------------------------------------
 
 const AGENTS_FILE = join(RUNTIME_DIR, 'agents.json')
 
 function saveAgents() {
   try {
-    // MCP entries are transient (one per call), only persist real agents
+    // MCP entries are transient (one per call), only persist real agents;
+    // ended sessions are on their way out and are not kept either
     const agents = Array.from(activeAgents.values()).filter(a => !a.server && a.state !== 'completed')
-    writeFileSync(AGENTS_FILE, JSON.stringify({ agents }), { mode: 0o600 })
+    const saved = Array.from(sessions.values()).filter(s => s.state === 'active').map(sessionToRecord)
+    writeFileSync(AGENTS_FILE, JSON.stringify({ agents, sessions: saved }), { mode: 0o600 })
   } catch (err) {
     console.warn('[agents] Could not save agent state:', err.message)
   }
@@ -253,7 +434,7 @@ function saveAgents() {
 function loadAgents() {
   if (!existsSync(AGENTS_FILE)) return
   try {
-    const { agents = [] } = JSON.parse(readFileSync(AGENTS_FILE, 'utf8'))
+    const { agents = [], sessions: saved = [] } = JSON.parse(readFileSync(AGENTS_FILE, 'utf8'))
     const cutoff = Date.now() - STALE_AGENT_MS
     for (const agent of agents) {
       if (!agent?.id || agent.state === 'completed') continue
@@ -262,6 +443,19 @@ function loadAgents() {
       if (agent.subagentId) subagentAliases.set(agent.subagentId, agent.id)
     }
     if (activeAgents.size > 0) console.log(`[agents] Restored ${activeAgents.size} agent(s) from ${AGENTS_FILE}`)
+
+    // Sessions come back with the same stale cutoff; their agent lists are
+    // rebuilt from the agents that survived
+    for (const session of Array.isArray(saved) ? saved : []) {
+      if (!session?.id || session.state === 'ended') continue
+      if ((session.lastActivityAt ?? session.startedAt ?? 0) < cutoff) continue
+      const agentIds = (Array.isArray(session.agentIds) ? session.agentIds : []).filter(id => activeAgents.has(id))
+      sessions.set(session.id, { ...session, state: 'active', agentIds: new Set(agentIds) })
+    }
+    for (const agent of activeAgents.values()) {
+      if (agent.sessionId) sessions.get(agent.sessionId)?.agentIds.add(agent.id)
+    }
+    if (sessions.size > 0) console.log(`[sessions] Restored ${sessions.size} session(s) from ${AGENTS_FILE}`)
   } catch (err) {
     console.warn('[agents] Could not restore agent state:', err.message)
   }
@@ -281,6 +475,8 @@ const KNOWN_EVENT_TYPES = new Set([
   'agent_started',
   'mcp_call',
   'mcp_done',
+  'session_started',
+  'session_ended',
 ])
 
 const MAX_STRING_LEN = 200
@@ -351,6 +547,11 @@ app.get('/roster', (_req, res) => {
  * spawn is the subagent that made the Agent call (a nested spawn).
  *   { type: "mcp_call",        server, tool, agentId? }
  *   { type: "mcp_done",        server, agentId? }
+ *   { type: "session_started", sessionId, project, cwd, source, model?, title? }   (SessionStart)
+ *   { type: "session_ended",   sessionId, reason }                                 (SessionEnd)
+ *
+ * Every event may carry sessionId, project, cwd and transcriptPath — the
+ * Claude Code session the hook fired in. Agents are filed under it.
  */
 app.post('/event', (req, res) => {
   // Auth check
@@ -392,6 +593,15 @@ app.post('/event', (req, res) => {
     result:  clampString(body.result),
     server:  clampString(body.server),
     tool:    clampString(body.tool),
+    // Session identity (on every event) + session lifecycle fields
+    sessionId:      clampString(body.sessionId),
+    project:        clampString(body.project),
+    cwd:            clampString(body.cwd, 400),
+    transcriptPath: clampString(body.transcriptPath, 400),
+    source:  clampString(body.source),
+    model:   clampString(body.model),
+    title:   clampString(body.title),
+    reason:  clampString(body.reason),
   }
 
   const event = processEvent(sanitised)
@@ -647,13 +857,25 @@ function sendAgentMessage({ sender, role, text, recipient, type, replyTo, sender
 app.get('/agents', (_req, res) => {
   const agents = Array.from(activeAgents.values())
     .filter(a => !a.server && a.state !== 'completed')
-    .map(({ id, name, role, task, state, status, lastError, background, spawnedAt, lastActivityAt, unread, parentId, parentSubagentId }) => ({
+    .map(({ id, name, role, task, state, status, lastError, background, spawnedAt, lastActivityAt, unread, parentId, parentSubagentId, sessionId, project }) => ({
       id, name, role, task, state, status, lastError, background, spawnedAt, lastActivityAt, unread: unread ?? 0,
       // Lineage: the subagent that spawned this one and, once that parent is linked, its office id
       parentId: parentId ?? lookupAgentId(parentSubagentId) ?? undefined,
       parentSubagentId,
+      // The Claude Code session (terminal) this agent works for
+      sessionId,
+      project,
     }))
   res.json({ agents })
+})
+
+/**
+ * GET /sessions — the Claude Code sessions (one per terminal) the office knows
+ * about: project, cwd, how it started, its agent counts and the last
+ * main-thread status. Ended sessions stay listed for SESSION_FORGET_MS.
+ */
+app.get('/sessions', (_req, res) => {
+  res.json({ sessions: Array.from(sessions.values()).map(sessionToJSON) })
 })
 
 /**
@@ -871,9 +1093,11 @@ function processEvent(body) {
       const agent = body.agent ?? {}
       const id = resolveAgentId(agent)
       prunePendingStarts()
+      const session = touchSession(body)
       if (activeAgents.has(id)) {
         // Replayed spawn (e.g. hook retry) — keep the existing record
         const existing = activeAgents.get(id)
+        if (session && !existing.sessionId) attachAgentToSession(existing, session)
         if (!existing.subagentId && adoptPendingStart(existing)) saveAgents()
         return { type: 'agent_spawned', agent: existing, timestamp: Date.now() }
       }
@@ -892,8 +1116,9 @@ function processEvent(body) {
         lastActivityAt: now,
       }
       setLineage(record, agent.parentSubagentId)
+      attachAgentToSession(record, session)
       activeAgents.set(id, record)
-      console.log(`[+] Agent spawned: ${record.name} (${record.role}) — ${id}${record.parentId ? ` (parent ${record.parentId})` : ''}`)
+      console.log(`[+] Agent spawned: ${record.name} (${record.role}) — ${id}${record.parentId ? ` (parent ${record.parentId})` : ''}${session ? ` [${session.project ?? session.id}]` : ''}`)
       // A SubagentStart that overtook this spawn on the way here is waiting for it
       adoptPendingStart(record)
       saveAgents()
@@ -909,6 +1134,7 @@ function processEvent(body) {
     }
 
     case 'agent_linked': {
+      touchSession(body)
       const id = lookupAgentId(body.agentId)
       if (id && body.subagentId) {
         linkSubagent(id, body.subagentId)
@@ -927,6 +1153,7 @@ function processEvent(body) {
       // the start overtook its spawn, park it until that spawn arrives.
       const subagentId = body.subagentId
       if (!subagentId) return null
+      touchSession(body)
       prunePendingStarts()
       const agentType = body.agentType || 'general-purpose'
       const known = lookupAgentId(subagentId)
@@ -939,7 +1166,7 @@ function processEvent(body) {
         console.log(`[~] SubagentStart ${subagentId} (${agentType}) confirms agent ${known}`)
         return null
       }
-      const agent = oldestUnlinkedAgent(agentType)
+      const agent = oldestUnlinkedAgent(agentType, body.sessionId)
       if (agent) {
         linkSubagent(agent.id, subagentId)
         setLineage(agent, body.parentId)
@@ -947,20 +1174,21 @@ function processEvent(body) {
         saveAgents()
         console.log(`[~] Agent ${agent.id} linked to subagent ${subagentId} (${agentType}) by SubagentStart`)
       } else {
-        pendingStarts.set(subagentId, { agentType, parentId: body.parentId, at: Date.now() })
+        pendingStarts.set(subagentId, { agentType, parentId: body.parentId, sessionId: body.sessionId, at: Date.now() })
         console.log(`[~] SubagentStart ${subagentId} (${agentType}) arrived before its spawn — parked`)
       }
       return null
     }
 
     case 'agent_working': {
+      const session = touchSession(body)
       let id = lookupAgentId(body.agentId)
 
       // A subagent id we haven't seen: no SubagentStart reached us (hook not
       // registered, server was down), so fall back to binding it to the
       // oldest unlinked agent of the same type on its first tool call.
       if (!id && body.agentId && body.agentType) {
-        const unbound = oldestUnlinkedAgent(body.agentType)
+        const unbound = oldestUnlinkedAgent(body.agentType, body.sessionId)
         if (unbound) {
           linkSubagent(unbound.id, body.agentId)
           id = unbound.id
@@ -969,6 +1197,9 @@ function processEvent(body) {
           pendingStarts.delete(body.agentId)
           const spawned = processEvent({
             type: 'agent_spawned',
+            sessionId: body.sessionId,
+            project: body.project,
+            cwd: body.cwd,
             agent: {
               id:   `agent-${body.agentId}`,
               name: body.name ?? 'Agent',
@@ -993,19 +1224,38 @@ function processEvent(body) {
           agent.lastError = agent.status
           console.log(`[!] Agent ${id} ${agent.status}`)
         }
+        // An agent spawned before the hook knew its session learns it here
+        if (session && !agent.sessionId) attachAgentToSession(agent, session)
+        saveAgents()
+        return {
+          type: 'agent_working',
+          agentId: id,
+          status: body.status,
+          ...(body.failed ? { failed: true } : {}),
+          ...(agent.sessionId ? { sessionId: agent.sessionId } : {}),
+          timestamp: Date.now(),
+        }
+      }
+      // Unknown or missing id is main-thread activity. It is remembered on the
+      // session (the last thing Claude itself did) and the broadcast names the
+      // session, so the frontend can show it there instead of on a random worker.
+      if (session) {
+        session.lastStatus = body.status ?? ''
+        session.lastStatusAt = Date.now()
         saveAgents()
       }
-      // Unknown or missing id is main-thread activity — frontend picks a worker
       return {
         type: 'agent_working',
-        agentId: id ?? undefined,
+        agentId: undefined,
         status: body.status,
         ...(body.failed ? { failed: true } : {}),
+        ...(session ? { sessionId: session.id, project: session.project } : {}),
         timestamp: Date.now(),
       }
     }
 
     case 'agent_completed': {
+      touchSession(body)
       const id = lookupAgentId(body.agentId)
       if (id && activeAgents.get(id).state !== 'completed') {
         const agent = activeAgents.get(id)
@@ -1025,33 +1275,96 @@ function processEvent(body) {
         }
       }
       console.log(`[-] Agent completed: ${id ?? body.agentId}`)
-      return { type: 'agent_completed', agentId: id ?? body.agentId, result: body.result, timestamp: Date.now() }
+      const sessionId = id ? activeAgents.get(id).sessionId : undefined
+      return {
+        type: 'agent_completed',
+        agentId: id ?? body.agentId,
+        result: body.result,
+        ...(sessionId ? { sessionId } : {}),
+        timestamp: Date.now(),
+      }
     }
 
     case 'mcp_call': {
+      const session = touchSession(body)
+      // Two calls to the same MCP in one millisecond (two terminals, say)
+      // must not share a record
+      let id = `mcp-${body.server}-${Date.now()}`
+      for (let n = Date.now() + 1; activeAgents.has(id); n++) id = `mcp-${body.server}-${n}`
       const record = {
-        id:     `mcp-${body.server}-${Date.now()}`,
+        id,
         name:   body.server ?? 'mcp',
         role:   body.server ?? 'default',
         server: body.server,
         tool:   body.tool,
         state:  'working',
         spawnedAt: Date.now(),
+        ...(session ? { sessionId: session.id, project: session.project } : {}),
       }
       // Track MCP agents transiently
       activeAgents.set(record.id, record)
       console.log(`[mcp] ${body.server} / ${body.tool}`)
-      return { type: 'mcp_call', server: body.server, tool: body.tool, agentId: record.id, timestamp: Date.now() }
+      return {
+        type: 'mcp_call', server: body.server, tool: body.tool, agentId: record.id,
+        ...(session ? { sessionId: session.id } : {}),
+        timestamp: Date.now(),
+      }
     }
 
     case 'mcp_done': {
-      // Clean up any mcp agent entries for this server
+      const session = touchSession(body)
+      // Clean up the mcp agent entries for this server — only this session's
+      // when the event says which, so two terminals on the same MCP don't
+      // clear each other's workers
       for (const [id, agent] of activeAgents.entries()) {
-        if (agent.server === body.server && agent.state === 'working') {
-          activeAgents.delete(id)
-        }
+        if (agent.server !== body.server || agent.state !== 'working') continue
+        if (session && agent.sessionId && agent.sessionId !== session.id) continue
+        activeAgents.delete(id)
       }
-      return { type: 'mcp_done', server: body.server, timestamp: Date.now() }
+      return { type: 'mcp_done', server: body.server, ...(session ? { sessionId: session.id } : {}), timestamp: Date.now() }
+    }
+
+    case 'session_started': {
+      // SessionStart hook: startup | resume | compact | clear | fork. The same
+      // session_id comes back on a resume, so an ended session is revived.
+      const id = body.sessionId
+      if (!id) return null
+      const now = Date.now()
+      const source = body.source || 'startup'
+      let session = sessions.get(id)
+      if (!session) {
+        session = createSession({ id, project: body.project, cwd: body.cwd, source, model: body.model, title: body.title, now })
+      } else {
+        if (session.state === 'ended') {
+          clearSessionTimer(id)
+          session.state = 'active'
+          delete session.endedAt
+          delete session.reason
+          console.log(`[session] back (${source}): ${session.project ?? id} (${id})`)
+        }
+        session.lastActivityAt = now
+        // Compaction fires SessionStart too, but it is not how the session started
+        if (source !== 'compact') session.source = source
+        const project = projectName(body.project, body.cwd)
+        if (project) session.project = project
+        if (body.cwd) session.cwd = body.cwd
+        if (body.model) session.model = body.model
+        if (body.title) session.title = body.title
+      }
+      saveAgents()
+      return sessionEvent(session)
+    }
+
+    case 'session_ended': {
+      // SessionEnd hook (reason: other | prompt_input_exit | ...), or the
+      // stale sweep below. Agents still at their desks clock out.
+      const id = body.sessionId
+      if (!id) return null
+      const reason = body.reason || 'other'
+      const session = sessions.get(id)
+      if (!session) return { type: 'session_ended', sessionId: id, reason, timestamp: Date.now() }
+      if (session.state !== 'ended') endSession(session, reason)
+      return sessionEvent(session, 'session_ended')
     }
 
     default:
@@ -1060,9 +1373,15 @@ function processEvent(body) {
   }
 }
 
-// Walk out agents that went silent (lost hand-back, killed session, ...)
+// Walk out agents that went silent (lost hand-back, killed session, ...) and
+// end sessions nothing has been heard from for as long (missed SessionEnd)
 setInterval(() => {
   const cutoff = Date.now() - STALE_AGENT_MS
+  for (const session of Array.from(sessions.values())) {
+    if (session.state === 'active' && session.lastActivityAt < cutoff) {
+      broadcast(processEvent({ type: 'session_ended', sessionId: session.id, reason: 'stale' }))
+    }
+  }
   for (const agent of Array.from(activeAgents.values())) {
     if (agent.server || agent.state === 'completed') continue
     if ((agent.lastActivityAt ?? agent.spawnedAt) < cutoff) {
@@ -1070,6 +1389,20 @@ setInterval(() => {
     }
   }
 }, 5 * 60_000).unref()
+
+// ---------------------------------------------------------------------------
+// Static UI — registered after every API route so /health, /chat, ... win
+// ---------------------------------------------------------------------------
+
+if (UI_AVAILABLE) {
+  app.use(express.static(UI_DIR))
+} else {
+  app.get('/', (_req, res) => {
+    res.status(404).json({
+      error: 'Office UI not built. Run `npm run build` to serve it from here, or `npm run dev` for the Vite dev server on port 3333.',
+    })
+  })
+}
 
 // ---------------------------------------------------------------------------
 // WebSocket server
@@ -1080,7 +1413,7 @@ const httpServer = createServer(app)
 const wss = new WebSocketServer({ server: httpServer, path: '/ws' })
 
 wss.on('connection', (ws, req) => {
-  // Origin validation — allow localhost origins and null (Electron/file://)
+  // Origin validation — loopback origins only (see isAllowedOrigin)
   const origin = req.headers.origin
   if (origin && !isAllowedOrigin(origin)) {
     console.warn(`[ws] Rejected connection from disallowed origin: ${origin}`)
@@ -1095,6 +1428,7 @@ wss.on('connection', (ws, req) => {
   const snapshot = {
     type: 'snapshot',
     activeAgents: Array.from(activeAgents.values()),
+    sessions: Array.from(sessions.values()).map(sessionToJSON),
     mcpServers: discoverMcpServers(),
     timestamp: Date.now(),
   }
@@ -1145,10 +1479,16 @@ export function start() {
 ║  POST  http://localhost:${PORT}/event        ║
 ║  GET   http://localhost:${PORT}/roster       ║
 ║  GET   http://localhost:${PORT}/agents       ║
+║  GET   http://localhost:${PORT}/sessions     ║
 ║  POST  http://localhost:${PORT}/a2a          ║
 ╚═══════════════════════════════════════════╝`)
 
     console.log(`  Auth token written to: ${TOKEN_FILE}`)
+    if (UI_AVAILABLE) {
+      console.log(`  Office UI served from: ${UI_DIR}`)
+    } else {
+      console.log('  Office UI not built (npm run build) — use the Vite dev server on port 3333')
+    }
 
     if (mcpServers.length > 0) {
       console.log(`  MCP servers discovered: ${mcpServers.join(', ')}`)
@@ -1189,8 +1529,11 @@ export {
   RUNTIME_DIR,
   TOKEN_FILE,
   PORT,
+  UI_DIR,
+  UI_AVAILABLE,
   activeAgents,
   pendingStarts,
+  sessions,
   processEvent,
   sendAgentMessage,
   broadcast,

@@ -6,7 +6,8 @@
 #   1. Backs up the existing settings file
 #   2. Registers agent-tracker.sh for PreToolUse (spawns + tool activity),
 #      PostToolUse (completions), PostToolUseFailure (failed tool calls),
-#      SubagentStart (subagent ids) and SubagentStop (subagents finishing)
+#      SubagentStart (subagent ids), SubagentStop (subagents finishing),
+#      SessionStart and SessionEnd (one session pill per Claude Code terminal)
 #   3. Prints next steps
 #
 # Safe to re-run: each hook event is checked separately, so an older install
@@ -71,7 +72,7 @@ echo -e "${GREEN}[ok]${RESET} Backup saved: $BACKUP_FILE"
 # ---------------------------------------------------------------------------
 # Merge hook entries into settings JSON using Python
 # ---------------------------------------------------------------------------
-echo -e "${CYAN}[...]${RESET} Registering PreToolUse, PostToolUse, PostToolUseFailure, SubagentStart + SubagentStop hooks..."
+echo -e "${CYAN}[...]${RESET} Registering PreToolUse, PostToolUse, PostToolUseFailure, SubagentStart, SubagentStop, SessionStart + SessionEnd hooks..."
 
 python3 - "$SETTINGS_FILE" "$HOOK_COMMAND" <<'PYEOF'
 import json, sys
@@ -95,7 +96,7 @@ def has_tracker(groups):
         for h in group.get('hooks', []) if isinstance(h, dict)
     )
 
-for event in ('PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'SubagentStart', 'SubagentStop'):
+for event in ('PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'SubagentStart', 'SubagentStop', 'SessionStart', 'SessionEnd'):
     groups = hooks.setdefault(event, [])
     if has_tracker(groups):
         print(f'  [skip] {event} already registered')

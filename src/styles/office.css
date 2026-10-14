@@ -100,6 +100,86 @@
   border-radius: 3px;
 }
 
+/* ===== SESSION STRIP (title bar) — one pill per Claude Code terminal ===== */
+.session-strip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 50%;
+  overflow: hidden;
+  -webkit-app-region: no-drag;
+}
+
+.session-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 16px;
+  padding: 0 6px;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.08);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 8px;
+  letter-spacing: 0.5px;
+  color: #8a7a58;
+  white-space: nowrap;
+  cursor: default;
+  transition: opacity 0.3s;
+}
+.session-pill.busy {
+  color: #c9b48a;
+  border-color: rgba(201, 180, 138, 0.25);
+}
+.session-pill.ended {
+  opacity: 0.4;
+  text-decoration: line-through;
+}
+
+.session-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #5a4a38;
+  flex-shrink: 0;
+}
+.session-dot.busy {
+  background: #28c840;
+  box-shadow: 0 0 4px #28c840;
+  animation: session-dot-pulse 1.2s ease-in-out infinite;
+}
+.session-dot.ended {
+  background: #ff5f57;
+}
+
+@keyframes session-dot-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.35; }
+}
+
+.session-pill-project {
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.session-pill-count {
+  padding: 0 4px;
+  border-radius: 6px;
+  background: rgba(255,255,255,0.07);
+  color: #a08a60;
+  font-size: 7px;
+  line-height: 11px;
+}
+
+.session-pill-status {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #6f5f45;
+  font-size: 7px;
+}
+
 /* ===== OFFICE CONTAINER ===== */
 .office-view {
   flex: 1;
@@ -368,6 +448,26 @@
 @keyframes char-unread-pop {
   from { transform: scale(0.4); opacity: 0; }
   to   { transform: scale(1);   opacity: 1; }
+}
+
+/* Project tag under the sprite — shown when more than one session is in the office */
+.char-project {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translate(-50%, -2px);
+  z-index: 12;
+  padding: 0 4px;
+  border-radius: 2px;
+  background: rgba(10, 8, 6, 0.75);
+  color: #c9b48a;
+  font: 7px/11px 'JetBrains Mono', monospace;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
 }
 
 /* ===== CHARACTER STATES ===== */

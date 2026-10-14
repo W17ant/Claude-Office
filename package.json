@@ -53,28 +53,21 @@
     "directories": {
       "output": "release"
     },
+    "asar": false,
     "files": [
       "dist/**",
       "electron/**",
+      "!electron/after-pack.cjs",
       "server/**",
-      "public/**",
-      "node_modules/**"
+      "scripts/notify.sh"
     ],
+    "npmRebuild": false,
+    "afterPack": "electron/after-pack.cjs",
     "mac": {
       "category": "public.app-category.developer-tools",
       "target": [
         "dmg"
       ]
-    },
-    "extraResources": [
-      {
-        "from": "server",
-        "to": "server"
-      },
-      {
-        "from": "public",
-        "to": "public"
-      }
-    ]
+    }
   }
 }

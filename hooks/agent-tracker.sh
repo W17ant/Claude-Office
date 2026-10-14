@@ -13,6 +13,12 @@
 #                        and gets NO PostToolUse); shown as a failed status
 #   SubagentStart      — a subagent exists; ties the office agent to its agent_id
 #   SubagentStop       — a subagent finished (the completion signal for background agents)
+#   SessionStart       — a Claude Code session began (startup/resume/compact/clear/fork)
+#   SessionEnd         — that session exited
+#
+# Every event carries the session it came from: sessionId (session_id),
+# project (basename of cwd), cwd and transcriptPath. Two terminals are two
+# sessions, and the server keeps their agents apart with these.
 #
 # Background agents (run_in_background): the Agent tool returns straight away
 # with status "async_launched", so PostToolUse only links the office agent to
@@ -58,6 +64,58 @@ except Exception:
 hook_event = d.get('hook_event_name', '')
 tool_name  = d.get('tool_name', '')
 
+# ── Session identity — present on every hook payload Claude Code sends ──────
+# session_id, transcript_path and cwd are in the base schema of all 33 hook
+# events (captured 2.1.300). project is the basename of cwd: the folder the
+# terminal was opened in, which is what the office shows on the session pill.
+def session_fields(payload):
+    out = {}
+    sid = payload.get('session_id')
+    if sid:
+        out['sessionId'] = str(sid)
+    cwd = payload.get('cwd')
+    if isinstance(cwd, str) and cwd:
+        out['project'] = os.path.basename(cwd.rstrip('/')) or cwd
+        out['cwd'] = cwd
+    transcript = payload.get('transcript_path')
+    if isinstance(transcript, str) and transcript:
+        out['transcriptPath'] = transcript
+    return out
+
+SESSION = session_fields(d)
+
+def emit(event):
+    # Every event the office receives says which session it belongs to
+    for key, value in SESSION.items():
+        event.setdefault(key, value)
+    print(json.dumps(event))
+
+# ── Session lifecycle ───────────────────────────────────────────────────────
+# Captured 2.1.300 payloads (besides session_id/transcript_path/cwd):
+#   SessionStart {"source": "startup"}                      first start, no model
+#   SessionStart {"source": "startup", "model": "claude-haiku-5-5"}
+#   SessionStart {"source": "resume", "seconds_since_last_response": 5,
+#                 "context_tokens": 44052, ...}             claude -r / --continue
+#   SessionStart {"source": "compact", "model": "claude-haiku-5-5", "prompt_id": ...}
+#   SessionEnd   {"reason": "other"}                        every -p exit
+#   SessionEnd   {"reason": "prompt_input_exit"}            /exit
+# source may also be clear | fork (schema). session_title is only present
+# when the session was named (--name, /rename) and becomes `title`.
+if hook_event == 'SessionStart':
+    event = {'type': 'session_started', 'source': str(d.get('source') or 'startup')}
+    if d.get('model'):
+        event['model'] = str(d['model'])
+    if d.get('session_title'):
+        event['title'] = str(d['session_title'])[:120]
+    if SESSION.get('sessionId'):
+        emit(event)
+    sys.exit(0)
+
+if hook_event == 'SessionEnd':
+    if SESSION.get('sessionId'):
+        emit({'type': 'session_ended', 'reason': str(d.get('reason') or 'other')})
+    sys.exit(0)
+
 # ── Subagent started — fires right after PreToolUse(Agent) ──────────────────
 # Captured 2.1.300 payload (besides session_id/transcript_path/cwd/prompt_id):
 #   {"hook_event_name": "SubagentStart", "agent_id": "ac5ff55b850b4fecf",
@@ -70,11 +128,11 @@ tool_name  = d.get('tool_name', '')
 # agent_spawned of the same agent_type, whichever of the two arrives first.
 if hook_event == 'SubagentStart':
     if d.get('agent_id') and d.get('agent_type'):
-        print(json.dumps({
+        emit({
             'type':       'agent_started',
             'subagentId': str(d['agent_id']),
             'agentType':  str(d['agent_type']),
-        }))
+        })
     sys.exit(0)
 
 # ── Subagent finished (foreground or background) — carries the subagent's
@@ -85,11 +143,11 @@ if hook_event == 'SubagentStart':
 # so emit nothing rather than a completion for an id the office never saw.
 if hook_event == 'SubagentStop':
     if d.get('agent_id') and d.get('agent_type'):
-        print(json.dumps({
+        emit({
             'type':    'agent_completed',
             'agentId': str(d['agent_id']),
             'result':  str(d.get('last_assistant_message') or 'done')[:120],
-        }))
+        })
     sys.exit(0)
 
 if not tool_name:
@@ -104,18 +162,18 @@ if tool_name.startswith('mcp__'):
     mcp_tool   = parts[1] if len(parts) > 1 else ''
 
     if hook_event == 'PreToolUse':
-        print(json.dumps({
+        emit({
             'type':   'mcp_call',
             'server': mcp_server,
             'tool':   mcp_tool,
-        }))
+        })
     elif hook_event in ('PostToolUse', 'PostToolUseFailure'):
         # A failed MCP call gets PostToolUseFailure instead of PostToolUse;
         # either way the transient worker leaves
-        print(json.dumps({
+        emit({
             'type':   'mcp_done',
             'server': mcp_server,
-        }))
+        })
     sys.exit(0)
 
 # Role mapping: normalise subagent_type to office role keys
@@ -264,18 +322,18 @@ if tool_name in ('Agent', 'Task'):
         if sub_agent_id:
             agent['parentSubagentId'] = str(sub_agent_id)
 
-        print(json.dumps({'type': 'agent_spawned', 'agent': agent}))
+        emit({'type': 'agent_spawned', 'agent': agent})
 
     elif hook_event == 'PostToolUseFailure':
         # The launch itself failed (unknown subagent_type, interrupted, ...):
         # no subagent ever existed, so walk the office agent out again
         agent_id = f'agent-{tool_use_id}' if tool_use_id else ''
         if agent_id:
-            print(json.dumps({
+            emit({
                 'type':    'agent_completed',
                 'agentId': agent_id,
                 'result':  f"failed: {error_summary(d.get('error'), 110)}",
-            }))
+            })
 
     elif hook_event == 'PostToolUse':
         agent_id = f'agent-{tool_use_id}' if tool_use_id else ''
@@ -287,18 +345,18 @@ if tool_name in ('Agent', 'Task'):
         if rd.get('status') == 'async_launched' or (inp.get('run_in_background') and not rd.get('status') == 'completed'):
             subagent_id = rd.get('agentId') or rd.get('agent_id') or ''
             if agent_id and subagent_id:
-                print(json.dumps({
+                emit({
                     'type':       'agent_linked',
                     'agentId':    agent_id,
                     'subagentId': str(subagent_id),
-                }))
+                })
             sys.exit(0)
 
-        print(json.dumps({
+        emit({
             'type':    'agent_completed',
             'agentId': agent_id,
             'result':  result_text(resp),
-        }))
+        })
 
     sys.exit(0)
 
@@ -310,11 +368,11 @@ if tool_name == 'SubagentHandback' and hook_event == 'PostToolUse':
     subagent_id = (sub_agent_id or inp.get('agent_id') or inp.get('agentId')
                    or rd.get('agent_id') or rd.get('agentId') or '')
     if subagent_id:
-        print(json.dumps({
+        emit({
             'type':    'agent_completed',
             'agentId': str(subagent_id),
             'result':  result_text(d.get('tool_response', {})),
-        }))
+        })
     sys.exit(0)
 
 # ── A tool call errored — Claude Code fires PostToolUseFailure {tool_name,
@@ -323,11 +381,11 @@ if tool_name == 'SubagentHandback' and hook_event == 'PostToolUse':
 # Shown as a failed status on the agent that made the call; a main-thread
 # failure carries no agentId, exactly like the working events below.
 if hook_event == 'PostToolUseFailure':
-    print(json.dumps(tag_subagent({
+    emit(tag_subagent({
         'type':   'agent_working',
         'status': f"failed: {tool_name} — {error_summary(d.get('error'))}",
         'failed': True,
-    })))
+    }))
     sys.exit(0)
 
 # ── Common tool uses — broadcast as working status updates ─────────────────
@@ -347,10 +405,10 @@ if hook_event == 'PreToolUse' and tool_name in ('Read', 'Write', 'Edit', 'Bash',
     status_fn = status_map.get(tool_name)
     if status_fn:
         status = status_fn(inp)
-        print(json.dumps(tag_subagent({
+        emit(tag_subagent({
             'type': 'agent_working',
             'status': status,
-        })))
+        }))
 
 sys.exit(0)
 PYEOF

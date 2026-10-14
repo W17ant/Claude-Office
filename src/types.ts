@@ -36,15 +36,51 @@ export interface Agent {
   hiredAt: number
   pathQueue?: { x: number; y: number }[]  // waypoints to walk through
   unread?: number           // directed agent-to-agent messages not yet read
+  sessionId?: string        // the Claude Code session (terminal) this agent works for
+  project?: string          // that session's project (basename of its cwd)
   lastFailed?: boolean      // the last agent_working for this agent was a tool failure
 }
 
+/**
+ * A Claude Code session the office knows about — one per terminal. Mirrors
+ * the server's GET /sessions entries and session_started/session_ended events.
+ */
+export interface SessionInfo {
+  id: string
+  project?: string
+  cwd?: string
+  title?: string
+  model?: string
+  source?: string           // startup | resume | compact | clear | fork | implicit
+  state: 'active' | 'ended'
+  reason?: string           // why it ended
+  startedAt?: number
+  lastActivityAt?: number
+  /** Last main-thread tool status (agent_working with no agentId) and when */
+  lastStatus?: string
+  lastStatusAt?: number
+}
+
 export interface OfficeEvent {
-  type: 'agent_spawned' | 'agent_working' | 'agent_completed' | 'mcp_call' | 'mcp_done' | 'new_hire' | 'chat_message' | 'chat_typing' | 'chat_reaction' | 'chat_seen' | 'inbox_update' | 'variant_change'
+  type: 'agent_spawned' | 'agent_working' | 'agent_completed' | 'mcp_call' | 'mcp_done' | 'new_hire' | 'chat_message' | 'chat_typing' | 'chat_reaction' | 'chat_seen' | 'inbox_update' | 'variant_change' | 'session_started' | 'session_ended'
   agent?: Partial<Agent>
   agentId?: string
   status?: string
   result?: string
+  // The Claude Code session the event came from (every hook event carries it)
+  sessionId?: string
+  project?: string
+  // session_started / session_ended
+  cwd?: string
+  source?: string
+  model?: string
+  title?: string
+  state?: 'active' | 'ended'
+  startedAt?: number
+  lastActivityAt?: number
+  lastStatus?: string
+  lastStatusAt?: number
+  timestamp?: number
   sender?: string
   text?: string
   // Directed agent-to-agent chat messages
@@ -57,6 +93,7 @@ export interface OfficeEvent {
   // agent_working: the tool call errored (PostToolUseFailure)
   failed?: boolean
   // variant_change: the server relayed /incident or /all-clear to every client
+  // (reason is also why a session_ended session ended)
   variant?: 'none' | 'incident'
   reason?: string
 }
