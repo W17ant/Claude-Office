@@ -166,6 +166,11 @@ Or add the hook to `~/.claude/settings.json` yourself:
       {
         "hooks": [{ "type": "command", "command": "bash /path/to/Claude-Office/hooks/agent-tracker.sh" }]
       }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [{ "type": "command", "command": "bash /path/to/Claude-Office/hooks/agent-tracker.sh" }]
+      }
     ]
   }
 }
@@ -173,7 +178,7 @@ Or add the hook to `~/.claude/settings.json` yourself:
 
 Now spawn agents in Claude Code and watch them appear in the office.
 
-**Background agents** (`run_in_background: true`) stay at their desk until they hand their report back, and tool calls made inside a subagent show up on that agent rather than a random one. Agents still working when the server restarts are restored from `~/.agent-office/agents.json`; agents that go quiet for 2 hours (`AGENT_OFFICE_STALE_MINUTES`) clock out on their own.
+**Background agents** (`run_in_background: true`) stay at their desk until they finish (the `SubagentStop` hook), and tool calls made inside a subagent show up on that agent rather than a random one. Agents still working when the server restarts are restored from `~/.agent-office/agents.json`; agents that go quiet for 2 hours (`AGENT_OFFICE_STALE_MINUTES`) clock out on their own.
 
 ## Customise Your Character
 

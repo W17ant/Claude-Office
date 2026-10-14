@@ -4,12 +4,12 @@
 #
 # This script:
 #   1. Backs up the existing settings file
-#   2. Registers agent-tracker.sh for PreToolUse (spawns + tool activity)
-#      and PostToolUse (completions, background agent hand-backs)
+#   2. Registers agent-tracker.sh for PreToolUse (spawns + tool activity),
+#      PostToolUse (completions) and SubagentStop (background agents finishing)
 #   3. Prints next steps
 #
 # Safe to re-run: each hook event is checked separately, so an older install
-# that only registered PostToolUse gets the missing PreToolUse entry added.
+# gets any missing entries added.
 #
 # Usage:
 #   bash hooks/install-hooks.sh
@@ -70,7 +70,7 @@ echo -e "${GREEN}[ok]${RESET} Backup saved: $BACKUP_FILE"
 # ---------------------------------------------------------------------------
 # Merge hook entries into settings JSON using Python
 # ---------------------------------------------------------------------------
-echo -e "${CYAN}[...]${RESET} Registering PreToolUse + PostToolUse hooks..."
+echo -e "${CYAN}[...]${RESET} Registering PreToolUse, PostToolUse + SubagentStop hooks..."
 
 python3 - "$SETTINGS_FILE" "$HOOK_COMMAND" <<'PYEOF'
 import json, sys
@@ -94,7 +94,7 @@ def has_tracker(groups):
         for h in group.get('hooks', []) if isinstance(h, dict)
     )
 
-for event in ('PreToolUse', 'PostToolUse'):
+for event in ('PreToolUse', 'PostToolUse', 'SubagentStop'):
     groups = hooks.setdefault(event, [])
     if has_tracker(groups):
         print(f'  [skip] {event} already registered')

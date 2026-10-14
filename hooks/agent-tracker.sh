@@ -9,10 +9,12 @@
 # Hook events handled:
 #   PreToolUse  — detect Agent tool calls, MCP tool calls, tool activity
 #   PostToolUse — detect Agent/MCP completion
+#   SubagentStop — a subagent finished (the completion signal for background agents)
 #
 # Background agents (run_in_background): the Agent tool returns straight away
 # with status "async_launched", so PostToolUse only links the office agent to
-# the subagent's agentId. The agent leaves when its SubagentHandback arrives.
+# the subagent's agentId. The agent leaves on SubagentStop (or a
+# SubagentHandback tool call, on Claude Code versions that have one).
 # Tool calls made inside a subagent carry that subagent's agent_id, which is
 # forwarded so the server knows which office agent is doing the work.
 #
@@ -49,6 +51,17 @@ except Exception:
 
 hook_event = d.get('hook_event_name', '')
 tool_name  = d.get('tool_name', '')
+
+# ── Subagent finished (foreground or background) — carries the subagent's
+# agent_id and its final message, but no tool_name
+if hook_event == 'SubagentStop':
+    if d.get('agent_id'):
+        print(json.dumps({
+            'type':    'agent_completed',
+            'agentId': str(d['agent_id']),
+            'result':  str(d.get('last_assistant_message') or 'done')[:120],
+        }))
+    sys.exit(0)
 
 if not tool_name:
     sys.exit(0)
@@ -230,7 +243,8 @@ if tool_name in ('Agent', 'Task'):
 
     sys.exit(0)
 
-# ── Background agent finished — its report comes back through SubagentHandback
+# ── Background agent finished — some Claude Code versions hand the report back
+# through a SubagentHandback tool call instead of (or as well as) SubagentStop
 if tool_name == 'SubagentHandback' and hook_event == 'PostToolUse':
     inp = d.get('tool_input', {}) or {}
     rd = response_dict(d.get('tool_response', {}))
