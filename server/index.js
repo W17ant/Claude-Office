@@ -423,8 +423,20 @@ function handleSlashCommand(cmd) {
       db.prepare('DELETE FROM messages').run()
       return '🧹 Chat cleared'
     }
+    // Incident mode ("Prod Is Down"): relayed to every connected office as a
+    // variant_change so all tabs switch together. Nothing is persisted server-side.
+    // Sent after the reply lines below so the office's own postmortem card lands
+    // under the all-clear line rather than above it.
+    case '/incident': {
+      setImmediate(() => broadcast({ type: 'variant_change', variant: 'incident', reason: 'manual', timestamp: Date.now() }))
+      return '🔴 INCIDENT DECLARED — prod is down. Everyone to the war room. (/all-clear when it is over)'
+    }
+    case '/all-clear': {
+      setImmediate(() => broadcast({ type: 'variant_change', variant: 'none', reason: 'manual', timestamp: Date.now() }))
+      return '✅ ALL CLEAR — incident over. Postmortem at 10, blameless, bring pizza.'
+    }
     case '/help':
-      return '📋 Commands: /status — office stats, /agents — list agents, /clear — wipe chat history, /help — this message'
+      return '📋 Commands: /status — office stats, /agents — list agents, /incident — declare an incident, /all-clear — end it, /clear — wipe chat history, /help — this message'
     default:
       return null
   }
