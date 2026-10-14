@@ -93,7 +93,7 @@ Toggle it off any time with `/the-office` again — state persists in `localStor
 - Claude has a witty office manager personality with running jokes
 - Multi-agent routing — mention a bug and the Debugger responds, ask about UI and Frontend answers
 - Typing indicators, emoji reactions, read receipts
-- Slash commands: `/status`, `/agents`, `/help`
+- Slash commands: `/status`, `/agents`, `/help`, `/incident`, `/all-clear`
 - Chat history persists across restarts (SQLite)
 - Proactive messages — agents announce when they start and finish work
 - Smart macOS notifications for important events
@@ -313,6 +313,17 @@ The recipient goes in `metadata.to` (name, role or office id); replies thread th
 | `localhost:3333?sim` | Simulation — scripted demo with fake agents |
 | `localhost:3333?video` | Video — scripted recording mode |
 | `localhost:3333?helper` | Placement helper — dev tool for positioning furniture |
+| `localhost:3333?variant=incident` | Incident — pins "Prod Is Down" mode on (for screenshots) |
+
+### Incident mode — "Prod Is Down"
+
+The office declares an incident **by itself** when real failures happen: three failed tool calls (`PostToolUseFailure`) inside five minutes switch it on. A `deploy-fail` or `who-broke-build` random event starts a 90 s mini-incident instead, and `/incident` in the chat declares one by hand (relayed to every open office).
+
+While it is on, the room is forced to night and tinted red, a beacon flashes over the door, the wall TV shows the rollback status page, the "days since last incident" sign flips to 0, agents whose last tool call failed carry a build-failed bubble, the chat header shows a live incident timer, and the spawn / working / done / boss lines come from an incident pool.
+
+It ends with `/all-clear`, ten minutes without a new failure, or a `deploy-success` during a mini-incident, and posts a one-line postmortem (duration, failures by tool, who was involved). The sign then counts the days from `localStorage['agent-office-last-incident']`. `?variant=incident` pins it on with auto-exit off, for screenshots. Incident mode is a *variant*, so it stacks with the Dunder Mifflin theme.
+
+The dedicated incident art (beacon frames, pizza tower, incident board, per-role props) is a follow-up: `src/incidentAssets.ts` lists the slots and today's fallbacks, and `public/sprites/incident/README.md` lists the files to draw. The office picks them up with no code change.
 
 ## Tech Stack
 
