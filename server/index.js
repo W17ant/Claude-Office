@@ -60,17 +60,41 @@ function writeTokenFile() {
 
 // ---------------------------------------------------------------------------
 // Allowed origins
+//
+// The office UI is served from this server (port 3334: `npm run build`, the
+// packaged desktop app) or from the Vite dev server (port 3333), and browsers
+// reach either as localhost, 127.0.0.1 or ::1 — the Origin header spells it
+// whichever way the page was opened, so match the loopback host rather than
+// a fixed string. Anything else (other ports, `null`, `file://`) is refused.
 // ---------------------------------------------------------------------------
 
-const ALLOWED_ORIGINS = new Set([
-  'http://localhost:3333',
-  'http://localhost:3334',
-])
+const UI_DEV_PORT = 3333
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'])
+const ALLOWED_ORIGIN_PORTS = new Set([String(UI_DEV_PORT), String(PORT)])
 
 function isAllowedOrigin(origin) {
-  if (!origin) return true  // null origin (Electron, file://, curl)
-  return ALLOWED_ORIGINS.has(origin)
+  if (!origin) return true  // no Origin header: curl, the hook script, same-origin GETs
+  try {
+    const { protocol, hostname, port } = new URL(origin)
+    return protocol === 'http:' && LOOPBACK_HOSTS.has(hostname) && ALLOWED_ORIGIN_PORTS.has(port)
+  } catch {
+    return false  // not a URL (`null`)
+  }
 }
+
+// ---------------------------------------------------------------------------
+// Built UI
+//
+// `vite build` writes the React app, plus everything in public/, to dist/.
+// When that directory exists the server serves it from its root, so
+// http://127.0.0.1:3334/ is the whole office on one port: the packaged
+// Electron app loads this URL, and `npm run build && npm run server` works in
+// a plain browser. `npm run dev` keeps using Vite on 3333 instead. Tests point
+// AGENT_OFFICE_UI_DIR at a temp dir.
+// ---------------------------------------------------------------------------
+
+const UI_DIR = process.env.AGENT_OFFICE_UI_DIR || join(__dirname, '..', 'dist')
+const UI_AVAILABLE = existsSync(join(UI_DIR, 'index.html'))
 
 // ---------------------------------------------------------------------------
 // MCP server discovery
@@ -1367,6 +1391,20 @@ setInterval(() => {
 }, 5 * 60_000).unref()
 
 // ---------------------------------------------------------------------------
+// Static UI — registered after every API route so /health, /chat, ... win
+// ---------------------------------------------------------------------------
+
+if (UI_AVAILABLE) {
+  app.use(express.static(UI_DIR))
+} else {
+  app.get('/', (_req, res) => {
+    res.status(404).json({
+      error: 'Office UI not built. Run `npm run build` to serve it from here, or `npm run dev` for the Vite dev server on port 3333.',
+    })
+  })
+}
+
+// ---------------------------------------------------------------------------
 // WebSocket server
 // ---------------------------------------------------------------------------
 
@@ -1375,7 +1413,7 @@ const httpServer = createServer(app)
 const wss = new WebSocketServer({ server: httpServer, path: '/ws' })
 
 wss.on('connection', (ws, req) => {
-  // Origin validation — allow localhost origins and null (Electron/file://)
+  // Origin validation — loopback origins only (see isAllowedOrigin)
   const origin = req.headers.origin
   if (origin && !isAllowedOrigin(origin)) {
     console.warn(`[ws] Rejected connection from disallowed origin: ${origin}`)
@@ -1446,6 +1484,11 @@ export function start() {
 ╚═══════════════════════════════════════════╝`)
 
     console.log(`  Auth token written to: ${TOKEN_FILE}`)
+    if (UI_AVAILABLE) {
+      console.log(`  Office UI served from: ${UI_DIR}`)
+    } else {
+      console.log('  Office UI not built (npm run build) — use the Vite dev server on port 3333')
+    }
 
     if (mcpServers.length > 0) {
       console.log(`  MCP servers discovered: ${mcpServers.join(', ')}`)
@@ -1486,6 +1529,8 @@ export {
   RUNTIME_DIR,
   TOKEN_FILE,
   PORT,
+  UI_DIR,
+  UI_AVAILABLE,
   activeAgents,
   pendingStarts,
   sessions,
