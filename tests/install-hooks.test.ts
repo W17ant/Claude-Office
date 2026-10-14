@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 
 const INSTALLER = fileURLToPath(new URL('../hooks/install-hooks.sh', import.meta.url))
-const EVENTS = ['PreToolUse', 'PostToolUse', 'SubagentStop'] as const
+const EVENTS = ['PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'SubagentStart', 'SubagentStop'] as const
 const TRACKER_COMMAND = /^bash ".*\/hooks\/agent-tracker\.sh"$/
 
 const homes: string[] = []
@@ -40,7 +40,7 @@ function trackerGroups(settings: any, event: string) {
 }
 
 describe('install-hooks.sh', () => {
-  it('creates settings.json with PreToolUse, PostToolUse and SubagentStop on a fresh HOME', () => {
+  it('creates settings.json with PreToolUse, PostToolUse, PostToolUseFailure, SubagentStart and SubagentStop on a fresh HOME', () => {
     const home = freshHome()
     const out = runInstaller(home)
 
@@ -79,8 +79,8 @@ describe('install-hooks.sh', () => {
     expect(settings.permissions).toEqual(old.permissions)
     expect(out).toContain('[skip] PostToolUse already registered')
 
-    // Added: the two missing events
-    for (const event of ['PreToolUse', 'SubagentStop']) {
+    // Added: every other event, SubagentStart and PostToolUseFailure included
+    for (const event of EVENTS.filter(e => e !== 'PostToolUse')) {
       expect(trackerGroups(settings, event)).toEqual([
         { matcher: '', hooks: [{ type: 'command', command: expect.stringMatching(TRACKER_COMMAND) }] },
       ])
