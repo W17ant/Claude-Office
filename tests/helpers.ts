@@ -54,12 +54,20 @@ export function removeOffice(office: Office | undefined) {
   try { rmSync(office.dir, { recursive: true, force: true }) } catch {}
 }
 
-/** POST /event with the server's own bearer token (or a bad one). */
-export function postEvent(server: OfficeServer, body: unknown, token: string = server.AUTH_TOKEN) {
+/**
+ * POST a JSON body to a token-protected route (/event, /chat/reply, /a2a,
+ * /chat/inbox/read, ...) with the server's own bearer token, or a bad one.
+ */
+export function postAuthed(server: OfficeServer, path: string, body: unknown, token: string = server.AUTH_TOKEN) {
   return request(server.app)
-    .post('/event')
+    .post(path)
     .set('Authorization', `Bearer ${token}`)
     .send(body as object)
+}
+
+/** POST /event with the server's own bearer token (or a bad one). */
+export function postEvent(server: OfficeServer, body: unknown, token: string = server.AUTH_TOKEN) {
+  return postAuthed(server, '/event', body, token)
 }
 
 /** Bind an http.Server to an ephemeral localhost port and return the port. */
