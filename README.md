@@ -103,6 +103,12 @@ Toggle it off any time with `/the-office` again — state persists in `localStor
 - Conversation memory — remembers the last 10 messages
 - AI On/Off toggle to control token usage
 
+**Sessions**
+- One pill per Claude Code session in the title bar: the project (folder the terminal was opened in), how many agents work for it, and a dot — green while an agent is working or Claude itself just used a tool, dim when idle, red once the session ends
+- Multiple terminals = multiple pills; each session's agents stay its own, and when several sessions share the office every character wears its project name
+- Claude's own tool calls (no subagent) are shown on that session's pill when none of its agents is at a desk, never on another terminal's worker
+- `GET /sessions` lists them (project, cwd, model, agent counts, last main-thread status); sessions survive a server restart and are forgotten a minute after they end
+
 ### Night mode — the office after dark, agents still grinding
 ![Night Mode](docs/images/night-mode.png)
 
@@ -150,7 +156,7 @@ The repo includes `.claude/settings.json` which auto-allows curl commands to the
 
 ### Connect Claude Code
 
-Run the installer (registers the five hook events below, safe to re-run):
+Run the installer (registers the seven hook events below, safe to re-run):
 
 ```bash
 npm run install-hooks
@@ -185,6 +191,16 @@ Or add the hook to `~/.claude/settings.json` yourself:
       {
         "hooks": [{ "type": "command", "command": "bash /path/to/Claude-Office/hooks/agent-tracker.sh" }]
       }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [{ "type": "command", "command": "bash /path/to/Claude-Office/hooks/agent-tracker.sh" }]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [{ "type": "command", "command": "bash /path/to/Claude-Office/hooks/agent-tracker.sh" }]
+      }
     ]
   }
 }
@@ -193,6 +209,8 @@ Or add the hook to `~/.claude/settings.json` yourself:
 Now spawn agents in Claude Code and watch them appear in the office.
 
 **Background agents** (`run_in_background: true`) stay at their desk until they finish (the `SubagentStop` hook). Each worker is tied to its Claude Code subagent the moment it exists (`SubagentStart`), so tool calls made inside a subagent show up on that agent rather than a random one, and a tool call that errors (`PostToolUseFailure` — a non-zero Bash exit, say) shows as a `failed:` status on the agent that made it. Agents still working when the server restarts are restored from `~/.agent-office/agents.json`; agents that go quiet for 2 hours (`AGENT_OFFICE_STALE_MINUTES`) clock out on their own.
+
+**Sessions.** Every hook payload names the Claude Code session it fired in (`session_id`, `cwd`, `transcript_path`), and the tracker forwards that on every event, so the office knows which terminal each agent works for. `SessionStart` adds a pill to the title bar (`SessionEnd` removes it and walks that session's agents out); a session the server first hears of mid-way — hooks installed while Claude was already running, or a server restart — is picked up from its next event. Sessions that go quiet for `AGENT_OFFICE_STALE_MINUTES` end the same way.
 
 ## Customise Your Character
 
