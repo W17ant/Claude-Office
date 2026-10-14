@@ -53,6 +53,8 @@ export interface OfficeEvent {
   msg_type?: string | null
   // inbox_update
   unread?: number
+  // agent_working: the tool call errored (PostToolUseFailure)
+  failed?: boolean
 }
 
 import { BOSS_NAME, BOSS_COLOR, BOSS_EMOJI } from './config'

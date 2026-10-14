@@ -300,3 +300,219 @@ describe('mcp_call and mcp_done', () => {
     expect(office.server.activeAgents.has(call.agentId)).toBe(false)
   })
 })
+
+describe('agent_started (SubagentStart)', () => {
+  let office: Office
+  beforeAll(async () => { office = await loadOffice() })
+  afterAll(() => {
+    vi.useRealTimers()
+    removeOffice(office)
+  })
+
+  it('links two same-type agents to their subagents in spawn order, so later working events land on the right one', async () => {
+    spawnAgent(office.server, {
+      id: 'agent-toolu_A', name: 'Agent', role: 'general-purpose', task: 'Count etc', agentType: 'general-purpose', background: true,
+    })
+    spawnAgent(office.server, {
+      id: 'agent-toolu_B', name: 'Agent', role: 'general-purpose', task: 'Fail on purpose', agentType: 'general-purpose', background: true,
+    })
+
+    const first = await postEvent(office.server, { type: 'agent_started', subagentId: 'ac5ff55b850b4fecf', agentType: 'general-purpose' })
+    expect(first.status).toBe(200)
+    // Nothing is broadcast for a start — it only wires state up
+    expect(office.server.processEvent({ type: 'agent_started', subagentId: 'a29964dc791f62039', agentType: 'general-purpose' })).toBeNull()
+
+    expect(office.server.activeAgents.get('agent-toolu_A').subagentId).toBe('ac5ff55b850b4fecf')
+    expect(office.server.activeAgents.get('agent-toolu_B').subagentId).toBe('a29964dc791f62039')
+    expect(office.server.pendingStarts.size).toBe(0)
+
+    // Tool calls inside each subagent reach their own agent, whichever order they come in
+    const evB = office.server.processEvent({
+      type: 'agent_working', agentId: 'a29964dc791f62039', agentType: 'general-purpose', status: 'running: cat /definitely/not/here',
+    })
+    expect(evB.agentId).toBe('agent-toolu_B')
+    const evA = office.server.processEvent({
+      type: 'agent_working', agentId: 'ac5ff55b850b4fecf', agentType: 'general-purpose', status: 'running: ls /etc | wc -l',
+    })
+    expect(evA.agentId).toBe('agent-toolu_A')
+    expect(office.server.activeAgents.get('agent-toolu_A')).toMatchObject({ state: 'working', status: 'running: ls /etc | wc -l' })
+    expect(office.server.activeAgents.get('agent-toolu_B')).toMatchObject({ state: 'working', status: 'running: cat /definitely/not/here' })
+
+    // ...and so does the completion
+    office.server.processEvent({ type: 'agent_completed', agentId: 'a29964dc791f62039', result: 'cat failed' })
+    expect(office.server.activeAgents.get('agent-toolu_B').state).toBe('completed')
+    expect(office.server.activeAgents.get('agent-toolu_A').state).toBe('working')
+  })
+
+  it('never binds across agent types: a start of another type is parked until that type is spawned', () => {
+    spawnAgent(office.server, { id: 'agent-toolu_C', name: 'Agent', role: 'general-purpose', task: 'gp', agentType: 'general-purpose' })
+    expect(office.server.processEvent({ type: 'agent_started', subagentId: 'a027f376ae8cdcbd0', agentType: 'Explore' })).toBeNull()
+    expect(office.server.activeAgents.get('agent-toolu_C').subagentId).toBeUndefined()
+    expect(office.server.pendingStarts.get('a027f376ae8cdcbd0')).toMatchObject({ agentType: 'Explore' })
+
+    spawnAgent(office.server, { id: 'agent-toolu_D', name: 'Explorer', role: 'Explore', task: 'Find hostname', agentType: 'Explore' })
+    expect(office.server.activeAgents.get('agent-toolu_D').subagentId).toBe('a027f376ae8cdcbd0')
+    expect(office.server.pendingStarts.has('a027f376ae8cdcbd0')).toBe(false)
+    expect(office.server.activeAgents.get('agent-toolu_C').subagentId).toBeUndefined()
+  })
+
+  it('a start that overtakes its spawn is parked, then linked by the spawn — oldest parked start first', async () => {
+    // agent-toolu_C is the only unlinked general-purpose agent; use it up first
+    office.server.processEvent({ type: 'agent_started', subagentId: 'sub-C', agentType: 'general-purpose' })
+    expect(office.server.activeAgents.get('agent-toolu_C').subagentId).toBe('sub-C')
+
+    // Two starts arrive with no agent to take them
+    office.server.processEvent({ type: 'agent_started', subagentId: 'sub-early-1', agentType: 'general-purpose' })
+    office.server.processEvent({ type: 'agent_started', subagentId: 'sub-early-2', agentType: 'general-purpose' })
+    expect([...office.server.pendingStarts.keys()]).toEqual(['sub-early-1', 'sub-early-2'])
+
+    // Working events for a parked start still don't invent agents (15 s window is tiny next to a model turn)
+    const agents = await request(office.server.app).get('/agents')
+    expect(agents.body.agents.map((a: any) => a.id)).not.toContain('agent-sub-early-1')
+
+    const spawn1 = await postEvent(office.server, {
+      type: 'agent_spawned',
+      agent: { id: 'agent-toolu_E', name: 'Agent', role: 'general-purpose', task: 'late 1', agentType: 'general-purpose', background: true },
+    })
+    expect(spawn1.status).toBe(200)
+    expect(office.server.activeAgents.get('agent-toolu_E').subagentId).toBe('sub-early-1')
+    expect([...office.server.pendingStarts.keys()]).toEqual(['sub-early-2'])
+
+    spawnAgent(office.server, { id: 'agent-toolu_F', name: 'Agent', role: 'general-purpose', task: 'late 2', agentType: 'general-purpose' })
+    expect(office.server.activeAgents.get('agent-toolu_F').subagentId).toBe('sub-early-2')
+    expect(office.server.pendingStarts.size).toBe(0)
+
+    // The usual path afterwards: the subagent's tool calls find the right agent
+    const ev = office.server.processEvent({ type: 'agent_working', agentId: 'sub-early-2', agentType: 'general-purpose', status: 'reading x' })
+    expect(ev.agentId).toBe('agent-toolu_F')
+  })
+
+  it('is a no-op when agent_linked already bound the subagent (PostToolUse won the race)', () => {
+    spawnAgent(office.server, { id: 'agent-toolu_G', name: 'Agent', role: 'general-purpose', task: 'g', agentType: 'general-purpose', background: true })
+    spawnAgent(office.server, { id: 'agent-toolu_H', name: 'Agent', role: 'general-purpose', task: 'h', agentType: 'general-purpose', background: true })
+    office.server.processEvent({ type: 'agent_linked', agentId: 'agent-toolu_H', subagentId: 'sub-H' })
+
+    office.server.processEvent({ type: 'agent_started', subagentId: 'sub-H', agentType: 'general-purpose' })
+    expect(office.server.activeAgents.get('agent-toolu_H').subagentId).toBe('sub-H')
+    // The older, still-unlinked G was not touched
+    expect(office.server.activeAgents.get('agent-toolu_G').subagentId).toBeUndefined()
+    expect(office.server.pendingStarts.size).toBe(0)
+
+    office.server.processEvent({ type: 'agent_started', subagentId: 'sub-G', agentType: 'general-purpose' })
+    expect(office.server.activeAgents.get('agent-toolu_G').subagentId).toBe('sub-G')
+  })
+
+  it('drops a parked start after 15 s', () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    office.server.processEvent({ type: 'agent_started', subagentId: 'sub-stale', agentType: 'Explore' })
+    expect(office.server.pendingStarts.has('sub-stale')).toBe(true)
+
+    vi.setSystemTime(Date.now() + 14_000)
+    office.server.processEvent({ type: 'agent_started', subagentId: 'sub-fresh', agentType: 'Explore' })
+    expect(office.server.pendingStarts.has('sub-stale')).toBe(true)
+
+    vi.setSystemTime(Date.now() + 1_001)
+    spawnAgent(office.server, { id: 'agent-toolu_I', name: 'Explorer', role: 'Explore', task: 'i', agentType: 'Explore' })
+    // The stale one expired; the spawn took the fresh one
+    expect(office.server.pendingStarts.has('sub-stale')).toBe(false)
+    expect(office.server.activeAgents.get('agent-toolu_I').subagentId).toBe('sub-fresh')
+    vi.useRealTimers()
+  })
+
+  it('ignores a start without a subagentId', async () => {
+    const res = await postEvent(office.server, { type: 'agent_started', agentType: 'general-purpose' })
+    expect(res.status).toBe(200)
+    expect(office.server.pendingStarts.size).toBe(0)
+  })
+})
+
+describe('failed tool calls (agent_working with failed: true)', () => {
+  let office: Office
+  beforeAll(async () => {
+    office = await loadOffice()
+    spawnAgent(office.server, {
+      id: 'agent-toolu_01X', name: 'Agent', role: 'general-purpose', task: 'Fail on purpose', agentType: 'general-purpose', background: true,
+    })
+    office.server.processEvent({ type: 'agent_started', subagentId: 'a29964dc791f62039', agentType: 'general-purpose' })
+  })
+  afterAll(() => removeOffice(office))
+
+  it('keeps the agent working, records lastError, and flags the broadcast event', async () => {
+    const status = 'failed: Bash — Exit code 1 cat: /definitely/not/here: No such file or direc'
+    const res = await postEvent(office.server, {
+      type: 'agent_working', agentId: 'a29964dc791f62039', agentType: 'general-purpose', role: 'general-purpose', name: 'Agent',
+      status, failed: true,
+    })
+    expect(res.status).toBe(200)
+
+    const agent = office.server.activeAgents.get('agent-toolu_01X')
+    expect(agent).toMatchObject({ state: 'working', status, lastError: status })
+
+    const ev = office.server.processEvent({ type: 'agent_working', agentId: 'a29964dc791f62039', status: 'failed: Bash — Exit code 1', failed: true })
+    expect(ev).toEqual({ type: 'agent_working', agentId: 'agent-toolu_01X', status: 'failed: Bash — Exit code 1', failed: true, timestamp: expect.any(Number) })
+    expect(agent.lastError).toBe('failed: Bash — Exit code 1')
+
+    // A later successful call moves status on but keeps the last error
+    const ok = office.server.processEvent({ type: 'agent_working', agentId: 'a29964dc791f62039', status: 'running: echo done' })
+    expect(ok).not.toHaveProperty('failed')
+    expect(agent).toMatchObject({ state: 'working', status: 'running: echo done', lastError: 'failed: Bash — Exit code 1' })
+
+    const agents = await request(office.server.app).get('/agents')
+    expect(agents.body.agents).toEqual([
+      expect.objectContaining({ id: 'agent-toolu_01X', state: 'working', status: 'running: echo done', lastError: 'failed: Bash — Exit code 1' }),
+    ])
+  })
+
+  it('a main-thread failure passes through without an agent id and only when failed is exactly true', async () => {
+    const ev = office.server.processEvent({ type: 'agent_working', status: 'failed: Bash — Exit code 1', failed: true })
+    expect(ev).toEqual({ type: 'agent_working', agentId: undefined, status: 'failed: Bash — Exit code 1', failed: true, timestamp: expect.any(Number) })
+
+    await postEvent(office.server, { type: 'agent_working', agentId: 'a29964dc791f62039', status: 'reading y', failed: 'yes' })
+    expect(office.server.activeAgents.get('agent-toolu_01X')).toMatchObject({ status: 'reading y', lastError: 'failed: Bash — Exit code 1' })
+  })
+})
+
+describe('lineage (nested spawns)', () => {
+  let office: Office
+  beforeAll(async () => { office = await loadOffice() })
+  afterAll(() => removeOffice(office))
+
+  it('resolves parentSubagentId to the parent office id and lists both in /agents', async () => {
+    spawnAgent(office.server, { id: 'agent-parent', name: 'Agent', role: 'general-purpose', task: 'orchestrate', agentType: 'general-purpose' })
+    office.server.processEvent({ type: 'agent_started', subagentId: 'a29964dc791f62039', agentType: 'general-purpose' })
+
+    // The Agent call made inside a29964dc791f62039 carries its agent_id -> parentSubagentId
+    const res = await postEvent(office.server, {
+      type: 'agent_spawned',
+      agent: { id: 'agent-child', name: 'Explorer', role: 'Explore', task: 'Find hostname', agentType: 'Explore', parentSubagentId: 'a29964dc791f62039' },
+    })
+    expect(res.status).toBe(200)
+    expect(office.server.activeAgents.get('agent-child')).toMatchObject({ parentSubagentId: 'a29964dc791f62039', parentId: 'agent-parent' })
+
+    const agents = await request(office.server.app).get('/agents')
+    expect(agents.body.agents).toEqual([
+      expect.objectContaining({ id: 'agent-parent' }),
+      expect.objectContaining({ id: 'agent-child', parentId: 'agent-parent', parentSubagentId: 'a29964dc791f62039' }),
+    ])
+    expect(agents.body.agents[0]).not.toHaveProperty('parentId')
+    expect(agents.body.agents[0]).not.toHaveProperty('parentSubagentId')
+  })
+
+  it('resolves the parent lazily in /agents when the parent is only linked later', async () => {
+    spawnAgent(office.server, { id: 'agent-orphan', name: 'Agent', role: 'general-purpose', task: 'x', agentType: 'general-purpose', parentSubagentId: 'sub-late-parent' })
+    expect(office.server.activeAgents.get('agent-orphan').parentId).toBeUndefined()
+
+    spawnAgent(office.server, { id: 'agent-late-parent', name: 'Agent', role: 'general-purpose', task: 'y', agentType: 'general-purpose' })
+    office.server.processEvent({ type: 'agent_linked', agentId: 'agent-late-parent', subagentId: 'sub-late-parent' })
+
+    const agents = await request(office.server.app).get('/agents')
+    expect(agents.body.agents).toContainEqual(expect.objectContaining({ id: 'agent-orphan', parentId: 'agent-late-parent', parentSubagentId: 'sub-late-parent' }))
+  })
+
+  it('agent_started with a parentId records lineage on the agent it links', () => {
+    // (debugger: the only agent of that type in this office, so the start can only land here)
+    spawnAgent(office.server, { id: 'agent-nested', name: 'Debugger', role: 'debugger', task: 'z', agentType: 'debugger' })
+    office.server.processEvent({ type: 'agent_started', subagentId: 'sub-nested', agentType: 'debugger', parentId: 'a29964dc791f62039' })
+    expect(office.server.activeAgents.get('agent-nested')).toMatchObject({ subagentId: 'sub-nested', parentSubagentId: 'a29964dc791f62039', parentId: 'agent-parent' })
+  })
+})

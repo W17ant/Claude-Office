@@ -647,6 +647,7 @@ const App: React.FC = () => {
         case 'agent_working': {
           const id = event.agentId ?? event.agent?.id
           const statusMsg = event.status ?? workMessage()
+          const icon = event.failed ? '❌' : '⚡'
 
           if (id) {
             // Targeted update — specific agent
@@ -654,7 +655,7 @@ const App: React.FC = () => {
               if (a.id !== id) return a
               const cfg = AGENT_CONFIGS[a.role] ?? AGENT_CONFIGS['default']
               effects.push({
-                msg: { sender: a.name, role: a.role, color: cfg.color, text: `⚡ ${statusMsg}` },
+                msg: { sender: a.name, role: a.role, color: cfg.color, text: `${icon} ${statusMsg}` },
               })
               return { ...a, state: 'working' as const, statusText: statusMsg }
             })
@@ -666,7 +667,7 @@ const App: React.FC = () => {
             const target = workers[Math.floor(Math.random() * workers.length)]
             const cfg = AGENT_CONFIGS[target.role] ?? AGENT_CONFIGS['default']
             effects.push({
-              msg: { sender: target.name, role: target.role, color: cfg.color, text: `⚡ ${statusMsg}` },
+              msg: { sender: target.name, role: target.role, color: cfg.color, text: `${icon} ${statusMsg}` },
             })
             return prev.map(a =>
               a.id === target.id ? { ...a, statusText: statusMsg } : a

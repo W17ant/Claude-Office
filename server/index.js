@@ -120,6 +120,16 @@ const activeAgents = new Map()
  */
 const subagentAliases = new Map()
 
+/**
+ * SubagentStart events that arrived before the agent_spawned they belong to.
+ * The hook POSTs from backgrounded curls, so the order is a race: such a start
+ * is parked here (subagentId -> { agentType, parentId, at }) and consumed by
+ * the next spawn of that agentType, or dropped after PENDING_START_MS.
+ * @type {Map<string, {agentType: string, parentId?: string, at: number}>}
+ */
+const pendingStarts = new Map()
+const PENDING_START_MS = 15_000
+
 // Agents with no activity for this long are assumed gone (missed hand-back,
 // Claude Code killed mid-task) and are walked out of the office.
 const STALE_AGENT_MS = (Number(process.env.AGENT_OFFICE_STALE_MINUTES) || 120) * 60_000
@@ -151,6 +161,44 @@ function linkSubagent(officeId, subagentId) {
   }
   agent.subagentId = subagentId
   subagentAliases.set(subagentId, officeId)
+}
+
+/** Oldest unlinked, not-completed, non-MCP agent of this Claude Code agent type. */
+function oldestUnlinkedAgent(agentType) {
+  return Array.from(activeAgents.values())
+    .filter(a => !a.server && !a.subagentId && a.state !== 'completed' && a.agentType === agentType)
+    .sort((a, b) => a.spawnedAt - b.spawnedAt)[0] ?? null
+}
+
+/** Record who spawned an agent: the parent's subagent id and, when known, its office id. */
+function setLineage(agent, parentSubagentId) {
+  if (!parentSubagentId) return
+  agent.parentSubagentId = parentSubagentId
+  const parentId = lookupAgentId(parentSubagentId)
+  if (parentId && parentId !== agent.id) agent.parentId = parentId
+}
+
+function prunePendingStarts(now = Date.now()) {
+  for (const [subagentId, pending] of pendingStarts) {
+    if (now - pending.at > PENDING_START_MS) {
+      pendingStarts.delete(subagentId)
+      console.log(`[~] Dropped parked SubagentStart ${subagentId} (${pending.agentType}): no spawn within ${PENDING_START_MS / 1000}s`)
+    }
+  }
+}
+
+/** Link a freshly spawned agent to the oldest parked SubagentStart of its type, if any. */
+function adoptPendingStart(agent) {
+  let oldest = null
+  for (const [subagentId, pending] of pendingStarts) {
+    if (pending.agentType === agent.agentType && (!oldest || pending.at < oldest.at)) oldest = { subagentId, ...pending }
+  }
+  if (!oldest) return false
+  pendingStarts.delete(oldest.subagentId)
+  linkSubagent(agent.id, oldest.subagentId)
+  setLineage(agent, oldest.parentId)
+  console.log(`[~] Agent ${agent.id} linked to parked subagent ${oldest.subagentId} (${agent.agentType}) by SubagentStart`)
+  return true
 }
 
 function forgetAgent(id) {
@@ -230,6 +278,7 @@ const KNOWN_EVENT_TYPES = new Set([
   'agent_working',
   'agent_completed',
   'agent_linked',
+  'agent_started',
   'mcp_call',
   'mcp_done',
 ])
@@ -292,12 +341,14 @@ app.get('/roster', (_req, res) => {
  *
  * Accepted body shapes:
  *   { type: "agent_spawned",   agent: { name, role, task, id? } }
- *   { type: "agent_working",   agentId?, status, agentType?, role?, name? }
+ *   { type: "agent_working",   agentId?, status, agentType?, role?, name?, failed? }
  *   { type: "agent_completed", agentId, result }
  *   { type: "agent_linked",    agentId, subagentId }
+ *   { type: "agent_started",   subagentId, agentType, parentId? }   (SubagentStart)
  *
  * agentId on working/completed may be either the office id or a Claude Code
- * subagent id (from the hook payload's agent_id).
+ * subagent id (from the hook payload's agent_id). agent.parentSubagentId on a
+ * spawn is the subagent that made the Agent call (a nested spawn).
  *   { type: "mcp_call",        server, tool, agentId? }
  *   { type: "mcp_done",        server, agentId? }
  */
@@ -328,9 +379,12 @@ app.post('/event', (req, res) => {
       id:     clampString(body.agent.id),
       agentType:  clampString(body.agent.agentType),
       background: !!body.agent.background,
+      parentSubagentId: clampString(body.agent.parentSubagentId),
     } : undefined,
     agentId: clampString(body.agentId),
     subagentId: clampString(body.subagentId),
+    parentId: clampString(body.parentId),
+    failed: body.failed === true || undefined,
     agentType:  clampString(body.agentType),
     role:       clampString(body.role),
     name:       clampString(body.name),
@@ -581,8 +635,12 @@ function sendAgentMessage({ sender, role, text, recipient, type, replyTo, sender
 app.get('/agents', (_req, res) => {
   const agents = Array.from(activeAgents.values())
     .filter(a => !a.server && a.state !== 'completed')
-    .map(({ id, name, role, task, state, status, background, spawnedAt, lastActivityAt, unread }) =>
-      ({ id, name, role, task, state, status, background, spawnedAt, lastActivityAt, unread: unread ?? 0 }))
+    .map(({ id, name, role, task, state, status, lastError, background, spawnedAt, lastActivityAt, unread, parentId, parentSubagentId }) => ({
+      id, name, role, task, state, status, lastError, background, spawnedAt, lastActivityAt, unread: unread ?? 0,
+      // Lineage: the subagent that spawned this one and, once that parent is linked, its office id
+      parentId: parentId ?? lookupAgentId(parentSubagentId) ?? undefined,
+      parentSubagentId,
+    }))
   res.json({ agents })
 })
 
@@ -800,9 +858,12 @@ function processEvent(body) {
     case 'agent_spawned': {
       const agent = body.agent ?? {}
       const id = resolveAgentId(agent)
+      prunePendingStarts()
       if (activeAgents.has(id)) {
         // Replayed spawn (e.g. hook retry) — keep the existing record
-        return { type: 'agent_spawned', agent: activeAgents.get(id), timestamp: Date.now() }
+        const existing = activeAgents.get(id)
+        if (!existing.subagentId && adoptPendingStart(existing)) saveAgents()
+        return { type: 'agent_spawned', agent: existing, timestamp: Date.now() }
       }
       let role = agent.role ?? 'general-purpose'
       if (role === 'general-purpose') role = leastUsedGeneralRole()
@@ -818,9 +879,12 @@ function processEvent(body) {
         spawnedAt: now,
         lastActivityAt: now,
       }
+      setLineage(record, agent.parentSubagentId)
       activeAgents.set(id, record)
+      console.log(`[+] Agent spawned: ${record.name} (${record.role}) — ${id}${record.parentId ? ` (parent ${record.parentId})` : ''}`)
+      // A SubagentStart that overtook this spawn on the way here is waiting for it
+      adoptPendingStart(record)
       saveAgents()
-      console.log(`[+] Agent spawned: ${record.name} (${record.role}) — ${id}`)
 
       // Proactive message — announce task in chat
       const taskShort = (record.task ?? '').slice(0, 50)
@@ -836,9 +900,43 @@ function processEvent(body) {
       const id = lookupAgentId(body.agentId)
       if (id && body.subagentId) {
         linkSubagent(id, body.subagentId)
+        pendingStarts.delete(body.subagentId)
         activeAgents.get(id).lastActivityAt = Date.now()
         saveAgents()
-        console.log(`[~] Agent ${id} linked to subagent ${body.subagentId}`)
+        console.log(`[~] Agent ${id} linked to subagent ${body.subagentId} by PostToolUse(Agent)`)
+      }
+      return null
+    }
+
+    case 'agent_started': {
+      // SubagentStart: the subagent exists now. Tie it to the oldest unlinked
+      // agent of the same type — the PreToolUse(Agent) that spawned it fired
+      // ~50 ms earlier, so that agent is normally in the office already. When
+      // the start overtook its spawn, park it until that spawn arrives.
+      const subagentId = body.subagentId
+      if (!subagentId) return null
+      prunePendingStarts()
+      const agentType = body.agentType || 'general-purpose'
+      const known = lookupAgentId(subagentId)
+      if (known) {
+        // agent_linked (the PostToolUse of a background launch) got here first
+        const agent = activeAgents.get(known)
+        setLineage(agent, body.parentId)
+        agent.lastActivityAt = Date.now()
+        saveAgents()
+        console.log(`[~] SubagentStart ${subagentId} (${agentType}) confirms agent ${known}`)
+        return null
+      }
+      const agent = oldestUnlinkedAgent(agentType)
+      if (agent) {
+        linkSubagent(agent.id, subagentId)
+        setLineage(agent, body.parentId)
+        agent.lastActivityAt = Date.now()
+        saveAgents()
+        console.log(`[~] Agent ${agent.id} linked to subagent ${subagentId} (${agentType}) by SubagentStart`)
+      } else {
+        pendingStarts.set(subagentId, { agentType, parentId: body.parentId, at: Date.now() })
+        console.log(`[~] SubagentStart ${subagentId} (${agentType}) arrived before its spawn — parked`)
       }
       return null
     }
@@ -846,16 +944,17 @@ function processEvent(body) {
     case 'agent_working': {
       let id = lookupAgentId(body.agentId)
 
-      // A subagent id we haven't seen: it belongs to a foreground agent whose
-      // id we only learn now, or to an agent spawned while the server was down.
+      // A subagent id we haven't seen: no SubagentStart reached us (hook not
+      // registered, server was down), so fall back to binding it to the
+      // oldest unlinked agent of the same type on its first tool call.
       if (!id && body.agentId && body.agentType) {
-        const unbound = Array.from(activeAgents.values())
-          .filter(a => !a.server && !a.subagentId && a.state !== 'completed' && a.agentType === body.agentType)
-          .sort((a, b) => a.spawnedAt - b.spawnedAt)[0]
+        const unbound = oldestUnlinkedAgent(body.agentType)
         if (unbound) {
           linkSubagent(unbound.id, body.agentId)
           id = unbound.id
+          console.log(`[~] Agent ${id} bound to subagent ${body.agentId} by its first tool call (no SubagentStart seen)`)
         } else {
+          pendingStarts.delete(body.agentId)
           const spawned = processEvent({
             type: 'agent_spawned',
             agent: {
@@ -877,10 +976,21 @@ function processEvent(body) {
         agent.state = 'working'
         agent.status = body.status ?? ''
         agent.lastActivityAt = Date.now()
+        if (body.failed) {
+          // A tool call errored (PostToolUseFailure); the agent carries on working
+          agent.lastError = agent.status
+          console.log(`[!] Agent ${id} ${agent.status}`)
+        }
         saveAgents()
       }
       // Unknown or missing id is main-thread activity — frontend picks a worker
-      return { type: 'agent_working', agentId: id ?? undefined, status: body.status, timestamp: Date.now() }
+      return {
+        type: 'agent_working',
+        agentId: id ?? undefined,
+        status: body.status,
+        ...(body.failed ? { failed: true } : {}),
+        timestamp: Date.now(),
+      }
     }
 
     case 'agent_completed': {
@@ -1068,6 +1178,7 @@ export {
   TOKEN_FILE,
   PORT,
   activeAgents,
+  pendingStarts,
   processEvent,
   sendAgentMessage,
   broadcast,
