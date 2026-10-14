@@ -5,6 +5,7 @@ import EffectBubble from './EffectBubble'
 import { getEffect } from '../agentManager'
 import { ROLE_TO_CHAR } from '../config'
 import { getSpritePath, useTheme } from '../theme'
+import { useVariant } from '../incident'
 
 export { ROLE_TO_CHAR }
 
@@ -126,10 +127,12 @@ const Character: React.FC<CharacterProps> = ({ agent, idleDurationMs = 0, zIndex
   const theme = useTheme() // Why: re-render on theme toggle so sprite path updates
   const spriteSrc = getSpritePath(agent.id, agent.role, charBase, directionRef.current)
   void theme
+  const variant = useVariant() // Why: re-render when incident mode flips so the failure bubble shows/hides
+  void variant
 
   const effectSrc = isTyping
     ? '/sprites/effects/typing.png'
-    : getEffect(agent.state, idleDurationMs, agent.statusText, agent.id, agent.task, agent.role)
+    : getEffect(agent.state, idleDurationMs, agent.statusText, agent.id, agent.task, agent.role, agent.lastFailed)
 
   return (
     <div

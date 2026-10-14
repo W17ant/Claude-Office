@@ -743,6 +743,7 @@
 
 .slack-msg-system .slack-msg-content {
   flex: none;
+  max-width: 100%; /* Why: long system lines (postmortems, /help) wrap instead of clipping */
 }
 
 .slack-msg-system .slack-system-text {
