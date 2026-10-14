@@ -140,6 +140,10 @@ bash scripts/stop-office.sh
 
 Open `http://localhost:3333` — the office is ready.
 
+### Running tests
+
+`npm test` runs the Vitest suite in `tests/` (server API, WebSocket, hook script, installer) against a temp `AGENT_OFFICE_HOME`, so your real `~/.agent-office` is never touched; `npm run test:watch` keeps it running. CI runs `tsc --noEmit` and `npm test` on every push to `main` and every pull request.
+
 ### Auto-Permissions
 
 The repo includes `.claude/settings.json` which auto-allows curl commands to the local office server (`127.0.0.1:3334`) and the start/stop scripts. This means the chat monitor cron and office commands run without permission prompts.

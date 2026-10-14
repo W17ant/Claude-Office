@@ -1,5 +1,22 @@
 # Agent Office — Comprehensive Test Plan
 
+## Status
+
+Run with `npm test` (Vitest, Node environment, `tests/`). CI (`.github/workflows/ci.yml`) runs `tsc --noEmit` and `npm test` on pushes to `main` and on pull requests.
+
+**Covered now**
+
+- `server/index.js` — `POST /event` auth + validation + string clamping; `processEvent` for `agent_spawned` (incl. general-purpose sprite spreading), `agent_linked`, `agent_working` (subagent id routing, foreground binding, auto-spawn), `agent_completed` (dedupe + grace period), `mcp_call`/`mcp_done`; `GET /agents`, `GET /roster`, `GET /health`; origin checks — `tests/events.test.ts`
+- Agent persistence — `agents.json` written on change, restored on a fresh import of the same runtime dir, stale entries dropped (`AGENT_OFFICE_STALE_MINUTES`) — `tests/persistence.test.ts`
+- Chat + A2A — `POST /chat/reply` (recipient, `@Name` mention, self-message, loop budget `AGENT_OFFICE_A2A_LIMIT`), `GET /chat?recipient=`, unread + `POST /chat/inbox/read`, inbox files, `GET /.well-known/agent-card.json`, `GET /a2a/agents`, `POST /a2a` (`message/send` + JSON-RPC errors), `POST /chat` + slash commands — `tests/chat-a2a.test.ts`
+- WebSocket — snapshot on connect, broadcast to all clients, origin rejection — `tests/websocket.test.ts`
+- `hooks/agent-tracker.sh` — Python section run against real Claude Code 2.1.x payloads — `tests/hook-script.test.ts`
+- `hooks/install-hooks.sh` — fresh install, upgrade from PostToolUse-only, idempotent re-run — `tests/install-hooks.test.ts`
+
+**Still planned** (see modules below): `chat-db.js` unit tests, all `src/` modules (jsdom + Testing Library), `useAgentSocket` reconnect logic, React components, Playwright E2E, coverage thresholds.
+
+The server is importable without side effects: `start()` is only called when `server/index.js` is the main module, and everything on disk goes under `AGENT_OFFICE_HOME` (default `~/.agent-office`). Tests point that at a temp dir per file — see `tests/helpers.ts`.
+
 ## Overview
 
 This document covers all source modules in `src/` and `server/`. There are currently zero test files in the repository. The recommended test stack is **Vitest** (unit + integration, compatible with Vite's config) and **Playwright** (E2E). No test runner is installed yet — setup steps are included per section.
