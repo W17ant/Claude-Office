@@ -187,7 +187,9 @@ Reply to the latest message naturally. Keep it short (8-12 words). Continue the 
 
     # Post the reply with its agent role and name. Prints the stored row's
     # timestamp on success, "error: ..." otherwise.
-    reply_ts=$(CHAT_SERVER="$SERVER" CHAT_REPLY="$reply" CHAT_ROLE="$agent_role" CHAT_SENDER="$agent_name" python3 -c "
+    # /chat/reply speaks as an agent, so it carries the office token (the file
+    # the server writes once it is up — the same one the hook reads).
+    reply_ts=$(CHAT_SERVER="$SERVER" CHAT_REPLY="$reply" CHAT_ROLE="$agent_role" CHAT_SENDER="$agent_name" CHAT_TOKEN_FILE="$STATE_DIR/auth-token" python3 -c "
 import urllib.request, json, os
 server = os.environ['CHAT_SERVER']
 data = json.dumps({
@@ -195,8 +197,13 @@ data = json.dumps({
     'role': os.environ.get('CHAT_ROLE', 'assistant'),
     'text': os.environ.get('CHAT_REPLY', ''),
 }).encode()
-req = urllib.request.Request(server + '/chat/reply', data=data,
-    headers={'Content-Type': 'application/json'}, method='POST')
+headers = {'Content-Type': 'application/json'}
+try:
+    with open(os.environ['CHAT_TOKEN_FILE']) as f:
+        headers['Authorization'] = 'Bearer ' + f.read().strip()
+except OSError:
+    pass
+req = urllib.request.Request(server + '/chat/reply', data=data, headers=headers, method='POST')
 try:
     with urllib.request.urlopen(req, timeout=5) as resp:
         posted_id = json.load(resp).get('id')
