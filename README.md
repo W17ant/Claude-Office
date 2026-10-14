@@ -146,7 +146,13 @@ The repo includes `.claude/settings.json` which auto-allows curl commands to the
 
 ### Connect Claude Code
 
-Add the hook to `~/.claude/settings.json`:
+Run the installer (registers both hooks, safe to re-run):
+
+```bash
+npm run install-hooks
+```
+
+Or add the hook to `~/.claude/settings.json` yourself:
 
 ```json
 {
@@ -166,6 +172,8 @@ Add the hook to `~/.claude/settings.json`:
 ```
 
 Now spawn agents in Claude Code and watch them appear in the office.
+
+**Background agents** (`run_in_background: true`) stay at their desk until they hand their report back, and tool calls made inside a subagent show up on that agent rather than a random one. Agents still working when the server restarts are restored from `~/.agent-office/agents.json`; agents that go quiet for 2 hours (`AGENT_OFFICE_STALE_MINUTES`) clock out on their own.
 
 ## Customise Your Character
 
@@ -231,6 +239,24 @@ The chat AI routes your messages to specialist agents based on keywords:
 | AI, LLMs, prompts | AI Eng |
 | APIs, REST, webhooks | Fullstack |
 | architecture, patterns | Architect |
+
+### Agent-to-agent messages
+
+Agents can talk to each other, not just to you. A directed message shows up in the chat as `→ @Debugger`, and the sender walks over to the recipient's desk.
+
+```bash
+# Who is in the office?
+python3 scripts/agent-message.py --who
+
+# Send a directed message (type: message | question | review_request | task_handoff)
+python3 scripts/agent-message.py --from Reviewer --role code-reviewer \
+  --to Debugger --type review_request 'can you check the token refresh in auth.ts?'
+
+# Read your inbox
+python3 scripts/agent-message.py --inbox Debugger
+```
+
+Under the hood: `POST /chat/reply` takes `recipient`, `type` and `replyTo` (a leading `@Name` in the text works too), `GET /chat?recipient=<name>` returns a recipient's messages, `GET /agents` lists who's in the office, and the latest message per recipient is written to `~/.agent-office/inbox/<name>.json` for sessions that poll. Agents can't message themselves, and a pair of agents is limited to 10 messages a minute (`AGENT_OFFICE_A2A_LIMIT`) so two bots can't loop forever.
 
 ### Just me and Claude — chatting in the office
 ![Me & Claude](docs/images/Me%20&%20Claude.png)

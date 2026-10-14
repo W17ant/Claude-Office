@@ -4,8 +4,12 @@
 #
 # This script:
 #   1. Backs up the existing settings file
-#   2. Adds a PostToolUse hook entry that runs agent-tracker.sh
+#   2. Registers agent-tracker.sh for PreToolUse (spawns + tool activity)
+#      and PostToolUse (completions, background agent hand-backs)
 #   3. Prints next steps
+#
+# Safe to re-run: each hook event is checked separately, so an older install
+# that only registered PostToolUse gets the missing PreToolUse entry added.
 #
 # Usage:
 #   bash hooks/install-hooks.sh
@@ -64,21 +68,9 @@ cp "$SETTINGS_FILE" "$BACKUP_FILE"
 echo -e "${GREEN}[ok]${RESET} Backup saved: $BACKUP_FILE"
 
 # ---------------------------------------------------------------------------
-# Check if the hook is already installed
+# Merge hook entries into settings JSON using Python
 # ---------------------------------------------------------------------------
-if grep -q "agent-tracker.sh" "$SETTINGS_FILE" 2>/dev/null; then
-    echo ""
-    echo -e "${YELLOW}[info]${RESET} Agent Office hook is already installed in $SETTINGS_FILE"
-    echo ""
-    echo "  To update it, remove the existing entry and re-run this script."
-    echo ""
-    exit 0
-fi
-
-# ---------------------------------------------------------------------------
-# Merge hook entry into settings JSON using Python
-# ---------------------------------------------------------------------------
-echo -e "${CYAN}[...]${RESET} Adding PostToolUse hook..."
+echo -e "${CYAN}[...]${RESET} Registering PreToolUse + PostToolUse hooks..."
 
 python3 - "$SETTINGS_FILE" "$HOOK_COMMAND" <<'PYEOF'
 import json, sys
@@ -92,39 +84,33 @@ with open(settings_path, 'r') as f:
     except json.JSONDecodeError:
         settings = {}
 
-# Ensure hooks.PostToolUse exists as a list
 hooks = settings.setdefault('hooks', {})
-post_tool_use = hooks.setdefault('PostToolUse', [])
 
-# New hook entry to add
-new_hook_group = {
-    "matcher": "",
-    "hooks": [
-        {
-            "type": "command",
-            "command": hook_command
-        }
-    ]
-}
+def has_tracker(groups):
+    # Match on the script name so installs from another checkout path count too
+    return any(
+        'agent-tracker.sh' in h.get('command', '')
+        for group in groups if isinstance(group, dict)
+        for h in group.get('hooks', []) if isinstance(h, dict)
+    )
 
-# Check if a hook group already contains this command (double safety)
-already_present = any(
-    any(h.get('command', '') == hook_command for h in group.get('hooks', []))
-    for group in post_tool_use
-    if isinstance(group, dict)
-)
-
-if not already_present:
-    post_tool_use.append(new_hook_group)
+for event in ('PreToolUse', 'PostToolUse'):
+    groups = hooks.setdefault(event, [])
+    if has_tracker(groups):
+        print(f'  [skip] {event} already registered')
+        continue
+    groups.append({
+        "matcher": "",
+        "hooks": [{"type": "command", "command": hook_command}],
+    })
+    print(f'  [add]  {event}')
 
 with open(settings_path, 'w') as f:
     json.dump(settings, f, indent=2)
     f.write('\n')
-
-print('ok')
 PYEOF
 
-echo -e "${GREEN}[ok]${RESET} Hook added to $SETTINGS_FILE"
+echo -e "${GREEN}[ok]${RESET} Hooks up to date in $SETTINGS_FILE"
 
 # ---------------------------------------------------------------------------
 # Print next steps

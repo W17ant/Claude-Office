@@ -38,13 +38,22 @@ db.exec(
   ')'
 )
 
+// Columns added for agent-to-agent messages — migrate older databases in place
+const existingCols = new Set(db.prepare('PRAGMA table_info(messages)').all().map(c => c.name))
+for (const [col, ddl] of [
+  ['recipient', 'recipient TEXT'],
+  ['msg_type',  'msg_type TEXT'],
+]) {
+  if (!existingCols.has(col)) db.exec(`ALTER TABLE messages ADD COLUMN ${ddl}`)
+}
+
 // ---------------------------------------------------------------------------
 // Prepared statements
 // ---------------------------------------------------------------------------
 
 const stmtInsert = db.prepare(
-  'INSERT INTO messages (sender, role, text, timestamp, is_system, thread_id) ' +
-  'VALUES (@sender, @role, @text, @timestamp, @isSystem, @threadId)'
+  'INSERT INTO messages (sender, role, text, timestamp, is_system, thread_id, recipient, msg_type) ' +
+  'VALUES (@sender, @role, @text, @timestamp, @isSystem, @threadId, @recipient, @msgType)'
 )
 
 const stmtGetAll = db.prepare(
@@ -57,6 +66,13 @@ const stmtGetSince = db.prepare(
   'WHERE timestamp > @since ' +
   'ORDER BY timestamp ASC, id ASC ' +
   'LIMIT @limit'
+)
+
+const stmtGetForRecipient = db.prepare(
+  'SELECT * FROM (SELECT * FROM messages ' +
+  '  WHERE recipient = @recipient COLLATE NOCASE AND timestamp > @since ' +
+  '  ORDER BY timestamp DESC, id DESC LIMIT @limit) ' +
+  'ORDER BY timestamp ASC, id ASC'
 )
 
 const stmtMarkSeen = db.prepare(
@@ -87,9 +103,10 @@ const stmtGetById = db.prepare(
 
 /**
  * Insert a new message and return it with its generated id.
- * @param {{ sender: string, role?: string, text: string, isSystem?: boolean, threadId?: number }} opts
+ * @param {{ sender: string, role?: string, text: string, isSystem?: boolean, threadId?: number,
+ *           recipient?: string, msgType?: string }} opts
  */
-export function addMessage({ sender, role = 'default', text, isSystem = false, threadId = null }) {
+export function addMessage({ sender, role = 'default', text, isSystem = false, threadId = null, recipient = null, msgType = null }) {
   const timestamp = Date.now()
   const info = stmtInsert.run({
     sender,
@@ -98,15 +115,21 @@ export function addMessage({ sender, role = 'default', text, isSystem = false, t
     timestamp,
     isSystem: isSystem ? 1 : 0,
     threadId: threadId ?? null,
+    recipient: recipient ?? null,
+    msgType: msgType ?? null,
   })
   return stmtGetById.get({ id: info.lastInsertRowid })
 }
 
 /**
  * Retrieve recent messages.
- * @param {{ since?: number, limit?: number }} opts
+ * @param {{ since?: number, limit?: number, recipient?: string }} opts
+ *   recipient — only messages addressed to this agent (case-insensitive)
  */
-export function getMessages({ since = 0, limit = 50 } = {}) {
+export function getMessages({ since = 0, limit = 50, recipient = null } = {}) {
+  if (recipient) {
+    return stmtGetForRecipient.all({ recipient, since, limit })
+  }
   if (since) {
     return stmtGetSince.all({ since, limit })
   }
