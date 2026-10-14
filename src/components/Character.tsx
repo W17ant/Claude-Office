@@ -16,6 +16,8 @@ interface CharacterProps {
   zIndex?: number
   /** Show typing indicator (about to post a Slack message) */
   isTyping?: boolean
+  /** Show the agent's project (its Claude Code session) — when several sessions share the office */
+  showProject?: boolean
 }
 
 // Movement direction → sprite variant
@@ -66,7 +68,7 @@ const OPPOSITE: Record<SpriteDirection, SpriteDirection> = {
   'rear-right': 'front-left',
 }
 
-const Character: React.FC<CharacterProps> = ({ agent, idleDurationMs = 0, zIndex, isTyping }) => {
+const Character: React.FC<CharacterProps> = ({ agent, idleDurationMs = 0, zIndex, isTyping, showProject }) => {
   const prevPosRef = useRef({ x: agent.position.x, y: agent.position.y })
   const directionRef = useRef<SpriteDirection>(agent.spriteFacing ?? 'front-right')
   const [turnedAround, setTurnedAround] = useState(false)
@@ -131,6 +133,8 @@ const Character: React.FC<CharacterProps> = ({ agent, idleDurationMs = 0, zIndex
     ? '/sprites/effects/typing.png'
     : getEffect(agent.state, idleDurationMs, agent.statusText, agent.id, agent.task, agent.role)
 
+  const projectTag = showProject && agent.project ? agent.project : null
+
   return (
     <div
       className={`character-wrapper state-${animState}`}
@@ -140,8 +144,13 @@ const Character: React.FC<CharacterProps> = ({ agent, idleDurationMs = 0, zIndex
         transform: 'translate(-50%, -100%)',
         zIndex: zIndex ?? Math.round(agent.position.y),
       }}
+      title={projectTag ? `${agent.name} · ${projectTag}` : undefined}
     >
       {effectSrc && <EffectBubble src={effectSrc} alt={agent.state} />}
+
+      {projectTag && (
+        <div className="char-project">{projectTag}</div>
+      )}
 
       {!!agent.unread && (
         <div className="char-unread" title={`${agent.unread} unread message${agent.unread === 1 ? '' : 's'}`}>

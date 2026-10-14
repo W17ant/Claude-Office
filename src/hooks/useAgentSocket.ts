@@ -8,11 +8,13 @@
  *  - Auto-reconnect with exponential back-off (capped at 30 s)
  *  - Returns events as they arrive via onEvent callback style AND as a state array
  *  - Exposes `connected` boolean and `mcpServers` roster
+ *  - Tracks the Claude Code sessions (one per terminal) from the snapshot and
+ *    session_started / session_ended events, exposed as `sessions`
  *  - Gracefully falls back to mock/offline mode when the server is unavailable
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { OfficeEvent } from '../types'
+import { OfficeEvent, SessionInfo } from '../types'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -36,6 +38,8 @@ export interface AgentSocketResult {
   events: OfficeEvent[]
   /** True if the server has never been reachable since mount */
   offline: boolean
+  /** Claude Code sessions the server knows about (ended ones linger briefly) */
+  sessions: SessionInfo[]
 }
 
 // ---------------------------------------------------------------------------
@@ -51,7 +55,10 @@ interface SnapshotMessage {
     task?: string
     state: string
     unread?: number
+    sessionId?: string
+    project?: string
   }>
+  sessions?: Array<SessionInfo & { agentIds?: string[]; agentCount?: number }>
   mcpServers: string[]
   timestamp: number
 }
@@ -68,6 +75,27 @@ const MAX_EVENTS     = 50
 const BACKOFF_INITIAL = 500   // ms
 const BACKOFF_MAX    = 30_000 // ms
 const BACKOFF_FACTOR = 2
+// An ended session's pill lingers this long before it is dropped
+const ENDED_SESSION_LINGER_MS = 10_000
+
+/** The session fields of a session_started/session_ended event or snapshot entry. */
+function toSessionInfo(id: string, src: Partial<SessionInfo>, prev?: SessionInfo): SessionInfo {
+  return {
+    ...prev,
+    id,
+    project:        src.project        ?? prev?.project,
+    cwd:            src.cwd            ?? prev?.cwd,
+    title:          src.title          ?? prev?.title,
+    model:          src.model          ?? prev?.model,
+    source:         src.source         ?? prev?.source,
+    state:          src.state          ?? prev?.state ?? 'active',
+    reason:         src.reason         ?? prev?.reason,
+    startedAt:      src.startedAt      ?? prev?.startedAt,
+    lastActivityAt: src.lastActivityAt ?? prev?.lastActivityAt,
+    lastStatus:     src.lastStatus     ?? prev?.lastStatus,
+    lastStatusAt:   src.lastStatusAt   ?? prev?.lastStatusAt,
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Hook
@@ -84,6 +112,7 @@ export function useAgentSocket(options: AgentSocketOptions = {}): AgentSocketRes
   const [mcpServers, setMcpServers] = useState<string[]>([])
   const [events, setEvents]         = useState<OfficeEvent[]>([])
   const [offline, setOffline]       = useState(false)
+  const [sessions, setSessions]     = useState<SessionInfo[]>([])
 
   // Refs so reconnect logic can read latest values without re-creating effects
   const wsRef          = useRef<WebSocket | null>(null)
@@ -119,6 +148,45 @@ export function useAgentSocket(options: AgentSocketOptions = {}): AgentSocketRes
   }, [])
 
   // ---------------------------------------------------------------------------
+  // Session bookkeeping — one entry per Claude Code terminal
+  // ---------------------------------------------------------------------------
+  const upsertSession = useCallback((id: string, src: Partial<SessionInfo>) => {
+    setSessions(prev => {
+      const existing = prev.find(s => s.id === id)
+      const next = toSessionInfo(id, src, existing)
+      return existing ? prev.map(s => (s.id === id ? next : s)) : [...prev, next]
+    })
+  }, [])
+
+  const dropSessionLater = useCallback((id: string) => {
+    setTimeout(() => {
+      if (!mountedRef.current) return
+      // Only drop it if it is still ended (a resume brings the same id back)
+      setSessions(prev => prev.filter(s => s.id !== id || s.state !== 'ended'))
+    }, ENDED_SESSION_LINGER_MS)
+  }, [])
+
+  const trackSession = useCallback((msg: OfficeEvent) => {
+    const id = msg.sessionId
+    if (!id) return
+    switch (msg.type) {
+      case 'session_started':
+        upsertSession(id, { ...msg, state: 'active', reason: undefined })
+        return
+      case 'session_ended':
+        upsertSession(id, { ...msg, state: 'ended' })
+        dropSessionLater(id)
+        return
+      case 'agent_working':
+        // Main-thread activity (no agentId) is the session's own status
+        if (!msg.agentId) upsertSession(id, { project: msg.project, lastStatus: msg.status, lastStatusAt: msg.timestamp ?? Date.now() })
+        return
+      default:
+        return
+    }
+  }, [upsertSession, dropSessionLater])
+
+  // ---------------------------------------------------------------------------
   // Process a raw message from the WebSocket
   // ---------------------------------------------------------------------------
   const handleMessage = useCallback((raw: string) => {
@@ -134,6 +202,10 @@ export function useAgentSocket(options: AgentSocketOptions = {}): AgentSocketRes
       if (snap.mcpServers?.length) {
         setMcpServers(snap.mcpServers)
       }
+      // The server's session list replaces ours (a reconnect may have missed ends)
+      const snapSessions = (snap.sessions ?? []).filter(s => s?.id)
+      setSessions(snapSessions.map(s => toSessionInfo(s.id, s)))
+      for (const s of snapSessions) if (s.state === 'ended') dropSessionLater(s.id)
       // Emit synthetic spawn events for agents that were already active
       for (const agent of snap.activeAgents ?? []) {
         const event: OfficeEvent = {
@@ -143,6 +215,8 @@ export function useAgentSocket(options: AgentSocketOptions = {}): AgentSocketRes
             name: agent.name,
             role: agent.role,
             task: agent.task,
+            sessionId: agent.sessionId,
+            project: agent.project,
           },
         }
         pushEvent(event)
@@ -154,8 +228,9 @@ export function useAgentSocket(options: AgentSocketOptions = {}): AgentSocketRes
     }
 
     // Regular office event
+    trackSession(msg as OfficeEvent)
     pushEvent(msg as OfficeEvent)
-  }, [pushEvent])
+  }, [pushEvent, trackSession, dropSessionLater])
 
   // ---------------------------------------------------------------------------
   // Connect / reconnect logic
@@ -262,5 +337,5 @@ export function useAgentSocket(options: AgentSocketOptions = {}): AgentSocketRes
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [disabled])
 
-  return { connected, mcpServers, events, offline }
+  return { connected, mcpServers, events, offline, sessions }
 }
