@@ -140,9 +140,15 @@ bash scripts/stop-office.sh
 
 Open `http://localhost:3333` — the office is ready.
 
+### The start/stop scripts
+
+`start-office.sh` starts the server, Vite and the chat AI watcher, each in its own process group, and records their pids in `~/.agent-office/server.pid`, `vite.pid` and `chat-watcher.pid`. `stop-office.sh` stops exactly those processes — a browser holding a WebSocket to `:3334`, the Electron app or an unrelated Vite on `:3333` are never touched. If you started the server some other way, `bash scripts/stop-office.sh --force` additionally kills whatever is *listening* on the office ports. Ctrl+C in `start-office.sh` stops everything it started; on a box without `open`/`xdg-open` it prints the URL instead of aborting.
+
+The chat AI watcher (`scripts/chat-ai-watcher.sh`, log in `~/.agent-office/chat-ai.log`) only answers messages a person typed in the office chat — its own replies, the agents' `starting:`/`done:` announcements, agent-to-agent messages and `/commands` are never answered — and runs `claude -p` with `--model claude-haiku-5-5 --safe-mode --strict-mcp-config --tools "" --no-session-persistence` under a timeout, so a reply never fires the office's own hooks or loads your project's MCP servers. Knobs (all optional): `CHAT_AI_MODEL`, `CHAT_AI_TIMEOUT` (seconds, default 60), `CHAT_AI_MAX_REPLIES_PER_MIN` (default 5), `CHAT_AI_POLL_INTERVAL` (default 8). Every script honours `AGENT_OFFICE_HOME` (state dir) and `AGENT_OFFICE_PORT` (server port, default 3334); `start-office.sh`/`stop-office.sh` also take `AGENT_OFFICE_UI_PORT` (default 3333).
+
 ### Running tests
 
-`npm test` runs the Vitest suite in `tests/` (server API, WebSocket, hook script, installer) against a temp `AGENT_OFFICE_HOME`, so your real `~/.agent-office` is never touched; `npm run test:watch` keeps it running. CI runs `tsc --noEmit` and `npm test` on every push to `main` and every pull request.
+`npm test` runs the Vitest suite in `tests/` (server API, WebSocket, hook script, installer, shell scripts) against a temp `AGENT_OFFICE_HOME`, so your real `~/.agent-office` is never touched; `npm run test:watch` keeps it running. CI runs `tsc --noEmit` and `npm test` on every push to `main` and every pull request.
 
 ### Auto-Permissions
 
@@ -347,9 +353,10 @@ Claude-Office/
 │   ├── index.js            # HTTP endpoints + WS broadcast
 │   └── chat-db.js          # SQLite wrapper
 ├── scripts/                # Shell scripts
-│   ├── start-office.sh     # Start everything
-│   ├── stop-office.sh      # Stop everything
+│   ├── start-office.sh     # Start everything (writes pid files)
+│   ├── stop-office.sh      # Stop everything (by pid file; --force for ports)
 │   ├── chat-ai-watcher.sh  # Polls chat, generates Claude replies
+│   ├── notify.sh           # Desktop notification (osascript / notify-send)
 │   └── gather-context.sh   # Git/agent context for prompts
 ├── hooks/                  # Claude Code hooks
 │   └── agent-tracker.sh    # Forwards events to server
