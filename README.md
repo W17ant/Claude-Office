@@ -332,6 +332,7 @@ The recipient goes in `metadata.to` (name, role or office id); replies thread th
 | `localhost:3333?video` | Video — scripted recording mode |
 | `localhost:3333?helper` | Placement helper — dev tool for positioning furniture |
 | `localhost:3333?variant=incident` | Incident — pins "Prod Is Down" mode on (for screenshots) |
+| `localhost:3334` | Built — the office server serving `dist/` after `npm run build`; what the desktop app loads. The `?` flags above work here too |
 
 ### Incident mode — "Prod Is Down"
 
@@ -385,10 +386,22 @@ Claude-Office/
 
 ## Desktop App (Electron)
 
+The desktop app is self-contained: it bundles the office server, the built UI and `node_modules`, runs the server on the Node that ships inside Electron (nothing needs to be installed, and no `node` on the PATH), and loads the office from `http://127.0.0.1:3334/` — one port for the page, its assets and the WebSocket.
+
 ```bash
-npm run dev:electron    # Development
-npm run build:electron  # Build .dmg
+npm run dev:electron    # Development: Vite on 3333 + an Electron window; the server runs on your Node
+npm run pack            # Unpacked build in release/<platform>-unpacked (quick smoke test)
+npm run build:electron  # Installer (.dmg on macOS) in release/
 ```
+
+How a build is put together (the `build` section of `package.json`):
+
+- `vite build` writes the UI and everything in `public/` to `dist/`; the server serves `dist/` from `/` when it exists, so the sprites ship once.
+- `asar` is off: the server is a plain Node child process that reads `dist/`, `server/` and `node_modules` with ordinary `fs` calls.
+- `npmRebuild` is off, so the checkout's `node_modules` stay built for your system Node and `npm test` / `node server/index.js` keep working after a pack. `electron/after-pack.cjs` fetches the Electron build of `better-sqlite3` (through its own `prebuild-install`) into the packaged copy only.
+- Debugging a build headlessly: `AGENT_OFFICE_SCREENSHOT=/tmp/office.png` makes the app save a screenshot of its window a few seconds after the page loads, then quit (works under `xvfb-run`).
+
+The same single-port mode works without Electron: `npm run build && npm run server`, then open `http://localhost:3334`.
 
 ## License
 
