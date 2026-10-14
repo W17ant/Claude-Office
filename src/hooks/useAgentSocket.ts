@@ -15,6 +15,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { OfficeEvent, SessionInfo } from '../types'
+import type { SessionStatus, MeterTotals } from '../meters'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -59,6 +60,8 @@ interface SnapshotMessage {
     project?: string
   }>
   sessions?: Array<SessionInfo & { agentIds?: string[]; agentCount?: number }>
+  /** Payroll / electricity / memory: the server's status store (server/status.js) */
+  statuses?: { sessions: SessionStatus[]; totals: MeterTotals }
   mcpServers: string[]
   timestamp: number
 }
@@ -206,6 +209,10 @@ export function useAgentSocket(options: AgentSocketOptions = {}): AgentSocketRes
       const snapSessions = (snap.sessions ?? []).filter(s => s?.id)
       setSessions(snapSessions.map(s => toSessionInfo(s.id, s)))
       for (const s of snapSessions) if (s.state === 'ended') dropSessionLater(s.id)
+      // The server's status store replaces ours too (a restart forgets sessions)
+      if (snap.statuses) {
+        pushEvent({ type: 'session_status', statuses: snap.statuses.sessions ?? [], totals: snap.statuses.totals })
+      }
       // Emit synthetic spawn events for agents that were already active
       for (const agent of snap.activeAgents ?? []) {
         const event: OfficeEvent = {

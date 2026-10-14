@@ -1,4 +1,5 @@
 import type { RoomId } from './rooms'
+import type { SessionStatus, AgentStatus, MeterTotals } from './meters'
 
 export type AgentState =
   | 'idle'
@@ -62,7 +63,7 @@ export interface SessionInfo {
 }
 
 export interface OfficeEvent {
-  type: 'agent_spawned' | 'agent_working' | 'agent_completed' | 'mcp_call' | 'mcp_done' | 'new_hire' | 'chat_message' | 'chat_typing' | 'chat_reaction' | 'chat_seen' | 'inbox_update' | 'variant_change' | 'session_started' | 'session_ended'
+  type: 'agent_spawned' | 'agent_working' | 'agent_completed' | 'mcp_call' | 'mcp_done' | 'new_hire' | 'chat_message' | 'chat_typing' | 'chat_reaction' | 'chat_seen' | 'inbox_update' | 'variant_change' | 'session_started' | 'session_ended' | 'session_status' | 'agent_status'
   agent?: Partial<Agent>
   agentId?: string
   status?: string
@@ -81,6 +82,12 @@ export interface OfficeEvent {
   lastStatus?: string
   lastStatusAt?: number
   timestamp?: number
+  // session_status / agent_status: the payroll / electricity / memory feed (src/meters.ts)
+  session?: SessionStatus
+  statuses?: SessionStatus[]
+  totals?: MeterTotals
+  removed?: boolean
+  agents?: AgentStatus[]
   sender?: string
   text?: string
   // Directed agent-to-agent chat messages

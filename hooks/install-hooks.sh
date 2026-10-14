@@ -8,16 +8,35 @@
 #      PostToolUse (completions), PostToolUseFailure (failed tool calls),
 #      SubagentStart (subagent ids), SubagentStop (subagents finishing),
 #      SessionStart and SessionEnd (one session pill per Claude Code terminal)
-#   3. Prints next steps
+#   3. Registers status-line.sh as the statusLine (+ subagentStatusLine)
+#      command — the payroll / electricity / memory meters — chaining any
+#      status line you already had (--no-status-line skips this step)
+#   4. Prints next steps
 #
 # Safe to re-run: each hook event is checked separately, so an older install
 # gets any missing entries added.
 #
 # Usage:
-#   bash hooks/install-hooks.sh
+#   bash hooks/install-hooks.sh [--no-status-line]
 # =============================================================================
 
 set -euo pipefail
+
+# --no-status-line: register the hooks only (no payroll / electricity / memory meters)
+STATUS_LINE=1
+for arg in "$@"; do
+    case "$arg" in
+        --no-status-line|--no-statusline) STATUS_LINE=0 ;;
+        -h|--help)
+            echo "Usage: bash hooks/install-hooks.sh [--no-status-line]"
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $arg (try --no-status-line)" >&2
+            exit 1
+            ;;
+    esac
+done
 
 SETTINGS_FILE="$HOME/.claude/settings.json"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -115,6 +134,73 @@ PYEOF
 echo -e "${GREEN}[ok]${RESET} Hooks up to date in $SETTINGS_FILE"
 
 # ---------------------------------------------------------------------------
+# Status line — the payroll / electricity / memory meters (statusLine +
+# subagentStatusLine, both served by status-line.sh). A status line you
+# already had is chained: its command is saved next to the auth token and
+# status-line.sh prints its output, so nothing you see changes.
+# ---------------------------------------------------------------------------
+STATUS_SCRIPT="$SCRIPT_DIR/status-line.sh"
+OFFICE_HOME="${AGENT_OFFICE_HOME:-$HOME/.agent-office}"
+if [ "$STATUS_LINE" = "1" ] && [ -f "$STATUS_SCRIPT" ]; then
+    chmod +x "$STATUS_SCRIPT"
+    mkdir -p "$OFFICE_HOME"
+    echo -e "${CYAN}[...]${RESET} Registering the status line (payroll / electricity / memory meters)..."
+
+    python3 - "$SETTINGS_FILE" "bash \"$STATUS_SCRIPT\"" "$OFFICE_HOME" <<'PYEOF'
+import json, os, sys
+
+settings_path, command, office_home = sys.argv[1:4]
+
+with open(settings_path, 'r') as f:
+    try:
+        settings = json.load(f)
+    except json.JSONDecodeError:
+        settings = {}
+
+def register(key, command, prev_file, padding):
+    current = settings.get(key)
+    # Match on the script name so installs from another checkout path count too
+    if isinstance(current, dict) and 'status-line.sh' in str(current.get('command', '')):
+        print(f'  [skip] {key} already registered')
+        return
+    entry = {'type': 'command', 'command': command}
+    if isinstance(current, dict) and current.get('command'):
+        if current.get('type', 'command') != 'command':
+            print(f'  [skip] {key}: existing entry of type {current.get("type")!r} left alone')
+            return
+        previous = str(current['command'])
+        with open(prev_file, 'w') as f:
+            f.write(previous + '\n')
+        os.chmod(prev_file, 0o600)
+        for opt in ('padding', 'refreshInterval'):
+            if opt in current:
+                entry[opt] = current[opt]
+        settings[key] = entry
+        print(f'  [wrap] {key}: your existing command is kept and chained, its output is what you will see:')
+        print(f'         {previous}')
+        print(f'         (saved in {prev_file})')
+        return
+    if padding is not None:
+        entry['padding'] = padding
+    settings[key] = entry
+    print(f'  [add]  {key}')
+
+register('statusLine', command, os.path.join(office_home, 'statusline-prev'), 0)
+register('subagentStatusLine', command + ' --subagents', os.path.join(office_home, 'subagent-statusline-prev'), None)
+
+with open(settings_path, 'w') as f:
+    json.dump(settings, f, indent=2)
+    f.write('\n')
+PYEOF
+
+    echo -e "${GREEN}[ok]${RESET} Status line up to date in $SETTINGS_FILE"
+elif [ "$STATUS_LINE" = "1" ]; then
+    echo -e "${YELLOW}[warn]${RESET} status-line.sh not found next to the tracker — meters skipped"
+else
+    echo -e "${YELLOW}[skip]${RESET} statusLine + subagentStatusLine (--no-status-line)"
+fi
+
+# ---------------------------------------------------------------------------
 # Print next steps
 # ---------------------------------------------------------------------------
 echo ""
@@ -133,6 +219,11 @@ echo "       npm run dev:electron  # desktop app"
 echo ""
 echo "  3. Use Claude Code normally. When you (or Claude) use the Agent"
 echo "     tool or any MCP tool, a character will appear in the office."
+if [ "$STATUS_LINE" = "1" ]; then
+echo ""
+echo "  4. The wall panel above the chat shows payroll / electricity / memory"
+echo "     as soon as Claude Code sends its first status line."
+fi
 echo ""
 echo "  Hook installed at:"
 echo "    $SETTINGS_FILE"

@@ -1,0 +1,250 @@
+/* ===== OFFICE METERS — payroll / electricity / memory wall panel =====
+   Sits above the chat header in the chat column (src/components/Meters.tsx).
+   Hidden until the first status arrives. Colours are variables so a theme
+   or variant can restyle it by overriding --meter-* (no logic in here). */
+
+:root {
+  --meter-bg: #15171a;
+  --meter-border: #2b2e33;
+  --meter-tile: #1d2024;
+  --meter-label: #6b6e75;
+  --meter-fg: #e6e6e6;
+  --meter-sub: #8b8d91;
+  --meter-track: #2c2f35;
+  --meter-ok: #2bac76;
+  --meter-warn: #f0b429;
+  --meter-danger: #ff5f57;
+  --meter-electric: #4fa3ff;
+  --meter-electric-hi: #9ad1ff;
+  --meter-money: #c9b48a;
+  --meter-tip-bg: #0f1113;
+}
+
+/* The chat column: meters on top, chat filling the rest */
+.chat-column {
+  display: flex;
+  flex-direction: column;
+  width: 300px;
+  min-width: 300px;
+  min-height: 0;
+}
+.chat-column > .slack-panel {
+  flex: 1;
+  min-height: 0;
+}
+
+.meters-panel {
+  position: relative;
+  background: var(--meter-bg);
+  border-left: 1px solid #35363a;
+  border-bottom: 1px solid var(--meter-border);
+  padding: 5px 10px 6px;
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--meter-fg);
+  flex-shrink: 0;
+  animation: metersIn 0.3s ease-out both;
+}
+
+@keyframes metersIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.meters-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.meters-title {
+  font-size: 7px;
+  letter-spacing: 2px;
+  color: var(--meter-label);
+  text-transform: uppercase;
+}
+
+/* RATE LIMIT pill (5-hour window) */
+.meter-pill {
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  padding: 1px 6px;
+  border-radius: 7px;
+  border: 1px solid var(--meter-ok);
+  color: var(--meter-ok);
+  background: rgba(43, 172, 118, 0.1);
+  cursor: default;
+  font-variant-numeric: tabular-nums;
+}
+.meter-pill.tone-warn   { border-color: var(--meter-warn);   color: var(--meter-warn);   background: rgba(240, 180, 41, 0.12); }
+.meter-pill.tone-danger { border-color: var(--meter-danger); color: var(--meter-danger); background: rgba(255, 95, 87, 0.12); animation: meterBlink 1s steps(1) infinite; }
+
+/* Three tiles */
+.meters-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.15fr;
+  gap: 4px;
+}
+
+.meter {
+  background: var(--meter-tile);
+  border: 1px solid var(--meter-border);
+  border-radius: 4px;
+  padding: 4px 6px 5px;
+  min-width: 0;
+  cursor: default;
+  transition: border-color 0.15s;
+}
+.meter:hover { border-color: #4a4e56; }
+
+.meter-label {
+  font-size: 7px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--meter-label);
+  margin-bottom: 2px;
+}
+
+.meter-value {
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--meter-fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+.meter-payroll .meter-value { color: var(--meter-money); }
+.meter-electricity .meter-value { color: var(--meter-electric-hi); }
+
+.meter-unit {
+  font-size: 7px;
+  font-weight: 400;
+  color: var(--meter-sub);
+  margin-left: 3px;
+  letter-spacing: 0.3px;
+}
+
+.meter-sub {
+  font-size: 8px;
+  color: var(--meter-sub);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ELECTRICITY gauge: log-scale fill, stripes flow faster the more it burns */
+.meter-gauge {
+  position: relative;
+  height: 6px;
+  margin-top: 4px;
+  border-radius: 3px;
+  background: var(--meter-track);
+  overflow: hidden;
+}
+.meter-gauge-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--meter-electric), var(--meter-electric-hi));
+  box-shadow: 0 0 6px rgba(79, 163, 255, 0.5);
+  transition: width 0.6s ease;
+}
+.meter-gauge.live::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(90deg, transparent 0 6px, rgba(255, 255, 255, 0.22) 6px 8px);
+  animation: meterFlow var(--meter-flow, 1.2s) linear infinite;
+}
+@keyframes meterFlow {
+  from { background-position: 0 0; }
+  to   { background-position: 16px 0; }
+}
+
+/* MEMORY bar: green → amber (> 70 %) → red (> 90 %) */
+.meter-bar {
+  height: 6px;
+  margin-top: 4px;
+  border-radius: 3px;
+  background: var(--meter-track);
+  overflow: hidden;
+}
+.meter-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--meter-ok);
+  transition: width 0.6s ease, background 0.3s;
+}
+.meter.tone-warn .meter-bar-fill   { background: var(--meter-warn); }
+.meter.tone-danger .meter-bar-fill { background: var(--meter-danger); box-shadow: 0 0 6px rgba(255, 95, 87, 0.6); }
+.meter.tone-warn .meter-value      { color: var(--meter-warn); }
+.meter.tone-danger .meter-value    { color: var(--meter-danger); }
+.meter.tone-danger                 { border-color: rgba(255, 95, 87, 0.45); }
+
+/* Per-session rows (several sessions) */
+.meters-sessions {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 4px;
+}
+
+.meters-session {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 0.9fr) 1fr 28px 44px;
+  align-items: center;
+  gap: 5px;
+  font-size: 8px;
+  line-height: 14px;
+  padding: 0 4px;
+  border-radius: 3px;
+  color: var(--meter-sub);
+  cursor: default;
+  font-variant-numeric: tabular-nums;
+}
+.meters-session:hover { background: rgba(255, 255, 255, 0.04); }
+.ms-project { color: var(--meter-fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ms-model   { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ms-bar {
+  display: block;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--meter-track);
+  overflow: hidden;
+}
+.ms-bar-fill { display: block; height: 100%; background: var(--meter-ok); transition: width 0.6s ease; }
+.meters-session.tone-warn .ms-bar-fill   { background: var(--meter-warn); }
+.meters-session.tone-danger .ms-bar-fill { background: var(--meter-danger); }
+.meters-session.tone-warn .ms-pct        { color: var(--meter-warn); }
+.meters-session.tone-danger .ms-pct      { color: var(--meter-danger); font-weight: 700; }
+.ms-pct  { text-align: right; }
+.ms-cost { text-align: right; color: var(--meter-money); }
+
+/* Hover strip with the exact numbers */
+.meters-tip {
+  margin-top: 5px;
+  padding: 4px 6px;
+  border-radius: 3px;
+  background: var(--meter-tip-bg);
+  border: 1px solid var(--meter-border);
+  font-size: 8px;
+  line-height: 1.5;
+  color: var(--meter-sub);
+  white-space: normal;
+  word-break: break-word;
+  animation: metersIn 0.12s ease-out both;
+}
+.meters-tip > div:first-child { color: var(--meter-fg); }
+
+@keyframes meterBlink {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.45; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .meter-gauge.live::after, .meter-pill.tone-danger, .meters-panel, .meters-tip { animation: none; }
+}
