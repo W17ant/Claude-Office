@@ -110,12 +110,19 @@ print(random.choice(replies))
 
         if [ -n "$REPLY" ]; then
             # Post reply (pass via env var to avoid shell quoting issues)
-            CHAT_REPLY="$REPLY" CHAT_SERVER="$SERVER" python3 << 'PYEOF'
+            # /chat/reply speaks as an agent, so it carries the office token
+            CHAT_REPLY="$REPLY" CHAT_SERVER="$SERVER" CHAT_TOKEN_FILE="$STATE_DIR/auth-token" python3 << 'PYEOF'
 import urllib.request, json, os
 text = os.environ['CHAT_REPLY']
 server = os.environ['CHAT_SERVER']
 data = json.dumps({'sender':'Claude','role':'assistant','text':text}).encode()
-req = urllib.request.Request(server + '/chat/reply', data=data, headers={'Content-Type':'application/json'}, method='POST')
+headers = {'Content-Type': 'application/json'}
+try:
+    with open(os.environ['CHAT_TOKEN_FILE']) as f:
+        headers['Authorization'] = 'Bearer ' + f.read().strip()
+except OSError:
+    pass
+req = urllib.request.Request(server + '/chat/reply', data=data, headers=headers, method='POST')
 resp = urllib.request.urlopen(req)
 print('[chat-watcher] POST:', resp.read().decode())
 PYEOF

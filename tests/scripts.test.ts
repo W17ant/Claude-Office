@@ -14,7 +14,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import request from 'supertest'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { listen, loadOffice, removeOffice, spawnAgent, type Office } from './helpers'
+import { listen, loadOffice, postAuthed, removeOffice, spawnAgent, type Office } from './helpers'
 
 const SCRIPTS = fileURLToPath(new URL('../scripts', import.meta.url))
 const WATCHER = join(SCRIPTS, 'chat-ai-watcher.sh')
@@ -112,6 +112,8 @@ interface WatcherWorld {
 async function startWatcher(opts: { maxPerMinute?: number; staleLock?: boolean } = {}): Promise<WatcherWorld> {
   const office = await loadOffice()
   const port = await listen(office.server.httpServer)
+  // What start() writes once the port is bound: the watcher reads it to post as an agent
+  writeFileSync(join(office.dir, 'auth-token'), office.server.AUTH_TOKEN, { mode: 0o600 })
   const home = tempDir('agent-office-script-home-')
   const bin = join(home, 'bin')
   fakeBin(bin, 'claude', FAKE_CLAUDE)
@@ -185,8 +187,7 @@ describe('chat-ai-watcher.sh', () => {
   it("ignores the server's starting:/done: announcements and directed agent-to-agent messages", async () => {
     spawnAgent(w.office.server, { id: 'agent-dbg', name: 'Debugger', role: 'debugger', task: 'fix the login bug' })
     spawnAgent(w.office.server, { id: 'agent-rev', name: 'Reviewer', role: 'code-reviewer', task: 'review the fix' })
-    await request(w.office.server.app).post('/chat/reply')
-      .send({ sender: 'Reviewer', role: 'code-reviewer', recipient: 'Debugger', text: 'is the login bug fixed?' })
+    await postAuthed(w.office.server, '/chat/reply', { sender: 'Reviewer', role: 'code-reviewer', recipient: 'Debugger', text: 'is the login bug fixed?' })
     w.office.server.processEvent({ type: 'agent_completed', agentId: 'agent-dbg', result: 'fixed the bug in login' })
 
     const msgs = await chat(w)

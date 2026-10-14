@@ -45,7 +45,7 @@ describe('POST /event validation', () => {
       agent: { id: 'agent-clamp', name: long, role: 'debugger', task: long },
     })
     expect(res.status).toBe(200)
-    expect(res.body).toEqual({ ok: true })
+    expect(res.body).toEqual({ ok: true, agentId: 'agent-clamp' })
     const agent = office.server.activeAgents.get('agent-clamp')
     expect(agent.name).toHaveLength(200)
     expect(agent.task).toHaveLength(200)
@@ -239,9 +239,10 @@ describe('agent_completed', () => {
     })
     expect(office.server.activeAgents.get('agent-toolu_01X').state).toBe('completed')
 
-    // Duplicate completion (SubagentStop after PostToolUse) is a no-op
+    // Duplicate completion (SubagentStop after PostToolUse) is a no-op — and
+    // nothing to broadcast, or the office would announce "done" twice
     const dup = office.server.processEvent({ type: 'agent_completed', agentId: 'agent-toolu_01X', result: 'again' })
-    expect(dup.agentId).toBe('agent-toolu_01X')
+    expect(dup).toBeNull()
     expect(office.server.activeAgents.get('agent-toolu_01X').state).toBe('completed')
 
     // Grace period: the record stays for 10s so the UI can animate the exit
@@ -280,9 +281,10 @@ describe('mcp_call and mcp_done', () => {
     expect(records[0]).toMatchObject({ name: 'github', role: 'github', server: 'github', tool: 'get_me', state: 'working' })
     expect(records[0].id).toMatch(/^mcp-github-\d+$/)
 
-    // Transient: visible in the roster/snapshot but not in the agent directory
+    // Transient: tracked in the map, but not an agent to draw — neither the
+    // roster/snapshot nor the agent directory lists it
     const roster = await request(office.server.app).get('/roster')
-    expect(roster.body.activeAgents.map((a: any) => a.id)).toContain(records[0].id)
+    expect(roster.body.activeAgents.map((a: any) => a.id)).not.toContain(records[0].id)
     const agents = await request(office.server.app).get('/agents')
     expect(agents.body.agents).toEqual([])
 

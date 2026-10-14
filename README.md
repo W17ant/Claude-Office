@@ -307,7 +307,7 @@ python3 scripts/agent-message.py --inbox Debugger
 
 Agents with unread messages get a red ✉ badge over their head until they read their inbox.
 
-Under the hood: `POST /chat/reply` takes `recipient`, `type` and `replyTo` (a leading `@Name` in the text works too), `GET /chat?recipient=<name>` returns a recipient's messages, `GET /agents` lists who's in the office, and the latest message per recipient is written to `~/.agent-office/inbox/<name>.json` for sessions that poll. Agents can't message themselves, and a pair of agents is limited to 10 messages a minute (`AGENT_OFFICE_A2A_LIMIT`) so two bots can't loop forever.
+Under the hood: `POST /chat/reply` takes `recipient`, `type` and `replyTo` (a leading `@Name` in the text works too), `GET /chat?recipient=<name>` returns a recipient's messages, `GET /agents` lists who's in the office, and the latest message per recipient is written to `~/.agent-office/inbox/<name>.json` for sessions that poll. Agents can't message themselves, and a pair of agents is limited to 10 messages a minute (`AGENT_OFFICE_A2A_LIMIT`) so two bots can't loop forever. `POST /chat/reply` and `POST /chat/inbox/read` speak for an agent, so they need the office bearer token (`Authorization: Bearer $(cat ~/.agent-office/auth-token)`); `scripts/agent-message.py` reads the token file for you. The read-only `--who` and `--inbox` listings do not.
 
 #### A2A protocol
 
@@ -317,10 +317,14 @@ The office also speaks a subset of the [Agent2Agent (A2A) protocol](https://a2a-
 |----------|--------------|
 | `GET /.well-known/agent-card.json` | Agent card for the office |
 | `GET /a2a/agents` | One agent card per agent in the office (with `metadata.officeId` and `unread`) |
-| `POST /a2a` | JSON-RPC 2.0 `message/send` |
+| `POST /a2a` | JSON-RPC 2.0 `message/send` (needs the bearer token) |
+
+`GET /.well-known/agent-card.json` and `GET /a2a/agents` are open (and the cards advertise a `bearer` security scheme). `POST /a2a` delivers a message as an agent, so it needs the office token — send it as `Authorization: Bearer <token>`, the contents of `~/.agent-office/auth-token`:
 
 ```bash
-curl -s localhost:3334/a2a -H 'content-type: application/json' -d '{
+curl -s localhost:3334/a2a \
+  -H 'content-type: application/json' \
+  -H "authorization: Bearer $(cat ~/.agent-office/auth-token)" -d '{
   "jsonrpc": "2.0", "id": 1, "method": "message/send",
   "params": { "message": {
     "kind": "message", "messageId": "m1", "role": "agent",
@@ -330,7 +334,7 @@ curl -s localhost:3334/a2a -H 'content-type: application/json' -d '{
 }'
 ```
 
-The recipient goes in `metadata.to` (name, role or office id); replies thread through `referenceTaskIds` or `metadata.replyTo`. Tasks and streaming aren't supported: every message is delivered as-is and the stored message comes back as the result.
+The recipient goes in `metadata.to` (name, role or office id); replies thread through `referenceTaskIds` or `metadata.replyTo`. Tasks and streaming aren't supported: every message is delivered as-is and the stored message comes back as the result. Without the token the call returns a JSON-RPC error with code `-32001`.
 
 ### Just me and Claude — chatting in the office
 ![Me & Claude](docs/images/Me%20&%20Claude.png)
@@ -394,10 +398,37 @@ Claude-Office/
 
 ## Security
 
-- Server binds to `127.0.0.1` only — not exposed to the network
-- Event endpoint (`/event`) requires a Bearer token generated at startup
-- Chat endpoints are unauthenticated (local single-user design)
-- Auth token stored in `~/.agent-office/auth-token` with `0600` permissions
+The server listens on `127.0.0.1` only, so it is never on the network. The
+threat it defends against is therefore other processes on the same machine (a
+malicious npm dependency, another local user on a shared host): loopback is not
+user-isolated, and nothing stops a local process from reaching the port.
+Browsers are kept out separately — the origin allowlist refuses every origin
+but the loopback UI (ports 3333/3334), and the JSON content type makes a
+cross-site POST preflight.
+
+So every route that **acts as an agent or destroys state** requires a bearer
+token, and the rest stay open:
+
+| | Routes | Why |
+|---|---|---|
+| **Token required** | `POST /event`, `/chat/reply`, `/a2a`, `/chat/inbox/read`, `/chat/seen`, `/chat/react`, `/chat/video-mode`, and `POST /chat` for a destructive slash command (`/clear`) | Speaks for an agent, writes another agent's inbox, or wipes history — a local process must not be able to do these |
+| **Open** | every `GET`, `POST /chat` (a plain line a person typed, and the read-only `/status` · `/agents` · `/help` · `/incident` · `/all-clear` commands), `POST /chat/typing`, `POST /chat/cron-state` | The office UI has no token; the worst these do is read what the office already shows or post a chat line |
+
+- The token is 32 random bytes generated at startup and written to
+  `~/.agent-office/auth-token` (mode `0600`) **only once the port is bound**, so
+  starting a second server while one is running no longer clobbers the live
+  token. Send it as `Authorization: Bearer <token>`; the hook and the office
+  scripts (`chat-reply.py`, `agent-message.py`, the chat watchers) read the file
+  and do this for you. The token check is constant-time.
+- Everything the server writes under `~/.agent-office` (the token, `agents.json`,
+  the A2A inbox files, `last-chat`, the chat-monitor state) is mode `0600` and
+  the dir is `0700`, so another local user can't read directed messages or the
+  latest chat.
+- Errors are returned as `{ "error": ... }` with no stack trace or absolute
+  path; message ids are validated and a message's reactions are capped.
+- `GET /roster` and `GET /agents` do expose each agent's task text and the names
+  of the configured MCP servers. That is the office's purpose, it is localhost
+  only, and anything on the machine can already read `~/.claude/settings.json`.
 
 ## Desktop App (Electron)
 
