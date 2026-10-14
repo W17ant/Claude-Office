@@ -164,6 +164,27 @@ const ARRIVAL_THRESHOLD = 0.3
 // Minimum time (ms) an agent stays visible after spawning before they can leave
 const MIN_VISIBLE_TIME = 30_000
 
+// Directed agent-to-agent messages: icon per message type, and how long the
+// sender stays at the recipient's desk before walking back
+const A2A_ICONS: Record<string, string> = {
+  message:        '💬',
+  question:       '❓',
+  review_request: '👀',
+  task_handoff:   '📦',
+}
+const A2A_VISIT_MS = 6000
+
+/** Match a chat sender/recipient to an agent in the office: id first, then name or role. */
+function findOfficeAgent(agents: Agent[], id: string | null | undefined, ref: string | null | undefined): Agent | undefined {
+  if (id) {
+    const byId = agents.find(a => a.id === id)
+    if (byId) return byId
+  }
+  if (!ref) return undefined
+  const want = ref.toLowerCase()
+  return agents.find(a => a.name.toLowerCase() === want) ?? agents.find(a => a.role.toLowerCase() === want)
+}
+
 interface AgentMeta {
   /** Timestamp when agent spawned */
   spawnedAt: number
@@ -824,9 +845,44 @@ const App: React.FC = () => {
               msgSender = claudeCfg.title; msgRole = CLAUDE_ROLE; msgColor = claudeCfg.color
             }
           }
-          // Use setTimeout to escape the setAgents updater before calling addMsg
-          setTimeout(() => addMsg(msgSender, msgRole, msgColor, text), 0)
-          return prev
+          const recipient = event.recipient
+          if (!recipient) {
+            // Use setTimeout to escape the setAgents updater before calling addMsg
+            setTimeout(() => addMsg(msgSender, msgRole, msgColor, text), 0)
+            return prev
+          }
+
+          // Directed agent-to-agent message: show who it's for, and walk the
+          // sender over to the recipient's desk for a quick chat
+          const fromAgent = findOfficeAgent(prev, event.senderId, sender)
+          const toAgent = findOfficeAgent(prev, event.recipientId, recipient)
+          if (fromAgent) {
+            const cfg = AGENT_CONFIGS[fromAgent.role] ?? AGENT_CONFIGS['default']
+            msgSender = fromAgent.name; msgRole = fromAgent.role; msgColor = cfg.color
+          }
+          const icon = A2A_ICONS[event.msg_type ?? 'message'] ?? A2A_ICONS.message
+          const directed = `${icon} → @${toAgent?.name ?? recipient}: ${text}`
+          setTimeout(() => addMsg(msgSender, msgRole, msgColor, directed), 0)
+
+          if (!fromAgent || !toAgent || fromAgent.id === toAgent.id || fromAgent.id === BOSS_ID) return prev
+          const visitSpot = { x: toAgent.deskPosition.x + 4, y: toAgent.deskPosition.y + 2 }
+          const visitorId = fromAgent.id
+          setTimeout(() => {
+            setAgents(cur => cur.map(a => a.id !== visitorId || a.state === 'completed' ? a : {
+              ...a,
+              state: 'walking-to-desk' as const,
+              targetPosition: { ...a.deskPosition },
+              pathQueue: computePath(a.position, a.deskPosition),
+              statusText: 'back to work',
+            }))
+          }, A2A_VISIT_MS)
+          return prev.map(a => a.id !== visitorId ? a : {
+            ...a,
+            state: 'walking-to-desk' as const,
+            targetPosition: visitSpot,
+            pathQueue: computePath(a.position, visitSpot),
+            statusText: `talking to ${toAgent.name}`,
+          })
         }
 
         default:

@@ -45,6 +45,11 @@ export interface OfficeEvent {
   result?: string
   sender?: string
   text?: string
+  // Directed agent-to-agent chat messages
+  recipient?: string | null
+  recipientId?: string | null
+  senderId?: string | null
+  msg_type?: string | null
 }
 
 import { BOSS_NAME, BOSS_COLOR, BOSS_EMOJI } from './config'
