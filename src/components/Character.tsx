@@ -155,6 +155,10 @@ const Character: React.FC<CharacterProps> = ({ agent, idleDurationMs = 0, zIndex
         <div className="char-project">{projectTag}</div>
       )}
 
+      {agent.state === 'waiting' && (
+        <div className="char-waiting">waiting for a desk</div>
+      )}
+
       {!!agent.unread && (
         <div className="char-unread" title={`${agent.unread} unread message${agent.unread === 1 ? '' : 's'}`}>
           ✉ {agent.unread > 9 ? '9+' : agent.unread}
@@ -184,4 +188,6 @@ const Character: React.FC<CharacterProps> = ({ agent, idleDurationMs = 0, zIndex
   )
 }
 
-export default Character
+// Why: the animation tick re-renders App up to 60 times a second while anyone
+// walks; an agent whose object did not change keeps its previous render
+export default React.memo(Character)

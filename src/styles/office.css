@@ -470,6 +470,23 @@
   pointer-events: none;
 }
 
+/* Lobby tag — an agent standing by the door until a desk frees up */
+.char-waiting {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translate(-50%, -2px);
+  z-index: 12;
+  padding: 0 4px;
+  border-radius: 2px;
+  background: rgba(10, 8, 6, 0.75);
+  color: #ffd166;
+  font: 7px/11px 'JetBrains Mono', monospace;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 /* ===== CHARACTER STATES ===== */
 .character-wrapper.state-idle .char-sprite {
   animation: idleBob 3s ease-in-out infinite;
