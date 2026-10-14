@@ -192,6 +192,19 @@ describe('agent-tracker.sh: captured 2.1.300 payloads', () => {
     scratchpad_dir: '/tmp/claude-0/-tmp-claude-0--home-user-Claude-Office-c25c5511-f321-521a-825b-f189ac4d57e8-scratchpad-hookcap/8cf68f64-5433-40f7-a130-557fc7f67e42/scratchpad',
     prompt_id: 'd0f0818e-428e-4732-b3f2-6830d470b485',
   }
+  // What every event made from `common` carries: the session it came from
+  const session = {
+    sessionId: common.session_id,
+    project: 'hookcap',
+    cwd: common.cwd,
+    transcriptPath: common.transcript_path,
+  }
+  // The other capture session (c25c5511…) that some payloads below belong to
+  const other = {
+    session_id: 'c25c5511-f321-521a-825b-f189ac4d57e8',
+    transcript_path: '/root/.claude/projects/-tmp-claude-0--home-user-Claude-Office-c25c5511-f321-521a-825b-f189ac4d57e8-scratchpad-hookcap/c25c5511-f321-521a-825b-f189ac4d57e8.jsonl',
+  }
+  const otherSession = { sessionId: other.session_id, project: 'hookcap', cwd: common.cwd, transcriptPath: other.transcript_path }
 
   it('SubagentStart -> agent_started: agent_id is the new subagent, no parent is named', () => {
     expect(runHook({
@@ -199,7 +212,7 @@ describe('agent-tracker.sh: captured 2.1.300 payloads', () => {
       agent_id: 'ac5ff55b850b4fecf',
       agent_type: 'general-purpose',
       hook_event_name: 'SubagentStart',
-    })).toEqual({ type: 'agent_started', subagentId: 'ac5ff55b850b4fecf', agentType: 'general-purpose' })
+    })).toEqual({ type: 'agent_started', subagentId: 'ac5ff55b850b4fecf', agentType: 'general-purpose', ...session })
 
     // No agent_type: a sidechain, not a worker
     expect(runHook({ ...common, agent_id: 'a4b69979afca21afd', agent_type: '', hook_event_name: 'SubagentStart' })).toBeNull()
@@ -217,6 +230,7 @@ describe('agent-tracker.sh: captured 2.1.300 payloads', () => {
     })).toEqual({
       type: 'agent_spawned',
       agent: { id: 'agent-toolu_01B8Zp1BDnyYNe7SEsseUD22', name: 'Agent', role: 'general-purpose', task: 'Count etc', agentType: 'general-purpose', background: true },
+      ...session,
     })
   })
 
@@ -241,13 +255,15 @@ describe('agent-tracker.sh: captured 2.1.300 payloads', () => {
       },
       tool_use_id: 'toolu_01B8Zp1BDnyYNe7SEsseUD22',
       duration_ms: 10,
-    })).toEqual({ type: 'agent_linked', agentId: 'agent-toolu_01B8Zp1BDnyYNe7SEsseUD22', subagentId: 'ac5ff55b850b4fecf' })
+    })).toEqual({ type: 'agent_linked', agentId: 'agent-toolu_01B8Zp1BDnyYNe7SEsseUD22', subagentId: 'ac5ff55b850b4fecf', ...session })
   })
 
   it('PreToolUse Bash inside the subagent -> agent_working on that subagent', () => {
+    // A hook fired inside a subagent carries the PARENT session's session_id
+    // (the subagent transcript lives under <session_id>/subagents/), so the
+    // working event files the worker under the terminal that spawned it
     expect(runHook({
-      session_id: 'c25c5511-f321-521a-825b-f189ac4d57e8',
-      transcript_path: '/root/.claude/projects/-tmp-claude-0--home-user-Claude-Office-c25c5511-f321-521a-825b-f189ac4d57e8-scratchpad-hookcap/c25c5511-f321-521a-825b-f189ac4d57e8.jsonl',
+      ...other,
       cwd: common.cwd,
       scratchpad_dir: '/tmp/claude-0/-tmp-claude-0--home-user-Claude-Office-c25c5511-f321-521a-825b-f189ac4d57e8-scratchpad-hookcap/c25c5511-f321-521a-825b-f189ac4d57e8/scratchpad',
       prompt_id: '60d87662-ef42-4452-a6bd-cd9718825c5b',
@@ -266,6 +282,7 @@ describe('agent-tracker.sh: captured 2.1.300 payloads', () => {
       agentType: 'general-purpose',
       role: 'general-purpose',
       name: 'Agent',
+      ...otherSession,
     })
   })
 
@@ -283,7 +300,7 @@ describe('agent-tracker.sh: captured 2.1.300 payloads', () => {
       last_assistant_message: last,
       background_tasks: [{ id: 'ac5ff55b850b4fecf', type: 'subagent', status: 'running', description: 'Count etc', agent_type: 'general-purpose' }],
       session_crons: [],
-    })).toEqual({ type: 'agent_completed', agentId: 'ac5ff55b850b4fecf', result: last.slice(0, 120) })
+    })).toEqual({ type: 'agent_completed', agentId: 'ac5ff55b850b4fecf', result: last.slice(0, 120), ...session })
   })
 
   it('phantom SubagentStop (compaction summariser, agent_type "") -> nothing', () => {
@@ -340,6 +357,7 @@ describe('agent-tracker.sh: captured 2.1.300 payloads', () => {
       effort: { level: 'medium' },
       hook_event_name: 'PostToolUseFailure',
     }
+    const failureSession = { sessionId: failure.session_id, project: 'hookcap', cwd: failure.cwd, transcriptPath: failure.transcript_path }
     expect(runHook({
       ...failure,
       tool_name: 'Bash',
@@ -352,6 +370,7 @@ describe('agent-tracker.sh: captured 2.1.300 payloads', () => {
       type: 'agent_working',
       status: 'failed: Bash — Exit code 1 cat: /definitely/not/here: No such file or direc',
       failed: true,
+      ...failureSession,
     })
 
     expect(runHook({
@@ -362,7 +381,7 @@ describe('agent-tracker.sh: captured 2.1.300 payloads', () => {
       error: 'Exit code 1',
       is_interrupt: false,
       duration_ms: 53,
-    })).toEqual({ type: 'agent_working', status: 'failed: Bash — Exit code 1', failed: true })
+    })).toEqual({ type: 'agent_working', status: 'failed: Bash — Exit code 1', failed: true, ...failureSession })
   })
 
   it('PostToolUseFailure of an MCP call -> mcp_done, of an Agent launch -> agent_completed', () => {
@@ -376,6 +395,139 @@ describe('agent-tracker.sh: captured 2.1.300 payloads', () => {
       tool_input: { description: 'Nope', prompt: '...', subagent_type: 'does-not-exist' },
       error: 'Agent type \'does-not-exist\' not found.', is_interrupt: false, duration_ms: 3,
     })).toEqual({ type: 'agent_completed', agentId: 'agent-toolu_01X', result: "failed: Agent type 'does-not-exist' not found." })
+  })
+})
+
+/**
+ * Sessions. SessionStart / SessionEnd payloads captured verbatim from Claude
+ * Code 2.1.300 (scratchpad/hookcap/events.jsonl, 2026-10-14): session_id,
+ * transcript_path and cwd are in the base schema of every hook event.
+ */
+describe('agent-tracker.sh: sessions', () => {
+  const base = {
+    session_id: 'c25c5511-f321-521a-825b-f189ac4d57e8',
+    transcript_path: '/root/.claude/projects/-tmp-claude-0--home-user-Claude-Office-c25c5511-f321-521a-825b-f189ac4d57e8-scratchpad-hookcap/c25c5511-f321-521a-825b-f189ac4d57e8.jsonl',
+    cwd: '/tmp/claude-0/-home-user-Claude-Office/c25c5511-f321-521a-825b-f189ac4d57e8/scratchpad/hookcap',
+    scratchpad_dir: '/tmp/claude-0/-tmp-claude-0--home-user-Claude-Office-c25c5511-f321-521a-825b-f189ac4d57e8-scratchpad-hookcap/c25c5511-f321-521a-825b-f189ac4d57e8/scratchpad',
+  }
+  const session = { sessionId: base.session_id, project: 'hookcap', cwd: base.cwd, transcriptPath: base.transcript_path }
+
+  it('SessionStart {source: startup} -> session_started (no model on a bare startup)', () => {
+    expect(runHook({ ...base, hook_event_name: 'SessionStart', source: 'startup' }))
+      .toEqual({ type: 'session_started', source: 'startup', ...session })
+  })
+
+  it('SessionStart {source: startup, model} -> session_started with the model', () => {
+    expect(runHook({
+      session_id: '19616213-277c-4e70-9909-9883230a3394',
+      transcript_path: '/root/.claude/projects/-tmp-claude-0--home-user-Claude-Office-c25c5511-f321-521a-825b-f189ac4d57e8-scratchpad-hookcap/19616213-277c-4e70-9909-9883230a3394.jsonl',
+      cwd: base.cwd,
+      scratchpad_dir: '/tmp/claude-0/-tmp-claude-0--home-user-Claude-Office-c25c5511-f321-521a-825b-f189ac4d57e8-scratchpad-hookcap/19616213-277c-4e70-9909-9883230a3394/scratchpad',
+      hook_event_name: 'SessionStart',
+      source: 'startup',
+      model: 'claude-haiku-5-5',
+    })).toEqual({
+      type: 'session_started',
+      source: 'startup',
+      model: 'claude-haiku-5-5',
+      sessionId: '19616213-277c-4e70-9909-9883230a3394',
+      project: 'hookcap',
+      cwd: base.cwd,
+      transcriptPath: '/root/.claude/projects/-tmp-claude-0--home-user-Claude-Office-c25c5511-f321-521a-825b-f189ac4d57e8-scratchpad-hookcap/19616213-277c-4e70-9909-9883230a3394.jsonl',
+    })
+  })
+
+  it('SessionStart {source: resume} (claude -r) -> session_started with the same session id; token fields are dropped', () => {
+    expect(runHook({
+      ...base,
+      hook_event_name: 'SessionStart',
+      source: 'resume',
+      seconds_since_last_response: 5,
+      context_tokens: 44052,
+      prompt_cache_likely_expired: false,
+      estimated_cache_write_usd: 0.0088,
+    })).toEqual({ type: 'session_started', source: 'resume', ...session })
+  })
+
+  it('SessionStart {source: compact, model} -> session_started with the model (the server treats it as an update)', () => {
+    expect(runHook({
+      ...base,
+      prompt_id: 'e40b57ac-50aa-4bae-a043-8852cc9ba9c7',
+      hook_event_name: 'SessionStart',
+      source: 'compact',
+      model: 'claude-haiku-5-5',
+    })).toEqual({ type: 'session_started', source: 'compact', model: 'claude-haiku-5-5', ...session })
+  })
+
+  it('a named session (session_title) -> title; source defaults to startup', () => {
+    // session_title only exists when the session was named (--name / /rename)
+    expect(runHook({ ...base, hook_event_name: 'SessionStart', source: 'fork', session_title: 'office refactor' }))
+      .toEqual({ type: 'session_started', source: 'fork', title: 'office refactor', ...session })
+    expect(runHook({ ...base, hook_event_name: 'SessionStart' })?.source).toBe('startup')
+  })
+
+  it('SessionEnd {reason: other} (every -p exit) and {reason: prompt_input_exit} (/exit) -> session_ended', () => {
+    expect(runHook({ ...base, prompt_id: '54f01295-3ff5-45ab-a738-b0598eae881d', hook_event_name: 'SessionEnd', reason: 'other' }))
+      .toEqual({ type: 'session_ended', reason: 'other', ...session })
+    expect(runHook({
+      session_id: '19616213-277c-4e70-9909-9883230a3394',
+      transcript_path: '/t/19616213.jsonl',
+      cwd: base.cwd,
+      prompt_id: 'f2fb3821-dd71-4d36-95ff-ae5cdedfaf8f',
+      hook_event_name: 'SessionEnd',
+      reason: 'prompt_input_exit',
+    })).toEqual({
+      type: 'session_ended', reason: 'prompt_input_exit',
+      sessionId: '19616213-277c-4e70-9909-9883230a3394', project: 'hookcap', cwd: base.cwd, transcriptPath: '/t/19616213.jsonl',
+    })
+  })
+
+  it('SessionStart/SessionEnd without a session_id emit nothing', () => {
+    expect(runHook({ hook_event_name: 'SessionStart', source: 'startup' })).toBeNull()
+    expect(runHook({ hook_event_name: 'SessionEnd', reason: 'other' })).toBeNull()
+  })
+
+  it('every emitted event carries sessionId, project, cwd and transcriptPath', () => {
+    const payloads: Array<Record<string, unknown>> = [
+      { hook_event_name: 'PreToolUse', tool_name: 'Agent', tool_use_id: 'toolu_1', tool_input: { description: 'Count etc', subagent_type: 'general-purpose', run_in_background: true } },
+      { hook_event_name: 'PostToolUse', tool_name: 'Agent', tool_use_id: 'toolu_1', tool_input: { run_in_background: true }, tool_response: { status: 'async_launched', agentId: 'ac5ff55b850b4fecf' } },
+      { hook_event_name: 'PostToolUse', tool_name: 'Agent', tool_use_id: 'toolu_2', tool_input: {}, tool_response: { status: 'completed', content: [{ type: 'text', text: 'ok' }] } },
+      { hook_event_name: 'PostToolUseFailure', tool_name: 'Agent', tool_use_id: 'toolu_3', tool_input: {}, error: 'nope' },
+      { hook_event_name: 'SubagentStart', agent_id: 'ac5ff55b850b4fecf', agent_type: 'general-purpose' },
+      { hook_event_name: 'SubagentStop', agent_id: 'ac5ff55b850b4fecf', agent_type: 'general-purpose', last_assistant_message: 'done' },
+      { hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input: { file_path: '/x/y.js' } },
+      { hook_event_name: 'PreToolUse', tool_name: 'Bash', agent_id: 'ac5ff55b850b4fecf', agent_type: 'general-purpose', tool_input: { command: 'ls' } },
+      { hook_event_name: 'PostToolUseFailure', tool_name: 'Bash', tool_input: { command: 'false' }, error: 'Exit code 1' },
+      { hook_event_name: 'PreToolUse', tool_name: 'mcp__github__get_me', tool_input: {} },
+      { hook_event_name: 'PostToolUse', tool_name: 'mcp__github__get_me', tool_input: {}, tool_response: {} },
+      { hook_event_name: 'PostToolUse', tool_name: 'SubagentHandback', tool_input: { agent_id: 'ac5ff55b850b4fecf' }, tool_response: 'report' },
+      { hook_event_name: 'SessionStart', source: 'startup' },
+      { hook_event_name: 'SessionEnd', reason: 'other' },
+    ]
+    const types = payloads.map(p => {
+      const ev = runHook({ ...base, ...p })
+      expect(ev, JSON.stringify(p)).toMatchObject(session)
+      return ev?.type
+    })
+    expect(types).toEqual([
+      'agent_spawned', 'agent_linked', 'agent_completed', 'agent_completed', 'agent_started', 'agent_completed',
+      'agent_working', 'agent_working', 'agent_working', 'mcp_call', 'mcp_done', 'agent_completed',
+      'session_started', 'session_ended',
+    ])
+  })
+
+  it('project is the last path segment of cwd (trailing slash tolerated; "/" stays "/")', () => {
+    const read = { hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input: { file_path: '/x' }, session_id: 's', transcript_path: '/t.jsonl' }
+    expect(runHook({ ...read, cwd: '/home/me/Claude-Office' })?.project).toBe('Claude-Office')
+    expect(runHook({ ...read, cwd: '/home/me/Claude-Office/' })?.project).toBe('Claude-Office')
+    expect(runHook({ ...read, cwd: '/' })?.project).toBe('/')
+    // No cwd: no project/cwd keys, but the session id still travels
+    expect(runHook({ ...read })).toEqual({ type: 'agent_working', status: 'reading x', sessionId: 's', transcriptPath: '/t.jsonl' })
+  })
+
+  it('payloads without session fields (older hooks, hand-made events) emit the old shapes unchanged', () => {
+    expect(runHook({ hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input: { file_path: '/a/b.js' } }))
+      .toEqual({ type: 'agent_working', status: 'reading b.js' })
   })
 })
 
