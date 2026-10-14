@@ -17,8 +17,9 @@
  *                   agents: [{ id, tokens, contextSize?, status?, agentType?, name?, model?, description? }] }
  *   GET  /status  → { sessions: [...], totals: { costToday, tokensPerMin, dollarsPerMin } }
  *
- * Same bearer token as POST /event. Broadcasts `session_status` (one session,
- * with the totals) and `agent_status`; the WS snapshot carries the whole
+ * Same bearer check as POST /event: server/index.js passes its `requireToken`
+ * middleware (constant-time compare) in. Broadcasts `session_status` (one
+ * session, with the totals) and `agent_status`; the WS snapshot carries the whole
  * summary as `statuses`. The store is keyed by session_id — the key of
  * server/index.js's `sessions` map — and borrows a session's project name
  * from there when the status line did not say. Memory only (v1); a session
@@ -280,21 +281,19 @@ export function createStatusStore({ staleMs = 120 * 60_000, sessions = null, now
 }
 
 /**
- * Mount POST /status + GET /status on an Express app. Returns the store,
- * which is also reachable as app.locals.status. The stale sweep runs every
- * `sweepMs` on an unref'd timer, so importing the server never keeps a
- * process alive.
+ * Mount POST /status + GET /status on an Express app. `requireToken` is the
+ * office's bearer middleware (server/index.js's constant-time token check),
+ * handed in rather than imported so this module never pulls in index.js.
+ * Returns the store, which is also reachable as app.locals.status. The stale
+ * sweep runs every `sweepMs` on an unref'd timer, so importing the server
+ * never keeps a process alive.
  */
-export function mountStatus(app, { authToken, broadcast, staleMs, sessions, sweepMs = 60_000 } = {}) {
+export function mountStatus(app, { requireToken, broadcast, staleMs, sessions, sweepMs = 60_000 } = {}) {
+  if (typeof requireToken !== 'function') throw new TypeError('mountStatus needs the requireToken middleware')
   const store = createStatusStore({ staleMs, sessions })
   app.locals.status = store
 
-  app.post('/status', (req, res) => {
-    const authHeader = req.headers['authorization'] ?? ''
-    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : ''
-    if (token !== authToken) {
-      return res.status(401).json({ error: 'Unauthorized' })
-    }
+  app.post('/status', requireToken, (req, res) => {
     const validationError = validateStatus(req.body)
     if (validationError) {
       return res.status(400).json({ error: validationError })
