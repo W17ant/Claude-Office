@@ -5,14 +5,14 @@
  * Users can customise their boss name, sprite, and colour there.
  */
 
-// Load user config (office.config.json) — bundled by Vite
-let userConfig: { boss?: { name?: string; sprite?: string; color?: string; emoji?: string } } = {}
-try {
-  // Vite handles JSON imports at build time
-  userConfig = await import('../office.config.json')
-} catch {
-  // Fallback defaults if file missing
-}
+// Shape of the optional office.config.json
+type UserConfig = { boss?: { name?: string; sprite?: string; color?: string; emoji?: string } }
+
+// Load user config (office.config.json) — bundled by Vite.
+// import.meta.glob is resolved at build time and yields {} when the file is
+// missing, so no top-level await is needed (the build target rejects it).
+const userConfigModules = import.meta.glob<UserConfig>('../office.config.json', { eager: true, import: 'default' })
+const userConfig: UserConfig = Object.values(userConfigModules)[0] ?? {}
 
 const bossName   = userConfig.boss?.name   ?? 'Boss'
 const bossSprite = userConfig.boss?.sprite ?? 'Me-1'
