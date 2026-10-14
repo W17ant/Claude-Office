@@ -3,11 +3,17 @@
  * burn-rate math, the WS broadcast + snapshot, and expiry.
  */
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import request from 'supertest'
 import WebSocket from 'ws'
 import { listen, loadOffice, removeOffice, type Office, type OfficeServer } from './helpers'
 import { BURN_WINDOW_MS, HISTORY_POINTS, computeBurn, createStatusStore, validateStatus } from '../server/status.js'
+
+// Pass-through mock so the test can see the server reach for timingSafeEqual
+vi.mock('crypto', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('node:crypto')>()
+  return { ...mod, timingSafeEqual: vi.fn(mod.timingSafeEqual) }
+})
 
 const SID = '8cf68f64-5433-40f7-a130-557fc7f67e42'
 
@@ -143,6 +149,38 @@ describe('POST /status', () => {
 
     const summary = await request(office.server.app).get('/status')
     expect(summary.body.sessions.find((s: any) => s.sessionId === SID).agents).toEqual(agents)
+  })
+})
+
+describe('POST /status token comparison', () => {
+  let office: Office
+  beforeAll(async () => { office = await loadOffice() })
+  afterAll(() => removeOffice(office))
+
+  it('runs the same constant-time check as POST /event: wrong-length and same-length impostors get 401, the token 200', async () => {
+    const { timingSafeEqual } = await import('crypto')
+    const spy = timingSafeEqual as unknown as ReturnType<typeof vi.fn>
+    spy.mockClear()
+
+    const token = office.server.AUTH_TOKEN
+    expect(token).toHaveLength(64)
+    const impostor = token.slice(0, -1) + (token.endsWith('0') ? '1' : '0')
+    for (const bad of [token.slice(0, 63), token + '0', impostor, '']) {
+      const res = await postStatus(office.server, status(), bad)
+      expect(res.status, JSON.stringify(bad)).toBe(401)
+      expect(res.body).toEqual({ error: 'Unauthorized' })
+      // The shared requireToken middleware answers, not a status.js copy of the check
+      expect(res.headers['www-authenticate']).toBe('Bearer realm="agent-office"')
+    }
+    expect(store(office).has(SID)).toBe(false)
+
+    const ok = await postStatus(office.server, status())
+    expect(ok.status).toBe(200)
+    expect(ok.body).toEqual({ ok: true })
+    expect(store(office).has(SID)).toBe(true)
+
+    // Only same-length candidates reach the constant-time compare: the impostor and the real token
+    expect(spy).toHaveBeenCalledTimes(2)
   })
 })
 

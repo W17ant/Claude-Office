@@ -603,7 +603,7 @@ app.options('*', (_req, res) => res.sendStatus(204))
 
 // Payroll / electricity / memory: POST /status + GET /status (server/status.js),
 // fed by the Claude Code status line and keyed by the same session ids as `sessions`
-const status = mountStatus(app, { authToken: AUTH_TOKEN, broadcast, staleMs: STALE_AGENT_MS, sessions })
+const status = mountStatus(app, { requireToken, broadcast, staleMs: STALE_AGENT_MS, sessions })
 
 // Health check
 app.get('/health', (_req, res) => {
