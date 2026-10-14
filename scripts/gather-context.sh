@@ -1,16 +1,26 @@
 #!/usr/bin/env bash
 # Gathers current dev context for chat AI prompt enrichment
-SERVER="http://127.0.0.1:3334"
+#
+# Git context comes from the first of these that is a git checkout:
+#   $AGENT_OFFICE_PROJECT (if set), the current directory, then this repo.
+# Every line is optional — missing git, a non-repo cwd or a stopped office
+# server just leave it out.
+PORT="${AGENT_OFFICE_PORT:-3334}"
+SERVER="http://127.0.0.1:$PORT"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(dirname "$SCRIPT_DIR")"
+
 echo "Current context:"
 
-# Git branch (check common project dirs)
-for dir in /Users/Antony/agent-office /Users/Antony; do
-    BRANCH=$(cd "$dir" && git branch --show-current 2>/dev/null)
+# Git branch
+for dir in "${AGENT_OFFICE_PROJECT:-}" "$PWD" "$REPO_DIR"; do
+    [ -n "$dir" ] && [ -d "$dir" ] || continue
+    BRANCH=$(git -C "$dir" branch --show-current 2>/dev/null)
     if [ -n "$BRANCH" ]; then
-        LAST_COMMIT=$(cd "$dir" && git log --oneline -1 2>/dev/null)
+        LAST_COMMIT=$(git -C "$dir" log --oneline -1 2>/dev/null)
         echo "- Branch: $BRANCH"
         echo "- Last commit: $LAST_COMMIT"
-        RECENT=$(cd "$dir" && git diff --name-only HEAD~1 2>/dev/null | head -3 | sed 's/^/- Changed: /')
+        RECENT=$(git -C "$dir" diff --name-only HEAD~1 2>/dev/null | head -3 | sed 's/^/- Changed: /')
         [ -n "$RECENT" ] && echo "$RECENT"
         break
     fi
@@ -27,4 +37,5 @@ if agents:
 else:
     print('- No active agents')
 " 2>/dev/null)
-echo "$AGENTS"
+[ -n "$AGENTS" ] && echo "$AGENTS"
+exit 0
