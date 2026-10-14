@@ -50,6 +50,7 @@ interface SnapshotMessage {
     role: string
     task?: string
     state: string
+    unread?: number
   }>
   mcpServers: string[]
   timestamp: number
@@ -145,6 +146,9 @@ export function useAgentSocket(options: AgentSocketOptions = {}): AgentSocketRes
           },
         }
         pushEvent(event)
+        if (agent.unread) {
+          pushEvent({ type: 'inbox_update', agentId: agent.id, unread: agent.unread })
+        }
       }
       return
     }

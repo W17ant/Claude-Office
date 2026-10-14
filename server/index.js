@@ -19,7 +19,7 @@ import { randomBytes } from 'crypto'
 import { execFile } from 'child_process'
 import { fileURLToPath } from 'url'
 import { dirname } from 'path'
-import { addMessage, getMessages, markSeen, addReaction } from './chat-db.js'
+import { addMessage, getMessages, markSeen, addReaction, markInboxRead } from './chat-db.js'
 import db from './chat-db.js'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -492,33 +492,18 @@ function inboxSlug(name) {
   return name.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '') || 'unknown'
 }
 
-/**
- * GET /agents — directory of who is in the office right now, so agents can
- * discover each other before sending a directed message.
- */
-app.get('/agents', (_req, res) => {
-  const agents = Array.from(activeAgents.values())
-    .filter(a => !a.server && a.state !== 'completed')
-    .map(({ id, name, role, task, state, status, background, spawnedAt, lastActivityAt }) =>
-      ({ id, name, role, task, state, status, background, spawnedAt, lastActivityAt }))
-  res.json({ agents })
-})
+/** The names a directed message to this agent may have been addressed by. */
+function agentAddresses(agent) {
+  return [agent.id, agent.subagentId, agent.name, agent.role].filter(Boolean)
+}
 
 /**
- * POST /chat/reply — Claude replies as an agent in the office Slack
- * Body: { sender: "AgentName", role: "code-reviewer", text: "message",
- *         recipient?: "Debugger", type?: "question", replyTo?: <messageId> }
- *
- * With a recipient (or a leading "@Name" in the text) the message is directed:
- * it is stored with the recipient, readable via GET /chat?recipient=<name>, and
- * the latest one is written to ~/.agent-office/inbox/<recipient>.json so the
- * recipient's session can pick it up like last-chat.
+ * Send a directed (agent-to-agent) or plain reply message. Shared by
+ * POST /chat/reply and the A2A JSON-RPC endpoint.
+ * @returns {{ error?: string, status?: number, msg?: object, to?: string|null, recipientAgent?: object|null }}
  */
-app.post('/chat/reply', (req, res) => {
-  const { sender, role, text, recipient, type, replyTo, senderId } = req.body ?? {}
-  if (!text || typeof text !== 'string') {
-    return res.status(400).json({ error: 'Missing text' })
-  }
+function sendAgentMessage({ sender, role, text, recipient, type, replyTo, senderId }) {
+  if (!text || typeof text !== 'string') return { error: 'Missing text', status: 400 }
 
   let to = clampString(recipient)?.trim() || null
   let body = text
@@ -540,19 +525,18 @@ app.post('/chat/reply', (req, res) => {
     recipientAgent = findAgent(to)
     const sameAgent = recipientAgent && senderAgent && recipientAgent.id === senderAgent.id
     if (sameAgent || to.toLowerCase() === from.toLowerCase()) {
-      return res.status(400).json({ error: 'An agent cannot message itself' })
+      return { error: 'An agent cannot message itself', status: 400 }
     }
     if (!a2aBudgetLeft(from, to)) {
-      return res.status(429).json({ error: `Loop budget hit: ${from} and ${to} have exchanged ${A2A_PAIR_LIMIT} messages in the last minute` })
+      return { error: `Loop budget hit: ${from} and ${to} have exchanged ${A2A_PAIR_LIMIT} messages in the last minute`, status: 429 }
     }
   }
 
-  const threadId = Number.isInteger(replyTo) ? replyTo : null
   const msg = addMessage({
     sender: from,
     role: clampString(role || 'default'),
     text: clampString(body, 2000),
-    threadId,
+    threadId: Number.isInteger(replyTo) ? replyTo : null,
     recipient: to,
     msgType,
   })
@@ -571,11 +555,164 @@ app.post('/chat/reply', (req, res) => {
       mkdirSync(inboxDir, { recursive: true })
       writeFileSync(join(inboxDir, `${inboxSlug(to)}.json`), JSON.stringify(msg), 'utf8')
     } catch {}
+    if (recipientAgent) {
+      recipientAgent.unread = (recipientAgent.unread ?? 0) + 1
+      saveAgents()
+      broadcast({ type: 'inbox_update', agentId: recipientAgent.id, unread: recipientAgent.unread })
+    }
     console.log(`[a2a] ${msg.sender} -> ${to} (${msgType}): ${msg.text}`)
   } else {
     console.log(`[reply] ${msg.sender}: ${msg.text}`)
   }
-  res.json({ ok: true, id: msg.id, recipient: to, delivered: !!recipientAgent })
+  return { msg, to, recipientAgent }
+}
+
+/**
+ * GET /agents — directory of who is in the office right now, so agents can
+ * discover each other before sending a directed message.
+ */
+app.get('/agents', (_req, res) => {
+  const agents = Array.from(activeAgents.values())
+    .filter(a => !a.server && a.state !== 'completed')
+    .map(({ id, name, role, task, state, status, background, spawnedAt, lastActivityAt, unread }) =>
+      ({ id, name, role, task, state, status, background, spawnedAt, lastActivityAt, unread: unread ?? 0 }))
+  res.json({ agents })
+})
+
+/**
+ * POST /chat/reply — Claude replies as an agent in the office Slack
+ * Body: { sender: "AgentName", role: "code-reviewer", text: "message",
+ *         recipient?: "Debugger", type?: "question", replyTo?: <messageId> }
+ *
+ * With a recipient (or a leading "@Name" in the text) the message is directed:
+ * it is stored with the recipient, readable via GET /chat?recipient=<name>, and
+ * the latest one is written to ~/.agent-office/inbox/<recipient>.json so the
+ * recipient's session can pick it up like last-chat.
+ */
+app.post('/chat/reply', (req, res) => {
+  const result = sendAgentMessage(req.body ?? {})
+  if (result.error) return res.status(result.status).json({ error: result.error })
+  res.json({ ok: true, id: result.msg.id, recipient: result.to, delivered: !!result.recipientAgent })
+})
+
+/**
+ * POST /chat/inbox/read — the recipient has read its directed messages.
+ * Body: { recipient: "Debugger" }  (office id, subagent id, name or role)
+ * Clears the unread badge on the agent's desk.
+ */
+app.post('/chat/inbox/read', (req, res) => {
+  const recipient = clampString(req.body?.recipient)?.trim()
+  if (!recipient) return res.status(400).json({ error: 'Missing recipient' })
+  const agent = findAgent(recipient)
+  markInboxRead(agent ? [recipient, ...agentAddresses(agent)] : [recipient])
+  if (agent && agent.unread) {
+    agent.unread = 0
+    saveAgents()
+    broadcast({ type: 'inbox_update', agentId: agent.id, unread: 0 })
+  }
+  res.json({ ok: true })
+})
+
+// ---------------------------------------------------------------------------
+// A2A protocol surface — a subset of the Agent2Agent (A2A) spec so agents that
+// speak A2A can reach office agents without learning the office's own API.
+//
+//   GET  /.well-known/agent-card.json   card for the office as a whole
+//   GET  /a2a/agents                    one agent card per agent in the office
+//   POST /a2a                           JSON-RPC 2.0, method "message/send"
+//
+// Office agents are addressed through message.metadata.to (id, name or role);
+// the sender is message.metadata.from. Replies thread via referenceTaskIds or
+// metadata.replyTo (an office message id). Tasks/streaming aren't supported —
+// every message is delivered as-is and answered with the stored message.
+// ---------------------------------------------------------------------------
+
+const A2A_PROTOCOL_VERSION = '0.3.0'
+const A2A_URL = `http://localhost:${PORT}/a2a`
+
+function officeAgentCard(agent) {
+  const cfgTitle = agent.name ?? 'Agent'
+  return {
+    protocolVersion: A2A_PROTOCOL_VERSION,
+    name: cfgTitle,
+    description: agent.task || `${agent.role} agent in Agent Office`,
+    url: A2A_URL,
+    version: '1.0.0',
+    capabilities: { streaming: false, pushNotifications: false },
+    defaultInputModes: ['text/plain'],
+    defaultOutputModes: ['text/plain'],
+    skills: [{ id: agent.role, name: agent.role, description: agent.task || agent.role, tags: [agent.role] }],
+    // Office-specific: how to address this agent in message.metadata.to
+    metadata: { officeId: agent.id, state: agent.state, unread: agent.unread ?? 0 },
+  }
+}
+
+/** Office chat row -> A2A Message object */
+function toA2AMessage(msg) {
+  return {
+    kind: 'message',
+    messageId: String(msg.id),
+    role: 'agent',
+    parts: [{ kind: 'text', text: msg.text }],
+    ...(msg.thread_id ? { referenceTaskIds: [String(msg.thread_id)] } : {}),
+    metadata: { from: msg.sender, to: msg.recipient, type: msg.msg_type, timestamp: msg.timestamp },
+  }
+}
+
+app.get('/.well-known/agent-card.json', (_req, res) => {
+  res.json({
+    protocolVersion: A2A_PROTOCOL_VERSION,
+    name: 'Agent Office',
+    description: 'Shared office for Claude Code agents. Send a message to any agent in the office; set metadata.to to its name, role or id (see GET /a2a/agents).',
+    url: A2A_URL,
+    version: '1.0.0',
+    capabilities: { streaming: false, pushNotifications: false },
+    defaultInputModes: ['text/plain'],
+    defaultOutputModes: ['text/plain'],
+    skills: [{
+      id: 'office-message',
+      name: 'Message an office agent',
+      description: 'Deliver a message, question, review request or task handoff to an agent in the office.',
+      tags: ['message', 'question', 'review_request', 'task_handoff'],
+    }],
+  })
+})
+
+app.get('/a2a/agents', (_req, res) => {
+  const cards = Array.from(activeAgents.values())
+    .filter(a => !a.server && a.state !== 'completed')
+    .map(officeAgentCard)
+  res.json({ agents: cards })
+})
+
+app.post('/a2a', (req, res) => {
+  const rpc = req.body ?? {}
+  const id = rpc.id ?? null
+  const fail = (code, message) => res.json({ jsonrpc: '2.0', id, error: { code, message } })
+
+  if (rpc.jsonrpc !== '2.0' || typeof rpc.method !== 'string') return fail(-32600, 'Invalid Request')
+  if (rpc.method !== 'message/send') return fail(-32601, `Method not found: ${rpc.method}`)
+
+  const m = rpc.params?.message
+  const text = Array.isArray(m?.parts)
+    ? m.parts.filter(p => p?.kind === 'text' && typeof p.text === 'string').map(p => p.text).join('\n')
+    : ''
+  const meta = m?.metadata ?? {}
+  if (!text) return fail(-32602, 'Invalid params: message.parts needs at least one text part')
+  if (!meta.to) return fail(-32602, 'Invalid params: set message.metadata.to to the recipient agent')
+
+  const replyTo = Number.parseInt(meta.replyTo ?? m.referenceTaskIds?.[0], 10)
+  const result = sendAgentMessage({
+    sender: meta.from,
+    role: meta.role,
+    senderId: meta.fromId,
+    recipient: String(meta.to),
+    type: meta.type,
+    replyTo: Number.isInteger(replyTo) ? replyTo : undefined,
+    text,
+  })
+  if (result.error) return fail(-32000, result.error)
+  res.json({ jsonrpc: '2.0', id, result: toA2AMessage(result.msg) })
 })
 
 /**
@@ -875,6 +1012,7 @@ httpServer.listen(PORT, '127.0.0.1', () => {
 ║  POST  http://localhost:${PORT}/event        ║
 ║  GET   http://localhost:${PORT}/roster       ║
 ║  GET   http://localhost:${PORT}/agents       ║
+║  POST  http://localhost:${PORT}/a2a          ║
 ╚═══════════════════════════════════════════╝`)
 
   console.log(`  Auth token written to: ${TOKEN_FILE}`)

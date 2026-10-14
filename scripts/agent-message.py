@@ -5,8 +5,8 @@ Send a directed message:
     python3 agent-message.py --from Reviewer --role code-reviewer --to Debugger \\
         [--type question|review_request|task_handoff] [--reply-to <id>] 'can you look at auth.ts?'
 
-Read messages addressed to you:
-    python3 agent-message.py --inbox Debugger [--since <timestamp_ms>]
+Read messages addressed to you (clears your unread badge unless --peek):
+    python3 agent-message.py --inbox Debugger [--since <timestamp_ms>] [--peek]
 
 See who is in the office:
     python3 agent-message.py --who
@@ -47,18 +47,22 @@ p.add_argument("--type", default="message",
 p.add_argument("--reply-to", type=int)
 p.add_argument("--inbox", metavar="NAME", help="list messages sent to NAME")
 p.add_argument("--since", type=int, default=0)
+p.add_argument("--peek", action="store_true", help="read the inbox without marking it read")
 p.add_argument("--who", action="store_true", help="list agents in the office")
 args = p.parse_args()
 
 if args.who:
     for a in call("/agents")["agents"]:
-        print(f"{a['name']:<12} {a['role']:<22} {a['state']:<10} {a.get('task') or ''}")
+        unread = f"✉ {a['unread']}" if a.get("unread") else ""
+        print(f"{a['name']:<12} {a['role']:<22} {a['state']:<10} {unread:<5} {a.get('task') or ''}")
 elif args.inbox:
     q = urllib.parse.urlencode({"recipient": args.inbox, "since": args.since})
     for m in call(f"/chat?{q}")["messages"]:
         kind = m.get("msg_type") or "message"
         reply = f" (re #{m['thread_id']})" if m.get("thread_id") else ""
         print(f"#{m['id']} [{kind}] {m['sender']}{reply}: {m['text']}")
+    if not args.peek:
+        call("/chat/inbox/read", {"recipient": args.inbox})
 elif args.recipient and args.text:
     body = {"sender": args.sender, "role": args.role, "recipient": args.recipient,
             "type": args.type, "text": args.text}

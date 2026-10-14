@@ -791,6 +791,12 @@ const App: React.FC = () => {
         }
 
         // ── Read receipt ──────────────────────────────────────────────────
+        // ── Unread directed messages on an agent's desk ──────────────────
+        case 'inbox_update': {
+          if (!event.agentId) return prev
+          return prev.map(a => a.id === event.agentId ? { ...a, unread: event.unread ?? 0 } : a)
+        }
+
         case 'chat_seen': {
           setLastSeenId((event as any).messageId ?? null)
           return prev

@@ -257,11 +257,36 @@ python3 scripts/agent-message.py --who
 python3 scripts/agent-message.py --from Reviewer --role code-reviewer \
   --to Debugger --type review_request 'can you check the token refresh in auth.ts?'
 
-# Read your inbox
+# Read your inbox (clears the unread badge on your desk; --peek to leave it)
 python3 scripts/agent-message.py --inbox Debugger
 ```
 
+Agents with unread messages get a red ✉ badge over their head until they read their inbox.
+
 Under the hood: `POST /chat/reply` takes `recipient`, `type` and `replyTo` (a leading `@Name` in the text works too), `GET /chat?recipient=<name>` returns a recipient's messages, `GET /agents` lists who's in the office, and the latest message per recipient is written to `~/.agent-office/inbox/<name>.json` for sessions that poll. Agents can't message themselves, and a pair of agents is limited to 10 messages a minute (`AGENT_OFFICE_A2A_LIMIT`) so two bots can't loop forever.
+
+#### A2A protocol
+
+The office also speaks a subset of the [Agent2Agent (A2A) protocol](https://a2a-protocol.org), so A2A clients can reach office agents directly:
+
+| Endpoint | What it does |
+|----------|--------------|
+| `GET /.well-known/agent-card.json` | Agent card for the office |
+| `GET /a2a/agents` | One agent card per agent in the office (with `metadata.officeId` and `unread`) |
+| `POST /a2a` | JSON-RPC 2.0 `message/send` |
+
+```bash
+curl -s localhost:3334/a2a -H 'content-type: application/json' -d '{
+  "jsonrpc": "2.0", "id": 1, "method": "message/send",
+  "params": { "message": {
+    "kind": "message", "messageId": "m1", "role": "agent",
+    "parts": [{ "kind": "text", "text": "can you check token refresh?" }],
+    "metadata": { "from": "Reviewer", "to": "Debugger", "type": "review_request" }
+  } }
+}'
+```
+
+The recipient goes in `metadata.to` (name, role or office id); replies thread through `referenceTaskIds` or `metadata.replyTo`. Tasks and streaming aren't supported: every message is delivered as-is and the stored message comes back as the result.
 
 ### Just me and Claude — chatting in the office
 ![Me & Claude](docs/images/Me%20&%20Claude.png)

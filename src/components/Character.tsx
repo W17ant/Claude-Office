@@ -143,6 +143,12 @@ const Character: React.FC<CharacterProps> = ({ agent, idleDurationMs = 0, zIndex
     >
       {effectSrc && <EffectBubble src={effectSrc} alt={agent.state} />}
 
+      {!!agent.unread && (
+        <div className="char-unread" title={`${agent.unread} unread message${agent.unread === 1 ? '' : 's'}`}>
+          ✉ {agent.unread > 9 ? '9+' : agent.unread}
+        </div>
+      )}
+
       {shouldShowBubble(agent.state) && agent.statusText && (
         <SpeechBubble key={agent.statusText} text={agent.statusText} />
       )}

@@ -43,6 +43,7 @@ const existingCols = new Set(db.prepare('PRAGMA table_info(messages)').all().map
 for (const [col, ddl] of [
   ['recipient', 'recipient TEXT'],
   ['msg_type',  'msg_type TEXT'],
+  ['read_at',   'read_at INTEGER'],
 ]) {
   if (!existingCols.has(col)) db.exec(`ALTER TABLE messages ADD COLUMN ${ddl}`)
 }
@@ -73,6 +74,11 @@ const stmtGetForRecipient = db.prepare(
   '  WHERE recipient = @recipient COLLATE NOCASE AND timestamp > @since ' +
   '  ORDER BY timestamp DESC, id DESC LIMIT @limit) ' +
   'ORDER BY timestamp ASC, id ASC'
+)
+
+const stmtMarkInboxRead = db.prepare(
+  'UPDATE messages SET read_at = @now ' +
+  'WHERE read_at IS NULL AND recipient = @recipient COLLATE NOCASE'
 )
 
 const stmtMarkSeen = db.prepare(
@@ -134,6 +140,18 @@ export function getMessages({ since = 0, limit = 50, recipient = null } = {}) {
     return stmtGetSince.all({ since, limit })
   }
   return stmtGetAll.all({ limit })
+}
+
+/**
+ * Mark every directed message to any of these names as read by the recipient.
+ * @param {string[]} names — the recipient's id, name, role, ... as addressed
+ */
+export function markInboxRead(names) {
+  const now = Date.now()
+  const tx = db.transaction(list => {
+    for (const recipient of list) stmtMarkInboxRead.run({ recipient, now })
+  })
+  tx(names.filter(Boolean))
 }
 
 /**
