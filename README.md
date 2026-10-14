@@ -168,6 +168,8 @@ Run the installer (registers the seven hook events below, safe to re-run):
 npm run install-hooks
 ```
 
+If you move, rename or re-clone the checkout, re-run the installer: entries that still name the old `agent-tracker.sh` / `status-line.sh` path are repointed at the current one, so Claude Code stops reporting a hook error on every tool call.
+
 Or add the hook to `~/.claude/settings.json` yourself:
 
 ```json
