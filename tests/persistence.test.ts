@@ -36,6 +36,7 @@ describe('agent persistence', () => {
       agents: [expect.objectContaining({
         id: 'agent-persist-1', name: 'Tester', role: 'test-engineer', task: 'Write tests', state: 'new-hire',
       })],
+      sessions: [],
     })
   })
 
