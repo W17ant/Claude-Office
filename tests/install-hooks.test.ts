@@ -111,3 +111,75 @@ describe('install-hooks.sh', () => {
     for (const event of EVENTS) expect(trackerGroups(settings, event)).toHaveLength(1)
   })
 })
+
+describe('install-hooks.sh: status line (payroll / electricity / memory)', () => {
+  const STATUS_COMMAND = /^bash ".*\/hooks\/status-line\.sh"$/
+  const SUBAGENT_COMMAND = /^bash ".*\/hooks\/status-line\.sh" --subagents$/
+
+  function runWith(home: string, args: string[] = []) {
+    return execFileSync('bash', [INSTALLER, ...args], {
+      encoding: 'utf8',
+      env: { ...process.env, HOME: home, AGENT_OFFICE_HOME: join(home, '.agent-office') },
+    })
+  }
+
+  it('registers statusLine (padding 0) and subagentStatusLine next to the hooks on a fresh HOME', () => {
+    const home = freshHome()
+    const out = runWith(home)
+    const settings = readSettings(home)
+    expect(settings.statusLine).toEqual({ type: 'command', command: expect.stringMatching(STATUS_COMMAND), padding: 0 })
+    expect(settings.subagentStatusLine).toEqual({ type: 'command', command: expect.stringMatching(SUBAGENT_COMMAND) })
+    expect(out).toContain('[add]  statusLine')
+    expect(out).toContain('[add]  subagentStatusLine')
+    for (const event of EVENTS) expect(trackerGroups(settings, event)).toHaveLength(1)
+    // Nothing was wrapped, so no previous command is saved
+    expect(existsSync(join(home, '.agent-office', 'statusline-prev'))).toBe(false)
+  })
+
+  it('wraps a status line that was already there: saves its command for chaining, keeps its padding/refreshInterval, says so', () => {
+    const home = freshHome()
+    mkdirSync(join(home, '.claude'), { recursive: true })
+    writeFileSync(settingsPath(home), JSON.stringify({
+      statusLine: { type: 'command', command: '~/.claude/statusline.sh', padding: 2, refreshInterval: 5 },
+      subagentStatusLine: { type: 'command', command: 'jq -c \'.tasks[] | {id, content: .label}\'' },
+    }, null, 2))
+
+    const out = runWith(home)
+    const settings = readSettings(home)
+    expect(settings.statusLine).toEqual({ type: 'command', command: expect.stringMatching(STATUS_COMMAND), padding: 2, refreshInterval: 5 })
+    expect(settings.subagentStatusLine).toEqual({ type: 'command', command: expect.stringMatching(SUBAGENT_COMMAND) })
+    expect(readFileSync(join(home, '.agent-office', 'statusline-prev'), 'utf8')).toBe('~/.claude/statusline.sh\n')
+    expect(readFileSync(join(home, '.agent-office', 'subagent-statusline-prev'), 'utf8')).toBe('jq -c \'.tasks[] | {id, content: .label}\'\n')
+    expect(out).toContain('[wrap] statusLine')
+    expect(out).toContain('~/.claude/statusline.sh')
+    expect(out).toContain('[wrap] subagentStatusLine')
+  })
+
+  it('recognises the office status line from another checkout path and leaves it alone on a second run', () => {
+    const home = freshHome()
+    mkdirSync(join(home, '.claude'), { recursive: true })
+    writeFileSync(settingsPath(home), JSON.stringify({ statusLine: { type: 'command', command: 'bash /old/checkout/hooks/status-line.sh', padding: 0 } }))
+    const first = runWith(home)
+    expect(first).toContain('[skip] statusLine already registered')
+    expect(first).toContain('[add]  subagentStatusLine')
+    expect(readSettings(home).statusLine.command).toBe('bash /old/checkout/hooks/status-line.sh')
+    expect(existsSync(join(home, '.agent-office', 'statusline-prev'))).toBe(false)
+
+    const before = readFileSync(settingsPath(home))
+    const second = runWith(home)
+    expect(readFileSync(settingsPath(home)).equals(before)).toBe(true)
+    expect(second).toContain('[skip] statusLine already registered')
+    expect(second).toContain('[skip] subagentStatusLine already registered')
+  })
+
+  it('--no-status-line registers the hooks only', () => {
+    const home = freshHome()
+    const out = runWith(home, ['--no-status-line'])
+    const settings = readSettings(home)
+    expect(settings).not.toHaveProperty('statusLine')
+    expect(settings).not.toHaveProperty('subagentStatusLine')
+    for (const event of EVENTS) expect(trackerGroups(settings, event)).toHaveLength(1)
+    expect(out).toContain('[skip]')
+    expect(out).toContain('--no-status-line')
+  })
+})

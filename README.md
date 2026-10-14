@@ -146,9 +146,15 @@ bash scripts/stop-office.sh
 
 Open `http://localhost:3333` — the office is ready.
 
+### The start/stop scripts
+
+`start-office.sh` starts the server, Vite and the chat AI watcher, each in its own process group, and records their pids in `~/.agent-office/server.pid`, `vite.pid` and `chat-watcher.pid`. `stop-office.sh` stops exactly those processes — a browser holding a WebSocket to `:3334`, the Electron app or an unrelated Vite on `:3333` are never touched. If you started the server some other way, `bash scripts/stop-office.sh --force` additionally kills whatever is *listening* on the office ports. Ctrl+C in `start-office.sh` stops everything it started; on a box without `open`/`xdg-open` it prints the URL instead of aborting.
+
+The chat AI watcher (`scripts/chat-ai-watcher.sh`, log in `~/.agent-office/chat-ai.log`) only answers messages a person typed in the office chat — its own replies, the agents' `starting:`/`done:` announcements, agent-to-agent messages and `/commands` are never answered — and runs `claude -p` with `--model claude-haiku-5-5 --safe-mode --strict-mcp-config --tools "" --no-session-persistence` under a timeout, so a reply never fires the office's own hooks or loads your project's MCP servers. Knobs (all optional): `CHAT_AI_MODEL`, `CHAT_AI_TIMEOUT` (seconds, default 60), `CHAT_AI_MAX_REPLIES_PER_MIN` (default 5), `CHAT_AI_POLL_INTERVAL` (default 8). Every script honours `AGENT_OFFICE_HOME` (state dir) and `AGENT_OFFICE_PORT` (server port, default 3334); `start-office.sh`/`stop-office.sh` also take `AGENT_OFFICE_UI_PORT` (default 3333).
+
 ### Running tests
 
-`npm test` runs the Vitest suite in `tests/` (server API, WebSocket, hook script, installer) against a temp `AGENT_OFFICE_HOME`, so your real `~/.agent-office` is never touched; `npm run test:watch` keeps it running. CI runs `tsc --noEmit` and `npm test` on every push to `main` and every pull request.
+`npm test` runs the Vitest suite in `tests/` (server API, WebSocket, hook script, installer, shell scripts) against a temp `AGENT_OFFICE_HOME`, so your real `~/.agent-office` is never touched; `npm run test:watch` keeps it running. CI runs `tsc --noEmit` and `npm test` on every push to `main` and every pull request.
 
 ### Auto-Permissions
 
@@ -211,6 +217,12 @@ Now spawn agents in Claude Code and watch them appear in the office.
 **Background agents** (`run_in_background: true`) stay at their desk until they finish (the `SubagentStop` hook). Each worker is tied to its Claude Code subagent the moment it exists (`SubagentStart`), so tool calls made inside a subagent show up on that agent rather than a random one, and a tool call that errors (`PostToolUseFailure` — a non-zero Bash exit, say) shows as a `failed:` status on the agent that made it. Agents still working when the server restarts are restored from `~/.agent-office/agents.json`; agents that go quiet for 2 hours (`AGENT_OFFICE_STALE_MINUTES`) clock out on their own.
 
 **Sessions.** Every hook payload names the Claude Code session it fired in (`session_id`, `cwd`, `transcript_path`), and the tracker forwards that on every event, so the office knows which terminal each agent works for. `SessionStart` adds a pill to the title bar (`SessionEnd` removes it and walks that session's agents out); a session the server first hears of mid-way — hooks installed while Claude was already running, or a server restart — is picked up from its next event. Sessions that go quiet for `AGENT_OFFICE_STALE_MINUTES` end the same way.
+
+### Payroll, electricity and memory
+
+A wall panel appears above the chat the moment Claude Code sends its first status line, and not before (an office without one looks exactly as it did). **PAYROLL** is what the open sessions have cost, with the $/min burn over the last five minutes underneath; **ELECTRICITY** is the tokens the API chews through per minute (context re-reads included — that is what you pay for) as a gauge whose stripes flow faster the harder it burns; **MEMORY** is the context-window fill — amber past 70 %, red past 90 %, and once a session passes 85 % the chat gets a "Claude's desk is getting cluttered" line (once per session). claude.ai subscribers also get a **5h** pill with the five-hour rate-limit utilisation. Hover any meter for the exact numbers and the model; with several terminals open the panel stacks one row per session (up to four).
+
+The numbers are Claude Code's own: `npm run install-hooks` registers `hooks/status-line.sh` as the [`statusLine`](https://code.claude.com/docs/en/statusline) command (and as `subagentStatusLine`, which adds per-worker token counts) next to the hooks. It forwards the JSON to `POST /status` (same bearer token as `/event`) and prints `<model> · ctx <used>% · $<cost>`. **If you already had a status line, you keep it**: the installer saves your command in `~/.agent-office/statusline-prev` and `status-line.sh` runs it with the same input and prints its output, so what you see does not change. `bash hooks/install-hooks.sh --no-status-line` skips the status line altogether. `GET /status` returns the sessions and the totals (cost today, tokens/min, $/min); nothing is persisted, and a session that goes quiet for `AGENT_OFFICE_STALE_MINUTES` drops off the panel.
 
 ## Customise Your Character
 
@@ -332,6 +344,7 @@ The recipient goes in `metadata.to` (name, role or office id); replies thread th
 | `localhost:3333?video` | Video — scripted recording mode |
 | `localhost:3333?helper` | Placement helper — dev tool for positioning furniture |
 | `localhost:3333?variant=incident` | Incident — pins "Prod Is Down" mode on (for screenshots) |
+| `localhost:3334` | Built — the office server serving `dist/` after `npm run build`; what the desktop app loads. The `?` flags above work here too |
 
 ### Incident mode — "Prod Is Down"
 
@@ -363,14 +376,17 @@ Claude-Office/
 │   └── App.tsx             # Main app (agent lifecycle, events, chat)
 ├── server/                 # Express + WebSocket server
 │   ├── index.js            # HTTP endpoints + WS broadcast
+│   ├── status.js           # /status: payroll / electricity / memory feed
 │   └── chat-db.js          # SQLite wrapper
 ├── scripts/                # Shell scripts
-│   ├── start-office.sh     # Start everything
-│   ├── stop-office.sh      # Stop everything
+│   ├── start-office.sh     # Start everything (writes pid files)
+│   ├── stop-office.sh      # Stop everything (by pid file; --force for ports)
 │   ├── chat-ai-watcher.sh  # Polls chat, generates Claude replies
+│   ├── notify.sh           # Desktop notification (osascript / notify-send)
 │   └── gather-context.sh   # Git/agent context for prompts
 ├── hooks/                  # Claude Code hooks
-│   └── agent-tracker.sh    # Forwards events to server
+│   ├── agent-tracker.sh    # Forwards events to server
+│   └── status-line.sh      # Claude Code status line → /status (meters)
 ├── public/                 # Static assets
 │   └── sprites/            # Pixel art characters + effects
 └── electron/               # Optional Electron wrapper
@@ -385,10 +401,22 @@ Claude-Office/
 
 ## Desktop App (Electron)
 
+The desktop app is self-contained: it bundles the office server, the built UI and `node_modules`, runs the server on the Node that ships inside Electron (nothing needs to be installed, and no `node` on the PATH), and loads the office from `http://127.0.0.1:3334/` — one port for the page, its assets and the WebSocket.
+
 ```bash
-npm run dev:electron    # Development
-npm run build:electron  # Build .dmg
+npm run dev:electron    # Development: Vite on 3333 + an Electron window; the server runs on your Node
+npm run pack            # Unpacked build in release/<platform>-unpacked (quick smoke test)
+npm run build:electron  # Installer (.dmg on macOS) in release/
 ```
+
+How a build is put together (the `build` section of `package.json`):
+
+- `vite build` writes the UI and everything in `public/` to `dist/`; the server serves `dist/` from `/` when it exists, so the sprites ship once.
+- `asar` is off: the server is a plain Node child process that reads `dist/`, `server/` and `node_modules` with ordinary `fs` calls.
+- `npmRebuild` is off, so the checkout's `node_modules` stay built for your system Node and `npm test` / `node server/index.js` keep working after a pack. `electron/after-pack.cjs` fetches the Electron build of `better-sqlite3` (through its own `prebuild-install`) into the packaged copy only.
+- Debugging a build headlessly: `AGENT_OFFICE_SCREENSHOT=/tmp/office.png` makes the app save a screenshot of its window a few seconds after the page loads, then quit (works under `xvfb-run`).
+
+The same single-port mode works without Electron: `npm run build && npm run server`, then open `http://localhost:3334`.
 
 ## License
 

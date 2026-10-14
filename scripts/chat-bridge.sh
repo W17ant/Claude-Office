@@ -6,8 +6,8 @@
 # Also provides a function to post Claude's replies back to the chat.
 # =============================================================================
 
-SERVER="http://127.0.0.1:3334"
-STATE_DIR="$HOME/.agent-office"
+SERVER="http://127.0.0.1:${AGENT_OFFICE_PORT:-3334}"
+STATE_DIR="${AGENT_OFFICE_HOME:-$HOME/.agent-office}"
 LAST_TS_FILE="$STATE_DIR/chat-bridge-last-ts"
 PENDING_FILE="$STATE_DIR/chat-pending"
 
@@ -38,12 +38,13 @@ fi
 # Fetch new messages
 RESPONSE=$(curl -sf "$SERVER/chat?since=$LAST_TS" 2>/dev/null || echo '{"messages":[]}')
 
-# Get user messages (not from Claude or system)
+# Messages a person typed (role 'default', not system, not directed, not a slash command)
 NEW_MSGS=$(echo "$RESPONSE" | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
 msgs = data.get('messages', [])
-user_msgs = [m for m in msgs if m.get('sender','').lower() not in ('claude', 'system')]
+user_msgs = [m for m in msgs if m.get('role', 'default') == 'default' and not m.get('is_system')
+             and not m.get('recipient') and not m.get('text', '').lstrip().startswith('/')]
 for m in user_msgs:
     print(f\"{m['sender']}: {m['text']}\")
 # Update last seen to latest timestamp

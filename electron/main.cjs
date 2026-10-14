@@ -1,19 +1,31 @@
 'use strict'
 
-const { app, BrowserWindow, screen } = require('electron')
+const { app, BrowserWindow, dialog, screen } = require('electron')
 const path = require('path')
+const fs = require('fs')
 const { spawn } = require('child_process')
 const http = require('http')
 
-// Allowed origins for navigation and new-window events
-const ALLOWED_ORIGINS = new Set([
-  'http://localhost:3333',
-  'http://localhost:3334',
-])
-
 const SERVER_PORT = 3334
 const SERVER_HOST = '127.0.0.1'
-const HEALTH_URL = `http://${SERVER_HOST}:${SERVER_PORT}/health`
+const SERVER_URL = `http://${SERVER_HOST}:${SERVER_PORT}`
+const HEALTH_URL = `${SERVER_URL}/health`
+const VITE_URL = 'http://localhost:3333'
+
+// Allowed origins for navigation and new-window events: the Vite dev server
+// (3333) and the office server (3334), by name or loopback IP.
+const ALLOWED_ORIGINS = new Set([
+  'http://localhost:3333',
+  'http://127.0.0.1:3333',
+  'http://localhost:3334',
+  'http://127.0.0.1:3334',
+])
+
+// The server sits next to this file in both layouts: <repo>/server in dev and
+// <app>/resources/app/server in a packaged build (asar is off — see the build
+// section of package.json — so the server, dist/ and node_modules are plain
+// files the server process can read).
+const SERVER_ENTRY = path.join(__dirname, '..', 'server', 'index.js')
 
 let win
 let serverProcess = null
@@ -81,21 +93,27 @@ function waitForServer(retries = 30, intervalMs = 300) {
 
 /**
  * Start the Express/WebSocket server as a child process.
- * In packaged builds the server files are placed in process.resourcesPath/server.
- * In dev the files are at <project-root>/server/index.js.
+ *
+ * Packaged: run it on the Node bundled inside Electron (ELECTRON_RUN_AS_NODE
+ * turns this very binary into a plain Node). That is the ABI the packaged
+ * better-sqlite3 is built for (see electron/after-pack.cjs), and it does not
+ * depend on a `node` on the user's PATH — apps opened from Finder, the Dock or
+ * a launcher get a bare system PATH without Homebrew/nvm.
+ *
+ * Dev: node_modules are built for the system Node, so use the Node that runs
+ * npm (`npm_node_execpath`, set by `npm run ...`), or `node` from PATH.
  */
 function startServer() {
-  const isDev = !app.isPackaged
+  const packaged = app.isPackaged
+  const command = packaged ? process.execPath : (process.env.npm_node_execpath || 'node')
+  const env = { ...process.env }
+  if (packaged) env.ELECTRON_RUN_AS_NODE = '1'
 
-  const serverEntry = isDev
-    ? path.join(__dirname, '../server/index.js')
-    : path.join(process.resourcesPath, 'server', 'index.js')
+  console.log(`[main] Spawning server: ${command} ${SERVER_ENTRY}`)
 
-  console.log('[main] Spawning server:', serverEntry)
-
-  serverProcess = spawn('node', [serverEntry], {
+  serverProcess = spawn(command, [SERVER_ENTRY], {
     stdio: 'pipe',
-    env: { ...process.env },
+    env,
   })
 
   serverProcess.stdout.on('data', (data) => {
@@ -129,6 +147,29 @@ function stopServer() {
 }
 
 // ---------------------------------------------------------------------------
+// Debug aid: AGENT_OFFICE_SCREENSHOT=<file.png> captures the window a moment
+// after the page has loaded (AGENT_OFFICE_SCREENSHOT_DELAY_MS, default 3000),
+// then quits. Used to verify a packaged build headlessly (xvfb).
+// ---------------------------------------------------------------------------
+
+function maybeCaptureScreenshot() {
+  const file = process.env.AGENT_OFFICE_SCREENSHOT
+  if (!file) return
+  const delay = Number(process.env.AGENT_OFFICE_SCREENSHOT_DELAY_MS) || 3000
+  setTimeout(async () => {
+    try {
+      const image = await win.webContents.capturePage()
+      fs.writeFileSync(file, image.toPNG())
+      const { width, height } = image.getSize()
+      console.log(`[main] Screenshot written to ${file} (${width}x${height})`)
+    } catch (err) {
+      console.error('[main] Screenshot failed:', err.message)
+    }
+    app.quit()
+  }, delay)
+}
+
+// ---------------------------------------------------------------------------
 // Window creation
 // ---------------------------------------------------------------------------
 
@@ -137,14 +178,25 @@ async function createWindow() {
   const alreadyRunning = await isServerRunning()
 
   if (alreadyRunning) {
-    console.log('[main] Server already running on port 3334 — skipping spawn')
+    console.log(`[main] Server already running on port ${SERVER_PORT} — skipping spawn`)
   } else {
     startServer()
     const ready = await waitForServer()
-    if (!ready) {
-      console.error('[main] Server did not become ready in time — continuing anyway')
+    if (ready) {
+      console.log(`[main] Server is ready on ${SERVER_URL}`)
+    } else if (app.isPackaged) {
+      // The packaged app has nothing to show without its server — say so
+      // instead of opening a blank window.
+      console.error('[main] Server did not become ready in time')
+      dialog.showErrorBox(
+        'Agent Office',
+        `The office server did not start on port ${SERVER_PORT}.\n\n` +
+        'If something else is using that port, stop it and open Agent Office again.',
+      )
+      app.quit()
+      return
     } else {
-      console.log('[main] Server is ready')
+      console.error('[main] Server did not become ready in time — continuing anyway (start it with `npm run server`)')
     }
   }
 
@@ -188,13 +240,21 @@ async function createWindow() {
     return { action: 'deny' }
   })
 
-  // In dev, load from Vite server; in production, load the built index.html
-  const isDev = !app.isPackaged
-  if (isDev) {
-    win.loadURL('http://localhost:3333')
-  } else {
-    win.loadFile(path.join(__dirname, '../dist/index.html'))
-  }
+  win.webContents.on('did-finish-load', () => {
+    console.log(`[main] Window loaded ${win.webContents.getURL()}`)
+    maybeCaptureScreenshot()
+  })
+
+  win.webContents.on('did-fail-load', (_event, code, description, failedUrl) => {
+    console.error(`[main] Window failed to load ${failedUrl}: ${description} (${code})`)
+  })
+
+  // Dev: the Vite dev server. Packaged: the office server, which serves the
+  // built UI from its root — one port for the page, its assets and the
+  // WebSocket, with an http:// origin the server's allowlist accepts.
+  const url = app.isPackaged ? `${SERVER_URL}/` : VITE_URL
+  console.log(`[main] Loading ${url}`)
+  win.loadURL(url)
 
   // Make window level float above everything (like Clippy)
   win.setAlwaysOnTop(true, 'floating')

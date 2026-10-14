@@ -2,13 +2,16 @@ import React, { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspens
 import './styles/office.css'
 import './styles/rooms.css'
 import './styles/incident.css'
+import './styles/meters.css'
 import SlackChat, { ChatMessage, getAvatarSrc } from './components/SlackChat'
 import Character from './components/Character'
 import FurnitureRenderer from './components/FurnitureRenderer'
 import SessionStrip from './components/SessionStrip'
+import Meters from './components/Meters'
 import { Agent, AGENT_CONFIGS } from './types'
 import { getCurrentPhase, getPhaseLabel, type DayPhase } from './daylight'
 import { useAgentSocket } from './hooks/useAgentSocket'
+import { dispatchMeters } from './meters'
 import * as sfx from './sounds'
 import { findWaypointPath } from './agentManager'
 import {
@@ -612,6 +615,11 @@ const App: React.FC = () => {
     }
     if (action.type === 'variant_change') {
       dispatchIncident({ type: 'command', at: Date.now(), cmd: action.variant === 'incident' ? 'incident' : 'all-clear', reason: 'remote' })
+      return
+    }
+    // Payroll / electricity / memory (the status-line feed): its own store, no agent involved
+    if (action.type === 'session_status' || action.type === 'agent_status') {
+      dispatchMeters(action)
       return
     }
 
@@ -1494,6 +1502,8 @@ const App: React.FC = () => {
         </div>
       </div>
 
+      <div className="chat-column">
+      <Meters onNotice={text => addMsg('system', 'default', '#8b8d91', text, true)} />
       <SlackChat
         messages={messages}
         muted={muted}
@@ -1507,6 +1517,7 @@ const App: React.FC = () => {
         lastSeenId={lastSeenId}
         onReaction={handleReaction}
       />
+      </div>
       </div>
     </div>
   )
