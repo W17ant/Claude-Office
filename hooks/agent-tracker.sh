@@ -15,10 +15,28 @@
 #   SubagentStop       — a subagent finished (the completion signal for background agents)
 #   SessionStart       — a Claude Code session began (startup/resume/compact/clear/fork)
 #   SessionEnd         — that session exited
+#   UserPromptSubmit   — the boss's prompt (or a background worker waking Claude)
+#   Stop               — Claude's turn ended: its reply + the background work still running
+#   PermissionRequest  — Claude is waiting for a permission answer
+#   Notification       — permission_prompt / idle_prompt / quota_* / agent_needs_input
+#   StopFailure        — the turn ended on an API error
+#   PreCompact /
+#   PostCompact        — context compaction started / finished
+#   PostToolBatch      — a batch of main-thread tool calls finished (lowers a
+#                        permission hand the batch answered)
+#   CwdChanged         — the session cd'd somewhere else (project tag follows)
+#   PostModelSwitch    — the session runs another model now
 #
 # Every event carries the session it came from: sessionId (session_id),
 # project (basename of cwd), cwd and transcriptPath. Two terminals are two
-# sessions, and the server keeps their agents apart with these.
+# sessions, and the server keeps their agents apart with these. The events
+# of the second group describe the session's own Claude (its "main" record
+# on the server) rather than a worker.
+#
+# UserPromptSubmit is special: whatever a hook prints on stdout is injected
+# into Claude's context and exit 2 blocks the prompt. This script captures
+# the Python's stdout into a variable and only ever exits 0, so nothing of
+# the office leaks into the conversation.
 #
 # Background agents (run_in_background): the Agent tool returns straight away
 # with status "async_launched", so PostToolUse only links the office agent to
@@ -34,7 +52,9 @@
 #   { "type": "command", "command": "/path/to/agent-tracker.sh" }
 # =============================================================================
 
-SERVER_URL="http://localhost:3334/event"
+# Where the office listens: AGENT_OFFICE_EVENT_URL wins, else the port from
+# AGENT_OFFICE_PORT (the same knob the office scripts take), default 3334
+SERVER_URL="${AGENT_OFFICE_EVENT_URL:-http://localhost:${AGENT_OFFICE_PORT:-3334}/event}"
 
 # Read the hook payload from stdin
 PAYLOAD=$(cat)
@@ -51,14 +71,20 @@ if [ -f "$TOKEN_FILE" ]; then
 fi
 
 # Extract common fields and build event JSON in a single Python invocation.
-# All variable data is passed via stdin; no shell variables are interpolated
-# into Python source code.
-EVENT_JSON=$(HOOK_PAYLOAD="$PAYLOAD" python3 - <<'PYEOF'
+# The Python source is the quoted heredoc below (tests/hook-script.test.ts
+# lifts it out by the PYEOF markers); the payload goes to it on stdin, never
+# through an environment variable or an argument: a PostToolUse carrying a
+# big tool_response (a 300 KB file read is routine) is over the ~128 KiB
+# single-argument limit and would fail the exec with E2BIG. No shell
+# variables are interpolated into the Python source.
+PY=$(cat <<'PYEOF'
 import json, sys, os, re
 
 try:
-    d = json.loads(os.environ.get('HOOK_PAYLOAD', '{}'))
+    d = json.loads(sys.stdin.read() or '{}')
 except Exception:
+    sys.exit(0)
+if not isinstance(d, dict):
     sys.exit(0)
 
 hook_event = d.get('hook_event_name', '')
@@ -148,6 +174,187 @@ if hook_event == 'SubagentStop':
             'agentId': str(d['agent_id']),
             'result':  str(d.get('last_assistant_message') or 'done')[:120],
         })
+    sys.exit(0)
+
+# ── The session's own Claude ────────────────────────────────────────────────
+# The events below describe the main thread, not a worker, and none of them
+# carries a tool_name except PermissionRequest — so they sit above the
+# tool_name gate. All of them need the session they belong to. Text is
+# clamped HERE as well as on the server: the server clamps `text` to 2000
+# characters, but an oversize body would be refused whole (413) and the state
+# change lost along with the text.
+def clamp(value, limit):
+    return str(value if value is not None else '')[:limit]
+
+def one_line(value, limit):
+    # Labels: whitespace collapsed, then clamped
+    return ' '.join(str(value if value is not None else '').split())[:limit]
+
+def emit_session(event):
+    pid = d.get('prompt_id')
+    if pid:
+        event['promptId'] = str(pid)[:80]
+    if SESSION.get('sessionId'):
+        emit(event)
+    sys.exit(0)
+
+# UserPromptSubmit {prompt, prompt_id, permission_mode} — the boss's prompt.
+# Also fired for turns Claude Code starts by itself: a background subagent
+# reporting back arrives as a prompt that begins "<task-notification>" and
+# names the subagent in <task-id> (captured 2.1.300: the schema's `source`
+# field, which would say so, was never sent). Such a wake-up is flagged and
+# only its <summary> line travels, never the XML or the agent's result.
+if hook_event == 'UserPromptSubmit':
+    prompt = d.get('prompt')
+    prompt = prompt if isinstance(prompt, str) else ''
+    event = {'type': 'session_prompt', 'text': clamp(prompt, 2000), 'isWakeup': False}
+    if prompt.lstrip().startswith('<task-notification>'):
+        event['isWakeup'] = True
+        m = re.search(r'<task-id>\s*([^<\s]+)\s*</task-id>', prompt)
+        if m:
+            event['wakeupAgentId'] = m.group(1)[:80]
+        m = re.search(r'<status>\s*([^<\s]+)\s*</status>', prompt)
+        if m:
+            event['wakeupStatus'] = m.group(1)[:40]
+        m = re.search(r'<summary>(.*?)</summary>', prompt, re.S)
+        event['text'] = one_line(m.group(1) if m else 'a background task finished', 2000)
+    emit_session(event)
+
+# Stop {stop_hook_active, last_assistant_message, background_tasks, session_crons}
+# — Claude's turn ended. background_tasks is the in-flight background work
+# ({id, type, status, description, ...} per the schema; every captured Stop
+# had [] because a background subagent's finish is delivered as a new prompt,
+# so "waiting on N workers" is schema-backed, not capture-backed).
+# session_crons are scheduled wake-ups (/loop, CronCreate). Stop does NOT fire
+# when the user rejects a permission dialog — that turn is interrupted.
+if hook_event == 'Stop':
+    tasks = []
+    raw_tasks = d.get('background_tasks')
+    for task in (raw_tasks if isinstance(raw_tasks, list) else [])[:10]:
+        if not isinstance(task, dict):
+            continue
+        tasks.append({
+            'id':          clamp(task.get('id'), 64),
+            'type':        clamp(task.get('type'), 40),
+            'status':      clamp(task.get('status'), 40),
+            'description': one_line(task.get('description'), 120),
+        })
+    crons = d.get('session_crons')
+    emit_session({
+        'type':            'session_turn_end',
+        'text':            clamp(d.get('last_assistant_message'), 2000),
+        'backgroundTasks': tasks,
+        'crons':           len(crons) if isinstance(crons, list) else 0,
+        'stopHookActive':  bool(d.get('stop_hook_active')),
+    })
+
+# PermissionRequest {tool_name, tool_input, permission_suggestions} — Claude
+# is waiting for the user's answer (no tool_use_id). In -p mode the call is
+# auto-denied right after this fires; interactively the dialog stays up and
+# a Notification{permission_prompt} follows ~6 s later (deduped server-side).
+# A request raised inside a subagent would carry agent_id (schema-only, not
+# captured); it is forwarded when present.
+def permission_summary(name, inp):
+    inp = inp if isinstance(inp, dict) else {}
+    if name in ('Write', 'Edit', 'Read', 'MultiEdit', 'NotebookEdit'):
+        path = str(inp.get('file_path') or inp.get('notebook_path') or '')
+        return os.path.basename(path.rstrip('/')) or name
+    if name == 'Bash':
+        return one_line(inp.get('command') or inp.get('description'), 80) or name
+    return name
+
+if hook_event == 'PermissionRequest':
+    name = str(tool_name or 'tool')
+    event = {
+        'type':     'session_needs_you',
+        'kind':     'permission',
+        'toolName': name[:80],
+        'summary':  permission_summary(name, d.get('tool_input'))[:120],
+    }
+    if d.get('agent_id'):
+        event['agentId'] = str(d['agent_id'])
+    emit_session(event)
+
+# Notification {message, notification_type, title?} — only the types that mean
+# the session is waiting on a person (or was paused by the quota) are
+# forwarded; auth_success, elicitation_*, agent_completed, ... are ignored.
+# permission_prompt and idle_prompt are presence-gated (they fire only when
+# the user looks away from the terminal), so they are best-effort.
+NOTIFICATION_KINDS = {
+    'permission_prompt':           'permission',
+    'idle_prompt':                 'idle',
+    'quota_auto_resume_fired':     'quota',
+    'quota_auto_resume_stale':     'quota',
+    'quota_auto_resume_disabled':  'quota',
+    'agent_needs_input':           'agent-input',
+}
+if hook_event == 'Notification':
+    ntype = str(d.get('notification_type') or '')
+    kind = NOTIFICATION_KINDS.get(ntype)
+    if not kind:
+        sys.exit(0)
+    emit_session({
+        'type':             'session_needs_you',
+        'kind':             kind,
+        'notificationType': ntype[:40],
+        'message':          one_line(d.get('message'), 200),
+    })
+
+# StopFailure {error, error_details?, last_assistant_message?} — the turn
+# ended on an API error (rate_limit, overloaded, authentication_failed, ...).
+# Never captured locally; shape per the schema and the hooks reference.
+if hook_event == 'StopFailure':
+    detail = d.get('error_details') or d.get('last_assistant_message') or ''
+    emit_session({
+        'type':   'session_error',
+        'error':  one_line(d.get('error') or 'unknown', 40),
+        'detail': one_line(detail, 200),
+    })
+
+# PreCompact / PostCompact {trigger: manual|auto} — the summary text is not
+# forwarded (it is the conversation). PreCompact fires even when compaction
+# is then refused ("Not enough messages"), so a `pre` may have no `post`.
+if hook_event in ('PreCompact', 'PostCompact'):
+    emit_session({
+        'type':    'session_compact',
+        'phase':   'pre' if hook_event == 'PreCompact' else 'post',
+        'trigger': one_line(d.get('trigger') or 'manual', 20),
+    })
+
+# PostToolBatch {tool_calls: [{tool_name, tool_input, tool_use_id, tool_response}]}
+# — one per model turn, once every tool call of that turn has an answer
+# (a denied one included). Only the main thread's batches matter here: the
+# server uses them to lower a permission hand the batch has answered, so a
+# headless auto-deny (PermissionRequest, then this ~60 ms later) never shows.
+if hook_event == 'PostToolBatch':
+    if d.get('agent_id'):
+        sys.exit(0)
+    calls = d.get('tool_calls')
+    emit_session({'type': 'session_tool_done', 'batch': True, 'count': len(calls) if isinstance(calls, list) else 0})
+
+# CwdChanged {old_cwd, new_cwd} — after a persistent `cd` in Bash. The
+# session's cwd and project tag follow (the payload's own cwd is still the
+# old one, so both are set explicitly before emit() fills the defaults).
+if hook_event == 'CwdChanged':
+    new_cwd = d.get('new_cwd')
+    if isinstance(new_cwd, str) and new_cwd:
+        event = {'type': 'session_cwd', 'cwd': new_cwd, 'project': os.path.basename(new_cwd.rstrip('/')) or new_cwd}
+        if isinstance(d.get('old_cwd'), str) and d['old_cwd']:
+            event['oldCwd'] = d['old_cwd']
+        emit_session(event)
+    sys.exit(0)
+
+# PostModelSwitch {from_model, to_model, requested_model, source, context_tokens, ...}
+# — /model, the picker, an SDK set_model or an automatic fallback.
+if hook_event == 'PostModelSwitch':
+    to_model = d.get('to_model')
+    if isinstance(to_model, str) and to_model:
+        event = {'type': 'session_model', 'model': to_model[:80]}
+        if isinstance(d.get('from_model'), str) and d['from_model']:
+            event['fromModel'] = d['from_model'][:80]
+        if isinstance(d.get('source'), str) and d['source']:
+            event['switchSource'] = d['source'][:20]
+        emit_session(event)
     sys.exit(0)
 
 if not tool_name:
@@ -352,11 +559,25 @@ if tool_name in ('Agent', 'Task'):
                 })
             sys.exit(0)
 
-        emit({
+        # A foreground agent's result also says what it cost (captured 2.1.300:
+        # totalTokens, totalDurationMs, totalToolUseCount, resolvedModel next to
+        # content/usage/toolStats); each travels only when present
+        event = {
             'type':    'agent_completed',
             'agentId': agent_id,
             'result':  result_text(resp),
-        })
+        }
+        def whole(value):
+            return isinstance(value, (int, float)) and not isinstance(value, bool) and value >= 0
+        if whole(rd.get('totalTokens')):
+            event['tokens'] = int(rd['totalTokens'])
+        if whole(rd.get('totalDurationMs')):
+            event['durationMs'] = int(rd['totalDurationMs'])
+        if whole(rd.get('totalToolUseCount')):
+            event['toolUses'] = int(rd['totalToolUseCount'])
+        if isinstance(rd.get('resolvedModel'), str) and rd['resolvedModel']:
+            event['model'] = rd['resolvedModel'][:80]
+        emit(event)
 
     sys.exit(0)
 
@@ -388,31 +609,46 @@ if hook_event == 'PostToolUseFailure':
     }))
     sys.exit(0)
 
-# ── Common tool uses — broadcast as working status updates ─────────────────
-if hook_event == 'PreToolUse' and tool_name in ('Read', 'Write', 'Edit', 'Bash', 'Grep', 'Glob', 'Skill'):
+# ── A main-thread tool call finished — PostToolUse of anything but the Agent
+# and MCP tools handled above. Nothing to draw, but a permission hand raised
+# for this tool comes down on the server: the call ran, so it was granted.
+# (A worker's PostToolUse says nothing; its agent is already shown working.)
+if hook_event == 'PostToolUse' and not sub_agent_id:
+    emit_session({'type': 'session_tool_done', 'toolName': str(tool_name)[:80]})
+
+# ── Every other tool use — broadcast as a working status update ────────────
+# The common tools get a specific line; anything else (WebFetch, TodoWrite,
+# ToolSearch, AskUserQuestion, ...) a generic one, so the main thread (no
+# agent_id — the session's own Claude) and a worker are seen working on every
+# call, not only on the handful the office used to know.
+if hook_event == 'PreToolUse':
     inp = d.get('tool_input', {})
+    inp = inp if isinstance(inp, dict) else {}
 
     status_map = {
-        'Read':  lambda i: f"reading {i.get('file_path', '').split('/')[-1]}",
-        'Write': lambda i: f"writing {i.get('file_path', '').split('/')[-1]}",
-        'Edit':  lambda i: f"editing {i.get('file_path', '').split('/')[-1]}",
-        'Bash':  lambda i: f"running: {(i.get('command', '') or i.get('description', ''))[:60]}",
-        'Grep':  lambda i: f"searching for '{i.get('pattern', '')[:30]}'",
-        'Glob':  lambda i: f"finding files: {i.get('pattern', '')[:40]}",
-        'Skill': lambda i: f"using /{i.get('skill', 'skill')}",
+        'Read':  lambda i: f"reading {str(i.get('file_path') or '').split('/')[-1]}",
+        'Write': lambda i: f"writing {str(i.get('file_path') or '').split('/')[-1]}",
+        'Edit':  lambda i: f"editing {str(i.get('file_path') or '').split('/')[-1]}",
+        'Bash':  lambda i: f"running: {str(i.get('command') or i.get('description') or '')[:60]}",
+        'Grep':  lambda i: f"searching for '{str(i.get('pattern') or '')[:30]}'",
+        'Glob':  lambda i: f"finding files: {str(i.get('pattern') or '')[:40]}",
+        'Skill': lambda i: f"using /{i.get('skill') or 'skill'}",
     }
 
     status_fn = status_map.get(tool_name)
-    if status_fn:
-        status = status_fn(inp)
-        emit(tag_subagent({
-            'type': 'agent_working',
-            'status': status,
-        }))
+    status = status_fn(inp) if status_fn else f"using {str(tool_name)[:40]}"
+    emit(tag_subagent({
+        'type': 'agent_working',
+        'status': status,
+    }))
 
 sys.exit(0)
 PYEOF
 )
+
+# -I: ignore PYTHON* env vars and the user site, and keep the cwd (the
+# project Claude is working in) off sys.path
+EVENT_JSON=$(printf '%s' "$PAYLOAD" | python3 -I -c "$PY")
 
 # If Python produced no output, nothing to send
 if [ -z "$EVENT_JSON" ]; then
