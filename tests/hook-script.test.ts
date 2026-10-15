@@ -9,7 +9,7 @@
  * last group runs the whole script with a fake `curl` on PATH.
  */
 
-import { execFileSync, spawnSync } from 'node:child_process'
+import { execFileSync, spawn, spawnSync } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -21,13 +21,28 @@ const TRACKER = fileURLToPath(new URL('../hooks/agent-tracker.sh', import.meta.u
 const PYTHON = execFileSync('awk', ["/<<'PYEOF'/{f=1;next} /^PYEOF$/{f=0} f", TRACKER], { encoding: 'utf8' })
 if (!PYTHON.includes('hook_event_name')) throw new Error('could not extract the Python section from agent-tracker.sh')
 
-/** Run the hook's Python against a payload (on stdin, as the wrapper does); null when it printed nothing. */
-function runHook(payload: unknown): Record<string, any> | null {
+// The Python looks for $AGENT_OFFICE_HOME/answer-permissions (the server keeps
+// that marker in step with its answerPermissions setting): point it at an
+// empty dir so a marker in the developer's real ~/.agent-office never changes
+// what the tests below see. The answer-from-the-office group sets its own.
+const NO_MARKER_HOME = mkdtempSync(join(tmpdir(), 'agent-office-hook-home-'))
+afterAll(() => rmSync(NO_MARKER_HOME, { recursive: true, force: true }))
+
+/** The hook's Python against a payload (on stdin, as the wrapper does): its stdout lines. */
+function runHookLines(payload: unknown, env: Record<string, string> = {}): string[] {
   const out = execFileSync('python3', ['-I', '-c', PYTHON], {
     input: typeof payload === 'string' ? payload : JSON.stringify(payload),
     encoding: 'utf8',
+    env: { ...process.env, AGENT_OFFICE_HOME: NO_MARKER_HOME, ...env },
   }).trim()
-  return out ? JSON.parse(out) : null
+  return out ? out.split('\n') : []
+}
+
+/** Run the hook's Python against a payload; null when it printed nothing. */
+function runHook(payload: unknown): Record<string, any> | null {
+  const lines = runHookLines(payload)
+  if (lines.length > 1) throw new Error(`expected one line, got ${lines.length}: ${lines.join(' | ')}`)
+  return lines.length ? JSON.parse(lines[0]) : null
 }
 
 describe('agent-tracker.sh: Agent tool', () => {
@@ -994,5 +1009,223 @@ describe('agent-tracker.sh: the bash wrapper', () => {
     expect((await runScript(read)).args?.[3]).toBe('http://localhost:3334/event')
     expect((await runScript(read, { AGENT_OFFICE_PORT: '3998' })).args?.[3]).toBe('http://localhost:3998/event')
     expect((await runScript(read, { AGENT_OFFICE_PORT: '3998', AGENT_OFFICE_EVENT_URL: 'http://127.0.0.1:4100/event' })).args?.[3]).toBe('http://127.0.0.1:4100/event')
+  })
+})
+
+/**
+ * Answering a permission dialog from the office (server/permissions.js). With
+ * the marker file present the Python adds answerable / permissionMode /
+ * suggestions / detail and a second `wait` line; the wrapper then POSTs in the
+ * foreground and long-polls GET /permission/<id> with the real curl against a
+ * tiny Node server, printing the server's hookOutput verbatim on allowed or
+ * denied and nothing otherwise. Without the marker nothing changes.
+ */
+describe('agent-tracker.sh: answering a permission from the office', () => {
+  const home = mkdtempSync(join(tmpdir(), 'agent-office-answer-'))
+  writeFileSync(join(home, 'answer-permissions'), 'on\n')
+  writeFileSync(join(home, 'auth-token'), 'office-token\n')
+  afterAll(() => rmSync(home, { recursive: true, force: true }))
+
+  const session = { session_id: 's-perm', cwd: '/home/me/proj', transcript_path: '/t/s-perm.jsonl', prompt_id: 'p1', permission_mode: 'default' }
+  const SUGGESTIONS = [{ type: 'setMode', mode: 'acceptEdits', destination: 'session' }]
+  const write = { ...session, hook_event_name: 'PermissionRequest', tool_name: 'Write', tool_input: { file_path: '/home/me/proj/probe.txt', content: 'hello' }, permission_suggestions: SUGGESTIONS }
+  const ALLOW = { hookSpecificOutput: { hookEventName: 'PermissionRequest', decision: { behavior: 'allow' } } }
+
+  it('the Python: with the marker the event gains answerable, permissionMode, suggestions and detail, and a `wait` line follows; without it, the event is as before on one line', () => {
+    const lines = runHookLines(write, { AGENT_OFFICE_HOME: home })
+    expect(lines).toHaveLength(2)
+    expect(JSON.parse(lines[0])).toEqual({
+      type: 'session_needs_you', kind: 'permission', toolName: 'Write', summary: 'probe.txt',
+      answerable: true, permissionMode: 'default', suggestions: SUGGESTIONS, detail: '/home/me/proj/probe.txt',
+      promptId: 'p1', sessionId: 's-perm', project: 'proj', cwd: '/home/me/proj', transcriptPath: '/t/s-perm.jsonl',
+    })
+    expect(lines[1]).toBe('wait')
+
+    const plain = runHookLines(write)
+    expect(plain).toHaveLength(1)
+    expect(JSON.parse(plain[0])).toEqual({
+      type: 'session_needs_you', kind: 'permission', toolName: 'Write', summary: 'probe.txt',
+      promptId: 'p1', sessionId: 's-perm', project: 'proj', cwd: '/home/me/proj', transcriptPath: '/t/s-perm.jsonl',
+    })
+    // No session id: nothing at all, marker or not
+    expect(runHookLines({ ...write, session_id: undefined }, { AGENT_OFFICE_HOME: home })).toEqual([])
+    // Only PermissionRequest ever gets the second line
+    expect(runHookLines({ ...session, hook_event_name: 'Notification', notification_type: 'permission_prompt', message: 'm' }, { AGENT_OFFICE_HOME: home })).toHaveLength(1)
+    expect(runHookLines({ ...session, hook_event_name: 'PreToolUse', tool_name: 'Write', tool_input: { file_path: '/x' } }, { AGENT_OFFICE_HOME: home })).toHaveLength(1)
+  })
+
+  it('the Python: detail is the Bash command (newlines kept), the file path of a file tool, else the tool input as compact JSON, clamped to 400; suggestions keep their shape, at most 4', () => {
+    const ev = (payload: unknown) => JSON.parse(runHookLines(payload, { AGENT_OFFICE_HOME: home })[0])
+    const base = { ...session, hook_event_name: 'PermissionRequest' }
+    expect(ev({ ...base, tool_name: 'Bash', tool_input: { command: 'rm -rf\n  node_modules', description: 'd' } })).toMatchObject({ summary: 'rm -rf node_modules', detail: 'rm -rf\n  node_modules' })
+    expect(ev({ ...base, tool_name: 'Bash', tool_input: { command: 'x'.repeat(1000) } }).detail).toHaveLength(400)
+    expect(ev({ ...base, tool_name: 'Edit', tool_input: { file_path: '/repo/src/App.tsx', old_string: 'a', new_string: 'b' } }).detail).toBe('/repo/src/App.tsx')
+    expect(ev({ ...base, tool_name: 'NotebookEdit', tool_input: { notebook_path: '/n.ipynb' } }).detail).toBe('/n.ipynb')
+    expect(ev({ ...base, tool_name: 'WebFetch', tool_input: { url: 'https://x.test', prompt: 'read it' } }).detail).toBe('{"url":"https://x.test","prompt":"read it"}')
+    expect(ev({ ...base, tool_name: 'WebFetch', tool_input: null })).toMatchObject({ detail: '{}', suggestions: [], permissionMode: 'default' })
+    const addRules = { type: 'addRules', rules: [{ toolName: 'Bash', ruleContent: 'npm test:*' }], behavior: 'allow', destination: 'localSettings' }
+    expect(ev({ ...base, tool_name: 'Bash', tool_input: { command: 'npm test' }, permission_suggestions: [addRules, 'junk', ...new Array(6).fill(SUGGESTIONS[0])] }).suggestions)
+      .toEqual([addRules, SUGGESTIONS[0], SUGGESTIONS[0], SUGGESTIONS[0]])
+    expect(ev({ ...base, tool_name: 'Bash', tool_input: { command: 'ls' }, permission_suggestions: [{ mode: 'm'.repeat(500) }] }).suggestions[0].mode).toHaveLength(200)
+    expect(ev({ ...base, tool_name: 'Bash', tool_input: { command: 'ls' }, permission_mode: 'acceptEdits' }).permissionMode).toBe('acceptEdits')
+  })
+
+  // ── The wrapper against a tiny office ────────────────────────────────────
+  type Hit = { method: string; url: string; auth?: string; body: string }
+
+  /** A fake office: `plan` answers each request in order of arrival (POST /event first, then the polls). */
+  async function fakeOffice(plan: Array<(hit: Hit, res: import('node:http').ServerResponse) => void>) {
+    const { createServer } = await import('node:http')
+    const hits: Hit[] = []
+    const server = createServer((req, res) => {
+      let body = ''
+      req.on('data', c => { body += c })
+      req.on('end', () => {
+        const hit = { method: req.method ?? '', url: req.url ?? '', auth: req.headers.authorization, body }
+        hits.push(hit)
+        const step = plan[hits.length - 1] ?? plan[plan.length - 1]
+        step(hit, res)
+      })
+    })
+    await new Promise<void>(res => server.listen(0, '127.0.0.1', () => res()))
+    const port = (server.address() as import('node:net').AddressInfo).port
+    return { port, hits, close: () => new Promise<void>(res => server.close(() => res())) }
+  }
+  const json = (res: import('node:http').ServerResponse, status: number, body: unknown) => {
+    res.writeHead(status, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify(body))
+  }
+
+  /**
+   * The whole script with the real curl, pointed at the fake office. Spawned
+   * asynchronously: the fake office lives on this event loop, so a spawnSync
+   * would starve it and every curl would time out.
+   */
+  function runLive(payload: unknown, port: number, extraEnv: Record<string, string> = {}) {
+    const env: Record<string, string | undefined> = { ...process.env, AGENT_OFFICE_HOME: home, AGENT_OFFICE_PORT: String(port) }
+    delete env.AGENT_OFFICE_EVENT_URL
+    Object.assign(env, extraEnv)
+    const started = Date.now()
+    return new Promise<{ stdout: string; stderr: string; status: number | null; ms: number }>((resolve, reject) => {
+      const child = spawn('bash', [TRACKER], { env, stdio: ['pipe', 'pipe', 'pipe'] })
+      let stdout = ''
+      let stderr = ''
+      child.stdout.setEncoding('utf8').on('data', c => { stdout += c })
+      child.stderr.setEncoding('utf8').on('data', c => { stderr += c })
+      child.on('error', reject)
+      child.on('close', status => resolve({ stdout, stderr, status, ms: Date.now() - started }))
+      child.stdin.end(JSON.stringify(payload))
+    })
+  }
+
+  it('allowed: the POST goes in the foreground with the token, the poll carries the token, and the hookOutput is printed verbatim', async () => {
+    const office = await fakeOffice([
+      (hit, res) => json(res, 200, { ok: true, permissionId: 'abc123', wait: { pollMs: 2000, deadline: Date.now() + 60_000 } }),
+      (hit, res) => json(res, 200, { status: 'allowed', deadline: Date.now() + 60_000, hookOutput: ALLOW }),
+    ])
+    try {
+      const run = await runLive(write, office.port)
+      expect(run.status).toBe(0)
+      expect(run.stderr).toBe('')
+      expect(JSON.parse(run.stdout)).toEqual(ALLOW)
+      expect(run.stdout.trim().split('\n')).toHaveLength(1)
+      expect(office.hits.map(h => [h.method, h.url])).toEqual([['POST', '/event'], ['GET', '/permission/abc123?wait=2']])
+      expect(office.hits[0].auth).toBe('Bearer office-token')
+      expect(office.hits[1].auth).toBe('Bearer office-token')
+      expect(JSON.parse(office.hits[0].body)).toMatchObject({ type: 'session_needs_you', answerable: true, suggestions: SUGGESTIONS })
+    } finally {
+      await office.close()
+    }
+  })
+
+  it('keeps polling while the server says pending (the deadline may move) and prints a deny verbatim', async () => {
+    const DENY = { hookSpecificOutput: { hookEventName: 'PermissionRequest', decision: { behavior: 'deny', message: 'Denied from Claude Office', interrupt: false } } }
+    const office = await fakeOffice([
+      (hit, res) => json(res, 200, { ok: true, permissionId: 'p2', wait: { pollMs: 1000, deadline: Date.now() + 60_000 } }),
+      (hit, res) => json(res, 200, { status: 'pending', deadline: Date.now() + 60_000 }),
+      (hit, res) => json(res, 200, { status: 'pending', deadline: Date.now() + 600_000 }),
+      (hit, res) => json(res, 200, { status: 'denied', deadline: Date.now() + 600_000, hookOutput: DENY }),
+    ])
+    try {
+      const run = await runLive(write, office.port)
+      expect(run.status).toBe(0)
+      expect(JSON.parse(run.stdout)).toEqual(DENY)
+      expect(office.hits).toHaveLength(4)
+      expect(office.hits.slice(1).every(h => h.url === '/permission/p2?wait=1')).toBe(true)
+    } finally {
+      await office.close()
+    }
+  })
+
+  it('prints nothing on resolved_elsewhere, expired, a 404, a pending answer past the deadline, or a reply without a permissionId', async () => {
+    for (const second of [
+      (hit: Hit, res: import('node:http').ServerResponse) => json(res, 200, { status: 'resolved_elsewhere', deadline: Date.now() + 60_000 }),
+      (hit: Hit, res: import('node:http').ServerResponse) => json(res, 200, { status: 'expired', deadline: Date.now() - 1 }),
+      (hit: Hit, res: import('node:http').ServerResponse) => json(res, 404, { error: 'Unknown permission' }),
+      (hit: Hit, res: import('node:http').ServerResponse) => json(res, 200, { status: 'pending', deadline: Date.now() - 5_000 }),
+    ]) {
+      const office = await fakeOffice([
+        (hit, res) => json(res, 200, { ok: true, permissionId: 'p3', wait: { pollMs: 1000, deadline: Date.now() + 60_000 } }),
+        second,
+      ])
+      try {
+        const run = await runLive(write, office.port)
+        expect(run.status).toBe(0)
+        expect(run.stdout).toBe('')
+        expect(run.stderr).toBe('')
+        expect(office.hits).toHaveLength(2)
+      } finally {
+        await office.close()
+      }
+    }
+    // An older server (or the setting off): a plain {ok} means no wait at all
+    const plain = await fakeOffice([(hit, res) => json(res, 200, { ok: true })])
+    try {
+      const run = await runLive(write, plain.port)
+      expect(run.stdout).toBe('')
+      expect(plain.hits).toHaveLength(1)
+    } finally {
+      await plain.close()
+    }
+  })
+
+  it('server down: exits 0 at once with nothing printed; without the marker a PermissionRequest never waits even with the server up', async () => {
+    // Nothing listens on this port
+    const probe = await fakeOffice([])
+    const deadPort = probe.port
+    await probe.close()
+    const down = await runLive(write, deadPort)
+    expect(down.status).toBe(0)
+    expect(down.stdout).toBe('')
+    expect(down.ms).toBeLessThan(5_000)
+
+    // A server that never answers: with the marker gone the POST is the usual
+    // backgrounded one (--max-time 1) and the script returns without waiting
+    const noMarker = mkdtempSync(join(tmpdir(), 'agent-office-nomarker-'))
+    const hanging = await fakeOffice([() => { /* never responds */ }])
+    try {
+      const run = await runLive(write, hanging.port, { AGENT_OFFICE_HOME: noMarker })
+      expect(run.status).toBe(0)
+      expect(run.stdout).toBe('')
+      expect(run.ms).toBeLessThan(3_000)
+    } finally {
+      await hanging.close()
+      rmSync(noMarker, { recursive: true, force: true })
+    }
+  })
+
+  it('never blocks any other event: a PostToolUse with the marker present is backgrounded even when the server hangs', async () => {
+    const hanging = await fakeOffice([() => { /* never responds */ }])
+    try {
+      const run = await runLive({ ...session, hook_event_name: 'PostToolUse', tool_name: 'Write', tool_input: { file_path: '/x' }, tool_response: 'ok' }, hanging.port)
+      expect(run.status).toBe(0)
+      expect(run.stdout).toBe('')
+      expect(run.ms).toBeLessThan(3_000)
+      const prompt = await runLive({ ...session, hook_event_name: 'UserPromptSubmit', prompt: 'hi' }, hanging.port)
+      expect(prompt.stdout).toBe('')
+      expect(prompt.ms).toBeLessThan(3_000)
+    } finally {
+      await hanging.close()
+    }
   })
 })

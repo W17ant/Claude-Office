@@ -15,7 +15,7 @@
 import express from 'express'
 import { createServer } from 'http'
 import { WebSocketServer, WebSocket } from 'ws'
-import { readFileSync, existsSync, writeFileSync, mkdirSync, realpathSync, chmodSync } from 'fs'
+import { readFileSync, existsSync, writeFileSync, mkdirSync, realpathSync, chmodSync, unlinkSync } from 'fs'
 import { homedir } from 'os'
 import { join, basename } from 'path'
 import { randomBytes, timingSafeEqual } from 'crypto'
@@ -26,6 +26,7 @@ import { addMessage, getMessages, markSeen, addReaction, markInboxRead } from '.
 import db from './chat-db.js'
 import { mountStatus } from './status.js'
 import { mountRegistry } from './sessions.js'
+import { mountPermissions, sanitiseSuggestions } from './permissions.js'
 import { mountHealth } from './health.js'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -65,7 +66,11 @@ const PORT = 3334
 //
 //   token required   POST /event, /chat/reply, /a2a, /chat/inbox/read,
 //                    /chat/seen, /chat/react, /chat/video-mode,
+//                    GET /permission/:id (the hook's long-poll),
 //                    and POST /chat for a destructive slash command (/clear)
+//   UI token or token  POST /permission/:id (answer a permission dialog) and
+//                    POST /settings — the two things the office page itself
+//                    may change; see UI_TOKEN below
 //   open             every GET, POST /chat (plain lines + read-only /status,
 //                    /agents, /help and the incident toggles), /chat/typing,
 //                    POST /chat/cron-state (the UI's pause button)
@@ -149,6 +154,42 @@ function isAllowedOrigin(origin) {
   } catch {
     return false  // not a URL (`null`)
   }
+}
+
+// ---------------------------------------------------------------------------
+// The UI token — how the office page gets to answer a permission dialog
+//
+// The page has no way to read the 0600 token file, yet answering "Do you want
+// to run this command?" for a Claude Code session must not be open to any
+// local process the way POST /chat is. So the server mints a second secret
+// per process, UI_TOKEN, and hands it out in exactly one place: the WebSocket
+// snapshot. That socket is origin-gated (isAllowedOrigin above: a browser
+// always sends Origin, and only the loopback UI ports pass), so a web page on
+// another origin — a malicious site, a DNS-rebinding page whose Origin is its
+// own hostname — can never open it and never learns the token, while a local
+// process that could connect without an Origin header could just as well
+// read the token file. The token lives in memory only, changes on every
+// restart, is compared in constant time, and opens only the two routes the
+// page needs: POST /permission/:id and POST /settings. The hook's long-poll
+// that *learns* a decision stays behind the file token, the loopback bind is
+// unchanged, nothing is ever auto-allowed, and when the server is down the
+// hook prints nothing and the terminal dialog is in charge.
+// ---------------------------------------------------------------------------
+
+const UI_TOKEN = randomBytes(24).toString('hex')
+
+function uiTokenMatches(supplied) {
+  if (typeof supplied !== 'string' || supplied.length === 0) return false
+  const a = Buffer.from(supplied, 'utf8')
+  const b = Buffer.from(UI_TOKEN, 'utf8')
+  return a.length === b.length && timingSafeEqual(a, b)
+}
+
+/** Express middleware: the office page (UI token from the snapshot) or a token holder. */
+function requireUi(req, res, next) {
+  const supplied = bearerToken(req)
+  if (uiTokenMatches(supplied) || tokenMatches(supplied)) return next()
+  unauthorized(res, { error: 'Unauthorized' })
 }
 
 // ---------------------------------------------------------------------------
@@ -593,6 +634,7 @@ function endSession(session, reason, now = Date.now()) {
   session.lastActivityAt = now
   cancelPendingNeedsYou(session.id)
   clearNeedsYouTimer(session.id)
+  releasePermissions(session.id, 'session ended')
   if (session.main?.state !== 'idle') console.log(`[main] ${sessionName(session)}: ${session.main?.state ?? 'idle'} -> idle (session ended)`)
   session.main = newMain(now)
   for (const agentId of Array.from(session.agentIds)) {
@@ -839,19 +881,30 @@ function clampCount(val, max = Number.MAX_SAFE_INTEGER) {
 //   off      state transitions only; no text is stored or broadcast
 //   summary  the first 200 characters (default)
 //   full     the whole 2000-character clamp
-// The file is written by POST /settings (token) and read at startup; GET
-// /settings is open.
+// The file is written by POST /settings (UI token or token) and read at
+// startup; GET /settings is open.
+//
+// answerPermissions (default true) says whether a Claude Code permission
+// dialog may be answered from the office (server/permissions.js). The hook
+// must know this before it decides to wait, without a round trip, so the
+// server mirrors it as a marker file: $AGENT_OFFICE_HOME/answer-permissions
+// exists while the setting is on and is removed when it is off. Without the
+// marker the hook's PermissionRequest branch behaves as it always did.
 // ---------------------------------------------------------------------------
 
 const SETTINGS_FILE = join(RUNTIME_DIR, 'settings.json')
+const ANSWER_MARKER_FILE = join(RUNTIME_DIR, 'answer-permissions')
 const LOG_PROMPTS_LEVELS = new Map([['off', 0], ['summary', 200], ['full', MAX_TEXT_LEN]])
-const settings = { logPrompts: 'summary' }
+const settings = { logPrompts: 'summary', answerPermissions: true }
 
 function loadSettings() {
   if (!existsSync(SETTINGS_FILE)) return
   try {
     const saved = JSON.parse(readFileSync(SETTINGS_FILE, 'utf8'))
-    if (saved && typeof saved === 'object' && LOG_PROMPTS_LEVELS.has(saved.logPrompts)) settings.logPrompts = saved.logPrompts
+    if (saved && typeof saved === 'object') {
+      if (LOG_PROMPTS_LEVELS.has(saved.logPrompts)) settings.logPrompts = saved.logPrompts
+      if (typeof saved.answerPermissions === 'boolean') settings.answerPermissions = saved.answerPermissions
+    }
   } catch (err) {
     console.warn('[settings] Could not read settings:', err.message)
   }
@@ -865,6 +918,16 @@ function saveSettings() {
   }
 }
 
+/** The marker file the hook checks follows the answerPermissions setting (0600 like the token). */
+function syncAnswerMarker() {
+  try {
+    if (settings.answerPermissions) writePrivate(ANSWER_MARKER_FILE, 'The office may answer permission dialogs (settings.answerPermissions).\n')
+    else if (existsSync(ANSWER_MARKER_FILE)) unlinkSync(ANSWER_MARKER_FILE)
+  } catch (err) {
+    console.warn('[settings] Could not update the answer-permissions marker:', err.message)
+  }
+}
+
 /** Prompt / reply text at the configured logPrompts level: '' when off, else its first N characters. */
 function transcriptText(text) {
   const max = LOG_PROMPTS_LEVELS.get(settings.logPrompts) ?? 0
@@ -872,6 +935,7 @@ function transcriptText(text) {
 }
 
 loadSettings()
+syncAnswerMarker()
 
 /** Stop.background_tasks as forwarded by the tracker: at most 10, four clamped strings each. */
 function sanitiseTasks(list) {
@@ -926,6 +990,41 @@ app.options('*', (_req, res) => res.sendStatus(204))
 // Payroll / electricity / memory: POST /status + GET /status (server/status.js),
 // fed by the Claude Code status line and keyed by the same session ids as `sessions`
 const status = mountStatus(app, { requireToken, broadcast, staleMs: STALE_AGENT_MS, sessions })
+
+/**
+ * A permission was answered from the office: the session's hand comes down
+ * the way a PostToolUse would lower it (the call is about to run, or Claude
+ * is about to hear the denial and carry on), and the UI is told.
+ */
+function onOfficeDecision(permission) {
+  const session = sessions.get(permission.sessionId)
+  if (!session) return
+  const isPermission = w => w && w.kind === 'permission'
+  const pending = pendingNeedsYou.get(session.id)
+  if (pending && isPermission(pending.wait)) cancelPendingNeedsYou(session.id)
+  const main = mainOf(session)
+  if (main.state !== 'needs-you' || !isPermission(main.needsYou)) return
+  delete main.needsYou
+  setMainState(session, 'working', `${permission.toolName} ${permission.status} from the office`)
+  saveAgents()
+  broadcast(mainEvent(session, 'permission answered from the office'))
+}
+
+// Answer a permission dialog from the office: GET /permissions, the hook's
+// long-poll GET /permission/:id (token) and the page's POST /permission/:id
+// (UI token). Pending records are created in POST /event below and released
+// by the session's later activity in processEvent.
+const permissions = mountPermissions(app, { requireToken, requireUi, broadcast, onDecided: onOfficeDecision })
+
+/**
+ * The session showed activity after a PermissionRequest: whatever permission
+ * was pending for it was answered in the terminal (see server/permissions.js).
+ * `filter` narrows it, e.g. to records older than the PreToolUse race window.
+ */
+function releasePermissions(sessionId, reason, filter) {
+  if (!sessionId) return
+  permissions.resolveSession(sessionId, reason, filter)
+}
 
 // Pipeline health: GET /health + the throttled `health` broadcast (server/health.js);
 // POST /event stamps it, the WS snapshot carries it, the status strip and `npm run doctor` read it.
@@ -1046,8 +1145,14 @@ app.post('/event', requireToken, (req, res) => {
     summary:          clampString(body.summary),
     message:          clampString(body.message),
     notificationType: clampString(body.notificationType, 40),
+    // A PermissionRequest the office may answer (server/permissions.js): the
+    // detail is the command or the path (400), the suggestions go back to
+    // Claude Code verbatim, so their shape is kept and their sizes bounded
+    answerable:       body.answerable === true || undefined,
+    permissionMode:   clampString(body.permissionMode, 40),
+    suggestions:      body.type === 'session_needs_you' ? sanitiseSuggestions(body.suggestions) : undefined,
     error:            clampString(body.error, 40),
-    detail:           clampString(body.detail),
+    detail:           clampString(body.detail, body.type === 'session_needs_you' ? 400 : MAX_STRING_LEN),
     phase:            body.phase === 'pre' || body.phase === 'post' ? body.phase : undefined,
     trigger:          clampString(body.trigger, 20),
     backgroundTasks:  sanitiseTasks(body.backgroundTasks),
@@ -1069,6 +1174,28 @@ app.post('/event', requireToken, (req, res) => {
     broadcast(event)
   }
   health.markHook()  // a hook reached us: what the strip's "last seen" counts (after the event, so its counts include it)
+
+  // A PermissionRequest the hook will wait on: the response names the pending
+  // record and how to poll it (server/permissions.js). Only while the setting
+  // is on and the session is known; otherwise the hook gets the usual {ok} and
+  // exits without printing, leaving the terminal dialog in charge.
+  if (sanitised.type === 'session_needs_you' && sanitised.kind === 'permission' && sanitised.answerable && settings.answerPermissions && sanitised.sessionId) {
+    const session = sessions.get(sanitised.sessionId)
+    const { permission, wait } = permissions.create({
+      sessionId: sanitised.sessionId,
+      project: session?.project,
+      cwd: session?.cwd ?? sanitised.cwd,
+      sessionTitle: session?.title,
+      toolName: sanitised.toolName,
+      summary: sanitised.summary,
+      detail: sanitised.detail,
+      suggestions: sanitised.suggestions,
+      permissionMode: sanitised.permissionMode,
+      promptId: sanitised.promptId,
+      agentId: sanitised.agentId,
+    })
+    return res.json({ ok: true, permissionId: permission.id, wait })
+  }
 
   res.json({ ok: true, ...(event?.type === 'agent_spawned' ? { agentId: event.agent.id } : {}) })
 })
@@ -1361,23 +1488,30 @@ app.get('/sessions', (req, res) => {
 
 /**
  * GET /settings — the office settings (see Settings above). Open.
- * POST /settings — change them: { logPrompts: "off" | "summary" | "full" }.
- * Needs the bearer token: it decides what of the conversation is kept.
+ * POST /settings — change them: { logPrompts: "off" | "summary" | "full",
+ * answerPermissions: boolean }. Needs the UI token (the office page) or the
+ * bearer token: it decides what of the conversation is kept and whether a
+ * permission dialog may be answered from here.
  */
 app.get('/settings', (_req, res) => {
   res.json({ ...settings, logPromptsLevels: Array.from(LOG_PROMPTS_LEVELS.keys()) })
 })
 
-app.post('/settings', requireToken, (req, res) => {
-  const { logPrompts } = req.body ?? {}
+app.post('/settings', requireUi, (req, res) => {
+  const { logPrompts, answerPermissions } = req.body ?? {}
   if (logPrompts !== undefined) {
     if (typeof logPrompts !== 'string' || !LOG_PROMPTS_LEVELS.has(logPrompts)) {
       return res.status(400).json({ error: `logPrompts must be one of ${Array.from(LOG_PROMPTS_LEVELS.keys()).join(', ')}` })
     }
-    settings.logPrompts = logPrompts
   }
+  if (answerPermissions !== undefined && typeof answerPermissions !== 'boolean') {
+    return res.status(400).json({ error: 'answerPermissions must be true or false' })
+  }
+  if (logPrompts !== undefined) settings.logPrompts = logPrompts
+  if (answerPermissions !== undefined) settings.answerPermissions = answerPermissions
   saveSettings()
-  console.log(`[settings] logPrompts = ${settings.logPrompts}`)
+  syncAnswerMarker()
+  console.log(`[settings] logPrompts = ${settings.logPrompts}, answerPermissions = ${settings.answerPermissions}`)
   res.json({ ok: true, ...settings })
 })
 
@@ -1786,6 +1920,10 @@ function processEvent(body) {
         session.lastStatus = body.status ?? ''
         session.lastStatusAt = now
         mainWorking(session, body.status, now)
+        // PreToolUse / PostToolUseFailure on the main thread: a dialog that
+        // was up has been answered — unless this is the PreToolUse of the very
+        // call that raised it, which can arrive after it (PERMISSION_RACE_MS)
+        releasePermissions(session.id, `tool call: ${logText(body.status)}`, p => now - p.createdAt >= PERMISSION_RACE_MS)
         saveAgents()
       }
       return {
@@ -1944,6 +2082,7 @@ function processEvent(body) {
       main.lastPromptAt = now
       if (body.promptId) main.promptId = body.promptId
       cancelPendingNeedsYou(session.id)
+      releasePermissions(session.id, wakeup ? 'woken by a background task' : 'new prompt')
       delete main.needsYou
       delete main.error
       delete main.beforeCompact
@@ -1987,6 +2126,7 @@ function processEvent(body) {
       main.crons = body.crons ?? 0
       if (body.promptId) main.promptId = body.promptId
       cancelPendingNeedsYou(session.id)
+      releasePermissions(session.id, 'turn ended')
       delete main.needsYou
       delete main.error
       delete main.beforeCompact
@@ -2025,6 +2165,13 @@ function processEvent(body) {
       if (!session) return null
       const now = Date.now()
       const main = mainOf(session, now)
+      // Answering from the office (server/permissions.js): a Notification
+      // proves the session is interactive, so a pending permission of it may
+      // wait the full ten minutes; a new PermissionRequest (the hook's, not a
+      // Notification's) means the previous dialog was answered. Both happen
+      // before the dedupe below, which only concerns the hand.
+      if (body.notificationType) permissions.markInteractive(session.id)
+      else if (body.kind === 'permission') releasePermissions(session.id, 'a new permission request')
       const sameWait = w => w && w.kind === body.kind
         && (w.promptId ?? null) === (body.promptId ?? null)
         && (!body.toolName || w.toolName === body.toolName)
@@ -2063,6 +2210,11 @@ function processEvent(body) {
       if (!session) return null
       const answers = w => w && w.kind === 'permission' && (body.batch === true || (body.toolName && w.toolName === body.toolName))
       const what = body.batch === true ? `tool batch of ${body.count ?? '?'} done` : `${body.toolName ?? 'tool'} ran`
+      // A pending permission of the session was answered in the terminal: the
+      // batch end settles everything; a single PostToolUse settles the tool it
+      // names, or any record older than the parallel-batch race window (a Read
+      // that ran beside the Write still waiting on its dialog)
+      releasePermissions(session.id, what, p => body.batch === true || p.toolName === body.toolName || Date.now() - p.createdAt >= PERMISSION_RACE_MS)
       const pending = pendingNeedsYou.get(session.id)
       if (pending && answers(pending.wait)) {
         cancelPendingNeedsYou(session.id)
@@ -2116,6 +2268,7 @@ function processEvent(body) {
       main.error = { error: body.error || 'unknown', detail: body.detail ?? '', since: now }
       if (body.promptId) main.promptId = body.promptId
       cancelPendingNeedsYou(session.id)
+      releasePermissions(session.id, 'turn failed')
       delete main.needsYou
       delete main.beforeCompact
       setMainState(session, 'error', `${main.error.error}${main.error.detail ? `: ${logText(main.error.detail, 80)}` : ''}`, now)
@@ -2283,6 +2436,10 @@ wss.on('connection', (ws, req) => {
     statuses: status.summary(),
     health: health.snapshot(),
     mcpServers: discoverMcpServers(),
+    // Permission dialogs waiting on the office, and the token that answers
+    // them — handed out here and nowhere else (see UI_TOKEN)
+    pendingPermissions: permissions.pending(),
+    uiToken: UI_TOKEN,
     timestamp: Date.now(),
   }
   ws.send(JSON.stringify(snapshot))
@@ -2405,8 +2562,10 @@ export {
   httpServer,
   wss,
   AUTH_TOKEN,
+  UI_TOKEN,
   RUNTIME_DIR,
   TOKEN_FILE,
+  ANSWER_MARKER_FILE,
   PORT,
   UI_DIR,
   UI_AVAILABLE,
@@ -2416,6 +2575,7 @@ export {
   registry,
   REGISTRY_DIR,
   pendingNeedsYou,
+  permissions,
   settings,
   processEvent,
   sendAgentMessage,

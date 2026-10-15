@@ -8,6 +8,8 @@ import Character from './components/Character'
 import FurnitureRenderer from './components/FurnitureRenderer'
 import SessionStrip from './components/SessionStrip'
 import Meters from './components/Meters'
+import PermissionCards from './components/PermissionCard'
+import { isPermissionEvent, reducePermissions, setUiToken, type PermissionAction, type PermissionCardState } from './permissions'
 import StatusStrip from './components/StatusStrip'
 import { Agent, AGENT_CONFIGS } from './types'
 import { getCurrentPhase, getPhaseLabel, type DayPhase } from './daylight'
@@ -630,7 +632,18 @@ const App: React.FC = () => {
   // office itself plays the server's part (lifecycle chat lines, all-move events)
   const officeEnv = useCallback((): OfficeEnv => ({ now: Date.now(), live: !isSimMode, computePath, random: Math.random }), [])
 
+  // Permission dialogs waiting on the office (src/permissions.ts): their own
+  // state beside the office reducer — a card is not a character. The
+  // dispatcher is stable, so handleEvent below can call it.
+  const [permissionCards, setPermissionCards] = useState<PermissionCardState[]>([])
+  const dispatchPermissions = useCallback((action: PermissionAction) => setPermissionCards(prev => reducePermissions(prev, action)), [])
+
   const handleEvent = useCallback((action: OfficeAction) => {
+    // permission_request / _extended / _resolved are the cards' alone; the
+    // snapshot also hands over the UI token and the pending list, then goes
+    // on to the office reducer as before
+    if (isPermissionEvent(action)) { dispatchPermissions(action); return }
+    if (action.type === 'snapshot') { setUiToken(action.uiToken); dispatchPermissions(action) }
     // Incident mode: count failed tool calls, and apply /incident + /all-clear
     // relayed by the server
     if (action.type === 'agent_working' && action.failed) {
@@ -654,7 +667,7 @@ const App: React.FC = () => {
     const { state, effects } = reduceOffice(officeRef.current!, action, officeEnv())
     if (state !== officeRef.current) commit(state)
     runEffects(effects)
-  }, [commit, runEffects, officeEnv])
+  }, [commit, runEffects, officeEnv, dispatchPermissions])
   handleEventRef.current = handleEvent
 
   // ---------------------------------------------------------------------------
@@ -1519,6 +1532,7 @@ const App: React.FC = () => {
       </div>
 
       <div className="chat-column">
+      {!isSimMode && <PermissionCards cards={permissionCards} dispatch={dispatchPermissions} />}
       <Meters onNotice={text => addMsg('system', 'default', '#8b8d91', text, true)} />
       <SlackChat
         messages={messages}

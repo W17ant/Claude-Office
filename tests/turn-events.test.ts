@@ -196,7 +196,7 @@ describe('logPrompts: what of the conversation is kept (GET/POST /settings)', ()
   it('defaults to summary (200 characters), is readable openly and changed with the token, and comes back after a restart from settings.json', async () => {
     const office = await loadOffice()
     offices.push(office)
-    expect((await request(office.server.app).get('/settings')).body).toEqual({ logPrompts: 'summary', logPromptsLevels: ['off', 'summary', 'full'] })
+    expect((await request(office.server.app).get('/settings')).body).toEqual({ logPrompts: 'summary', answerPermissions: true, logPromptsLevels: ['off', 'summary', 'full'] })
     expect(existsSync(join(office.dir, 'settings.json'))).toBe(false)  // nothing written until a change
 
     office.server.processEvent({ type: 'session_prompt', ...ALPHA, promptId: 'p-1', text: 'p'.repeat(500) })
@@ -212,8 +212,8 @@ describe('logPrompts: what of the conversation is kept (GET/POST /settings)', ()
 
     const set = await postAuthed(office.server, '/settings', { logPrompts: 'off' })
     expect(set.status).toBe(200)
-    expect(set.body).toEqual({ ok: true, logPrompts: 'off' })
-    expect(JSON.parse(readFileSync(join(office.dir, 'settings.json'), 'utf8'))).toEqual({ logPrompts: 'off' })
+    expect(set.body).toEqual({ ok: true, logPrompts: 'off', answerPermissions: true })
+    expect(JSON.parse(readFileSync(join(office.dir, 'settings.json'), 'utf8'))).toEqual({ logPrompts: 'off', answerPermissions: true })
 
     const again = await loadOffice({ dir: office.dir })
     offices.push(again)

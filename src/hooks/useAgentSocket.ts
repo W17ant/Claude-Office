@@ -17,7 +17,7 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { OfficeEvent, ServerHealth, SessionInfo, SessionRegistry, SnapshotAgent } from '../types'
+import { OfficeEvent, PendingPermission, ServerHealth, SessionInfo, SessionRegistry, SnapshotAgent } from '../types'
 import type { SessionStatus, MeterTotals } from '../meters'
 import { projectFromCwd } from '../mainState'
 
@@ -57,6 +57,9 @@ interface SnapshotMessage {
   sessions?: Array<SessionInfo & { agentIds?: string[]; agentCount?: number }>
   /** Payroll / electricity / memory: the server's status store (server/status.js) */
   statuses?: { sessions: SessionStatus[]; totals: MeterTotals }
+  /** Permission dialogs waiting on the office, and the token that answers them (server/permissions.js) */
+  pendingPermissions?: PendingPermission[]
+  uiToken?: string
   /** Pipeline health: hooks seen, version, uptime (server/health.js) */
   health?: ServerHealth
   mcpServers: string[]
@@ -278,6 +281,10 @@ export function useAgentSocket(options: AgentSocketOptions = {}): AgentSocketRes
         type: 'snapshot',
         activeAgents: snap.activeAgents ?? [],
         sessions: snapSessions.map(s => toSessionInfo(s.id, s)),
+        // The pending permission dialogs and the UI token ride along for
+        // src/permissions.ts (left undefined by a server without them)
+        pendingPermissions: snap.pendingPermissions,
+        uiToken: snap.uiToken,
         timestamp: snap.timestamp,
       })
       return
