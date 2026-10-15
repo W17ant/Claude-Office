@@ -38,28 +38,18 @@ const VALID_EVENTS = [
   'MessageDisplay',
 ]
 
-/** What hooks/install-hooks.sh registers; the plugin must cover at least these. */
-const INSTALLER_EVENTS = ['PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'SubagentStart', 'SubagentStop', 'SessionStart', 'SessionEnd']
-/** Registered ahead of the tracker handling them: it exits 0 silently for events it does not act on. */
-const EXTRA_EVENTS = ['UserPromptSubmit', 'Stop', 'PermissionRequest', 'Notification', 'StopFailure', 'PreCompact', 'PostCompact', 'CwdChanged', 'PostModelSwitch']
-
-/** Events whose matcher filters on the tool name (hooks reference, "Matcher patterns"). */
-const TOOL_MATCHED_EVENTS = ['PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'PermissionRequest', 'PermissionDenied']
+/**
+ * What hooks/install-hooks.sh registers — read from its EVENTS tuple, so the
+ * plugin and the installer cannot drift apart without this test noticing.
+ */
+const INSTALLER_EVENTS = (() => {
+  const source = readFileSync(join(ROOT, 'hooks', 'install-hooks.sh'), 'utf8')
+  const tuple = /^EVENTS = \(([\s\S]*?)^\)/m.exec(source)
+  if (!tuple) throw new Error('could not find the EVENTS tuple in hooks/install-hooks.sh')
+  return Array.from(tuple[1].matchAll(/'([A-Za-z]+)'/g), (m) => m[1])
+})()
 
 const TRACKER_COMMAND = 'bash "${CLAUDE_PLUGIN_ROOT}/hooks/agent-tracker.sh"'
-
-/**
- * How Claude Code evaluates a matcher: "", "*" or omitted match everything;
- * a value made only of letters, digits, `_`, `-`, spaces, `,` and `|` is a
- * list of exact names; anything else is an unanchored JavaScript regex.
- */
-function matcherMatches(matcher: string | undefined, name: string): boolean {
-  if (matcher === undefined || matcher === '' || matcher === '*') return true
-  if (/^[A-Za-z0-9_\- ,|]+$/.test(matcher)) {
-    return matcher.split(/[|,]/).map((s) => s.trim()).includes(name)
-  }
-  return new RegExp(matcher).test(name)
-}
 
 describe('.claude-plugin/plugin.json', () => {
   it('names the plugin agent-office with a kebab-case name Claude Code accepts', () => {
@@ -157,8 +147,9 @@ describe('hooks/hooks.json', () => {
     }
   })
 
-  it('registers the installer’s seven events plus the nine per-turn and session-state events', () => {
-    expect(Object.keys(hooks).sort()).toEqual([...INSTALLER_EVENTS, ...EXTRA_EVENTS].sort())
+  it('registers exactly the 17 events the installer registers (workers, sessions, the main thread’s turn)', () => {
+    expect(INSTALLER_EVENTS).toHaveLength(17)
+    expect(Object.keys(hooks).sort()).toEqual([...INSTALLER_EVENTS].sort())
   })
 
   it('runs agent-tracker.sh through ${CLAUDE_PLUGIN_ROOT}, double-quoted, once per event', () => {
@@ -189,31 +180,13 @@ describe('hooks/hooks.json', () => {
     }
   })
 
-  it('puts a matcher only on tool events, and only PostToolUse is narrowed', () => {
+  it('narrows nothing: every event fires on every occurrence, like the installer’s matcher ""', () => {
+    // PreToolUse is activity for every tool, a main-thread PostToolUse of any
+    // tool lowers a permission hand (session_tool_done), and the rest either
+    // have no matcher support (UserPromptSubmit, Stop, PostToolBatch, CwdChanged)
+    // or are wanted whole
     for (const [event, groups] of Object.entries(hooks)) {
-      const matcher = groups[0].matcher
-      if (event === 'PostToolUse') {
-        expect(typeof matcher).toBe('string')
-        continue
-      }
-      // Omitted = fire on every occurrence; CwdChanged has no matcher support at all
-      expect(matcher, `${event} should not be narrowed`).toBeUndefined()
-      if (matcher !== undefined) expect(TOOL_MATCHED_EVENTS).toContain(event)
-    }
-  })
-
-  it('PostToolUse matcher is a valid regex that covers exactly the tools the tracker acts on after a call', () => {
-    const matcher: string = hooks.PostToolUse[0].matcher
-    // Contains regex characters, so Claude Code compiles it as a JavaScript RegExp
-    expect(() => new RegExp(matcher)).not.toThrow()
-    // The tracker's PostToolUse branches: mcp__<server>__<tool>, Agent (and
-    // its Task alias), and SubagentHandback (background agents handing back)
-    for (const tool of ['Agent', 'Task', 'SubagentHandback', 'mcp__memory__search', 'mcp__plugin_x_y__tool']) {
-      expect(matcherMatches(matcher, tool), `${tool} should match`).toBe(true)
-    }
-    // Everything else exits silently in the tracker, so it must not spawn it
-    for (const tool of ['Bash', 'Read', 'Write', 'Edit', 'Grep', 'Glob', 'Skill', 'TaskOutput', 'TaskStop', 'ListAgents', 'SendMessage', 'Monitor']) {
-      expect(matcherMatches(matcher, tool), `${tool} should not match`).toBe(false)
+      expect(groups[0].matcher, `${event} should not be narrowed`).toBeUndefined()
     }
   })
 })
@@ -239,6 +212,7 @@ describe('hooks/hooks.json × agent-tracker.sh', () => {
     StopFailure: { error: 'rate_limit' },
     PreCompact: { trigger: 'manual', custom_instructions: null },
     PostCompact: { trigger: 'manual', compact_summary: 'summary' },
+    PostToolBatch: { tool_calls: [{ ...tool, tool_response: '' }] },
     CwdChanged: { old_cwd: '/tmp/project', new_cwd: '/tmp' },
     PostModelSwitch: { from_model: 'a', to_model: 'b', requested_model: 'b', source: 'command', context_tokens: 1 },
   }
