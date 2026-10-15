@@ -1640,6 +1640,42 @@ export function returnAgentsFromEvent(agents: Agent[], movedIds: string[], env: 
     : a))
 }
 
+// ---------------------------------------------------------------------------
+// Errands: the boss walking to a piece of furniture someone clicked
+// ---------------------------------------------------------------------------
+
+/** The frame rate WALK_SPEED is tuned for: App.tsx steps the office with dt = elapsed / 16.67 ms */
+const FRAMES_PER_SECOND = 60
+
+/**
+ * How long a walk from `from` through the waypoints of `path` to `to` takes
+ * at WALK_SPEED, in ms at 60 fps: what one step per waypoint (stepToward)
+ * adds up to.
+ */
+export function walkDurationMs(from: Position, path: Position[], to: Position): number {
+  let length = 0
+  let at = from
+  for (const p of [...path, to]) {
+    length += Math.hypot(p.x - at.x, p.y - at.y)
+    at = p
+  }
+  return Math.ceil((length / (WALK_SPEED * FRAMES_PER_SECOND)) * 1000)
+}
+
+/** Never give up on an errand sooner than this (the wait App.tsx always had) */
+export const ERRAND_MIN_WAIT_MS = 15_000
+
+/**
+ * How long App.tsx watches for the boss to reach the furniture before it
+ * gives up on the effect: the walk, with room for a slower frame rate (dt is
+ * capped per frame, so a slow frame walks less), never under 15 s. A fixed
+ * 15 s was shorter than his walk from his desk to the whiteboard, so he got
+ * there and nothing happened.
+ */
+export function errandWaitMs(walkMs: number): number {
+  return Math.max(ERRAND_MIN_WAIT_MS, Math.ceil(walkMs * 1.5) + 2_000)
+}
+
 /** The one agent a single-agent event (printer jam) sends somewhere: never the boss, never a live worker or a Claude mid-turn */
 export function pickSingleEventAgent(agents: Agent[], env: OfficeEnv): Agent | null {
   const candidates = agents.filter(a =>

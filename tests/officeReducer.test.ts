@@ -13,6 +13,9 @@ import {
   moveAgentsForEvent,
   returnAgentsFromEvent,
   pickSingleEventAgent,
+  walkDurationMs,
+  errandWaitMs,
+  ERRAND_MIN_WAIT_MS,
   lobbyPosition,
   MAIN_ROOM,
   DOOR_TARGET,
@@ -34,7 +37,9 @@ import {
   type OfficeAction,
 } from '../src/officeReducer'
 import { mainId } from '../src/mainState'
-import { createAgent } from '../src/agentManager'
+import { createAgent, findWaypointPath, stepToward, WALK_SPEED } from '../src/agentManager'
+import { getInteraction } from '../src/interactions'
+import { readFileSync } from 'node:fs'
 import { BOSS_NAME } from '../src/config'
 import { AGENT_CONFIGS, type Agent, type ServerHealth } from '../src/types'
 
@@ -1401,5 +1406,41 @@ describe("completion line with the Agent tool's numbers", () => {
   it('sim: the numbers join the "done:" line', () => {
     const { effects } = reduceOffice(fullOffice(1), { type: 'agent_completed', agentId: 'w1', result: 'all green', tokens: 4_200, durationMs: 45_000 }, env({ now: T0 + MIN_VISIBLE_TIME + 1, live: false }))
     expect(texts(effects)[0]).toBe('done: all green · 4.2k tok · 45s')
+  })
+})
+
+describe("the boss's errands to the furniture", () => {
+  const desk = spot('spot-1')
+  const route = (to: { x: number; y: number }) => findWaypointPath(desk.x, desk.y, to.x, to.y, MAIN_ROOM.waypoints ?? [])
+
+  it('walkDurationMs is what stepping the walk frame by frame at 60 fps takes', () => {
+    const board = getInteraction('kanban-board', null)!.walkTo
+    const path = route(board)
+    let at = { x: desk.x, y: desk.y }
+    let frames = 0
+    for (const target of [...path, board]) {
+      for (;;) {
+        const r = stepToward(at, target, WALK_SPEED)
+        at = r.position
+        frames++
+        if (r.arrived) break
+      }
+    }
+    // One frame per waypoint is lost to the step that lands on it
+    expect(Math.abs(walkDurationMs(desk, path, board) - (frames * 1000) / 60)).toBeLessThan(((path.length + 1) * 1000) / 60 + 1)
+    expect(walkDurationMs(desk, [], desk)).toBe(0)
+  })
+
+  it('the wait for him to arrive covers the walk: from his desk to the whiteboard takes more than the old fixed 15 s', () => {
+    const board = getInteraction('kanban-board', null)!.walkTo
+    const walk = walkDurationMs(desk, route(board), board)
+    expect(walk).toBeGreaterThan(ERRAND_MIN_WAIT_MS)
+    expect(errandWaitMs(walk)).toBeGreaterThan(walk)
+    // A short errand still gets at least the old 15 s
+    expect(errandWaitMs(1000)).toBe(ERRAND_MIN_WAIT_MS)
+    // App.tsx watches for that long, not for a fixed time
+    const app = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
+    expect(app).toContain('clearInterval(checkArrival), errandWaitMs(walkMs))')
+    expect(app).not.toMatch(/clearInterval\(checkArrival\), \d+\)/)
   })
 })
