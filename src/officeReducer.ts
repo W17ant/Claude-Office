@@ -19,7 +19,7 @@
  * whole lifecycle is unit-testable in plain Node.
  */
 
-import { Agent, OfficeEvent, Position, SnapshotAgent, AGENT_CONFIGS } from './types'
+import { Agent, OfficeEvent, Position, SnapshotAgent, ServerHealth, AGENT_CONFIGS } from './types'
 import { ROOMS, AgentSpot } from './rooms'
 import {
   createAgent,
@@ -97,6 +97,27 @@ export interface PendingStatus {
   failed: boolean
 }
 
+/** How the office is connected to its server (the status strip's first pill) */
+export type ConnectionPhase = 'connecting' | 'online' | 'reconnecting' | 'offline'
+
+/**
+ * Pipeline health as the office knows it: the socket's phase (from the
+ * `connection` actions src/hooks/useAgentSocket.ts dispatches on open/close)
+ * and the server's last report (the `health` event, also the snapshot's
+ * `health`). Shown by src/components/StatusStrip.tsx.
+ */
+export interface HealthState {
+  connection: ConnectionPhase
+  /** When the current phase began */
+  connectionSince: number
+  /** When the socket first opened this page load (null until it has) */
+  onlineSince: number | null
+  /** The server's last report (null until one arrives) */
+  server: ServerHealth | null
+  /** When that report arrived, by the office's clock */
+  reportedAt: number | null
+}
+
 export interface OfficeState {
   agents: Agent[]
   /** Ids of agents waiting by the door for a desk, oldest first */
@@ -106,6 +127,8 @@ export interface OfficeState {
   meta: Record<string, AgentMeta>
   /** `${timestamp}:${text}` of recent chat_message events, for deduplication */
   recentChatKeys: string[]
+  /** Connection + the server's health report (the status strip) */
+  health: HealthState
 }
 
 /** Everything impure the reducer needs, injected so tests are deterministic */
@@ -259,7 +282,66 @@ function bossReply(agentName: string, random: () => number): string {
 export function initialOfficeState(agents: Agent[], now: number): OfficeState {
   const meta: Record<string, AgentMeta> = {}
   for (const a of agents) meta[a.id] = newMeta(now, true)
-  return { agents, lobby: [], pendingStatus: {}, meta, recentChatKeys: [] }
+  return { agents, lobby: [], pendingStatus: {}, meta, recentChatKeys: [], health: initialHealth(now) }
+}
+
+// ---------------------------------------------------------------------------
+// Pipeline health (the status strip)
+// ---------------------------------------------------------------------------
+
+/** Before the socket has said anything: connecting, no report */
+export function initialHealth(now: number): HealthState {
+  return { connection: 'connecting', connectionSince: now, onlineSince: null, server: null, reportedAt: null }
+}
+
+/**
+ * The socket's phase. `connecting` → `online` on the first open; a close
+ * after that is `reconnecting` (the hook keeps retrying with back-off), a
+ * close before any open is `offline` (no server has answered yet). A repeat
+ * of the current phase — one failed retry after another — is not a change,
+ * so `connectionSince` keeps the time the phase was entered.
+ */
+export function reduceConnection(h: HealthState, socket: 'open' | 'closed' | undefined, now: number): HealthState {
+  if (socket === 'open') {
+    if (h.connection === 'online') return h
+    return { ...h, connection: 'online', connectionSince: now, onlineSince: h.onlineSince ?? now }
+  }
+  if (socket === 'closed') {
+    const next: ConnectionPhase = h.onlineSince === null ? 'offline' : 'reconnecting'
+    if (h.connection === next) return h
+    return { ...h, connection: next, connectionSince: now }
+  }
+  return h
+}
+
+/** Online this long with no hook heard: the hooks are probably not installed */
+export const HOOK_WARN_MS = 60_000
+
+export type HookVerdict =
+  /** No server report yet (not connected) */
+  | { kind: 'unknown' }
+  /** Hooks fire; the last one `agoMs` ago, `count` since the server started */
+  | { kind: 'seen'; agoMs: number; count: number }
+  /** None yet, but the office or the server has only been up `forMs` */
+  | { kind: 'waiting'; forMs: number }
+  /** None after `forMs` ≥ warnAfterMs with both up: time to run the installer */
+  | { kind: 'missing'; forMs: number }
+
+/**
+ * What to say about hooks. `missing` needs both this page to have been
+ * online and the server to have been up for `warnAfterMs` with nothing
+ * heard: a server that was just restarted, or a page that just connected,
+ * has not had the chance yet. `lastHookAt` is stamped by the server's clock,
+ * which is this machine's — the two talk over loopback.
+ */
+export function hookVerdict(h: HealthState, now: number, warnAfterMs = HOOK_WARN_MS): HookVerdict {
+  const s = h.server
+  if (!s) return { kind: 'unknown' }
+  if (s.lastHookAt !== null) return { kind: 'seen', agoMs: Math.max(0, now - s.lastHookAt), count: s.hooksSeen }
+  const onlineFor = h.connection === 'online' && h.onlineSince !== null ? now - h.onlineSince : 0
+  const serverUp = s.uptimeMs + Math.max(0, now - (h.reportedAt ?? now))
+  const forMs = Math.max(0, Math.min(onlineFor, serverUp))
+  return forMs >= warnAfterMs ? { kind: 'missing', forMs } : { kind: 'waiting', forMs }
 }
 
 // ---------------------------------------------------------------------------
@@ -612,6 +694,17 @@ export function reduceOffice(state: OfficeState, action: OfficeAction, env: Offi
       const agent = state.agents.find(a => a.id === action.agentId)
       if (!agent || agent.state !== 'walking-to-desk') return none
       return { state: { ...state, agents: state.agents.map(a => (a.id === agent.id ? walkTo(a, a.deskPosition, 'back to work', env) : a)) }, effects: [] }
+    }
+
+    // ── Pipeline health: the socket's phase, the server's report ───────────
+    case 'connection': {
+      const health = reduceConnection(state.health, action.socket, env.now)
+      return health === state.health ? none : { state: { ...state, health }, effects: [] }
+    }
+
+    case 'health': {
+      if (!action.health) return none
+      return { state: { ...state, health: { ...state.health, server: action.health, reportedAt: env.now } }, effects: [] }
     }
 
     default:
