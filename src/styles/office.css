@@ -1430,6 +1430,35 @@
   font-weight: 700;
 }
 
+/* ===== SESSION PILL — not hooked (known only from Claude Code's session registry) ===== */
+/* Grey and dashed whatever the dot says: the office hears nothing from this
+   terminal, the dot is the registry's own status word (busy / idle / waiting) */
+.session-pill.unhooked {
+  color: #7d7d7d;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px dashed rgba(200, 200, 200, 0.35);
+}
+.session-pill.unhooked .session-pill-project {
+  color: #9a9a9a;
+}
+.session-pill.unhooked .session-pill-model {
+  background: rgba(200, 200, 200, 0.08);
+  color: #8a8a8a;
+}
+.session-pill-unhooked {
+  padding: 0 4px;
+  border-radius: 6px;
+  border: 1px dashed rgba(200, 200, 200, 0.3);
+  color: #8a8a8a;
+  font-size: 7px;
+  line-height: 10px;
+  text-transform: lowercase;
+}
+.session-pill.unhooked.needs-you {
+  color: #e0c67a;
+  border-color: rgba(255, 209, 102, 0.45);
+}
+
 /* ===== A SESSION'S CLAUDE — needs-you hand, error badge, memory wipe ===== */
 /* CSS-drawn emoji in the effect-bubble slot (no sprite exists for a raised hand) */
 .effect-bubble.effect-emoji {

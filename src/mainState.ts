@@ -24,11 +24,14 @@ export function isMainAgent(a: Pick<Agent, 'id'>): boolean {
 }
 
 /**
- * Kinds that need a person at the keyboard right now. The other two are
- * soft: `idle` is Claude Code nudging an absent user, `quota` is a usage
- * pause nobody can shorten — no chime and no title-bar hand for those.
+ * Kinds that need a person at the keyboard right now — `registry` included:
+ * Claude Code marks an unhooked session "waiting" exactly while a dialog or a
+ * question is on its screen (an amber pill; no Claude is seated for it, so no
+ * chime and no title-bar hand either way). The other two are soft: `idle` is
+ * Claude Code nudging an absent user, `quota` is a usage pause nobody can
+ * shorten — no chime and no title-bar hand for those.
  */
-export const HARD_NEEDS_YOU: ReadonlySet<NeedsYouKind> = new Set<NeedsYouKind>(['permission', 'agent-input'])
+export const HARD_NEEDS_YOU: ReadonlySet<NeedsYouKind> = new Set<NeedsYouKind>(['permission', 'agent-input', 'registry'])
 
 export function isHardNeedsYou(needsYou: NeedsYou | undefined): boolean {
   return !!needsYou && HARD_NEEDS_YOU.has(needsYou.kind)
@@ -41,6 +44,7 @@ export function needsYouBadge(kind: NeedsYouKind): string {
     case 'agent-input': return '✋'
     case 'idle':        return '💤'
     case 'quota':       return '⏳'
+    case 'registry':    return '✋'
   }
 }
 
@@ -51,6 +55,7 @@ export function needsYouShort(kind: NeedsYouKind): string {
     case 'agent-input': return 'needs input'
     case 'idle':        return 'idle prompt'
     case 'quota':       return 'waiting for tokens'
+    case 'registry':    return 'waiting in the terminal'
   }
 }
 
@@ -68,6 +73,8 @@ export function needsYouLabel(needsYou: NeedsYou): string {
       return '💤 idle prompt'
     case 'quota':
       return '⏳ waiting for tokens'
+    case 'registry':
+      return `✋ ${summary ?? 'waiting in the terminal'}`
   }
 }
 

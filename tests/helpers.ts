@@ -37,7 +37,11 @@ export interface LoadOptions {
 export async function loadOffice(opts: LoadOptions = {}): Promise<Office> {
   const dir = opts.dir ?? mkdtempSync(join(tmpdir(), 'agent-office-test-'))
   process.env.AGENT_OFFICE_HOME = dir
-  const extra = Object.entries(opts.env ?? {})
+  // The registry roster (server/sessions.js) reads Claude Code's own
+  // ~/.claude/sessions when started; a test office reads a (normally absent)
+  // directory under its runtime dir instead, so the sessions of whoever runs
+  // the suite never turn up in it. A test that wants a registry passes its own.
+  const extra = Object.entries({ AGENT_OFFICE_REGISTRY_DIR: join(dir, 'registry'), ...(opts.env ?? {}) })
   for (const [key, value] of extra) process.env[key] = value
   try {
     vi.resetModules()

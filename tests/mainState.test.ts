@@ -23,6 +23,14 @@ describe('mainState helpers', () => {
     expect(isHardNeedsYou({ kind: 'idle' })).toBe(false)
     expect(isHardNeedsYou({ kind: 'quota' })).toBe(false)
     expect(isHardNeedsYou(undefined)).toBe(false)
+    // An unhooked session the registry marks "waiting" has a dialog on its screen
+    expect(isHardNeedsYou({ kind: 'registry' })).toBe(true)
+    expect(mainTone('needs-you', { kind: 'registry' })).toBe('needs-you')
+    expect(needsYouBadge('registry')).toBe('✋')
+    expect(needsYouShort('registry')).toBe('waiting in the terminal')
+    expect(needsYouLabel({ kind: 'registry', summary: 'waiting in the terminal' })).toBe('✋ waiting in the terminal')
+    expect(needsYouLabel({ kind: 'registry' })).toBe('✋ waiting in the terminal')
+    expect(mainPillText('needs-you', { kind: 'registry' })).toBe('✋ waiting in the terminal')
   })
 
   it('labels say only what the event said', () => {

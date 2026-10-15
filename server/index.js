@@ -7,7 +7,9 @@
  * - GET /roster returns discovered MCP servers
  * - GET /agents lists agents in the office; POST /chat/reply with a recipient
  *   sends a directed agent-to-agent message
- * - GET /sessions lists the Claude Code sessions (terminals) the agents belong to
+ * - GET /sessions lists the Claude Code sessions (terminals) the agents belong to,
+ *   hooked ones and the ones only Claude Code's session registry knows about
+ * - GET /registry shows that registry as the roster reads it (server/sessions.js)
  */
 
 import express from 'express'
@@ -23,6 +25,7 @@ import { dirname } from 'path'
 import { addMessage, getMessages, markSeen, addReaction, markInboxRead } from './chat-db.js'
 import db from './chat-db.js'
 import { mountStatus } from './status.js'
+import { mountRegistry } from './sessions.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -235,10 +238,26 @@ const STALE_AGENT_MS = (Number(process.env.AGENT_OFFICE_STALE_MINUTES) || 120) *
 // without an agentId) are attributed to their session instead of to a random
 // worker. A session the office has not seen is created implicitly by its
 // first event (hooks installed mid-session, server restarted).
+//
+// Sessions without hooks. Claude Code's own session registry
+// (~/.claude/sessions/<pid>.json, server/sessions.js) lists every running
+// CLI process, so a session shows up here before (or without) the hooks
+// being installed: `hooked: false`, `registry: { pid, name, status, ... }`
+// and a `main` mapped from the registry status. Such a record is not
+// persisted (the registry rebuilds it) and never swept as stale while its
+// process is alive; the first hook event from it flips it to hooked
+// (hookSession), same id, and from then on the hooks are the truth. A
+// hooked session with a live registry entry carries `registry` too, as
+// presence only.
 // ---------------------------------------------------------------------------
 
 /** @type {Map<string, object>} sessionId -> session record */
 const sessions = new Map()
+
+// Claude Code's config dir (CLAUDE_CONFIG_DIR moves it) holds the registry;
+// tests point AGENT_OFFICE_REGISTRY_DIR at a temp dir
+const CLAUDE_DIR = process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude')
+const REGISTRY_DIR = process.env.AGENT_OFFICE_REGISTRY_DIR || join(CLAUDE_DIR, 'sessions')
 
 /** @type {Map<string, ReturnType<typeof setTimeout>>} sessionId -> timer that forgets an ended session */
 const sessionTimers = new Map()
@@ -455,6 +474,8 @@ function sessionToJSON(session, { withText = true } = {}) {
   }
   return {
     ...record,
+    // Sessions restored from an older agents.json predate the flag: hooks made them
+    hooked: session.hooked !== false,
     agentCount: live.length,
     workingCount: live.filter(a => a.state === 'working').length,
   }
@@ -469,6 +490,7 @@ function sessionEvent(session, type = 'session_started') {
 function createSession({ id, project, cwd, source, model, title, now = Date.now() }) {
   const session = {
     id,
+    hooked: true,
     project: projectName(project, cwd),
     cwd,
     source: source || 'implicit',
@@ -486,6 +508,24 @@ function createSession({ id, project, cwd, source, model, title, now = Date.now(
 }
 
 /**
+ * A session the registry put here (hooked: false) has sent its first hook
+ * event — hooks installed mid-session, or the office only now hearing them:
+ * from here on the hooks are the truth. The registry-derived main state is
+ * dropped for a fresh one (the event about to be applied sets it), the
+ * registry entry stays attached as presence. Returns whether it flipped; the
+ * caller announces it (session_started with hooked: true).
+ */
+function hookSession(session, source, now = Date.now()) {
+  if (session.hooked !== false) return false
+  session.hooked = true
+  session.source = source
+  session.main = newMain(now)
+  session.lastActivityAt = now
+  console.log(`[session] hooked now (${source}): ${sessionName(session)} (${session.id})`)
+  return true
+}
+
+/**
  * The session an event belongs to, created on the fly (source 'implicit')
  * when the office has not seen it. Bumps the session's activity clock. A
  * straggling event does not revive an ended session — only session_started
@@ -500,6 +540,10 @@ function touchSession(body, now = Date.now()) {
     saveAgents()
     broadcast(sessionEvent(session))
     return session
+  }
+  if (hookSession(session, 'implicit', now)) {
+    saveAgents()
+    broadcast(sessionEvent(session))
   }
   if (session.state === 'active') session.lastActivityAt = now
   if (!session.project) session.project = projectName(body.project, body.cwd)
@@ -705,9 +749,10 @@ const AGENTS_FILE = join(RUNTIME_DIR, 'agents.json')
 function saveAgents() {
   try {
     // MCP entries are transient (one per call), only persist real agents;
-    // ended sessions are on their way out and are not kept either
+    // ended sessions are on their way out and are not kept either, nor are
+    // registry-only sessions (the registry rebuilds them on the next start)
     const agents = liveAgents()
-    const saved = Array.from(sessions.values()).filter(s => s.state === 'active').map(sessionToRecord)
+    const saved = Array.from(sessions.values()).filter(s => s.state === 'active' && s.hooked !== false).map(sessionToRecord)
     writePrivate(AGENTS_FILE, JSON.stringify({ agents, sessions: saved }))
   } catch (err) {
     console.warn('[agents] Could not save agent state:', err.message)
@@ -730,7 +775,7 @@ function loadAgents() {
     // Sessions come back with the same stale cutoff; their agent lists are
     // rebuilt from the agents that survived
     for (const session of Array.isArray(saved) ? saved : []) {
-      if (!session?.id || session.state === 'ended') continue
+      if (!session?.id || session.state === 'ended' || session.hooked === false) continue
       if ((session.lastActivityAt ?? session.startedAt ?? 0) < cutoff) continue
       const agentIds = (Array.isArray(session.agentIds) ? session.agentIds : []).filter(id => activeAgents.has(id))
       sessions.set(session.id, { ...session, state: 'active', agentIds: new Set(agentIds), main: restoredMain(session.main) })
@@ -881,9 +926,22 @@ app.options('*', (_req, res) => res.sendStatus(204))
 // fed by the Claude Code status line and keyed by the same session ids as `sessions`
 const status = mountStatus(app, { requireToken, broadcast, staleMs: STALE_AGENT_MS, sessions })
 
+// The registry roster (server/sessions.js): Claude Code's own session registry
+// adds the sessions nothing has hooks for, and ends them when their process
+// goes. Nothing is read until start() — importing the module stays side-effect
+// free and the tests point AGENT_OFFICE_REGISTRY_DIR at a temp dir.
+const registry = mountRegistry(app, {
+  sessions,
+  broadcast,
+  registryDir: REGISTRY_DIR,
+  toEvent: sessionEvent,
+  endSession,
+  forgetSession,
+})
+
 // Health check
 app.get('/health', (_req, res) => {
-  res.json({ status: 'ok', agents: activeAgents.size, clients: wss?.clients.size ?? 0 })
+  res.json({ status: 'ok', agents: activeAgents.size, clients: wss?.clients.size ?? 0, registry: registry.stats() })
 })
 
 // MCP server roster + the agents in the office (same view as the WS snapshot)
@@ -1841,6 +1899,8 @@ function processEvent(body) {
           session.main = newMain(now)
           console.log(`[session] back (${source}): ${session.project ?? id} (${id})`)
         }
+        // A registry-only session's first SessionStart: hooked from now on
+        hookSession(session, source === 'compact' ? 'implicit' : source, now)
         session.lastActivityAt = now
         // Compaction fires SessionStart too, but it is not how the session started
         if (source !== 'compact') session.source = source
@@ -2120,6 +2180,9 @@ const MCP_STALE_MS = (Number(process.env.AGENT_OFFICE_MCP_STALE_MINUTES) || 5) *
 function sweepStale(now = Date.now()) {
   const cutoff = now - STALE_AGENT_MS
   for (const session of Array.from(sessions.values())) {
+    // A session with a live registry entry has a running process, however
+    // quiet it is; the registry ends it when the process goes
+    if (session.registry) continue
     if (session.state === 'active' && session.lastActivityAt < cutoff) {
       broadcast(processEvent({ type: 'session_ended', sessionId: session.id, reason: 'stale' }))
     }
@@ -2284,6 +2347,10 @@ export function start({ port = PORT, host = '127.0.0.1' } = {}) {
 
   httpServer.listen(port, host, () => {
     writeTokenFile()
+    // The registry roster runs with the server (and stops with it, so a
+    // test's closed server leaves no poll behind)
+    registry.start()
+    httpServer.once('close', () => registry.stop())
     const bound = httpServer.address()?.port ?? port
     const mcpServers = discoverMcpServers()
     console.log(`
@@ -2300,6 +2367,7 @@ export function start({ port = PORT, host = '127.0.0.1' } = {}) {
 ╚═══════════════════════════════════════════╝`)
 
     console.log(`  Auth token written to: ${TOKEN_FILE}`)
+    console.log(`  Session registry read from: ${REGISTRY_DIR}`)
     if (UI_AVAILABLE) {
       console.log(`  Office UI served from: ${UI_DIR}`)
     } else {
@@ -2341,6 +2409,8 @@ export {
   activeAgents,
   pendingStarts,
   sessions,
+  registry,
+  REGISTRY_DIR,
   pendingNeedsYou,
   settings,
   processEvent,

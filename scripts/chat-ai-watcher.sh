@@ -45,7 +45,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 #                         on the command line (and none is).
 #   --tools ""            nothing to call, so --max-turns 1 always ends in text.
 #   --no-session-persistence  do not litter ~/.claude with one-shot sessions.
-CLAUDE_ARGS=(--max-turns 1 --model "$MODEL" --safe-mode --strict-mcp-config --tools "" --no-session-persistence)
+#   --name agent-office-bot   every `claude -p` registers in Claude Code's
+#                         session registry (~/.claude/sessions) for as long as
+#                         it runs, and the office reads that registry to show
+#                         sessions that have no hooks (server/sessions.js). The
+#                         name marks these calls as the office's own so they
+#                         never flicker through the session strip; keep it in
+#                         step with BOT_SESSION_NAME there.
+CLAUDE_ARGS=(--max-turns 1 --model "$MODEL" --safe-mode --strict-mcp-config --tools "" --no-session-persistence --name agent-office-bot)
 
 mkdir -p "$STATE_DIR"
 echo $$ > "$PID_FILE"

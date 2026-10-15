@@ -172,12 +172,14 @@ describe('chat-ai-watcher.sh', () => {
     const args = claudeCalls(w)[0]
     expect(args.slice(0, 2)).toEqual(['-p', expect.stringContaining('You are responding as Debugger, the office debugger')])
     expect(args[1]).toContain('Antony: hey there is a bug in login')
-    for (const flag of ['--max-turns', '--model', '--safe-mode', '--strict-mcp-config', '--tools', '--no-session-persistence']) {
+    for (const flag of ['--max-turns', '--model', '--safe-mode', '--strict-mcp-config', '--tools', '--no-session-persistence', '--name']) {
       expect(args, `missing ${flag}`).toContain(flag)
     }
     expect(args[args.indexOf('--max-turns') + 1]).toBe('1')
     expect(args[args.indexOf('--model') + 1]).toBe('claude-haiku-5-5')
     expect(args[args.indexOf('--tools') + 1]).toBe('')
+    // Named so the registry roster (server/sessions.js) never shows the bot as a session
+    expect(args[args.indexOf('--name') + 1]).toBe('agent-office-bot')
 
     // Its own reply is behind the watermark, not ahead of it
     const lastTs = Number(readFileSync(join(w.office.dir, 'chat-ai-last-ts'), 'utf8'))
