@@ -504,14 +504,23 @@ npm run pack            # Unpacked build in release/<platform>-unpacked (quick s
 npm run build:electron  # Installer (.dmg on macOS) in release/
 ```
 
+**The window.** The office is a fixed 1056×682 layout, so the window opens at exactly that size, centred on the screen, and scales the office to fit whatever size you drag it to — the layout never reflows, it is zoomed and letterboxed, down to half size. The window remembers its size and position in `window-state.json` under the app's user-data directory (`~/Library/Application Support/Agent Office`, `%APPDATA%\Agent Office` or `~/.config/Agent Office`) and restores them clamped to the display's work area, so it cannot come back off-screen after a monitor is unplugged or a resolution changes. The office draws its own title bar: drag it to move the window, right-click anywhere else for the menu described under the tray below. `Office → Reset window size` puts the window back to its default size and spot.
+
+**Compact widget** — `Office → Compact widget`, `Cmd/Ctrl+Shift+C`, the tray menu, or `--compact` on the command line — turns the window into a small always-on-top widget showing just the room. The layout is scaled to 60 % and shifted so the chat panel sits off the right edge: the agents keep moving in a 452×409 corner of the screen (top-right the first time) that follows you across virtual desktops and full-screen apps. It resizes (the room scales with it), has its own remembered size and spot, and the title bar is still the drag handle. Toggle it off and the full office comes back where it was. **Always on top** (`Cmd/Ctrl+Shift+T`) is a separate toggle for the full window; the widget is always on top by nature.
+
+**Tray / menu bar.** The app puts a pixel-art desk in the tray (the menu bar on macOS) and reads `GET /agents` and `GET /sessions` every 5 s: the tooltip says `Agent Office — 2 working, 1 needs you` (or `the office is empty`, `server not reachable`), the window title carries the same line, and on macOS the number of working agents — plus `1!` when a session waits on you — sits beside the icon. Its menu, also on right-click in the window: the status line, **Show/Hide office**, **Compact widget**, **Always on top**, **Open in browser** (the same office at `http://127.0.0.1:3334/`), **Quit**. On macOS and Windows closing the window keeps the app in the tray (the Dock icon, the tray or opening the app again brings the window back); on Linux, where not every desktop shows a tray, closing the window quits.
+
+**Icons.** `scripts/generate-icons.mjs` draws the tray glyph and the app icon as pixel maps and writes the PNGs with no image tooling: `electron/assets/` holds the tray icons and the Linux window icon, `build/icon.png` (512×512) is what electron-builder turns into the `.icns`, `.ico` and Linux icon set. The macOS tray icon is a monochrome template image (`trayTemplate.png` and `@2x`), tinted by the menu bar for light and dark mode. Re-run the script after editing the maps; a test fails when the committed files are stale.
+
 How a build is put together (the `build` section of `package.json`):
 
 - `vite build` writes the UI and everything in `public/` to `dist/`; the server serves `dist/` from `/` when it exists, so the sprites ship once.
 - `asar` is off: the server is a plain Node child process that reads `dist/`, `server/` and `node_modules` with ordinary `fs` calls.
 - `npmRebuild` is off, so the checkout's `node_modules` stay built for your system Node and `npm test` / `node server/index.js` keep working after a pack. `electron/after-pack.cjs` fetches the Electron build of `better-sqlite3` (through its own `prebuild-install`) into the packaged copy only.
-- Debugging a build headlessly: `AGENT_OFFICE_SCREENSHOT=/tmp/office.png` makes the app save a screenshot of its window a few seconds after the page loads, then quit (works under `xvfb-run`).
+- `build/icon.png` is the app icon (see Icons above); electron-builder reads it from `build/`, its `buildResources` directory, and the tray icons ship with `electron/**`.
+- Debugging a build headlessly: `AGENT_OFFICE_SCREENSHOT=/tmp/office.png` makes the app save a screenshot of its window a few seconds after the page loads, then quit (works under `xvfb-run`); add `--compact` to capture the widget.
 
-The same single-port mode works without Electron: `npm run build && npm run server`, then open `http://localhost:3334`. The Linux bundle was built and launched this week; the macOS and Windows packages have not been re-verified since the bundle became self-contained — see [Platform support](#platform-support).
+The same single-port mode works without Electron: `npm run build && npm run server`, then open `http://localhost:3334`. The Linux bundle was built, launched and screenshotted (full window and compact widget) under xvfb; the tray icon was created there but a headless X server has no panel to show it in, and the macOS and Windows packages have not been re-verified since the bundle became self-contained — see [Platform support](#platform-support).
 
 ## Security
 
@@ -593,6 +602,7 @@ Claude-Office/
 │   ├── chat-ai-watcher.sh  # Polls chat, generates Claude replies
 │   ├── agent-message.py    # Agent-to-agent messages from the shell
 │   ├── notify.sh           # Desktop notification (osascript / notify-send)
+│   ├── generate-icons.mjs  # Draws the tray and app icons as PNGs (no dependencies)
 │   └── gather-context.sh   # Git/agent context for prompts
 ├── hooks/                  # Claude Code hooks
 │   ├── install-hooks.sh    # Registers the hooks + status line in ~/.claude/settings.json
@@ -602,6 +612,11 @@ Claude-Office/
 ├── public/                 # Static assets
 │   └── sprites/            # Pixel art characters, effects, incident slots, the skin
 ├── electron/               # Optional Electron wrapper (self-contained bundle)
+│   ├── main.cjs            # Window, compact widget, menus, the server child process
+│   ├── tray.cjs            # Tray icon: status polling and menu
+│   ├── helpers.cjs         # Pure helpers (bounds, zoom-to-fit, window-state.json, status text)
+│   └── assets/             # Tray icons and the Linux window icon (generated)
+├── build/                  # electron-builder resources: icon.png (generated)
 └── .github/                # CI workflow, issue templates
 ```
 
