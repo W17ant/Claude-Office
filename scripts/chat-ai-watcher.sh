@@ -59,28 +59,58 @@ echo $$ > "$PID_FILE"
 # A lock left behind by a crashed or SIGKILLed watcher must not block this one
 rm -f "$LOCK_FILE"
 
-# Initialise last-seen timestamp to now
-if [ -f "$LAST_TS_FILE" ]; then
-    LAST_TS=$(cat "$LAST_TS_FILE")
-else
-    LAST_TS=$(date +%s)000
-    echo "$LAST_TS" > "$LAST_TS_FILE"
+# The watermark: the newest chat row (ms epoch) the watcher has seen. It is
+# replaced through a temp file and a rename, so a crash mid-write cannot
+# leave it empty.
+save_last_ts() {
+    printf '%s\n' "$LAST_TS" > "$LAST_TS_FILE.tmp" && mv -f "$LAST_TS_FILE.tmp" "$LAST_TS_FILE"
+}
+
+# Initialise it from the file, or to now. Anything in the file that is not a
+# plain timestamp up to now — empty, junk, a time in the future — starts from
+# now too: GET /chat?since= with a value it cannot parse returns every recent
+# row, so the same message would be answered on every poll, and a future one
+# would never let a message through.
+NOW_MS=$(date +%s)000
+LAST_TS=$(tr -d '[:space:]' 2>/dev/null < "$LAST_TS_FILE" || true)
+case "$LAST_TS" in
+    ''|*[!0-9]*) LAST_TS="" ;;
+    *) if [ "${#LAST_TS}" -gt 15 ] || [ "$LAST_TS" -gt "$NOW_MS" ]; then LAST_TS=""; fi ;;
+esac
+if [ -z "$LAST_TS" ]; then
+    [ -f "$LAST_TS_FILE" ] && echo "[chat-ai] $LAST_TS_FILE did not hold a timestamp — starting from now"
+    LAST_TS="$NOW_MS"
+    save_last_ts
 fi
 
 echo "[chat-ai] Started (pid $$), polling $SERVER every ${POLL_INTERVAL}s, model $MODEL"
 command -v claude >/dev/null 2>&1 || echo "[chat-ai] Warning: 'claude' CLI not on PATH — messages will be seen but not answered"
 
-cleanup() { trap - EXIT INT TERM; rm -f "$PID_FILE" "$LOCK_FILE"; echo "[chat-ai] Stopped"; exit 0; }
+cleanup() { trap - EXIT INT TERM; rm -f "$PID_FILE" "$LOCK_FILE" "$ERR_FILE" "$LAST_TS_FILE.tmp"; echo "[chat-ai] Stopped"; exit 0; }
 trap cleanup EXIT INT TERM
 
 # --- helpers -----------------------------------------------------------------
 
 # run_with_timeout SECS CMD... — GNU timeout where present, perl's alarm on
 # macOS (no coreutils), plain execution as a last resort.
+#
+# The command must stay in the watcher's process group: stop-office.sh and
+# start-office.sh's Ctrl+C stop the watcher with a kill of its whole group,
+# and that is what takes an in-flight `claude -p` down with it. GNU timeout
+# moves itself and the command into a group of their own unless given
+# --foreground, so without it the reply runs on (and bills) for up to
+# CHAT_AI_TIMEOUT after the office says it stopped. A timeout without the
+# flag (BusyBox) does not move them in the first place; perl's exec replaces
+# perl in place.
+TIMEOUT_FG=""
+if command -v timeout >/dev/null 2>&1 && timeout --foreground 5 true >/dev/null 2>&1; then
+    TIMEOUT_FG="--foreground"
+fi
 run_with_timeout() {
     local secs="$1"; shift
     if command -v timeout >/dev/null 2>&1; then
-        timeout "$secs" "$@"
+        # $TIMEOUT_FG unquoted on purpose: empty means no flag
+        timeout $TIMEOUT_FG "$secs" "$@"
     elif command -v perl >/dev/null 2>&1; then
         perl -e 'alarm shift; exec @ARGV' "$secs" "$@"
     else
@@ -134,7 +164,7 @@ print('assistant|Claude')
 # caller (reply_to_message) clears the lock either way.
 do_reply() {
     local msg="$1"
-    local agent_info agent_role agent_name dev_context persona context prompt reply reply_ts
+    local agent_info agent_role agent_name dev_context persona context prompt reply posted
 
     agent_info=$(route_message "$msg")
     agent_role=${agent_info%%|*}
@@ -192,11 +222,17 @@ Reply to the latest message naturally. Keep it short (8-12 words). Continue the 
 
     echo "[chat-ai] Replying as $agent_name: $reply"
 
-    # Post the reply with its agent role and name. Prints the stored row's
-    # timestamp on success, "error: ..." otherwise.
+    # Post the reply with its agent role and name. Prints "ok", or "error: ...".
     # /chat/reply speaks as an agent, so it carries the office token (the file
     # the server writes once it is up — the same one the hook reads).
-    reply_ts=$(CHAT_SERVER="$SERVER" CHAT_REPLY="$reply" CHAT_ROLE="$agent_role" CHAT_SENDER="$agent_name" CHAT_TOKEN_FILE="$STATE_DIR/auth-token" python3 -c "
+    #
+    # The watermark is not moved past the reply: it stays at the newest row
+    # seen before generating, so a message typed while `claude -p` was
+    # thinking is still ahead of it and is answered on the next poll. The
+    # reply itself comes back on that poll too, but it carries an agent role,
+    # which typed_by_a_person never answers, and the poll moves the watermark
+    # past it.
+    posted=$(CHAT_SERVER="$SERVER" CHAT_REPLY="$reply" CHAT_ROLE="$agent_role" CHAT_SENDER="$agent_name" CHAT_TOKEN_FILE="$STATE_DIR/auth-token" python3 -c "
 import urllib.request, json, os
 server = os.environ['CHAT_SERVER']
 data = json.dumps({
@@ -213,23 +249,14 @@ except OSError:
 req = urllib.request.Request(server + '/chat/reply', data=data, headers=headers, method='POST')
 try:
     with urllib.request.urlopen(req, timeout=5) as resp:
-        posted_id = json.load(resp).get('id')
-    with urllib.request.urlopen(server + '/chat', timeout=5) as resp:
-        rows = [m for m in json.load(resp).get('messages', []) if m.get('id') == posted_id]
-    print(rows[0].get('timestamp', 0) if rows else 0)
+        resp.read()
+    print('ok')
 except Exception as e:
     print('error: ' + str(e))
 " 2>/dev/null)
-    case "$reply_ts" in
-        error:*) echo "[chat-ai] Failed to post reply — $reply_ts"; return 1 ;;
-        ''|*[!0-9]*) ;;
-        *)
-            # Advance past our own reply so the next poll never re-reads it
-            if [ "$reply_ts" -gt "$LAST_TS" ]; then
-                LAST_TS="$reply_ts"
-                echo "$LAST_TS" > "$LAST_TS_FILE"
-            fi
-            ;;
+    case "$posted" in
+        ok) ;;
+        *) echo "[chat-ai] Failed to post reply — ${posted:-no answer from python3}"; return 1 ;;
     esac
 
     echo "[chat-ai] Done"
@@ -290,7 +317,7 @@ print(human[-1]["text"].replace("\n", " ").replace("\r", " ") if human else "")
         ''|*[!0-9]*) ;;
         *) if [ "$NEW_TS" -gt "$LAST_TS" ]; then
                LAST_TS="$NEW_TS"
-               echo "$LAST_TS" > "$LAST_TS_FILE"
+               save_last_ts
            fi ;;
     esac
 

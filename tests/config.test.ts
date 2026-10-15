@@ -103,15 +103,26 @@ describe('readHost', () => {
     expect(DEFAULT_HOST).toBe('127.0.0.1')
   })
 
-  it('accepts every loopback spelling', () => {
+  it('accepts 127.0.0.1 and localhost, and binds 127.0.0.1 for both (the resolver may answer ::1 for localhost)', () => {
     const log = recorder()
     expect(readHost({ AGENT_OFFICE_HOST: '127.0.0.1' }, log)).toBe('127.0.0.1')
-    expect(readHost({ AGENT_OFFICE_HOST: 'localhost' }, log)).toBe('localhost')
-    expect(readHost({ AGENT_OFFICE_HOST: 'LOCALHOST' }, log)).toBe('localhost')
-    expect(readHost({ AGENT_OFFICE_HOST: '::1' }, log)).toBe('::1')
-    expect(readHost({ AGENT_OFFICE_HOST: '[::1]' }, log)).toBe('::1')
-    expect(readHost({ AGENT_OFFICE_HOST: ' localhost ' }, log)).toBe('localhost')
+    expect(readHost({ AGENT_OFFICE_HOST: 'localhost' }, log)).toBe('127.0.0.1')
+    expect(readHost({ AGENT_OFFICE_HOST: 'LOCALHOST' }, log)).toBe('127.0.0.1')
+    expect(readHost({ AGENT_OFFICE_HOST: ' localhost ' }, log)).toBe('127.0.0.1')
     expect(log.lines.error).toEqual([])
+  })
+
+  it('refuses IPv6 loopback with its own reason and binds 127.0.0.1: every client dials IPv4', () => {
+    for (const host of ['::1', '[::1]', '0:0:0:0:0:0:0:1']) {
+      const log = recorder()
+      expect(readHost({ AGENT_OFFICE_HOST: host }, log)).toBe('127.0.0.1')
+      expect(log.lines.error).toHaveLength(1)
+      const msg = log.lines.error[0]
+      expect(msg).toContain(`AGENT_OFFICE_HOST=${JSON.stringify(host)} refused`)
+      expect(msg).toMatch(/IPv4 loopback only/)
+      expect(msg).toMatch(/dial 127\.0\.0\.1/)
+      expect(msg).toMatch(/Binding 127\.0\.0\.1/)
+    }
   })
 
   it('refuses anything else with the reason and binds 127.0.0.1', () => {

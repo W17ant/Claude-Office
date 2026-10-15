@@ -29,6 +29,7 @@
     "test:watch": "vitest",
     "check-assets": "node scripts/check-assets.mjs",
     "install-hooks": "bash hooks/install-hooks.sh",
+    "install-status-line": "bash hooks/install-hooks.sh --status-line-only",
     "uninstall-hooks": "bash hooks/install-hooks.sh --uninstall",
     "doctor": "node scripts/doctor.mjs",
     "version": "node scripts/sync-plugin-version.mjs && git add .claude-plugin/plugin.json"

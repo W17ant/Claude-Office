@@ -61,6 +61,150 @@ function serverUrls(port = DEFAULT_SERVER_PORT, uiPort = VITE_DEV_PORT) {
 }
 
 // ---------------------------------------------------------------------------
+// Reusing a server that is already on the port
+//
+// The app first asks GET /health whether an office server already answers on
+// its port (one started with start-office.sh, `npm run server`, another copy
+// of the app). The packaged window loads the page from that server, so a
+// server with no built UI — a checkout run with the Vite dev server, which
+// answers GET / with a 404 JSON body — is no use to it, and spawning a second
+// server on the same port would only fail (and must not overwrite the token
+// file the first one wrote). The dev window loads the page from Vite and
+// reuses any office server.
+// ---------------------------------------------------------------------------
+
+/**
+ * What GET /health said: 'none' (no answer, or not a 200: no office server
+ * there), 'usable' (it serves the office page: `uiAvailable: true`), 'no-ui'
+ * (`uiAvailable: false`, or a 200 that is not the office's JSON), 'unknown'
+ * (an office server too old to report `uiAvailable`: ask GET / instead).
+ */
+function classifyHealth(statusCode, bodyText) {
+  if (statusCode !== 200) return 'none'
+  let body
+  try { body = JSON.parse(String(bodyText)) } catch { return 'no-ui' }
+  if (!body || typeof body !== 'object' || body.status !== 'ok') return 'no-ui'
+  if (body.uiAvailable === true) return 'usable'
+  if (body.uiAvailable === false) return 'no-ui'
+  return 'unknown'
+}
+
+/** What GET / said, for a server whose /health did not tell: the office page is a 200 HTML document. */
+function classifyIndex(statusCode, contentType) {
+  return statusCode === 200 && /^text\/html\b/i.test(String(contentType || '')) ? 'usable' : 'no-ui'
+}
+
+/**
+ * What to do about the server found on the port: 'start' one (nothing is
+ * there), 'reuse' it, or report a 'conflict' (the packaged window would show
+ * an error body instead of the office).
+ */
+function serverPlan(found, packaged) {
+  if (found === 'none') return 'start'
+  if (found === 'usable' || !packaged) return 'reuse'
+  return 'conflict'
+}
+
+/** The dialog for a 'conflict': what is on the port and the ways out. */
+function serverConflictMessage(port) {
+  return `Another Agent Office server is already running on port ${port}, but it has no built office page to show ` +
+    '(a checkout started with start-office.sh or `npm run dev:all`, say).\n\n' +
+    `Stop that server, or run \`npm run build\` in its checkout, or launch ${APP_NAME} with AGENT_OFFICE_PORT set to a free port.`
+}
+
+// ---------------------------------------------------------------------------
+// App lifecycle
+// ---------------------------------------------------------------------------
+
+/**
+ * Run `fn` at most once at a time: a call while one is in flight gets that
+ * call's promise instead of a second run. The app's startup (probe the port,
+ * spawn the server, wait for it, open the window) takes seconds, and macOS
+ * sends 'activate' for a Dock click during it; a second run would spawn a
+ * second server and open a second window. `pending()` says whether a run is
+ * in flight.
+ */
+function singleFlight(fn) {
+  let inFlight = null
+  const run = (...args) => {
+    if (inFlight) return inFlight
+    inFlight = Promise.resolve()
+      .then(() => fn(...args))
+      .finally(() => { inFlight = null })
+    return inFlight
+  }
+  run.pending = () => inFlight !== null
+  return run
+}
+
+/**
+ * What the app does when it is opened again (macOS 'activate', or a second
+ * instance): nothing while it is still starting (the window is on its way)
+ * or on its way out (a startup that ended in an error dialog quits), show
+ * the window it has, or create one when there is none.
+ */
+function reopenAction({ quitting = false, starting, hasWindow, windowCount }) {
+  if (quitting || starting) return 'none'
+  if (hasWindow) return 'show'
+  return windowCount === 0 ? 'create' : 'none'
+}
+
+/**
+ * The server child this app owns. An 'exit' or 'error' from a child that is
+ * no longer the current one — a duplicate that lost the port — leaves the
+ * slot alone, so the app never loses track of the server it must stop.
+ */
+function childSlot() {
+  let current = null
+  return {
+    get: () => current,
+    adopt(child) { current = child; return child },
+    release(child) { if (current === child) current = null },
+    take() { const child = current; current = null; return child },
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Keyboard shortcuts
+//
+// The window is frameless, and on Windows and Linux a frameless window draws
+// no menu bar, so nothing there shows the application menu or promises its
+// accelerators. The window handles these keys itself (main.cjs, before the
+// page or a menu sees them); the application menu lists the same
+// accelerators, from this table, so the two cannot drift apart.
+// ---------------------------------------------------------------------------
+
+const SHORTCUTS = Object.freeze([
+  Object.freeze({ action: 'toggleCompact', accelerator: 'CmdOrCtrl+Shift+C', code: 'KeyC' }),
+  Object.freeze({ action: 'toggleAlwaysOnTop', accelerator: 'CmdOrCtrl+Shift+T', code: 'KeyT' }),
+  Object.freeze({ action: 'openInBrowser', accelerator: 'CmdOrCtrl+Shift+O', code: 'KeyO' }),
+  // Cmd/Ctrl+0 resets the zoom in a browser; with Shift it resets the window
+  Object.freeze({ action: 'resetBounds', accelerator: 'CmdOrCtrl+Shift+0', code: 'Digit0' }),
+])
+
+/** The accelerator string for an action, for the application menu. */
+function acceleratorFor(action) {
+  const shortcut = SHORTCUTS.find(s => s.action === action)
+  return shortcut ? shortcut.accelerator : undefined
+}
+
+/**
+ * The action an Electron `before-input-event` input asks for, or null:
+ * Cmd+Shift (macOS) or Ctrl+Shift (elsewhere) and the key, matched by its
+ * physical position (`code`) so a keyboard layout cannot move it. A held key
+ * repeating does not toggle a mode back and forth.
+ */
+function shortcutFor(input, platform = process.platform) {
+  if (!input || input.type !== 'keyDown' || input.isAutoRepeat) return null
+  const mac = platform === 'darwin'
+  const primary = mac ? input.meta : input.control
+  const other = mac ? input.control : input.meta
+  if (!primary || other || !input.shift || input.alt) return null
+  const shortcut = SHORTCUTS.find(s => s.code === input.code)
+  return shortcut ? shortcut.action : null
+}
+
+// ---------------------------------------------------------------------------
 // The office link
 //
 // The office page shows conversation text and may answer permission dialogs
@@ -383,10 +527,14 @@ function windowTitle(summary) {
 /**
  * The tray / right-click menu. `state` is { visible, compact, alwaysOnTop,
  * status }; `actions` supplies toggleWindow, setCompact, setAlwaysOnTop,
- * openInBrowser and quit. Compact mode is always on top, so the toggle is
- * shown checked and disabled there.
+ * resetBounds, openInBrowser and quit. Compact mode is always on top, so the
+ * toggle is shown checked and disabled there. Every window control is here,
+ * because on Windows and Linux the frameless window shows no menu bar: this
+ * menu (the tray's, and the window's right-click) is the only one there is.
  */
 function trayMenuTemplate(state, actions) {
+  // The shortcuts are shown, not registered: the window handles the keys itself
+  const hint = action => ({ accelerator: acceleratorFor(action), registerAccelerator: false })
   return [
     { label: state.status ? `${APP_NAME} — ${state.status}` : APP_NAME, enabled: false },
     { type: 'separator' },
@@ -396,6 +544,7 @@ function trayMenuTemplate(state, actions) {
       label: 'Compact widget',
       type: 'checkbox',
       checked: !!state.compact,
+      ...hint('toggleCompact'),
       click: () => actions.setCompact(!state.compact),
     },
     {
@@ -403,10 +552,12 @@ function trayMenuTemplate(state, actions) {
       type: 'checkbox',
       checked: !!state.compact || !!state.alwaysOnTop,
       enabled: !state.compact,
+      ...hint('toggleAlwaysOnTop'),
       click: () => actions.setAlwaysOnTop(!state.alwaysOnTop),
     },
+    { label: 'Reset window size', ...hint('resetBounds'), click: () => actions.resetBounds() },
     { type: 'separator' },
-    { label: 'Open in browser', click: () => actions.openInBrowser() },
+    { label: 'Open in browser', ...hint('openInBrowser'), click: () => actions.openInBrowser() },
     { type: 'separator' },
     { label: `Quit ${APP_NAME}`, click: () => actions.quit() },
   ]
@@ -418,6 +569,16 @@ module.exports = {
   VITE_DEV_PORT,
   serverPortFromEnv,
   serverUrls,
+  classifyHealth,
+  classifyIndex,
+  serverPlan,
+  serverConflictMessage,
+  singleFlight,
+  reopenAction,
+  childSlot,
+  SHORTCUTS,
+  acceleratorFor,
+  shortcutFor,
   OFFICE_TOKEN_PATTERN,
   runtimeDirFromEnv,
   readOfficeToken,

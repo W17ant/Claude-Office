@@ -267,6 +267,14 @@ describe('commands/office.md', () => {
     expect(source).toContain('npm run build && npm run server')
     expect(source).toContain('${CLAUDE_PLUGIN_ROOT}')
   })
+
+  it('sends plugin users to the status-line-only install for the meters, never to the full installer', () => {
+    // npm run install-hooks would register every hook again next to the plugin's: every event twice
+    expect(source).toContain('npm run install-status-line')
+    expect(source).not.toMatch(/run `npm run install-hooks` from/)
+    const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
+    expect(pkg.scripts['install-status-line']).toBe('bash hooks/install-hooks.sh --status-line-only')
+  })
 })
 
 // `claude plugin validate` is the authoritative check; run it when the CLI is

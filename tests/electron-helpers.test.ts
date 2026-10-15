@@ -10,8 +10,10 @@ import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { inflateSync } from 'node:zlib'
+import request from 'supertest'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderIcons, TRAY_GLYPH, APP_GLYPH } from '../scripts/generate-icons.mjs'
+import { loadOffice, removeOffice } from './helpers'
 
 const require = createRequire(import.meta.url)
 const h = require('../electron/helpers.cjs')
@@ -301,6 +303,7 @@ describe('trayMenuTemplate', () => {
     toggleWindow: vi.fn(),
     setCompact: vi.fn(),
     setAlwaysOnTop: vi.fn(),
+    resetBounds: vi.fn(),
     openInBrowser: vi.fn(),
     quit: vi.fn(),
   }
@@ -311,7 +314,7 @@ describe('trayMenuTemplate', () => {
 
   it('full window, visible: Hide, unchecked compact, always-on-top enabled', () => {
     const t = h.trayMenuTemplate({ visible: true, compact: false, alwaysOnTop: false, status: '2 working' }, actions)
-    expect(labels(t)).toEqual(['Agent Office — 2 working', 'Hide office', 'Compact widget', 'Always on top', 'Open in browser', 'Quit Agent Office'])
+    expect(labels(t)).toEqual(['Agent Office — 2 working', 'Hide office', 'Compact widget', 'Always on top', 'Reset window size', 'Open in browser', 'Quit Agent Office'])
     expect(t[0].enabled).toBe(false)
     expect(item(t, 'Compact widget')).toMatchObject({ type: 'checkbox', checked: false })
     expect(item(t, 'Always on top')).toMatchObject({ type: 'checkbox', checked: false, enabled: true })
@@ -348,6 +351,201 @@ describe('trayMenuTemplate', () => {
     item(compactOn, 'Always on top').click()
     expect(actions.setCompact).toHaveBeenLastCalledWith(false)
     expect(actions.setAlwaysOnTop).toHaveBeenLastCalledWith(false)
+  })
+
+  it('carries Reset window size (a frameless window shows no menu bar on Windows or Linux), in both modes', () => {
+    for (const compact of [false, true]) {
+      const t = h.trayMenuTemplate({ visible: true, compact, alwaysOnTop: false, status: '' }, actions)
+      item(t, 'Reset window size').click()
+    }
+    expect(actions.resetBounds).toHaveBeenCalledTimes(2)
+    expect(actions.setCompact).not.toHaveBeenCalled()
+  })
+
+  it('shows each shortcut beside its item without registering it (the window handles the keys)', () => {
+    const t = h.trayMenuTemplate({ visible: true, compact: false, alwaysOnTop: false, status: '' }, actions)
+    expect(item(t, 'Compact widget')).toMatchObject({ accelerator: 'CmdOrCtrl+Shift+C', registerAccelerator: false })
+    expect(item(t, 'Always on top')).toMatchObject({ accelerator: 'CmdOrCtrl+Shift+T', registerAccelerator: false })
+    expect(item(t, 'Reset window size')).toMatchObject({ accelerator: 'CmdOrCtrl+Shift+0', registerAccelerator: false })
+    expect(item(t, 'Open in browser')).toMatchObject({ accelerator: 'CmdOrCtrl+Shift+O', registerAccelerator: false })
+    expect(item(t, 'Hide office').accelerator).toBeUndefined()
+  })
+})
+
+describe('keyboard shortcuts (the frameless window has no menu bar on Windows or Linux)', () => {
+  const key = (code: string, mods: Partial<Record<'control' | 'meta' | 'shift' | 'alt' | 'isAutoRepeat', boolean>>, type = 'keyDown') =>
+    ({ type, code, key: code.replace(/^(Key|Digit)/, ''), control: false, meta: false, shift: false, alt: false, isAutoRepeat: false, ...mods })
+
+  it('Ctrl+Shift (Windows, Linux) or Cmd+Shift (macOS) and the key name the action', () => {
+    for (const platform of ['linux', 'win32']) {
+      expect(h.shortcutFor(key('Digit0', { control: true, shift: true }), platform)).toBe('resetBounds')
+      expect(h.shortcutFor(key('KeyC', { control: true, shift: true }), platform)).toBe('toggleCompact')
+      expect(h.shortcutFor(key('KeyT', { control: true, shift: true }), platform)).toBe('toggleAlwaysOnTop')
+      expect(h.shortcutFor(key('KeyO', { control: true, shift: true }), platform)).toBe('openInBrowser')
+    }
+    expect(h.shortcutFor(key('Digit0', { meta: true, shift: true }), 'darwin')).toBe('resetBounds')
+  })
+
+  it('anything else is left to the page: other keys, missing or extra modifiers, key-up, a held key repeating', () => {
+    expect(h.shortcutFor(key('KeyX', { control: true, shift: true }), 'linux')).toBeNull()
+    expect(h.shortcutFor(key('Digit0', { control: true }), 'linux')).toBeNull()                    // Ctrl+0: the zoom reset
+    expect(h.shortcutFor(key('Digit0', { shift: true }), 'linux')).toBeNull()
+    expect(h.shortcutFor(key('Digit0', { control: true, shift: true, alt: true }), 'linux')).toBeNull()
+    expect(h.shortcutFor(key('Digit0', { meta: true, shift: true }), 'linux')).toBeNull()          // the Super key is not Ctrl
+    expect(h.shortcutFor(key('Digit0', { control: true, shift: true }), 'darwin')).toBeNull()      // Ctrl is not Cmd on a Mac
+    expect(h.shortcutFor(key('Digit0', { control: true, shift: true }, 'keyUp'), 'linux')).toBeNull()
+    expect(h.shortcutFor(key('KeyC', { control: true, shift: true, isAutoRepeat: true }), 'linux')).toBeNull()
+    expect(h.shortcutFor(null, 'linux')).toBeNull()
+  })
+
+  it('the application menu takes its accelerators from the same table, and main.cjs routes the keys through it', () => {
+    expect(h.SHORTCUTS.map((s: any) => s.action)).toEqual(['toggleCompact', 'toggleAlwaysOnTop', 'openInBrowser', 'resetBounds'])
+    expect(h.acceleratorFor('resetBounds')).toBe('CmdOrCtrl+Shift+0')
+    expect(h.acceleratorFor('nope')).toBeUndefined()
+    const main = readFileSync(join(ROOT, 'electron/main.cjs'), 'utf8')
+    expect(main).toContain("'before-input-event'")
+    expect(main).toContain('shortcutFor(input)')
+    expect(main).toContain("accelerator: acceleratorFor('resetBounds')")
+    expect(main).not.toMatch(/accelerator: 'CmdOrCtrl/)
+    for (const s of h.SHORTCUTS) expect(main).toContain(`case '${s.action}'`)
+  })
+})
+
+describe('reusing a server already on the port', () => {
+  const health = (body: object) => JSON.stringify({ status: 'ok', agents: 0, clients: 0, ...body })
+
+  it('classifyHealth: the office page is there only when /health says uiAvailable: true', () => {
+    expect(h.classifyHealth(200, health({ uiAvailable: true }))).toBe('usable')
+    expect(h.classifyHealth(200, health({ uiAvailable: false }))).toBe('no-ui')
+    // A server from before the field existed: ask it for its page instead
+    expect(h.classifyHealth(200, health({}))).toBe('unknown')
+    // Something else answers 200 on the port: not an office server we can show
+    expect(h.classifyHealth(200, '<html>hello</html>')).toBe('no-ui')
+    expect(h.classifyHealth(200, JSON.stringify({ ok: true }))).toBe('no-ui')
+    expect(h.classifyHealth(200, 'null')).toBe('no-ui')
+    // No office server there
+    expect(h.classifyHealth(404, health({ uiAvailable: true }))).toBe('none')
+    expect(h.classifyHealth(500, '')).toBe('none')
+  })
+
+  it('classifyIndex: a 200 HTML page is the office; the "UI not built" 404 JSON is not', () => {
+    expect(h.classifyIndex(200, 'text/html; charset=UTF-8')).toBe('usable')
+    expect(h.classifyIndex(404, 'application/json; charset=utf-8')).toBe('no-ui')
+    expect(h.classifyIndex(200, 'application/json')).toBe('no-ui')
+    expect(h.classifyIndex(200, undefined)).toBe('no-ui')
+  })
+
+  it('serverPlan: start one when nothing is there; the packaged app refuses a server without the UI, dev reuses it (it loads Vite)', () => {
+    expect(h.serverPlan('none', true)).toBe('start')
+    expect(h.serverPlan('none', false)).toBe('start')
+    expect(h.serverPlan('usable', true)).toBe('reuse')
+    expect(h.serverPlan('usable', false)).toBe('reuse')
+    expect(h.serverPlan('no-ui', true)).toBe('conflict')
+    expect(h.serverPlan('no-ui', false)).toBe('reuse')
+  })
+
+  it('the conflict dialog names the port and the ways out', () => {
+    const text = h.serverConflictMessage(4000)
+    expect(text).toContain('port 4000')
+    expect(text).toContain('npm run build')
+    expect(text).toContain('AGENT_OFFICE_PORT')
+  })
+
+  it('against the real server: a checkout without a build is a conflict for the packaged app, a built one is reused', async () => {
+    const empty = mkdtempSync(join(tmpdir(), 'agent-office-no-ui-'))
+    const built = mkdtempSync(join(tmpdir(), 'agent-office-ui-'))
+    writeFileSync(join(built, 'index.html'), '<!doctype html><title>Agent Office</title>')
+    try {
+      const bare = await loadOffice({ env: { AGENT_OFFICE_UI_DIR: empty } })
+      try {
+        const res = await request(bare.server.app).get('/health')
+        expect(h.classifyHealth(res.status, res.text)).toBe('no-ui')
+        const index = await request(bare.server.app).get('/')
+        expect(index.status).toBe(404)
+        expect(h.classifyIndex(index.status, index.headers['content-type'])).toBe('no-ui')
+        expect(h.serverPlan(h.classifyHealth(res.status, res.text), true)).toBe('conflict')
+      } finally {
+        removeOffice(bare)
+      }
+      const office = await loadOffice({ env: { AGENT_OFFICE_UI_DIR: built } })
+      try {
+        const res = await request(office.server.app).get('/health')
+        expect(h.classifyHealth(res.status, res.text)).toBe('usable')
+        const index = await request(office.server.app).get('/')
+        expect(h.classifyIndex(index.status, index.headers['content-type'])).toBe('usable')
+      } finally {
+        removeOffice(office)
+      }
+    } finally {
+      rmSync(empty, { recursive: true, force: true })
+      rmSync(built, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('app lifecycle', () => {
+  it('singleFlight: a call while one is in flight gets the same run; the next call after it settles runs again', async () => {
+    let release!: () => void
+    const fn = vi.fn(() => new Promise<void>(r => { release = r }))
+    const run = h.singleFlight(fn)
+    expect(run.pending()).toBe(false)
+    const a = run()
+    const b = run()
+    expect(b).toBe(a)
+    expect(run.pending()).toBe(true)
+    await Promise.resolve()
+    expect(fn).toHaveBeenCalledTimes(1)
+    release()
+    await a
+    expect(run.pending()).toBe(false)
+    const c = run()
+    expect(c).not.toBe(a)
+    await Promise.resolve()
+    release()
+    await c
+    expect(fn).toHaveBeenCalledTimes(2)
+  })
+
+  it('singleFlight: a failed run does not block the next one', async () => {
+    const run = h.singleFlight(vi.fn().mockRejectedValueOnce(new Error('boom')).mockResolvedValueOnce('ok'))
+    await expect(run()).rejects.toThrow('boom')
+    expect(run.pending()).toBe(false)
+    await expect(run()).resolves.toBe('ok')
+  })
+
+  it('reopenAction: a Dock click during startup does nothing (the window is on its way), later it shows or creates the window', () => {
+    expect(h.reopenAction({ starting: true, hasWindow: false, windowCount: 0 })).toBe('none')
+    expect(h.reopenAction({ starting: true, hasWindow: true, windowCount: 1 })).toBe('none')
+    expect(h.reopenAction({ starting: false, hasWindow: true, windowCount: 1 })).toBe('show')
+    expect(h.reopenAction({ starting: false, hasWindow: false, windowCount: 0 })).toBe('create')
+    expect(h.reopenAction({ starting: false, hasWindow: false, windowCount: 1 })).toBe('none')   // some other window (DevTools)
+    // Quitting (after the error dialog of a failed startup): no second attempt
+    expect(h.reopenAction({ quitting: true, starting: false, hasWindow: false, windowCount: 0 })).toBe('none')
+  })
+
+  it('childSlot: the exit of a duplicate that lost the port does not clear the server the app must stop', () => {
+    const slot = h.childSlot()
+    const live = { name: 'live' }
+    const duplicate = { name: 'duplicate' }
+    slot.adopt(live)
+    slot.release(duplicate)
+    expect(slot.get()).toBe(live)
+    slot.adopt(duplicate)
+    slot.release(live)                    // the old one's exit, after a newer one was adopted
+    expect(slot.get()).toBe(duplicate)
+    expect(slot.take()).toBe(duplicate)
+    expect(slot.get()).toBeNull()
+    expect(slot.take()).toBeNull()
+  })
+
+  it('main.cjs runs startup through singleFlight and routes activate and second-instance through reopenAction', () => {
+    const main = readFileSync(join(ROOT, 'electron/main.cjs'), 'utf8')
+    expect(main).toContain('singleFlight(createWindow)')
+    expect(main).toContain("app.on('activate', reopen)")
+    expect(main).toContain("app.on('second-instance', reopen)")
+    expect(main).not.toMatch(/(?<!function )\bcreateWindow\(\)/) // never called directly
+    expect(main).not.toMatch(/serverProcess\s*=\s*null/)         // only childSlot clears it
+    expect(main).toContain('server.release(child)')
   })
 })
 

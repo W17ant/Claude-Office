@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
 # =============================================================================
 # install-hooks.sh — Add Agent Office hook to ~/.claude/settings.json
+#                    ($CLAUDE_CONFIG_DIR/settings.json when that is set, the
+#                    file Claude Code itself reads then)
 #
 # This script:
-#   1. Backs up the existing settings file
+#   1. Refuses a settings file that is not valid JSON (line and column of the
+#      error, nothing changed), then backs it up under a name no earlier
+#      backup has
 #   2. Registers agent-tracker.sh for PreToolUse (spawns + tool activity),
 #      PostToolUse (completions), PostToolUseFailure (failed tool calls),
 #      SubagentStart (subagent ids), SubagentStop (subagents finishing),
@@ -13,6 +17,7 @@
 #      and Notification (waiting on you), StopFailure (API errors), PreCompact
 #      and PostCompact (compaction), PostToolBatch (a permission answered),
 #      CwdChanged (project tag follows a cd), PostModelSwitch (model)
+#      (--status-line-only skips this step)
 #   3. Registers status-line.sh as the statusLine (+ subagentStatusLine)
 #      command — the payroll / electricity / memory meters — chaining any
 #      status line you already had (--no-status-line skips this step)
@@ -21,7 +26,16 @@
 # Safe to re-run: each hook event is checked separately, so an older install
 # gets any missing entries added, and an entry that still points at a checkout
 # you have since moved, re-cloned or deleted is repointed at this one. Hooks
-# that are not ours are never touched.
+# that are not ours are never touched. An entry is ours when one of its shell
+# words is a path ending in hooks/agent-tracker.sh (hooks/status-line.sh for
+# the status line), the layout of every checkout and of the plugin; a command
+# that merely contains the name (my-status-line.sh, ~/.claude/status-line.sh)
+# is someone else's.
+#
+# The agent-office plugin registers the same hooks from its own copy, so a
+# plugin user wants the status line alone: --status-line-only (npm run
+# install-status-line). A plain install with the plugin enabled warns that
+# every event would then arrive twice.
 #
 # --uninstall takes it all back out: every hook entry whose command runs
 # agent-tracker.sh goes (whatever checkout it points at), a statusLine /
@@ -30,34 +44,48 @@
 # subagent-statusline-prev) or removed, and the saved files are deleted.
 #
 # Usage:
-#   bash hooks/install-hooks.sh [--no-status-line]
-#   bash hooks/install-hooks.sh --uninstall [--no-status-line]
+#   bash hooks/install-hooks.sh [--no-status-line | --status-line-only]
+#   bash hooks/install-hooks.sh --uninstall [--no-status-line | --status-line-only]
 # =============================================================================
 
 set -euo pipefail
 
-# --no-status-line: register the hooks only (no payroll / electricity / memory
-#                   meters); with --uninstall, leave the status line alone
-# --uninstall:      remove what this script registered (see above)
+# --no-status-line:   register the hooks only (no payroll / electricity /
+#                     memory meters); with --uninstall, leave the status line
+#                     alone
+# --status-line-only: register the status line only (no hooks), for the
+#                     plugin install; with --uninstall, leave the hooks alone
+# --uninstall:        remove what this script registered (see above)
+HOOKS=1
 STATUS_LINE=1
 UNINSTALL=0
+USAGE="Usage: bash hooks/install-hooks.sh [--no-status-line | --status-line-only]
+       bash hooks/install-hooks.sh --uninstall [--no-status-line | --status-line-only]"
 for arg in "$@"; do
     case "$arg" in
         --no-status-line|--no-statusline) STATUS_LINE=0 ;;
+        --status-line-only|--statusline-only) HOOKS=0 ;;
         --uninstall) UNINSTALL=1 ;;
         -h|--help)
-            echo "Usage: bash hooks/install-hooks.sh [--no-status-line]"
-            echo "       bash hooks/install-hooks.sh --uninstall [--no-status-line]"
+            echo "$USAGE"
             exit 0
             ;;
         *)
-            echo "Unknown option: $arg (try --no-status-line or --uninstall)" >&2
+            echo "Unknown option: $arg (try --no-status-line, --status-line-only or --uninstall)" >&2
             exit 1
             ;;
     esac
 done
+if [ "$HOOKS" = "0" ] && [ "$STATUS_LINE" = "0" ]; then
+    echo "--no-status-line and --status-line-only together leave nothing to do" >&2
+    echo "$USAGE" >&2
+    exit 1
+fi
 
-SETTINGS_FILE="$HOME/.claude/settings.json"
+# Claude Code reads $CLAUDE_CONFIG_DIR/settings.json when that is set (the
+# server and npm run doctor follow it too), ~/.claude/settings.json otherwise
+CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+SETTINGS_FILE="$CLAUDE_DIR/settings.json"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TRACKER_SCRIPT="$SCRIPT_DIR/agent-tracker.sh"
 HOOK_COMMAND="bash \"$TRACKER_SCRIPT\""
@@ -82,6 +110,52 @@ echo -e "${CYAN}╚════════════════════�
 echo ""
 
 # ---------------------------------------------------------------------------
+# A settings file that is not valid JSON is refused, never replaced: one stray
+# comma in a hand-edited file would otherwise cost every permission rule, env
+# var, model choice and plugin in it. The parse error is printed with its line
+# and column and nothing is written — no backup either, since this runs first.
+# A file holding only whitespace counts as {} (there is nothing in it to
+# lose). Every Python step below that parses the file refuses the same way.
+# ---------------------------------------------------------------------------
+check_settings_json() {
+    local why
+    [ -f "$SETTINGS_FILE" ] || return 0
+    if ! why=$(python3 - "$SETTINGS_FILE" 2>&1 <<'PYEOF'
+import json, sys
+try:
+    with open(sys.argv[1], 'r') as f:
+        text = f.read()
+    if text.strip():
+        json.loads(text)
+except json.JSONDecodeError as e:
+    print(f'line {e.lineno}, column {e.colno}: {e.msg}')
+    sys.exit(1)
+except (OSError, ValueError) as e:
+    print(e)
+    sys.exit(1)
+PYEOF
+    ); then
+        echo -e "${RED}[error]${RESET} $SETTINGS_FILE is not valid JSON ($why)" >&2
+        echo "        Nothing was changed. Fix it (Claude Code cannot read it either) and run this again." >&2
+        exit 1
+    fi
+}
+
+# A backup name no other file has: settings.json.backup.<time>, then .1, .2, …
+# for further runs in the same second (a dotfiles bootstrap, `install &&
+# install --no-status-line`), so the copy of the original is never overwritten
+backup_name() {
+    local base name n=0
+    base="${SETTINGS_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
+    name="$base"
+    while [ -e "$name" ]; do
+        n=$((n + 1))
+        name="$base.$n"
+    done
+    printf '%s\n' "$name"
+}
+
+# ---------------------------------------------------------------------------
 # --uninstall: take the office back out of settings.json
 #
 # Every hook entry whose command runs agent-tracker.sh is removed, whatever
@@ -93,43 +167,54 @@ echo ""
 # deleted. Anything that is not ours — other hooks, other settings, a status
 # line we never wrapped — is left as it is, and so are the shapes the install
 # path repairs (nothing of ours can hide in a "hooks" that is not an object).
-# The file is backed up first, and only written when there is something to
-# remove.
+# A file that is not valid JSON is refused (check_settings_json). The file is
+# backed up first, and only written when there is something to remove.
 # ---------------------------------------------------------------------------
 if [ "$UNINSTALL" = "1" ]; then
     if [ ! -f "$SETTINGS_FILE" ]; then
         echo -e "${YELLOW}[info]${RESET} $SETTINGS_FILE does not exist — nothing to remove"
         exit 0
     fi
-    BACKUP_FILE="${SETTINGS_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
-    echo -e "${CYAN}[...]${RESET} Removing the office hooks and status line from $SETTINGS_FILE..."
+    check_settings_json
+    BACKUP_FILE="$(backup_name)"
+    if [ "$HOOKS" = "0" ]; then
+        echo -e "${CYAN}[...]${RESET} Removing the office status line from $SETTINGS_FILE..."
+    else
+        echo -e "${CYAN}[...]${RESET} Removing the office hooks and status line from $SETTINGS_FILE..."
+    fi
 
     rc=0
-    python3 - "$SETTINGS_FILE" "$BACKUP_FILE" "$(basename "$TRACKER_SCRIPT")" "$(basename "$STATUS_SCRIPT")" "$OFFICE_HOME" "$STATUS_LINE" <<'PYEOF' || rc=$?
+    python3 - "$SETTINGS_FILE" "$BACKUP_FILE" "$(basename "$TRACKER_SCRIPT")" "$(basename "$STATUS_SCRIPT")" "$OFFICE_HOME" "$STATUS_LINE" "$HOOKS" <<'PYEOF' || rc=$?
 import json, os, shlex, shutil, sys
 
-settings_path, backup_path, tracker_name, status_name, office_home, status_line = sys.argv[1:7]
+settings_path, backup_path, tracker_name, status_name, office_home, status_line, hooks_too = sys.argv[1:8]
 NOTHING_TO_REMOVE = 3
+REFUSED = 4  # nothing written, the reason printed
 
 def kind(value):
     return 'null' if value is None else type(value).__name__
 
 def script_path(command, name):
-    # The path to `name` a hook command runs, or None when the command is not ours
+    # The path to `name` a command runs — a shell word ending in hooks/<name>,
+    # the layout of every checkout and of the plugin — or None when the
+    # command is not ours: containing the name (my-status-line.sh,
+    # ~/.claude/status-line.sh, claude-agent-tracker.sh.py) is not enough
     if not isinstance(command, str) or name not in command:
         return None
     try:
         words = shlex.split(command)
     except ValueError:
         words = command.split()
-    return next((w for w in words if os.path.basename(w) == name), command)
+    return next((w for w in words if os.path.basename(w) == name and os.path.basename(os.path.dirname(w)) == 'hooks'), None)
 
 with open(settings_path, 'r') as f:
-    try:
-        settings = json.load(f)
-    except json.JSONDecodeError:
-        print('  [skip] the settings file is not valid JSON; nothing of ours can be read from it, so it is left as it is')
-        sys.exit(NOTHING_TO_REMOVE)
+    text = f.read()
+try:
+    settings = json.loads(text) if text.strip() else {}
+except json.JSONDecodeError as e:
+    # check_settings_json refused this already; the file changed under us
+    print(f'  [error] the settings file is not valid JSON (line {e.lineno}, column {e.colno}: {e.msg})', file=sys.stderr)
+    sys.exit(REFUSED)
 if not isinstance(settings, dict):
     print(f'  [skip] the settings file holds a JSON {kind(settings)}, not an object; left as it is')
     sys.exit(NOTHING_TO_REMOVE)
@@ -139,7 +224,9 @@ changed = False
 # -- hooks: every entry that runs agent-tracker.sh, under any event ----------
 removed = 0
 hooks = settings.get('hooks')
-if isinstance(hooks, dict):
+if hooks_too != '1':
+    print('  [skip] hooks (--status-line-only)')
+elif isinstance(hooks, dict):
     for event in list(hooks):
         groups = hooks[event]
         # A single group written where Claude Code expects a list of them is searched as it is
@@ -203,7 +290,13 @@ if not changed:
     sys.exit(NOTHING_TO_REMOVE)
 
 output = json.dumps(settings, indent=2) + '\n'
-shutil.copyfile(settings_path, backup_path)
+try:
+    # 'x': a backup that appeared under this name since bash picked it is never overwritten
+    with open(settings_path, 'rb') as src, open(backup_path, 'xb') as dst:
+        shutil.copyfileobj(src, dst)
+except FileExistsError:
+    print(f'  [error] {backup_path} already exists; run this again', file=sys.stderr)
+    sys.exit(REFUSED)
 print(f'  [ok] backup saved: {backup_path}')
 with open(settings_path, 'w') as f:
     f.write(output)
@@ -226,6 +319,11 @@ PYEOF
             echo -e "${GREEN}[ok]${RESET} Nothing to remove — $SETTINGS_FILE has no office hooks or status line and was not changed"
             echo ""
             ;;
+        4)
+            # The Python step refused (and said why) before writing anything
+            echo -e "${RED}[error]${RESET} $SETTINGS_FILE was not changed" >&2
+            exit 1
+            ;;
         *)
             echo -e "${RED}[error]${RESET} Could not update $SETTINGS_FILE" >&2
             [ -f "$BACKUP_FILE" ] && echo "        Your previous settings are in $BACKUP_FILE" >&2
@@ -238,17 +336,28 @@ fi
 # ---------------------------------------------------------------------------
 # Validate tracker script exists and is executable
 # ---------------------------------------------------------------------------
-if [ ! -f "$TRACKER_SCRIPT" ]; then
-    echo -e "${RED}[error]${RESET} Tracker script not found: $TRACKER_SCRIPT"
+if [ "$HOOKS" = "1" ]; then
+    if [ ! -f "$TRACKER_SCRIPT" ]; then
+        echo -e "${RED}[error]${RESET} Tracker script not found: $TRACKER_SCRIPT"
+        echo "        Make sure you run this from the agent-office project directory."
+        exit 1
+    fi
+
+    chmod +x "$TRACKER_SCRIPT"
+    echo -e "${GREEN}[ok]${RESET} Tracker script: $TRACKER_SCRIPT"
+elif [ ! -f "$STATUS_SCRIPT" ]; then
+    echo -e "${RED}[error]${RESET} Status line script not found: $STATUS_SCRIPT"
     echo "        Make sure you run this from the agent-office project directory."
     exit 1
 fi
 
-chmod +x "$TRACKER_SCRIPT"
-echo -e "${GREEN}[ok]${RESET} Tracker script: $TRACKER_SCRIPT"
+# ---------------------------------------------------------------------------
+# A settings file that is not valid JSON stops here, before the backup
+# ---------------------------------------------------------------------------
+check_settings_json
 
 # ---------------------------------------------------------------------------
-# Ensure ~/.claude directory exists
+# Ensure the config directory (~/.claude or $CLAUDE_CONFIG_DIR) exists
 # ---------------------------------------------------------------------------
 mkdir -p "$(dirname "$SETTINGS_FILE")"
 
@@ -261,10 +370,14 @@ if [ ! -f "$SETTINGS_FILE" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Backup existing settings
+# Backup existing settings, under a name no earlier backup has (noclobber:
+# a file that appears under it meanwhile is not overwritten either)
 # ---------------------------------------------------------------------------
-BACKUP_FILE="${SETTINGS_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
-cp "$SETTINGS_FILE" "$BACKUP_FILE"
+BACKUP_FILE="$(backup_name)"
+if ! (set -o noclobber; cat "$SETTINGS_FILE" > "$BACKUP_FILE") 2>/dev/null; then
+    echo -e "${RED}[error]${RESET} Could not write the backup $BACKUP_FILE — nothing was changed" >&2
+    exit 1
+fi
 echo -e "${GREEN}[ok]${RESET} Backup saved: $BACKUP_FILE"
 
 # A merge step that fails leaves the backup as the way back
@@ -276,14 +389,16 @@ merge_failed() {
 # ---------------------------------------------------------------------------
 # Merge hook entries into settings JSON using Python
 #
-# An entry is ours when its command names agent-tracker.sh. One that points
-# at this checkout is left alone; one that points anywhere else (a moved or
-# deleted checkout, a pruned worktree, a second clone) is repointed in place,
-# otherwise Claude Code reports a hook error on every tool call and the office
-# never hears about it. Shapes Claude Code itself would reject ("hooks" not an
-# object, an event given as one group instead of a list, entries that are not
-# objects) are repaired or ignored instead of crashing the install.
+# An entry is ours when one of its command's words is a path ending in
+# hooks/agent-tracker.sh. One that points at this checkout is left alone; one
+# that points anywhere else (a moved or deleted checkout, a pruned worktree, a
+# second clone) is repointed in place, otherwise Claude Code reports a hook
+# error on every tool call and the office never hears about it. Shapes Claude
+# Code itself would reject ("hooks" not an object, an event given as one group
+# instead of a list, entries that are not objects) are repaired or ignored
+# instead of crashing the install.
 # ---------------------------------------------------------------------------
+if [ "$HOOKS" = "1" ]; then
 echo -e "${CYAN}[...]${RESET} Registering the 19 hook events (tool calls, subagents, sessions, the main thread's turn, the task list)..."
 
 python3 - "$SETTINGS_FILE" "$HOOK_COMMAND" "$TRACKER_SCRIPT" <<'PYEOF' || merge_failed
@@ -309,10 +424,13 @@ EVENTS = (
 )
 
 with open(settings_path, 'r') as f:
-    try:
-        settings = json.load(f)
-    except json.JSONDecodeError:
-        settings = {}
+    text = f.read()
+try:
+    settings = json.loads(text) if text.strip() else {}
+except json.JSONDecodeError as e:
+    # check_settings_json refused this already; the file changed under us
+    print(f'  [error] {settings_path} is not valid JSON (line {e.lineno}, column {e.colno}: {e.msg}); not written', file=sys.stderr)
+    sys.exit(1)
 
 def kind(value):
     return 'null' if value is None else type(value).__name__
@@ -324,6 +442,10 @@ if not isinstance(settings, dict):
     warn(f'settings file holds a JSON {kind(settings)}, not an object; starting from {{}}')
     settings = {}
 
+# The agent-office plugin registers these same hooks from its own copy
+plugins = settings.get('enabledPlugins')
+plugin = next((k for k, on in plugins.items() if on and (k == 'agent-office' or k.startswith('agent-office@'))), None) if isinstance(plugins, dict) else None
+
 hooks = settings.get('hooks')
 if not isinstance(hooks, dict):
     if 'hooks' in settings:
@@ -331,14 +453,16 @@ if not isinstance(hooks, dict):
     hooks = settings['hooks'] = {}
 
 def script_path(command):
-    # The agent-tracker.sh path a hook command names, or None when the hook is not ours
+    # The agent-tracker.sh path a hook command runs — a shell word ending in
+    # hooks/agent-tracker.sh — or None when the hook is not ours: a command
+    # that merely contains the name (my-agent-tracker.sh) is someone else's
     if not isinstance(command, str) or SCRIPT_NAME not in command:
         return None
     try:
         words = shlex.split(command)
     except ValueError:
         words = command.split()
-    return next((w for w in words if os.path.basename(w) == SCRIPT_NAME), command)
+    return next((w for w in words if os.path.basename(w) == SCRIPT_NAME and os.path.basename(os.path.dirname(w)) == 'hooks'), None)
 
 def is_current(path):
     return os.path.realpath(os.path.expanduser(path)) == os.path.realpath(tracker_script)
@@ -389,6 +513,10 @@ for event in EVENTS:
             groups.remove(group)
 
 print(f'  hooks: {added} added, {updated} repointed at this checkout, {unchanged} unchanged')
+if plugin:
+    print(f'  [warn] the {plugin} plugin is enabled too: its hooks and these both run, so every event reaches the office twice.')
+    print('         Keep one: npm run uninstall-hooks -- --no-status-line takes these back out (the status line stays),')
+    print(f'         or claude plugin uninstall {plugin}. Next to the plugin, npm run install-status-line adds the meters alone.')
 
 with open(settings_path, 'w') as f:
     json.dump(settings, f, indent=2)
@@ -396,6 +524,9 @@ with open(settings_path, 'w') as f:
 PYEOF
 
 echo -e "${GREEN}[ok]${RESET} Hooks up to date in $SETTINGS_FILE"
+else
+    echo -e "${YELLOW}[skip]${RESET} hooks (--status-line-only: the agent-office plugin, or your own entries, provide them)"
+fi
 
 # ---------------------------------------------------------------------------
 # Status line — the payroll / electricity / memory meters (statusLine +
@@ -417,22 +548,29 @@ settings_path, command, office_home, status_script = sys.argv[1:5]
 SCRIPT_NAME = os.path.basename(status_script)
 
 with open(settings_path, 'r') as f:
-    try:
-        settings = json.load(f)
-    except json.JSONDecodeError:
-        settings = {}
+    text = f.read()
+try:
+    settings = json.loads(text) if text.strip() else {}
+except json.JSONDecodeError as e:
+    # check_settings_json refused this already; the file changed under us
+    print(f'  [error] {settings_path} is not valid JSON (line {e.lineno}, column {e.colno}: {e.msg}); not written', file=sys.stderr)
+    sys.exit(1)
 if not isinstance(settings, dict):
+    # The hook step warns about this too; with --status-line-only it is the first to see it
+    print(f'  [warn] settings file holds a JSON {"null" if settings is None else type(settings).__name__}, not an object; starting from {{}} (the backup keeps the old value)')
     settings = {}
 
 def script_path(command):
-    # The status-line.sh path a command names, or None when the status line is not ours
+    # The status-line.sh path a command runs — a shell word ending in
+    # hooks/status-line.sh — or None when the status line is not ours: your
+    # own my-status-line.sh or ~/.claude/status-line.sh is chained, not replaced
     if not isinstance(command, str) or SCRIPT_NAME not in command:
         return None
     try:
         words = shlex.split(command)
     except ValueError:
         words = command.split()
-    return next((w for w in words if os.path.basename(w) == SCRIPT_NAME), command)
+    return next((w for w in words if os.path.basename(w) == SCRIPT_NAME and os.path.basename(os.path.dirname(w)) == 'hooks'), None)
 
 def is_current(path):
     return os.path.realpath(os.path.expanduser(path)) == os.path.realpath(status_script)
@@ -511,19 +649,33 @@ echo "  2. Start the Agent Office UI:"
 echo "       npm run dev           # browser"
 echo "       npm run dev:electron  # desktop app"
 echo ""
+if [ "$HOOKS" = "1" ]; then
 echo "  3. Use Claude Code normally. When you (or Claude) use the Agent"
 echo "     tool or any MCP tool, a character will appear in the office."
+else
+echo "  3. Use Claude Code normally: the agent-office plugin's hooks bring the"
+echo "     agents in; this install added the status line only."
+fi
 if [ "$STATUS_LINE" = "1" ]; then
 echo ""
 echo "  4. The wall panel above the chat shows payroll / electricity / memory"
 echo "     as soon as Claude Code sends its first status line."
 fi
 echo ""
+if [ "$HOOKS" = "1" ]; then
 echo "  Hook installed at:"
+else
+echo "  Status line installed at:"
+fi
 echo "    $SETTINGS_FILE"
 echo ""
+if [ "$HOOKS" = "1" ]; then
 echo "  Tracker script:"
 echo "    $TRACKER_SCRIPT"
+else
+echo "  Status line script:"
+echo "    $STATUS_SCRIPT"
+fi
 echo ""
 echo -e "${YELLOW}Note:${RESET} The server must be running on port ${AGENT_OFFICE_PORT:-3334} for events to appear"
 echo "  (the hook, the status line and the server all read AGENT_OFFICE_PORT; default 3334)."

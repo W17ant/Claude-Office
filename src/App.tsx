@@ -20,7 +20,7 @@ import * as sfx from './sounds'
 import { findWaypointPath } from './agentManager'
 import {
   reduceOffice, stepOffice, initialOfficeState,
-  moveAgentsForEvent, returnAgentsFromEvent, pickSingleEventAgent,
+  moveAgentsForEvent, returnAgentsFromEvent, pickSingleEventAgent, walkDurationMs, errandWaitMs,
   MAIN_ROOM, BOSS_ID, CLAUDE_ID, CLAUDE_ROLE,
   type OfficeState, type OfficeAction, type OfficeEffect, type OfficeEnv,
 } from './officeReducer'
@@ -340,6 +340,9 @@ const App: React.FC = () => {
 
     // Walk boss to the item
     const target = interaction.walkTo
+    // How long to watch for him to get there: as long as the walk takes from where he stands
+    const bossNow = agentsRef.current.find(a => a.id === BOSS_ID)
+    const walkMs = bossNow ? walkDurationMs(bossNow.position, findWaypointPath(bossNow.position.x, bossNow.position.y, target.x, target.y, MAIN_WAYPOINTS), target) : 0
     updateAgents(prev => prev.map(a => {
       if (a.id !== BOSS_ID) return a
       return {
@@ -417,8 +420,8 @@ const App: React.FC = () => {
       }
     }, 200)
 
-    // Safety: clear after 15s if boss never arrives
-    setTimeout(() => clearInterval(checkArrival), 15000)
+    // Safety: stop watching if he never arrives (sent elsewhere meanwhile)
+    setTimeout(() => clearInterval(checkArrival), errandWaitMs(walkMs))
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 

@@ -284,8 +284,13 @@ export function modelLabel(s: SessionStatus): string {
 // Transcript estimates (a session without the status line)
 // ---------------------------------------------------------------------------
 
-/** What registers the status line — the only source of PAYROLL and ELECTRICITY */
-export const STATUS_LINE_INSTALL = 'npm run install-hooks'
+/**
+ * What registers the status line — the only source of PAYROLL and
+ * ELECTRICITY. The status line alone: these sessions are plugin installs or
+ * claude -p runs whose hooks already report, and the full installer next to
+ * the plugin would deliver every event twice.
+ */
+export const STATUS_LINE_INSTALL = 'npm run install-status-line'
 
 /** MEMORY estimated from the transcript: no status line reports for this session */
 export function isEstimated(s: SessionStatus): boolean {

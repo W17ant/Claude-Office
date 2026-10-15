@@ -9,12 +9,16 @@
  *   hooks        ~/.claude/settings.json — or $CLAUDE_CONFIG_DIR/settings.json —
  *                runs hooks/agent-tracker.sh for every event the installer
  *                registers, from a file that exists. Same rule as
- *                hooks/install-hooks.sh: an entry is ours when its command
- *                names agent-tracker.sh. Or the agent-office plugin is
+ *                hooks/install-hooks.sh: an entry is ours when a word of its
+ *                command is a path ending in hooks/agent-tracker.sh. Or the
+ *                agent-office plugin is
  *                installed: enabledPlugins in settings.json plus a copy under
  *                plugins/ (installed_plugins.json, cache/, marketplaces/).
  *   status line  statusLine + subagentStatusLine run hooks/status-line.sh —
- *                the meters; a plugin cannot register statusLine
+ *                the meters; a plugin cannot register statusLine, so plugin
+ *                installs are pointed at npm run install-status-line (the
+ *                status line alone: the installer's hooks next to the
+ *                plugin's would deliver every event twice)
  *   tools        python3, bash, curl on PATH (the hook and the installer use them)
  *   server       GET http://127.0.0.1:$AGENT_OFFICE_PORT/health answers, and
  *                whether a hook has reached it since it started
@@ -46,7 +50,9 @@ export const FAIL = 'FAIL'
 export const COMMANDS = {
   install:   'npm run install-hooks',
   hooksOnly: 'bash hooks/install-hooks.sh --no-status-line',
+  statusLine: 'npm run install-status-line',
   uninstall: 'npm run uninstall-hooks',
+  uninstallHooks: 'npm run uninstall-hooks -- --no-status-line',
   plugin:    'claude plugin marketplace add W17ant/Claude-Office && claude plugin install agent-office@agent-office',
   unplugin:  'claude plugin uninstall agent-office@agent-office',
   start:     'npm run build && npm run server',
@@ -102,12 +108,14 @@ export function shellWords(command) {
 }
 
 /**
- * The path a hook command names whose basename is `name`, or null when the
- * command is not ours — the installer's own rule (its `script_path`).
+ * The path a hook command runs that ends in hooks/`name` (the layout of every
+ * checkout and of the plugin), or null when the command is not ours — the
+ * installer's own rule (its `script_path`). Containing the name is not
+ * enough: my-status-line.sh or ~/.claude/status-line.sh is someone else's.
  */
 export function scriptPathIn(command, name) {
   if (typeof command !== 'string' || !command.includes(name)) return null
-  return shellWords(command).find(w => basename(w) === name) ?? command
+  return shellWords(command).find(w => basename(w) === name && basename(dirname(w)) === 'hooks') ?? null
 }
 
 /** ~ and $HOME as a shell would expand them in a hook command */
@@ -286,7 +294,7 @@ export function checkHooks({ settingsPath, settings, settingsState, events, trac
     const copy = plugin.copies[0]
     if (hooks.any) {
       out.push(result(WARN, `plugin ${plugin.enabledKey} is installed as well (${copy.source}) — plugin hooks merge with the settings hooks, so every agent arrives twice`,
-        `keep one: ${COMMANDS.uninstall}, or ${COMMANDS.unplugin}`))
+        `keep one: ${COMMANDS.uninstallHooks} takes the installer's hooks out and keeps the status line (the meters), or ${COMMANDS.unplugin}`))
     } else {
       out.push(result(PASS, `plugin ${plugin.enabledKey}: enabled, hooks run ${copy.tracker}`))
     }
@@ -297,7 +305,7 @@ export function checkHooks({ settingsPath, settings, settingsState, events, trac
     const notes = [
       plugin.disabledKey ? `the plugin ${plugin.disabledKey} is installed but disabled: claude plugin enable ${plugin.disabledKey}` : null,
       !plugin.disabledKey && plugin.copies.length ? `a plugin copy exists at ${plugin.copies[0].dir} but is not enabled: ${COMMANDS.plugin}` : null,
-      fallback?.any ? `they are in ${fallback.path} — but CLAUDE_CONFIG_DIR is set, so Claude Code reads ${settingsPath}; move them there, or unset CLAUDE_CONFIG_DIR` : null,
+      fallback?.any ? `they are in ${fallback.path} — but CLAUDE_CONFIG_DIR is set, so Claude Code reads ${settingsPath}; ${COMMANDS.install} with CLAUDE_CONFIG_DIR set writes them there (CLAUDE_CONFIG_DIR= ${COMMANDS.uninstall} takes the old ones out)` : null,
       `${COMMANDS.install} registers them (or install the plugin: ${COMMANDS.plugin})`,
     ]
     const what = settingsState?.missing ? `${settingsPath} does not exist` : `nothing in ${settingsPath} runs hooks/${TRACKER_NAME}`
@@ -310,6 +318,8 @@ export function checkHooks({ settingsPath, settings, settingsState, events, trac
 /** The status line: statusLine + subagentStatusLine running hooks/status-line.sh. */
 export function checkStatusLine({ settings, statusScript, home, pluginOnly }) {
   const s = settings && typeof settings === 'object' ? settings : {}
+  // Next to the plugin the full installer would register every hook a second time
+  const fix = pluginOnly ? COMMANDS.statusLine : COMMANDS.install
   const entry = (key) => {
     const cur = s[key]
     const raw = cur && typeof cur === 'object' ? scriptPathIn(cur.command, STATUS_NAME) : null
@@ -321,18 +331,18 @@ export function checkStatusLine({ settings, statusScript, home, pluginOnly }) {
   const sub = entry('subagentStatusLine')
 
   if (main.ours && !main.exists) {
-    return result(FAIL, `status line: statusLine runs ${main.path}, which does not exist — Claude Code shows an error instead of a status line`, `${COMMANDS.install} repoints it`)
+    return result(FAIL, `status line: statusLine runs ${main.path}, which does not exist — Claude Code shows an error instead of a status line`, `${fix} repoints it`)
   }
   if (main.ours) {
     const notes = [
-      !sub.ours ? `subagentStatusLine is not registered (subagent token rows) — ${COMMANDS.install} adds it` : null,
+      !sub.ours ? `subagentStatusLine is not registered (subagent token rows) — ${fix} adds it` : null,
       !main.current ? `(not this checkout's hooks/${STATUS_NAME}: ${main.path})` : null,
     ]
     return result(sub.ours ? PASS : WARN, `status line: statusLine${sub.ours ? ' + subagentStatusLine' : ''} run ${main.path}`, ...notes)
   }
   if (pluginOnly) {
     return result(WARN, 'status line: not registered — a plugin cannot set statusLine, so the payroll / electricity / memory meters stay hidden',
-      `${COMMANDS.install} from a clone adds it (hooks stay with the plugin; use ${COMMANDS.hooksOnly} if you only want to repoint)`)
+      `${COMMANDS.statusLine} from a clone adds it and nothing else (the hooks stay with the plugin; ${COMMANDS.install} would register them a second time)`)
   }
   return result(WARN, 'status line: not registered — the payroll / electricity / memory meters stay hidden',
     main.other ? `${COMMANDS.install} adds it and chains the one you have (${main.other})` : `${COMMANDS.install} adds it`)
@@ -431,7 +441,7 @@ export async function runDoctor(opts = {}) {
   const settingsState = readJson(settingsPath)
   const settings = settingsState.value ?? {}
 
-  // CLAUDE_CONFIG_DIR set: the installer still writes ~/.claude/settings.json, so look there too
+  // CLAUDE_CONFIG_DIR set: an installer from before it honoured the variable wrote ~/.claude/settings.json, so look there too
   let fallback = null
   if (!samePath(configDir, defaultConfigDir)) {
     const alt = readJson(join(defaultConfigDir, 'settings.json')).value
@@ -475,6 +485,7 @@ export function formatReport({ results, ok, context }, { color = false } = {}) {
   const rows = [
     ['install / repair hooks + status line', COMMANDS.install],
     ['hooks only', COMMANDS.hooksOnly],
+    ['status line only (next to the plugin)', COMMANDS.statusLine],
     ['uninstall what the installer added', COMMANDS.uninstall],
     ['plugin instead of the installer', COMMANDS.plugin],
     ['uninstall the plugin', COMMANDS.unplugin],

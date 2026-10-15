@@ -13,6 +13,9 @@ import {
   moveAgentsForEvent,
   returnAgentsFromEvent,
   pickSingleEventAgent,
+  walkDurationMs,
+  errandWaitMs,
+  ERRAND_MIN_WAIT_MS,
   lobbyPosition,
   MAIN_ROOM,
   DOOR_TARGET,
@@ -34,7 +37,9 @@ import {
   type OfficeAction,
 } from '../src/officeReducer'
 import { mainId } from '../src/mainState'
-import { createAgent } from '../src/agentManager'
+import { createAgent, findWaypointPath, stepToward, WALK_SPEED } from '../src/agentManager'
+import { getInteraction } from '../src/interactions'
+import { readFileSync } from 'node:fs'
 import { BOSS_NAME } from '../src/config'
 import { AGENT_CONFIGS, type Agent, type ServerHealth } from '../src/types'
 
@@ -746,10 +751,10 @@ describe('one Claude per session', () => {
     const { state: s1, effects } = reduceOffice(office, { type: 'session_ended', sessionId: 's1', reason: 'prompt_input_exit' }, env())
     expect(claudeOf(s1, 's1')!.statusText).toBe('👋 session ended (prompt_input_exit)')
     expect(claudeOf(s1, 's1')!.mainState).toBeUndefined()
-    expect(effects).toEqual([{ kind: 'schedule', action: { type: 'session_claude_leave', sessionId: 's1' }, delayMs: SESSION_CLAUDE_GRACE_MS }])
+    expect(effects).toEqual([{ kind: 'schedule', action: { type: 'session_claude_leave', sessionId: 's1', endedAt: T0 }, delayMs: SESSION_CLAUDE_GRACE_MS }])
 
     const late = env({ now: T0 + SESSION_CLAUDE_GRACE_MS })
-    const { state: gone, effects: bye } = reduceOffice(s1, { type: 'session_claude_leave', sessionId: 's1' }, late)
+    const { state: gone, effects: bye } = reduceOffice(s1, { type: 'session_claude_leave', sessionId: 's1', endedAt: T0 }, late)
     expect(agent(gone, mainId('s1'))!.state).toBe('completed')
     expect(agent(gone, mainId('s1'))!.targetPosition).toEqual(DOOR_TARGET)
     expect(texts(bye)).toEqual(['👋 clocked out'])
@@ -759,9 +764,80 @@ describe('one Claude per session', () => {
     // Resume before the grace is over: the leave is a no-op
     const { state: back } = reduceOffice(s1, { type: 'session_started', ...S1, source: 'resume' }, env())
     expect(back.endedSessions).toEqual({})
-    const r = reduceOffice(back, { type: 'session_claude_leave', sessionId: 's1' }, late)
+    const r = reduceOffice(back, { type: 'session_claude_leave', sessionId: 's1', endedAt: T0 }, late)
     expect(r.state).toBe(back)
     expect(claudeOf(r.state, 's1')!.state).toBe('idle')
+  })
+
+  it("end, resume and end again inside the grace: the first end's timer is stale and cannot cut the second grace short", () => {
+    const at = (ms: number) => env({ now: T0 + ms })
+    const leaveOf = (effects: OfficeEffect[]) => (effects.find(e => e.kind === 'schedule') as Extract<OfficeEffect, { kind: 'schedule' }>).action
+    const { state: end1, effects: fx1 } = reduceOffice(sessionOffice(), { type: 'session_ended', sessionId: 's1' }, at(0))
+    const { state: resumed } = reduceOffice(end1, { type: 'session_started', ...S1, source: 'resume' }, at(3000))
+    const { state: end2, effects: fx2 } = reduceOffice(resumed, { type: 'session_ended', sessionId: 's1' }, at(6000))
+    const leave1 = leaveOf(fx1)
+    const leave2 = leaveOf(fx2)
+    expect(leave1).toEqual({ type: 'session_claude_leave', sessionId: 's1', endedAt: T0 })
+    expect(leave2).toEqual({ type: 'session_claude_leave', sessionId: 's1', endedAt: T0 + 6000 })
+
+    // The first end's timer fires 4 s into the second grace: nothing happens
+    const stale = reduceOffice(end2, leave1, at(SESSION_CLAUDE_GRACE_MS))
+    expect(stale.state).toBe(end2)
+    expect(stale.effects).toEqual([])
+    expect(claudeOf(stale.state, 's1')!.state).toBe('idle')
+
+    // So a resume 5 s into the second grace keeps the same Claude seated: no door, no clock-in
+    const { state: back, effects: welcome } = reduceOffice(stale.state, { type: 'session_started', ...S1, source: 'resume' }, at(11_000))
+    expect(sfx(welcome)).toEqual([])
+    expect(msgs(welcome)).toEqual([])
+    expect(claudeOf(back, 's1')!.state).toBe('idle')
+    expect(reduceOffice(back, leave2, at(16_000)).state).toBe(back)
+
+    // Without that resume, the second end's own timer clocks it out
+    const { state: out, effects: bye } = reduceOffice(end2, leave2, at(16_000))
+    expect(agent(out, mainId('s1'))!.state).toBe('completed')
+    expect(texts(bye)).toEqual(['👋 clocked out'])
+  })
+
+  it('a snapshot that lists the session as ended stops its Claude at once, as session_ended does: hand down, no ✋ in the title, not typing', () => {
+    const ended = (reason?: string): OfficeAction => ({ type: 'snapshot', activeAgents: [], sessions: [{ id: 's1', project: 'office', state: 'ended', reason, hooked: true, main: { state: 'idle' } }] })
+    const { state: raised } = reduceOffice(sessionOffice(), { type: 'session_needs_you', ...S1, kind: 'permission', toolName: 'Bash', summary: 'rm -rf dist' }, env())
+    const { state, effects } = reduceOffice(raised, ended('prompt_input_exit'), env())
+    const c = claudeOf(state, 's1')!
+    expect(c.mainState).toBeUndefined()
+    expect(c.needsYou).toBeUndefined()
+    expect(c.state).toBe('idle')                               // still at its desk for the grace
+    expect(c.statusText).toBe('👋 session ended (prompt_input_exit)')
+    expect(titles(effects)).toEqual([''])
+    expect(effects.filter(e => e.kind === 'schedule')).toEqual([
+      { kind: 'schedule', action: { type: 'session_claude_leave', sessionId: 's1', endedAt: T0 }, delayMs: SESSION_CLAUDE_GRACE_MS },
+    ])
+    // The same snapshot again during the grace: nothing more
+    expect(reduceOffice(state, ended('prompt_input_exit'), env({ now: T0 + 2000 })).effects).toEqual([])
+
+    // A Claude that was typing stops
+    const { state: working } = reduceOffice(sessionOffice(), { type: 'session_prompt', ...S1, text: 'go' }, env())
+    const { state: stopped } = reduceOffice(working, ended(), env())
+    expect(claudeOf(stopped, 's1')!.state).toBe('idle')
+    expect(claudeOf(stopped, 's1')!.mainState).toBeUndefined()
+    expect(claudeOf(stopped, 's1')!.statusText).toBe('👋 session ended')
+  })
+
+  it("on a reload the snapshot seats each session's Claude by the boss before its workers take their desks", () => {
+    const worker = (id: string, role: string) => ({ id, name: id, role, task: 'fix', state: 'working', status: 'x', sessionId: 's1', project: 'office' })
+    const sessions = [{ id: 's1', project: 'office', state: 'active' as const, main: { state: 'working' as const, since: T0 } }]
+    const { state } = reduceOffice(liveOffice(), { type: 'snapshot', activeAgents: [worker('agent-a', 'debugger'), worker('agent-b', 'code-reviewer')], sessions }, env())
+    expect(claudeOf(state, 's1')!.assignedSpotId).toBe(CLAUDE_HOME_SPOT)
+    expect(agent(state, 'agent-a')!.assignedSpotId).toBe('spot-3')
+    expect(agent(state, 'agent-b')!.assignedSpotId).toBe('spot-4')
+    // The workers still walk in with their task line, after the Claude's clock-in
+    expect(texts(reduceOffice(liveOffice(), { type: 'snapshot', activeAgents: [worker('agent-a', 'debugger')], sessions }, env()).effects))
+      .toEqual(['🤖 clocked in · office', '📋 fix'])
+
+    // A browsing role still takes the filing cabinet
+    const { state: browsing } = reduceOffice(liveOffice(), { type: 'snapshot', activeAgents: [worker('agent-e', 'Explore')], sessions }, env())
+    expect(agent(browsing, 'agent-e')!.assignedSpotId).toBe('spot-filing')
+    expect(claudeOf(browsing, 's1')!.assignedSpotId).toBe(CLAUDE_HOME_SPOT)
   })
 
   it('a Claude between turns joins a fire drill; one mid-turn or with a hand up stays at its desk (C32 for Claude)', () => {
@@ -826,8 +902,8 @@ describe('sessions without hooks (the registry roster)', () => {
     const e = reduceOffice(office, { type: 'session_ended', sessionId: 'r9', hooked: false, reason: 'exited' }, env())
     expect(claudeOf(e.state, 'r9')).toBeUndefined()
     expect(claudeOf(e.state, 's1')!.state).toBe('idle')
-    expect(e.effects).toEqual([{ kind: 'schedule', action: { type: 'session_claude_leave', sessionId: 'r9' }, delayMs: SESSION_CLAUDE_GRACE_MS }])
-    const { state: later } = reduceOffice(e.state, { type: 'session_claude_leave', sessionId: 'r9' }, env({ now: T0 + SESSION_CLAUDE_GRACE_MS }))
+    expect(e.effects).toEqual([{ kind: 'schedule', action: { type: 'session_claude_leave', sessionId: 'r9', endedAt: T0 }, delayMs: SESSION_CLAUDE_GRACE_MS }])
+    const { state: later } = reduceOffice(e.state, { type: 'session_claude_leave', sessionId: 'r9', endedAt: T0 }, env({ now: T0 + SESSION_CLAUDE_GRACE_MS }))
     expect(later.agents).toHaveLength(e.state.agents.length)
   })
 })
@@ -870,6 +946,67 @@ describe("main-thread activity lands on the session's Claude", () => {
     const { state: s2 } = settle(s1)
     expect(claudeOf(s2, 's1')!.state).toBe('working')
     expect(claudeOf(s2, 's1')!.statusText).toBe('reading README')
+  })
+})
+
+describe("a Claude's status line survives its walks", () => {
+  it('a Claude that sits down after a walk-in shows the turn as it stands, not a tool call from earlier in it', () => {
+    // A prompt, a tool call and the turn end, all before the new Claude reaches its desk
+    const { state } = dispatchAll(liveOffice(), [
+      { type: 'session_prompt', ...S1, text: 'fix the build' },
+      { type: 'agent_working', ...S1, status: 'Reading src/a.ts' },
+      { type: 'session_turn_end', ...S1, text: 'done', backgroundTasks: [] },
+    ])
+    expect(claudeOf(state, 's1')!.state).toBe('new-hire')
+    const seated = claudeOf(settle(state).state, 's1')!
+    expect(seated.state).toBe('idle')
+    expect(seated.statusText).toBe('turn over — idle')
+    expect(seated.lastFailed).toBe(false)
+
+    // A failed tool call, then a hand up
+    const { state: s2 } = dispatchAll(liveOffice(), [
+      { type: 'session_prompt', ...S1, text: 'fix the build' },
+      { type: 'agent_working', ...S1, status: 'failed: Bash — Exit code 1', failed: true },
+      { type: 'session_needs_you', ...S1, kind: 'permission', toolName: 'Bash', summary: 'rm -rf build' },
+    ])
+    const raised = claudeOf(settle(s2).state, 's1')!
+    expect(raised.mainState).toBe('needs-you')
+    expect(raised.statusText).toBe('✋ needs you: Bash · rm -rf build')
+  })
+
+  it('a Claude back from a fire drill keeps its own line, and one a prompt reached at the drill shows that prompt', () => {
+    const drill = { x: 67.5, y: 48.9 }
+    const idle = settle(reduceOffice(sessionOffice(), { type: 'session_turn_end', ...S1, text: 'done', backgroundTasks: [] }, env()).state).state
+    const { agents, movedIds } = moveAgentsForEvent(idle.agents, drill, 'Fire Drill', env())
+    expect(movedIds).toContain(mainId('s1'))
+    const atDrill = settle({ ...idle, agents }).state
+    expect(claudeOf(atDrill, 's1')!.statusText).toBe('turn over — idle')
+    expect(agent(atDrill, BOSS_ID)!.statusText).toBe('Fire Drill')   // the boss still plays along
+
+    const back = settle({ ...atDrill, agents: returnAgentsFromEvent(atDrill.agents, movedIds, env()) }).state
+    expect(claudeOf(back, 's1')!.state).toBe('idle')
+    expect(claudeOf(back, 's1')!.statusText).toBe('turn over — idle')
+
+    const { state: prompted } = reduceOffice(atDrill, { type: 'session_prompt', ...S1, text: 'add tests for the parser' }, env())
+    const backToWork = settle({ ...prompted, agents: returnAgentsFromEvent(prompted.agents, movedIds, env()) }).state
+    expect(claudeOf(backToWork, 's1')!.state).toBe('working')
+    expect(claudeOf(backToWork, 's1')!.statusText).toBe('✍ add tests for the parser')
+  })
+
+  it('a Claude seated from the lobby keeps its needs-you line', () => {
+    const desks = MAIN_ROOM.agentSpots.filter(s => s.type === 'desk').length
+    const ids = Array.from({ length: desks - 1 }, (_, i) => `w${i + 1}`)  // the boss has the other desk
+    const full = settle(dispatchAll(liveOffice(), ids.map(id => spawn(id))).state).state
+    const { state: waiting } = reduceOffice(full, { type: 'session_needs_you', ...S1, kind: 'permission', toolName: 'Bash', summary: 'npm test' }, env())
+    expect(waiting.lobby).toEqual([mainId('s1')])
+    const late = env({ now: T0 + MIN_VISIBLE_TIME + 1 })
+    const { state: freed } = reduceOffice(settle(waiting).state, { type: 'agent_completed', agentId: 'w3', result: 'done' }, late)
+    const seated = settle(freed, late).state
+    const c = claudeOf(seated, 's1')!
+    expect(c.assignedSpotId).toBeDefined()
+    expect(c.state).toBe('idle')
+    expect(c.mainState).toBe('needs-you')
+    expect(c.statusText).toBe('✋ needs you: Bash · npm test')
   })
 })
 
@@ -919,6 +1056,60 @@ describe('session_prompt: the boss hands the prompt over, Claude types', () => {
     expect(s2.handoverSeq).toBe(2)
     expect(effects).toContainEqual({ kind: 'schedule', action: { type: 'handover_over', seq: 2 }, delayMs: HANDOVER_DWELL_MS })
     expect(reduceOffice(s2, { type: 'handover_over', seq: 1 }, env()).state).toBe(s2)
+  })
+
+  it('a prompt while the boss walks back from the last hand-over turns him round with the new line', () => {
+    const { state: s1 } = reduceOffice(sessionOffice(), { type: 'session_prompt', ...S1, text: 'first' }, env())
+    const { state: there } = settle(s1)
+    const visitSpot = { ...agent(there, BOSS_ID)!.position }
+    const { state: leaving } = reduceOffice(there, { type: 'handover_over', seq: 1 }, env())
+    // Twenty frames on he is well on his way home, but not there
+    let walking = leaving
+    for (let i = 0; i < 20; i++) walking = stepOffice(walking, 1, env()).state
+    const boss = agent(walking, BOSS_ID)!
+    expect(boss.state).toBe('walking-to-desk')
+    expect(Math.hypot(boss.position.x - visitSpot.x, boss.position.y - visitSpot.y)).toBeGreaterThan(1)
+
+    const { state: s2, effects } = reduceOffice(walking, { type: 'session_prompt', ...S1, text: 'yes, continue' }, env())
+    expect(s2.handoverSeq).toBe(2)
+    expect(effects).toContainEqual({ kind: 'schedule', action: { type: 'handover_over', seq: 2 }, delayMs: HANDOVER_MAX_MS })
+    expect(agent(s2, BOSS_ID)!.state).toBe('walking-to-manager')
+    expect(agent(s2, BOSS_ID)!.statusText).toBe('yes, continue')
+    expect(agent(s2, BOSS_ID)!.targetPosition).toEqual(visitSpot)
+    const { state: back, effects: walk } = settle(s2)
+    expect(agent(back, BOSS_ID)!.state).toBe('talking-to-manager')
+    expect(walk).toContainEqual({ kind: 'schedule', action: { type: 'handover_over', seq: 2 }, delayMs: HANDOVER_DWELL_MS })
+
+    // A frame after he set off he is still beside Claude: he just says the new line
+    const { state: s3 } = reduceOffice(stepOffice(leaving, 1, env()).state, { type: 'session_prompt', ...S1, text: 'and the docs' }, env())
+    expect(agent(s3, BOSS_ID)!.state).toBe('talking-to-manager')
+    expect(agent(s3, BOSS_ID)!.statusText).toBe('and the docs')
+
+    // Once he has sat down the walk home is over: the mark is cleared
+    const { state: home } = settle(leaving)
+    expect(agent(home, BOSS_ID)!.state).toBe('working')
+    expect(home.meta[BOSS_ID].homeFromHandover).toBe(false)
+  })
+
+  it('a prompt while the boss walks back from a fire drill or an errand does not turn him round', () => {
+    const office = sessionOffice()
+    const { agents, movedIds } = moveAgentsForEvent(office.agents, { x: 67.5, y: 48.9 }, 'Fire Drill', env())
+    const atDrill = settle({ ...office, agents }).state
+    const returning = { ...atDrill, agents: returnAgentsFromEvent(atDrill.agents, movedIds, env()) }
+    expect(agent(returning, BOSS_ID)!.state).toBe('walking-to-desk')
+    const { state } = reduceOffice(returning, { type: 'session_prompt', ...S1, text: 'go' }, env())
+    expect(state.handoverSeq).toBe(0)
+    expect(agent(state, BOSS_ID)!.state).toBe('walking-to-desk')
+    expect(agent(state, BOSS_ID)!.statusText).toBe('back to work')
+    expect(claudeOf(state, 's1')!.mainState).toBe('working')
+
+    // Walking home from a hand-over, but the person sent him off somewhere else (the coffee machine)
+    const { state: there } = settle(reduceOffice(office, { type: 'session_prompt', ...S1, text: 'first' }, env()).state)
+    const { state: leaving } = reduceOffice(there, { type: 'handover_over', seq: 1 }, env())
+    const errand = { ...leaving, agents: leaving.agents.map(a => (a.id === BOSS_ID ? { ...a, targetPosition: { x: 73.5, y: 56.7 }, statusText: 'coffee time' } : a)) }
+    const { state: s2 } = reduceOffice(errand, { type: 'session_prompt', ...S1, text: 'second' }, env())
+    expect(s2.handoverSeq).toBe(1)
+    expect(agent(s2, BOSS_ID)!.statusText).toBe('coffee time')
   })
 
   it('a wake-up from a background worker is a note on Claude, not a walk', () => {
@@ -1152,6 +1343,38 @@ describe('session_needs_you (F02)', () => {
     expect(sfx(input.effects)).toEqual(['needsYou'])
     expect(titles(input.effects)).toEqual(['✋ '])
   })
+
+  it("a new wait of the same shape is announced again: the server's since says it is not the one already up", () => {
+    // What the server broadcasts: the wait, and the record it now holds, both with when it began
+    const wait = (since: number): OfficeAction => {
+      const needsYou = { kind: 'permission' as const, toolName: 'Bash', summary: 'npm test', since }
+      return { type: 'session_needs_you', ...S1, kind: 'permission', toolName: 'Bash', summary: 'npm test', needsYou, main: { state: 'needs-you', since, needsYou } }
+    }
+    const { state: first, effects: e1 } = reduceOffice(sessionOffice(), wait(T0), env())
+    expect(texts(e1)).toEqual(['✋ needs you: Bash · npm test'])
+    expect(sfx(e1)).toEqual(['needsYou'])
+
+    // The same broadcast delivered again: nothing new
+    expect(reduceOffice(first, wait(T0), env({ now: T0 + 500 })).effects).toEqual([])
+
+    // A worker asks for the same command again 11 s later (the first was approved in the
+    // terminal, which lowers no hand for a subagent): the server parked a new wait
+    const { state: second, effects: e2 } = reduceOffice(first, wait(T0 + 11_000), env({ now: T0 + 11_000 }))
+    expect(texts(e2)).toEqual(['✋ needs you: Bash · npm test'])
+    expect(sfx(e2)).toEqual(['needsYou'])
+    expect(titles(e2)).toEqual([])                             // the prefix is already up
+    expect(claudeOf(second, 's1')!.needsYou!.since).toBe(T0 + 11_000)
+
+    // Two agent-input waits in a row, likewise
+    const input = (since: number): OfficeAction => {
+      const needsYou = { kind: 'agent-input' as const, message: 'Agent needs your input', since }
+      return { type: 'session_needs_you', ...S1, kind: 'agent-input', message: 'Agent needs your input', needsYou, main: { state: 'needs-you', since, needsYou } }
+    }
+    const { state: i1 } = reduceOffice(sessionOffice(), input(T0), env())
+    const i2 = reduceOffice(i1, input(T0 + 11_000), env({ now: T0 + 11_000 }))
+    expect(texts(i2.effects)).toEqual(['✋ needs input: Agent needs your input'])
+    expect(sfx(i2.effects)).toEqual(['needsYou'])
+  })
 })
 
 describe('session_cwd / session_model', () => {
@@ -1183,5 +1406,41 @@ describe("completion line with the Agent tool's numbers", () => {
   it('sim: the numbers join the "done:" line', () => {
     const { effects } = reduceOffice(fullOffice(1), { type: 'agent_completed', agentId: 'w1', result: 'all green', tokens: 4_200, durationMs: 45_000 }, env({ now: T0 + MIN_VISIBLE_TIME + 1, live: false }))
     expect(texts(effects)[0]).toBe('done: all green · 4.2k tok · 45s')
+  })
+})
+
+describe("the boss's errands to the furniture", () => {
+  const desk = spot('spot-1')
+  const route = (to: { x: number; y: number }) => findWaypointPath(desk.x, desk.y, to.x, to.y, MAIN_ROOM.waypoints ?? [])
+
+  it('walkDurationMs is what stepping the walk frame by frame at 60 fps takes', () => {
+    const board = getInteraction('kanban-board', null)!.walkTo
+    const path = route(board)
+    let at = { x: desk.x, y: desk.y }
+    let frames = 0
+    for (const target of [...path, board]) {
+      for (;;) {
+        const r = stepToward(at, target, WALK_SPEED)
+        at = r.position
+        frames++
+        if (r.arrived) break
+      }
+    }
+    // One frame per waypoint is lost to the step that lands on it
+    expect(Math.abs(walkDurationMs(desk, path, board) - (frames * 1000) / 60)).toBeLessThan(((path.length + 1) * 1000) / 60 + 1)
+    expect(walkDurationMs(desk, [], desk)).toBe(0)
+  })
+
+  it('the wait for him to arrive covers the walk: from his desk to the whiteboard takes more than the old fixed 15 s', () => {
+    const board = getInteraction('kanban-board', null)!.walkTo
+    const walk = walkDurationMs(desk, route(board), board)
+    expect(walk).toBeGreaterThan(ERRAND_MIN_WAIT_MS)
+    expect(errandWaitMs(walk)).toBeGreaterThan(walk)
+    // A short errand still gets at least the old 15 s
+    expect(errandWaitMs(1000)).toBe(ERRAND_MIN_WAIT_MS)
+    // App.tsx watches for that long, not for a fixed time
+    const app = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
+    expect(app).toContain('clearInterval(checkArrival), errandWaitMs(walkMs))')
+    expect(app).not.toMatch(/clearInterval\(checkArrival\), \d+\)/)
   })
 })

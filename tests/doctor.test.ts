@@ -34,10 +34,16 @@ function tmp(prefix: string) {
   return d
 }
 
+/** The installer's environment: a temp HOME, never the caller's CLAUDE_CONFIG_DIR (the installer honours it) */
+function installerEnv(home: string, extra: Record<string, string> = {}): NodeJS.ProcessEnv {
+  const { CLAUDE_CONFIG_DIR: _ignored, ...env } = process.env
+  return { ...env, HOME: home, AGENT_OFFICE_HOME: join(home, '.agent-office'), ...extra }
+}
+
 /** A HOME with the real installer run into it (hooks + status line) */
-function installedHome() {
+function installedHome(args: string[] = []) {
   const home = tmp('doctor-home-')
-  execFileSync('bash', [INSTALLER], { encoding: 'utf8', env: { ...process.env, HOME: home, AGENT_OFFICE_HOME: join(home, '.agent-office') } })
+  execFileSync('bash', [INSTALLER, ...args], { encoding: 'utf8', env: installerEnv(home) })
   return home
 }
 
@@ -80,7 +86,12 @@ describe('doctor helpers', () => {
     expect(scriptPathIn('bash "${CLAUDE_PLUGIN_ROOT}/hooks/agent-tracker.sh"', 'agent-tracker.sh')).toBe('${CLAUDE_PLUGIN_ROOT}/hooks/agent-tracker.sh')
     expect(scriptPathIn('say done', 'agent-tracker.sh')).toBeNull()
     expect(scriptPathIn(undefined, 'agent-tracker.sh')).toBeNull()
-    expect(scriptPathIn('bash /x/status-line.sh --subagents', 'status-line.sh')).toBe('/x/status-line.sh')
+    expect(scriptPathIn('bash /x/hooks/status-line.sh --subagents', 'status-line.sh')).toBe('/x/hooks/status-line.sh')
+    // Containing the name is not enough: these are someone else's (the installer leaves them alone too)
+    expect(scriptPathIn('bash ~/.claude/my-status-line.sh', 'status-line.sh')).toBeNull()
+    expect(scriptPathIn('~/.claude/status-line.sh', 'status-line.sh')).toBeNull()
+    expect(scriptPathIn('bash ~/bin/my-agent-tracker.sh --log /tmp/x', 'agent-tracker.sh')).toBeNull()
+    expect(scriptPathIn('python3 ~/tools/claude-agent-tracker.sh.py', 'agent-tracker.sh')).toBeNull()
   })
 
   it('node: 20+ passes, older fails with the floor in the message', () => {
@@ -223,7 +234,26 @@ describe('runDoctor', () => {
     const status = line(r, 'status line:')!
     expect(status.level).toBe(WARN)
     expect(status.title).toContain('a plugin cannot set statusLine')
+    // The status line alone: the full installer would register the plugin's hooks a second time
+    expect(status.notes.join(' ')).toContain(`${COMMANDS.statusLine} from a clone adds it and nothing else`)
+    expect(COMMANDS.statusLine).toBe('npm run install-status-line')
     expect(r.ok).toBe(true)
+  })
+
+  it('a plugin install that followed that advice has the meters and no doubled hooks', async () => {
+    const home = tmp('doctor-home-')
+    const config = join(home, '.claude')
+    const copy = join(config, 'plugins', 'cache', 'agent-office', 'agent-office', '1.0.0')
+    mkdirSync(join(copy, 'hooks'), { recursive: true })
+    writeFileSync(join(copy, 'hooks', 'agent-tracker.sh'), '#!/bin/bash\n')
+    writeSettings(config, { enabledPlugins: { 'agent-office@agent-office': true } })
+    execFileSync('bash', [INSTALLER, '--status-line-only'], { encoding: 'utf8', env: installerEnv(home) })
+
+    const r = (await runDoctor(await base(home))) as Report
+    expect(lines(r, 'hooks:')).toHaveLength(0)
+    expect(line(r, 'plugin agent-office@agent-office')?.level).toBe(PASS)
+    expect(r.results.some(l => l.title.includes('arrives twice'))).toBe(false)
+    expect(line(r, 'status line:')?.level).toBe(PASS)
   })
 
   it('warns when both the installer\'s hooks and the plugin are active (every agent arrives twice)', async () => {
@@ -240,7 +270,9 @@ describe('runDoctor', () => {
     const both = line(r, 'plugin agent-office@agent-office')!
     expect(both.level).toBe(WARN)
     expect(both.title).toContain('every agent arrives twice')
-    expect(both.notes.join(' ')).toContain(COMMANDS.uninstall)
+    // The remedy keeps the meters: the hooks go, the status line (which the plugin cannot set) stays
+    expect(both.notes.join(' ')).toContain(`${COMMANDS.uninstallHooks} takes the installer's hooks out and keeps the status line`)
+    expect(COMMANDS.uninstallHooks).toBe('npm run uninstall-hooks -- --no-status-line')
     expect(both.notes.join(' ')).toContain(COMMANDS.unplugin)
   })
 
@@ -253,13 +285,20 @@ describe('runDoctor', () => {
     const hooks = line(r, 'hooks:')!
     expect(hooks.level).toBe(FAIL)
     expect(hooks.notes.join('\n')).toContain(`they are in ${join(home, '.claude', 'settings.json')}`)
-    expect(hooks.notes.join('\n')).toContain('CLAUDE_CONFIG_DIR')
+    expect(hooks.notes.join('\n')).toContain(`${COMMANDS.install} with CLAUDE_CONFIG_DIR set writes them there`)
 
     // Hooks in the config dir itself: fine
     const config2 = tmp('doctor-config-')
     writeSettings(config2, JSON.parse(execFileSync('cat', [join(home, '.claude', 'settings.json')], { encoding: 'utf8' })))
     const r2 = (await runDoctor(await base(home, { env: { CLAUDE_CONFIG_DIR: config2 } }))) as Report
     expect(line(r2, 'hooks:')?.level).toBe(PASS)
+
+    // Following the remedy works: the installer run with CLAUDE_CONFIG_DIR set writes the file the doctor reads
+    const config3 = tmp('doctor-config-')
+    execFileSync('bash', [INSTALLER], { encoding: 'utf8', env: installerEnv(home, { CLAUDE_CONFIG_DIR: config3 }) })
+    const r3 = (await runDoctor(await base(home, { env: { CLAUDE_CONFIG_DIR: config3 } }))) as Report
+    expect(line(r3, 'hooks:')?.level).toBe(PASS)
+    expect(line(r3, 'status line:')?.level).toBe(PASS)
   })
 
   it('flags a settings.json that is not JSON', async () => {

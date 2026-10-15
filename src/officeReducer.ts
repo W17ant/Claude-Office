@@ -123,6 +123,8 @@ export interface AgentMeta {
   lobbySlot?: number
   /** A session's Claude: the main state to go back to when the memory wipe is over */
   beforeCompact?: MainState
+  /** The boss: walking back to his desk from a hand-over (a new prompt may turn him round) */
+  homeFromHandover?: boolean
 }
 
 /** An agent_working that arrived before the agent reached its desk (C13) */
@@ -186,8 +188,12 @@ export type OfficeAction =
   | { type: 'a2a_visit_over'; agentId: string }
   /** The boss has said his piece at Claude's desk (seq guards against a stale timer) */
   | { type: 'handover_over'; seq: number }
-  /** session_ended's grace is over: that session's Claude clocks out */
-  | { type: 'session_claude_leave'; sessionId: string }
+  /**
+   * session_ended's grace is over: that session's Claude clocks out. `endedAt`
+   * is the end it was scheduled for (the timer is never cancelled), so the
+   * leave of an end that a resume undid cannot cut a later end's grace short.
+   */
+  | { type: 'session_claude_leave'; sessionId: string; endedAt: number }
   /** What a Bash command meant (the server's `signal` broadcast) */
   | SignalEvent
   /** A signal's scene has run its course (`until` guards against a newer scene) */
@@ -679,11 +685,13 @@ function ensureClaude(state: OfficeState, sessionId: string, info: SessionFields
  * The boss gets up and hands the prompt over at Claude's desk: walking-to-
  * manager → (stepOffice, on arrival) talking-to-manager with `bubble` as the
  * speech bubble → handover_over → back to his desk. Only a seated boss (or
- * one already on such a visit) goes; a Claude without a desk gets no visit.
+ * one already on such a visit, or on his way back from one) goes; a Claude
+ * without a desk gets no visit.
  */
 function bossHandover(state: OfficeState, claude: Agent, bubble: string, env: OfficeEnv): OfficeResult {
   const boss = state.agents.find(a => a.id === BOSS_ID)
-  const free = boss && (boss.state === 'working' || boss.state === 'idle' || boss.state === 'walking-to-manager' || boss.state === 'talking-to-manager')
+  const free = boss && (boss.state === 'working' || boss.state === 'idle' || boss.state === 'walking-to-manager' || boss.state === 'talking-to-manager'
+    || walkingHomeFromHandover(state, boss))
   if (!boss || !free || !claude.assignedSpotId) return { state, effects: [] }
   const seq = state.handoverSeq + 1
   const spot = { x: claude.deskPosition.x + 4, y: claude.deskPosition.y + 2 }
@@ -696,10 +704,34 @@ function bossHandover(state: OfficeState, claude: Agent, bubble: string, env: Of
   } else {
     next = { ...walkTo(boss, spot, bubble, env), state: 'walking-to-manager' }
   }
+  const meta = state.meta[BOSS_ID]?.homeFromHandover ? { ...state.meta, [BOSS_ID]: { ...state.meta[BOSS_ID], homeFromHandover: false } } : state.meta
   return {
-    state: { ...state, handoverSeq: seq, agents: state.agents.map(a => (a.id === BOSS_ID ? next : a)) },
+    state: { ...state, handoverSeq: seq, meta, agents: state.agents.map(a => (a.id === BOSS_ID ? next : a)) },
     effects,
   }
+}
+
+/**
+ * The boss is on the walk back from a hand-over: a follow-up prompt ("yes",
+ * "continue") a second after the last one turns him round, as it would have
+ * a second earlier or once he sits down. Any other walk to his desk — back
+ * from a fire drill, from an errand the person sent him on — runs its course.
+ */
+function walkingHomeFromHandover(state: OfficeState, boss: Agent): boolean {
+  return boss.state === 'walking-to-desk' && state.meta[boss.id]?.homeFromHandover === true && near(boss.targetPosition, boss.deskPosition)
+}
+
+/**
+ * A session has ended (session_ended, or a snapshot that lists it as ended):
+ * its Claude stops what it was doing — hand down, no typing, so the '✋ '
+ * title prefix goes now — and keeps its desk for SESSION_CLAUDE_GRACE_MS, in
+ * case the session is resumed; then session_claude_leave walks it out.
+ */
+function endSession(state: OfficeState, sessionId: string, reason: string | undefined, env: OfficeEnv): OfficeResult {
+  let cur: OfficeState = { ...state, endedSessions: { ...state.endedSessions, [sessionId]: env.now } }
+  const effects: OfficeEffect[] = [{ kind: 'schedule', action: { type: 'session_claude_leave', sessionId, endedAt: env.now }, delayMs: SESSION_CLAUDE_GRACE_MS }]
+  if (findMain(cur, sessionId)) cur = applyMain(cur, mainId(sessionId), { mainState: null, statusText: `👋 session ended${reason ? ` (${reason})` : ''}` }, env)
+  return { state: cur, effects }
 }
 
 // ---------------------------------------------------------------------------
@@ -829,18 +861,20 @@ function reduceEvent(state: OfficeState, action: OfficeAction, env: OfficeEnv): 
   // A straggler for a session whose end we already saw: its Claude is on its way out
   if (TURN_EVENTS.has(action.type) && 'sessionId' in action && action.sessionId && action.sessionId in state.endedSessions) return none
 
-  /** Main-thread activity (a tool call with no agentId) lands on that session's Claude, never on a worker */
+  /**
+   * Main-thread activity (a tool call with no agentId) lands on that session's
+   * Claude, never on a worker. Its status line is set at once, even on a
+   * Claude still walking in, and kept on arrival (C13): applyMain owns a
+   * Claude's line, so no pendingStatus is queued that could replay a stale
+   * tool call over a later turn end or needs-you.
+   */
   const mainThreadWorking = (sessionId: string, statusMsg: string, failed: boolean, origin: SessionFields): OfficeResult => {
     if (sessionId in state.endedSessions) return none
     const ensured = ensureClaude(state, sessionId, origin, env)
     const id = mainId(sessionId)
-    let cur = applyMain(ensured.state, id, { mainState: 'working', statusText: statusMsg, lastFailed: failed }, env)
+    const cur = applyMain(ensured.state, id, { mainState: 'working', statusText: statusMsg, lastFailed: failed }, env)
     const claude = cur.agents.find(a => a.id === id)
     if (!claude) return none
-    // A status that reaches a Claude still walking in applies on arrival (C13); its line is posted now
-    if (claude.state !== 'working' && claude.state !== 'idle') {
-      cur = { ...cur, pendingStatus: { ...cur.pendingStatus, [id]: { status: statusMsg, failed } } }
-    }
     return { state: cur, effects: [...ensured.effects, claudeMsg(cur, claude, `${failed ? '❌' : '⚡'} ${statusMsg}`)] }
   }
 
@@ -950,20 +984,13 @@ function reduceEvent(state: OfficeState, action: OfficeAction, env: OfficeEnv): 
       })
       cur = { ...cur, agents, pendingStatus }
 
-      // 3. Agents the server has that we do not: they walk in
-      for (const e of entries) {
-        if (cur.agents.some(a => a.id === e.id)) continue
-        const r = spawnAgent(cur, e, env, true)
-        cur = r.state
-        effects.push(...r.effects)
-      }
-
-      // 4. Sessions (when the snapshot lists them): a Claude per active
+      // 3. Sessions (when the snapshot lists them): a Claude per active
       //    hooked session, refreshed from the server's main record; the Claude
       //    of a session the server no longer lists (or now lists as unhooked,
       //    i.e. only the registry knows it) leaves quietly, and one whose
-      //    session ended leaves after the grace. Unhooked sessions are pills
-      //    only: no Claude is seated for them.
+      //    session ended stops what it was doing at once and leaves after the
+      //    grace, exactly as on a live session_ended. Unhooked sessions are
+      //    pills only: no Claude is seated for them.
       if (Array.isArray(action.sessions)) {
         const listed = action.sessions.filter((s): s is SessionInfo => !!s && !!s.id && s.hooked !== false)
         const bySid = new Map(listed.map(s => [s.id, s]))
@@ -973,17 +1000,16 @@ function reduceEvent(state: OfficeState, action: OfficeAction, env: OfficeEnv): 
           if (bySid.has(sid)) continue
           cur = completeAgent(cur, a.id, 'clocked out while we were away', env, true).state
         }
-        let ended = cur.endedSessions
         for (const s of listed) {
           if (s.state === 'ended') {
-            if (!(s.id in ended)) {
-              ended = { ...ended, [s.id]: env.now }
-              effects.push({ kind: 'schedule', action: { type: 'session_claude_leave', sessionId: s.id }, delayMs: SESSION_CLAUDE_GRACE_MS })
+            if (!(s.id in cur.endedSessions)) {
+              const r = endSession(cur, s.id, s.reason, env)
+              cur = r.state
+              effects.push(...r.effects)
             }
             continue
           }
-          if (s.id in ended) ended = without(ended, s.id)
-          cur = { ...cur, endedSessions: ended }
+          if (s.id in cur.endedSessions) cur = { ...cur, endedSessions: without(cur.endedSessions, s.id) }
           const r = ensureClaude(cur, s.id, { project: s.project, cwd: s.cwd, model: s.model, main: s.main }, env)
           cur = r.state
           effects.push(...r.effects)
@@ -993,7 +1019,17 @@ function reduceEvent(state: OfficeState, action: OfficeAction, env: OfficeEnv): 
             cur = { ...cur, agents: cur.agents.map(a => (a.id === id ? { ...a, project: s.project ?? a.project, model: s.model ?? a.model } : a)) }
           }
         }
-        cur = { ...cur, endedSessions: ended }
+      }
+
+      // 4. Agents the server has that we do not: they walk in. After the
+      //    sessions, so on a reload each session's Claude gets its desk (the
+      //    first one by the boss) before its workers take theirs, as in the
+      //    live order where the session's first event comes before any spawn.
+      for (const e of entries) {
+        if (cur.agents.some(a => a.id === e.id)) continue
+        const r = spawnAgent(cur, e, env, true)
+        cur = r.state
+        effects.push(...r.effects)
       }
       return { state: cur, effects }
     }
@@ -1142,10 +1178,7 @@ function reduceEvent(state: OfficeState, action: OfficeAction, env: OfficeEnv): 
     case 'session_ended': {
       const sid = action.sessionId
       if (!sid || sid in state.endedSessions) return none
-      let cur: OfficeState = { ...state, endedSessions: { ...state.endedSessions, [sid]: env.now } }
-      const effects: OfficeEffect[] = [{ kind: 'schedule', action: { type: 'session_claude_leave', sessionId: sid }, delayMs: SESSION_CLAUDE_GRACE_MS }]
-      if (findMain(cur, sid)) cur = applyMain(cur, mainId(sid), { mainState: null, statusText: `👋 session ended${action.reason ? ` (${action.reason})` : ''}` }, env)
-      return { state: cur, effects }
+      return endSession(state, sid, action.reason, env)
     }
 
     // The session's registry entry changed (server/sessions.js): presence and
@@ -1157,7 +1190,9 @@ function reduceEvent(state: OfficeState, action: OfficeAction, env: OfficeEnv): 
 
     case 'session_claude_leave': {
       const sid = action.sessionId
-      if (!(sid in state.endedSessions)) return none            // resumed within the grace
+      // Resumed within the grace — or resumed and ended again since, so this
+      // timer belongs to an earlier end and the later end's own timer decides
+      if (state.endedSessions[sid] !== action.endedAt) return none
       const cur: OfficeState = { ...state, endedSessions: without(state.endedSessions, sid) }
       const claude = findMain(cur, sid)
       if (!claude) return { state: cur, effects: [] }
@@ -1205,7 +1240,9 @@ function reduceEvent(state: OfficeState, action: OfficeAction, env: OfficeEnv): 
       if (action.seq !== state.handoverSeq) return none
       const boss = state.agents.find(a => a.id === BOSS_ID)
       if (!boss || (boss.state !== 'walking-to-manager' && boss.state !== 'talking-to-manager')) return none
-      return { state: { ...state, agents: state.agents.map(a => (a.id === BOSS_ID ? walkTo(a, a.deskPosition, 'back to work', env) : a)) }, effects: [] }
+      // Marked as the walk home from a hand-over until he sits down (stepOffice), so a prompt meanwhile turns him round
+      const meta = { ...state.meta, [BOSS_ID]: { ...(state.meta[BOSS_ID] ?? newMeta(env.now, true)), homeFromHandover: true } }
+      return { state: { ...state, meta, agents: state.agents.map(a => (a.id === BOSS_ID ? walkTo(a, a.deskPosition, 'back to work', env) : a)) }, effects: [] }
     }
 
     // ── The turn is over: reply in the chat, then idle or waiting on workers ─
@@ -1250,9 +1287,14 @@ function reduceEvent(state: OfficeState, action: OfficeAction, env: OfficeEnv): 
         message: action.message ?? fromServer?.message,
         since: fromServer?.since ?? env.now,
       }
-      // The same wait again (PermissionRequest, then its Notification): keep the first one, say nothing
+      // The same wait again (PermissionRequest, then its Notification): keep the first one, say nothing.
+      // The server only broadcasts a wait once (it drops a repeat within its dedupe window), so one
+      // that carries a different `since` is a new wait of the same shape — a second worker asking
+      // for the same command, a second agent-input — and is announced; an older server sends no
+      // `since` and the shape alone decides.
       const same = claude.mainState === 'needs-you' && !!claude.needsYou && claude.needsYou.kind === fresh.kind
         && claude.needsYou.toolName === fresh.toolName && claude.needsYou.summary === fresh.summary
+        && (fromServer?.since === undefined || fromServer.since === claude.needsYou.since)
       const needsYou = same ? claude.needsYou! : fresh
       const label = needsYouLabel(needsYou)
       cur = applyMain(cur, id, { mainState: 'needs-you', needsYou, statusText: label }, env)
@@ -1437,20 +1479,17 @@ export function stepOffice(state: OfficeState, dt: number, env: OfficeEnv): Step
 
         if (agent.state === 'new-hire' || agent.state === 'walking-to-desk') {
           if (isAtDesk || agent.state === 'new-hire') {
-            setMeta(agent.id, { arrivedAtDeskAt: now, onBreak: false })
+            setMeta(agent.id, { arrivedAtDeskAt: now, onBreak: false, ...(m.homeFromHandover ? { homeFromHandover: false } : {}) })
             if (agent.assignedSpotId === 'spot-filing') effects.push({ kind: 'furniture', id: 'filing-1', state: 'open' })
-            // A status that arrived while they were walking in applies now (C13)
+            // A worker's status that arrived while they were walking in applies now (C13)
             const pending = pendingStatus[agent.id]
             if (pending) pendingStatus = without(pendingStatus, agent.id)
-            // A session's Claude sits down in whatever its main thread is doing and keeps its status line
+            // A session's Claude sits down in whatever its main thread is doing and keeps its
+            // status line: applyMain has kept that current all along, so nothing queued replays
             const main = isMainAgent(agent)
-            updated = {
-              ...agent,
-              position,
-              state: main ? agentStateFor(agent.mainState) : 'working',
-              statusText: pending?.status ?? (main ? agent.statusText : workMessage()),
-              lastFailed: pending ? pending.failed : agent.lastFailed,
-            }
+            updated = main
+              ? { ...agent, position, state: agentStateFor(agent.mainState) }
+              : { ...agent, position, state: 'working', statusText: pending?.status ?? workMessage(), lastFailed: pending ? pending.failed : agent.lastFailed }
             changed = true
           } else if (moved) {
             updated = { ...agent, position }
@@ -1554,7 +1593,8 @@ export function stepOffice(state: OfficeState, dt: number, env: OfficeEnv): Step
       deskPosition: desk,
       targetPosition: desk,
       spriteFacing: spot.spriteFacing,
-      statusText: 'found a desk',
+      // A session's Claude keeps its main thread's line once it has one (a hand may have gone up while it waited)
+      statusText: isMainAgent(kept[idx]) && kept[idx].mainState !== undefined ? kept[idx].statusText : 'found a desk',
       pathQueue: env.computePath(kept[idx].position, desk),
     }
     lobby = lobby.slice(1)
@@ -1576,6 +1616,9 @@ export function stepOffice(state: OfficeState, dt: number, env: OfficeEnv): Step
  * fire drill (C32). The boss and the ?sim Claude are decorative and always
  * join; a session's Claude joins only between turns (idle, waiting, or not
  * heard from yet) — one mid-turn, with a hand up or wiping its memory stays.
+ * A Claude's status line is its main thread's (the tooltip, the session
+ * pill), so the walk leaves it alone: a prompt that lands during the event
+ * shows, and an idle Claude does not come back saying "back to work".
  */
 export function moveAgentsForEvent(agents: Agent[], target: Position, statusText: string, env: OfficeEnv): { agents: Agent[]; movedIds: string[] } {
   const movedIds: string[] = []
@@ -1584,7 +1627,7 @@ export function moveAgentsForEvent(agents: Agent[], target: Position, statusText
     const decorative = a.id === BOSS_ID || a.id === CLAUDE_ID || (isMainAgent(a) && isFreeMain(a))
     if (!seated || (env.live && !decorative)) return a
     movedIds.push(a.id)
-    return walkTo(a, target, statusText, env)
+    return walkTo(a, target, (isMainAgent(a) && a.statusText) || statusText, env)
   })
   return { agents: next, movedIds }
 }
@@ -1592,7 +1635,45 @@ export function moveAgentsForEvent(agents: Agent[], target: Position, statusText
 /** After an event: those who went (and were not sent elsewhere since) walk back to their desks */
 export function returnAgentsFromEvent(agents: Agent[], movedIds: string[], env: OfficeEnv): Agent[] {
   const moved = new Set(movedIds)
-  return agents.map(a => (moved.has(a.id) && a.state === 'walking-to-desk' ? walkTo(a, a.deskPosition, 'back to work', env) : a))
+  return agents.map(a => (moved.has(a.id) && a.state === 'walking-to-desk'
+    ? walkTo(a, a.deskPosition, (isMainAgent(a) && a.statusText) || 'back to work', env)
+    : a))
+}
+
+// ---------------------------------------------------------------------------
+// Errands: the boss walking to a piece of furniture someone clicked
+// ---------------------------------------------------------------------------
+
+/** The frame rate WALK_SPEED is tuned for: App.tsx steps the office with dt = elapsed / 16.67 ms */
+const FRAMES_PER_SECOND = 60
+
+/**
+ * How long a walk from `from` through the waypoints of `path` to `to` takes
+ * at WALK_SPEED, in ms at 60 fps: what one step per waypoint (stepToward)
+ * adds up to.
+ */
+export function walkDurationMs(from: Position, path: Position[], to: Position): number {
+  let length = 0
+  let at = from
+  for (const p of [...path, to]) {
+    length += Math.hypot(p.x - at.x, p.y - at.y)
+    at = p
+  }
+  return Math.ceil((length / (WALK_SPEED * FRAMES_PER_SECOND)) * 1000)
+}
+
+/** Never give up on an errand sooner than this (the wait App.tsx always had) */
+export const ERRAND_MIN_WAIT_MS = 15_000
+
+/**
+ * How long App.tsx watches for the boss to reach the furniture before it
+ * gives up on the effect: the walk, with room for a slower frame rate (dt is
+ * capped per frame, so a slow frame walks less), never under 15 s. A fixed
+ * 15 s was shorter than his walk from his desk to the whiteboard, so he got
+ * there and nothing happened.
+ */
+export function errandWaitMs(walkMs: number): number {
+  return Math.max(ERRAND_MIN_WAIT_MS, Math.ceil(walkMs * 1.5) + 2_000)
 }
 
 /** The one agent a single-agent event (printer jam) sends somewhere: never the boss, never a live worker or a Claude mid-turn */

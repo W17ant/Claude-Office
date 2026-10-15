@@ -9,7 +9,7 @@
  *   AGENT_OFFICE_UI_PORT  the Vite dev server's port, default 3333 — only the
  *                         origin allowlist needs it (start-office.sh passes it
  *                         to `vite --port`).
- *   AGENT_OFFICE_HOST     the bind address, loopback only (see readHost).
+ *   AGENT_OFFICE_HOST     the bind address: IPv4 loopback only (see readHost).
  *
  * office.config.json lives next to package.json. Until now Vite baked it
  * into the bundle, so renaming the boss meant a rebuild; the server now reads
@@ -28,8 +28,16 @@ export const DEFAULT_UI_PORT = 3333
 export const DEFAULT_HOST = '127.0.0.1'
 export const CONFIG_FILE_NAME = 'office.config.json'
 
-/** The bind addresses the office accepts: every spelling of loopback. */
-export const LOOPBACK_BIND_HOSTS = new Set(['127.0.0.1', 'localhost', '::1'])
+/**
+ * The spellings of AGENT_OFFICE_HOST the office accepts; both bind 127.0.0.1.
+ * `localhost` is mapped rather than passed to listen(): the resolver may
+ * answer ::1 first (macOS does), and an IPv6-only socket refuses the
+ * 127.0.0.1 every client dials.
+ */
+export const LOOPBACK_BIND_HOSTS = new Set(['127.0.0.1', 'localhost'])
+
+/** IPv6 loopback, refused with its own reason (see readHost). */
+const IPV6_LOOPBACK = new Set(['::1', '0:0:0:0:0:0:0:1'])
 
 /** The boss without an office.config.json (the same defaults as src/config.ts). */
 export const DEFAULT_BOSS = Object.freeze({
@@ -75,8 +83,17 @@ function readPortVar(env, name, fallback, log) {
 }
 
 /**
- * The address to bind: AGENT_OFFICE_HOST when it is a loopback form
- * (127.0.0.1, localhost, ::1), else 127.0.0.1.
+ * The address to bind: always 127.0.0.1. AGENT_OFFICE_HOST may say
+ * 127.0.0.1 or localhost; anything else is logged as refused, with the
+ * reason, and 127.0.0.1 is bound.
+ *
+ * ::1 is loopback too, but every client of the server dials IPv4: the office
+ * scripts, npm run doctor, the desktop app and its tray, and the plugin's
+ * /agent-office:office (which cannot read the environment at all). A server
+ * bound to [::1] alone refuses all of them, so start-office.sh would start a
+ * second server that dies on EADDRINUSE, the chat AI would never answer and
+ * the doctor would call the server down, while hooks (which say localhost)
+ * kept arriving. Binding IPv4 loopback for it keeps every client working.
  *
  * Anything else is refused on purpose, not merely unsupported. The threat
  * model in server/index.js keeps every GET, POST /chat and the WebSocket
@@ -92,10 +109,18 @@ export function readHost(env = process.env, log = console) {
   const raw = env?.AGENT_OFFICE_HOST
   if (raw === undefined || typeof raw !== 'string' || raw.trim() === '') return DEFAULT_HOST
   const host = raw.trim().replace(/^\[(.*)\]$/, '$1').toLowerCase()
-  if (LOOPBACK_BIND_HOSTS.has(host)) return host
+  if (LOOPBACK_BIND_HOSTS.has(host)) return DEFAULT_HOST
+  if (IPV6_LOOPBACK.has(host)) {
+    log?.error?.(
+      `[config] AGENT_OFFICE_HOST=${JSON.stringify(raw)} refused: the office binds IPv4 loopback only. ` +
+      `The office scripts, npm run doctor, the desktop app and /agent-office:office all dial 127.0.0.1, ` +
+      `and a server on [::1] alone would refuse them. Binding ${DEFAULT_HOST}, which is loopback too.`,
+    )
+    return DEFAULT_HOST
+  }
   log?.error?.(
     `[config] AGENT_OFFICE_HOST=${JSON.stringify(raw)} refused: the office binds loopback only ` +
-    `(127.0.0.1, localhost or ::1). Every GET, POST /chat and the WebSocket are open on loopback by design ` +
+    `(127.0.0.1 or localhost). Every GET, POST /chat and the WebSocket are open on loopback by design ` +
     `(the office page has no token), so a non-loopback bind would expose your prompts, Claude's replies and ` +
     `the agents' tasks to the network; the UI token work would have to cover every route first. Binding ${DEFAULT_HOST}.`,
   )
