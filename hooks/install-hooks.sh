@@ -7,7 +7,12 @@
 #   2. Registers agent-tracker.sh for PreToolUse (spawns + tool activity),
 #      PostToolUse (completions), PostToolUseFailure (failed tool calls),
 #      SubagentStart (subagent ids), SubagentStop (subagents finishing),
-#      SessionStart and SessionEnd (one session pill per Claude Code terminal)
+#      SessionStart and SessionEnd (one session pill per Claude Code terminal),
+#      and the main-thread events that show what the session's own Claude is
+#      doing: UserPromptSubmit (the prompt), Stop (the reply), PermissionRequest
+#      and Notification (waiting on you), StopFailure (API errors), PreCompact
+#      and PostCompact (compaction), PostToolBatch (a permission answered),
+#      CwdChanged (project tag follows a cd), PostModelSwitch (model)
 #   3. Registers status-line.sh as the statusLine (+ subagentStatusLine)
 #      command — the payroll / electricity / memory meters — chaining any
 #      status line you already had (--no-status-line skips this step)
@@ -107,13 +112,27 @@ merge_failed() {
 # object, an event given as one group instead of a list, entries that are not
 # objects) are repaired or ignored instead of crashing the install.
 # ---------------------------------------------------------------------------
-echo -e "${CYAN}[...]${RESET} Registering PreToolUse, PostToolUse, PostToolUseFailure, SubagentStart, SubagentStop, SessionStart + SessionEnd hooks..."
+echo -e "${CYAN}[...]${RESET} Registering the 17 hook events (tool calls, subagents, sessions, the main thread's turn)..."
 
 python3 - "$SETTINGS_FILE" "$HOOK_COMMAND" "$TRACKER_SCRIPT" <<'PYEOF' || merge_failed
 import json, os, shlex, sys
 
 settings_path, hook_command, tracker_script = sys.argv[1:4]
 SCRIPT_NAME = os.path.basename(tracker_script)
+
+# Every event agent-tracker.sh handles (matcher "" = every occurrence). The
+# tracker ignores anything it does not know, so an older tracker with a newer
+# settings file is harmless, and vice versa.
+EVENTS = (
+    # workers: spawns, tool calls, completions
+    'PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'SubagentStart', 'SubagentStop',
+    # one session pill per terminal
+    'SessionStart', 'SessionEnd',
+    # the session's own Claude: prompt, reply, waiting on you, API errors, compaction,
+    # a permission answered (batch done), cd, model switch
+    'UserPromptSubmit', 'Stop', 'PermissionRequest', 'Notification', 'StopFailure', 'PreCompact', 'PostCompact',
+    'PostToolBatch', 'CwdChanged', 'PostModelSwitch',
+)
 
 with open(settings_path, 'r') as f:
     try:
@@ -151,7 +170,7 @@ def is_current(path):
     return os.path.realpath(os.path.expanduser(path)) == os.path.realpath(tracker_script)
 
 added = updated = unchanged = 0
-for event in ('PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'SubagentStart', 'SubagentStop', 'SessionStart', 'SessionEnd'):
+for event in EVENTS:
     groups = hooks.get(event)
     if isinstance(groups, dict):
         # One group written where Claude Code expects a list of them

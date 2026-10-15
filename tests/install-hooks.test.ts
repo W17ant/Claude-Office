@@ -13,7 +13,18 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 const INSTALLER = fileURLToPath(new URL('../hooks/install-hooks.sh', import.meta.url))
 const TRACKER_SCRIPT = fileURLToPath(new URL('../hooks/agent-tracker.sh', import.meta.url))
-const EVENTS = ['PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'SubagentStart', 'SubagentStop', 'SessionStart', 'SessionEnd'] as const
+/** Every event the installer registers: workers, sessions, and the main thread's turn (prompt, reply, needs-you, errors, compaction). */
+const EVENTS = [
+  'PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'SubagentStart', 'SubagentStop',
+  'SessionStart', 'SessionEnd',
+  'UserPromptSubmit', 'Stop', 'PermissionRequest', 'Notification', 'StopFailure', 'PreCompact', 'PostCompact',
+  'PostToolBatch', 'CwdChanged', 'PostModelSwitch',
+] as const
+/** The ones added for the main thread (F01/F02); an older install lacks exactly these. */
+const TURN_EVENTS = [
+  'UserPromptSubmit', 'Stop', 'PermissionRequest', 'Notification', 'StopFailure', 'PreCompact', 'PostCompact',
+  'PostToolBatch', 'CwdChanged', 'PostModelSwitch',
+] as const
 const TRACKER_COMMAND = /^bash ".*\/hooks\/agent-tracker\.sh"$/
 /** What the installer writes for an event when nothing of ours was there */
 const OUR_GROUP = { matcher: '', hooks: [{ type: 'command', command: expect.stringMatching(TRACKER_COMMAND) }] }
@@ -46,7 +57,7 @@ function trackerGroups(settings: any, event: string) {
 }
 
 describe('install-hooks.sh', () => {
-  it('creates settings.json with PreToolUse, PostToolUse, PostToolUseFailure, SubagentStart, SubagentStop, SessionStart and SessionEnd on a fresh HOME', () => {
+  it('creates settings.json with all 17 events (workers, sessions, the main thread\'s turn) on a fresh HOME', () => {
     const home = freshHome()
     const out = runInstaller(home)
 
@@ -82,8 +93,8 @@ describe('install-hooks.sh', () => {
     // The old PostToolUse entry is recognised by script name and repointed at this checkout (its old path is gone)
     expect(settings.hooks.PostToolUse).toEqual([OUR_GROUP])
     expect(out).toContain('[update] PostToolUse (was /old/checkout/hooks/agent-tracker.sh)')
-    // Untouched: hooks that are not ours and unrelated keys
-    expect(settings.hooks.Stop).toEqual(old.hooks.Stop)
+    // Untouched: a Stop hook that is not ours keeps its place (ours is added after it) and unrelated keys
+    expect(settings.hooks.Stop).toEqual([...old.hooks.Stop, OUR_GROUP])
     expect(settings.permissions).toEqual(old.permissions)
 
     // Added: every other event, SubagentStart, PostToolUseFailure, SessionStart and SessionEnd included
@@ -91,6 +102,28 @@ describe('install-hooks.sh', () => {
       expect(trackerGroups(settings, event)).toEqual([OUR_GROUP])
       expect(out).toContain(`[add]  ${event}`)
     }
+  })
+
+  it('adds the ten main-thread events to an install that predates them and leaves the seven it had alone', () => {
+    const home = freshHome()
+    mkdirSync(join(home, '.claude'), { recursive: true })
+    const older = EVENTS.filter(e => !(TURN_EVENTS as readonly string[]).includes(e))
+    const settings: any = { hooks: {} }
+    for (const event of older) settings.hooks[event] = [{ matcher: '', hooks: [{ type: 'command', command: `bash "${TRACKER_SCRIPT}"` }] }]
+    writeFileSync(settingsPath(home), JSON.stringify(settings, null, 2))
+
+    const out = runInstaller(home)
+    const after = readSettings(home)
+    expect(Object.keys(after.hooks).sort()).toEqual([...EVENTS].sort())
+    for (const event of older) {
+      expect(after.hooks[event]).toEqual(settings.hooks[event])
+      expect(out).toContain(`[skip] ${event} already registered`)
+    }
+    for (const event of TURN_EVENTS) {
+      expect(after.hooks[event]).toEqual([OUR_GROUP])
+      expect(out).toContain(`[add]  ${event}`)
+    }
+    expect(out).toContain('hooks: 10 added, 0 repointed at this checkout, 7 unchanged')
   })
 
   it('repoints every entry that names a checkout that moved, keeps foreign hooks where they were and adds nothing twice', () => {
@@ -120,7 +153,7 @@ describe('install-hooks.sh', () => {
       expect(out).not.toContain(`[add]  ${event}`)
       expect(out).not.toContain(`[skip] ${event}`)
     }
-    expect(out).toContain('hooks: 0 added, 7 repointed at this checkout, 0 unchanged')
+    expect(out).toContain(`hooks: 0 added, ${EVENTS.length} repointed at this checkout, 0 unchanged`)
     expect(out).toContain('Installation complete!')
 
     // Repaired once, a re-run has nothing left to do
@@ -128,7 +161,7 @@ describe('install-hooks.sh', () => {
     const again = runInstaller(home)
     expect(readFileSync(settingsPath(home)).equals(before)).toBe(true)
     for (const event of EVENTS) expect(again).toContain(`[skip] ${event} already registered`)
-    expect(again).toContain('hooks: 0 added, 0 repointed at this checkout, 7 unchanged')
+    expect(again).toContain(`hooks: 0 added, 0 repointed at this checkout, ${EVENTS.length} unchanged`)
   })
 
   it('leaves an entry that already points at this checkout alone, however it was quoted', () => {
@@ -218,7 +251,8 @@ describe('install-hooks.sh: shapes Claude Code would reject do not crash the mer
     expect(settings.hooks.PreToolUse).toEqual([foreign, OUR_GROUP])
     expect(settings.hooks.PostToolUse).toEqual([{ matcher: '', hooks: ['junk', { type: 'command', command: expect.stringMatching(TRACKER_COMMAND) }] }])
     expect(settings.hooks.SubagentStop).toEqual(['junk', 42, OUR_GROUP])
-    expect(settings.hooks.Stop).toEqual([{ hooks: [{ type: 'command', command: 'say done' }] }])
+    // Stop is one of ours too now: the foreign hook stays first, ours is appended
+    expect(settings.hooks.Stop).toEqual([{ hooks: [{ type: 'command', command: 'say done' }] }, OUR_GROUP])
     expect(out).toContain('[update] PostToolUse (was /old/moved/path/hooks/agent-tracker.sh)')
     expect(out).toContain('[update] SubagentStop (was /old/moved/path/hooks/agent-tracker.sh)')
     for (const event of EVENTS) expect(trackerGroups(settings, event)).toHaveLength(1)
