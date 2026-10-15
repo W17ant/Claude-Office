@@ -1,0 +1,118 @@
+/* ===== STATUS STRIP — pipeline health along the bottom of the office =====
+   src/components/StatusStrip.tsx: connection, last hook, sessions, version.
+   Its colours are the title bar's traffic lights (green / amber / red), so
+   the two bars read as one piece of chrome. Variables so a theme or variant
+   can restyle it by overriding --strip-* (no logic in here). */
+
+:root {
+  --strip-bg: #151210;
+  --strip-border: #2a2520;
+  --strip-fg: #8a7a58;
+  --strip-dim: #5a4a38;
+  --strip-ok: #28c840;
+  --strip-warn: #febc2e;
+  --strip-danger: #ff5f57;
+  --strip-code-bg: rgba(255,255,255,0.05);
+}
+
+.status-strip {
+  height: 20px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  background: var(--strip-bg);
+  border-top: 1px solid var(--strip-border);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 8px;
+  letter-spacing: 0.5px;
+  color: var(--strip-fg);
+  white-space: nowrap;
+  overflow: hidden;
+  user-select: none;
+  cursor: default;
+}
+
+.strip-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.strip-sep {
+  width: 1px;
+  height: 10px;
+  background: var(--strip-border);
+  flex-shrink: 0;
+}
+
+.strip-spacer { flex: 1; }
+
+/* Connection pill: dot + phase */
+.strip-conn {
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+.strip-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--strip-dim);
+  flex-shrink: 0;
+}
+.status-strip[data-connection="online"] .strip-dot {
+  background: var(--strip-ok);
+  box-shadow: 0 0 4px var(--strip-ok);
+}
+.status-strip[data-connection="connecting"] .strip-dot,
+.status-strip[data-connection="reconnecting"] .strip-dot {
+  background: var(--strip-warn);
+  animation: stripPulse 1s ease-in-out infinite;
+}
+.status-strip[data-connection="reconnecting"] .strip-conn { color: var(--strip-warn); }
+.status-strip[data-connection="offline"] .strip-dot { background: var(--strip-danger); }
+.status-strip[data-connection="offline"] .strip-conn { color: var(--strip-danger); }
+
+@keyframes stripPulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.35; }
+}
+
+/* Hooks pill tones */
+.strip-hooks.ok   { color: var(--strip-fg); }
+.strip-hooks.dim  { color: var(--strip-dim); }
+.strip-hooks.warn { color: var(--strip-warn); }
+
+.strip-sessions { color: var(--strip-fg); }
+.strip-version  { color: var(--strip-dim); }
+
+/* The command to type, on the right */
+.strip-hint { color: var(--strip-dim); }
+.strip-hint code {
+  font-family: inherit;
+  font-size: inherit;
+  color: var(--strip-fg);
+  background: var(--strip-code-bg);
+  border-radius: 3px;
+  padding: 1px 4px;
+  user-select: text;
+}
+
+/* ?sim / ?video: no server, so no strip — a badge in the corner instead */
+.status-badge.sim {
+  position: absolute;
+  left: 10px;
+  bottom: 8px;
+  z-index: 50;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 7px;
+  letter-spacing: 2px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.1);
+  color: var(--strip-dim);
+  pointer-events: none;
+}

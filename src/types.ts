@@ -133,6 +133,25 @@ export interface SnapshotAgent {
   server?: string
 }
 
+/**
+ * The server's pipeline health: GET /health, the snapshot's `health` and the
+ * `health` broadcast (server/health.js). What the status strip shows.
+ */
+export interface ServerHealth {
+  status: string
+  agents: number
+  clients: number
+  sessions: number
+  /** When a Claude Code hook last reached POST /event (ms epoch), null if never since boot */
+  lastHookAt: number | null
+  /** Hook events accepted since the server started */
+  hooksSeen: number
+  /** The built UI (dist/) is served from the server's root */
+  uiAvailable: boolean
+  version: string
+  uptimeMs: number
+}
+
 export interface OfficeEvent {
   type: 'agent_spawned' | 'agent_working' | 'agent_completed' | 'mcp_call' | 'mcp_done' | 'new_hire' | 'chat_message' | 'chat_typing' | 'chat_reaction' | 'chat_seen' | 'inbox_update' | 'variant_change' | 'session_started' | 'session_ended' | 'session_status' | 'agent_status' | 'snapshot'
     // The turn events (UserPromptSubmit, Stop, PermissionRequest/Notification, StopFailure, Pre/PostCompact, CwdChanged, PostModelSwitch),
@@ -140,6 +159,8 @@ export interface OfficeEvent {
     // session_tool_done (main-thread PostToolUse / PostToolBatch, the input that lowers a hand)
     | 'session_prompt' | 'session_turn_end' | 'session_needs_you' | 'session_error' | 'session_compact' | 'session_cwd' | 'session_model'
     | 'session_main' | 'session_tool_done'
+    // Pipeline health (the status strip): the server's record, and the socket's own open/close
+    | 'health' | 'connection'
   agent?: Partial<Agent>
   agentId?: string
   status?: string
@@ -227,6 +248,10 @@ export interface OfficeEvent {
   // (reason is also why a session_ended session ended)
   variant?: 'none' | 'incident'
   reason?: string
+  // health: the server's pipeline record (server/health.js), also carried by the snapshot
+  health?: ServerHealth
+  // connection: the WebSocket opened or closed — dispatched by useAgentSocket, not sent by the server
+  socket?: 'open' | 'closed'
 }
 
 import { BOSS_NAME, BOSS_COLOR, BOSS_EMOJI } from './config'

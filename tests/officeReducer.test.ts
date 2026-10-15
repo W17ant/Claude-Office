@@ -24,6 +24,10 @@ import {
   HANDOVER_DWELL_MS,
   HANDOVER_MAX_MS,
   SESSION_CLAUDE_GRACE_MS,
+  HOOK_WARN_MS,
+  initialHealth,
+  reduceConnection,
+  hookVerdict,
   type OfficeState,
   type OfficeEnv,
   type OfficeEffect,
@@ -32,7 +36,7 @@ import {
 import { mainId } from '../src/mainState'
 import { createAgent } from '../src/agentManager'
 import { BOSS_NAME } from '../src/config'
-import type { Agent } from '../src/types'
+import type { Agent, ServerHealth } from '../src/types'
 
 // ---------------------------------------------------------------------------
 // Harness
@@ -518,6 +522,120 @@ describe('lifecycle chat lines are not duplicated', () => {
     const { effects: done } = reduceOffice(fullOffice(1), { type: 'agent_completed', agentId: 'w1', result: 'all green' }, late)
     expect(texts(done)[0]).toBe('done: all green')
     expect(texts(done)).toHaveLength(2)                     // plus the boss reply
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Pipeline health — the status strip's state (G1)
+// ---------------------------------------------------------------------------
+
+describe('pipeline health: connection + health actions (G1)', () => {
+  /** What server/health.js reports */
+  const report = (over: Partial<ServerHealth> = {}): ServerHealth => ({
+    status: 'ok', agents: 0, clients: 1, sessions: 0, lastHookAt: null, hooksSeen: 0,
+    uiAvailable: true, version: '1.0.0', uptimeMs: 0, ...over,
+  })
+  const conn = (socket: 'open' | 'closed'): OfficeAction => ({ type: 'connection', socket })
+  const healthEvent = (h: ServerHealth): OfficeAction => ({ type: 'health', health: h })
+  const at = (now: number) => env({ now })
+
+  it('starts connecting, with no server report', () => {
+    expect(emptyOffice().health).toEqual(initialHealth(T0))
+    expect(emptyOffice().health).toEqual({ connection: 'connecting', connectionSince: T0, onlineSince: null, server: null, reportedAt: null })
+  })
+
+  it('open → online; a later close → reconnecting; open again → online, remembering the first open', () => {
+    const s1 = reduceOffice(emptyOffice(), conn('open'), at(T0 + 100)).state
+    expect(s1.health).toMatchObject({ connection: 'online', connectionSince: T0 + 100, onlineSince: T0 + 100 })
+
+    const s2 = reduceOffice(s1, conn('closed'), at(T0 + 5_000)).state
+    expect(s2.health).toMatchObject({ connection: 'reconnecting', connectionSince: T0 + 5_000, onlineSince: T0 + 100 })
+
+    // Retries that fail close again: the phase (and when it began) stand, the state is not churned
+    const s3 = reduceOffice(s2, conn('closed'), at(T0 + 9_000))
+    expect(s3.state).toBe(s2)
+    expect(s3.effects).toEqual([])
+
+    const s4 = reduceOffice(s3.state, conn('open'), at(T0 + 12_000)).state
+    expect(s4.health).toMatchObject({ connection: 'online', connectionSince: T0 + 12_000, onlineSince: T0 + 100 })
+  })
+
+  it('a close before any open is offline — the server was never reached — and repeats do not churn', () => {
+    const r1 = reduceOffice(emptyOffice(), conn('closed'), at(T0 + 50))
+    expect(r1.state.health).toMatchObject({ connection: 'offline', connectionSince: T0 + 50, onlineSince: null })
+    const r2 = reduceOffice(r1.state, conn('closed'), at(T0 + 2_000))
+    expect(r2.state).toBe(r1.state)
+    // ...and the first open from there is a plain online
+    const r3 = reduceOffice(r2.state, conn('open'), at(T0 + 3_000))
+    expect(r3.state.health).toMatchObject({ connection: 'online', onlineSince: T0 + 3_000 })
+    expect(reduceConnection(r3.state.health, 'open', T0 + 4_000)).toBe(r3.state.health)
+    expect(reduceConnection(r3.state.health, undefined, T0 + 4_000)).toBe(r3.state.health)
+  })
+
+  it('a health event stores the server report (with when it came) and touches nothing else', () => {
+    const office = fullOffice(2)
+    const h = report({ hooksSeen: 3, lastHookAt: T0 - 1_000, sessions: 1, agents: 2 })
+    const { state, effects } = reduceOffice(office, healthEvent(h), at(T0 + 500))
+    expect(state.health.server).toEqual(h)
+    expect(state.health.reportedAt).toBe(T0 + 500)
+    expect(state.health.connection).toBe(office.health.connection)
+    // The roster is the same array: nobody moved, nothing re-renders for it
+    expect(state.agents).toBe(office.agents)
+    expect(state.meta).toBe(office.meta)
+    expect(effects).toEqual([])
+    // A health event with no payload is ignored
+    expect(reduceOffice(state, { type: 'health' }, at(T0 + 600)).state).toBe(state)
+  })
+
+  it('connection and health never post chat lines or play sounds, in live or sim mode', () => {
+    for (const live of [true, false]) {
+      const { effects } = dispatchAll(emptyOffice(), [conn('open'), healthEvent(report()), conn('closed'), conn('open')], env({ live }))
+      expect(effects).toEqual([])
+    }
+  })
+
+  it('hookVerdict: unknown until a report, waiting while young, missing after HOOK_WARN_MS with both page and server up', () => {
+    const connecting = emptyOffice().health
+    expect(hookVerdict(connecting, T0)).toEqual({ kind: 'unknown' })
+
+    // Online at T0, server up 10 min already, no hooks ever
+    const online = dispatchAll(emptyOffice(), [conn('open'), healthEvent(report({ uptimeMs: 10 * 60_000 }))], at(T0)).state.health
+    expect(hookVerdict(online, T0 + 1_000)).toEqual({ kind: 'waiting', forMs: 1_000 })
+    expect(hookVerdict(online, T0 + HOOK_WARN_MS - 1)).toEqual({ kind: 'waiting', forMs: HOOK_WARN_MS - 1 })
+    expect(hookVerdict(online, T0 + HOOK_WARN_MS)).toEqual({ kind: 'missing', forMs: HOOK_WARN_MS })
+    // The threshold is a parameter (VITE_HOOK_WARN_MS lowers it for screenshots)
+    expect(hookVerdict(online, T0 + 2_000, 1_500)).toEqual({ kind: 'missing', forMs: 2_000 })
+  })
+
+  it('hookVerdict: a server that just (re)started does not trigger the warning, however long the page has been open', () => {
+    // Online for an hour, then the server comes back with 5 s of uptime and no hooks
+    const h = dispatchAll(emptyOffice(), [conn('open')], at(T0)).state.health
+    const fresh = reduceOffice({ ...emptyOffice(), health: h }, healthEvent(report({ uptimeMs: 5_000 })), at(T0 + 3_600_000)).state.health
+    expect(hookVerdict(fresh, T0 + 3_600_000)).toEqual({ kind: 'waiting', forMs: 5_000 })
+    // Its uptime keeps counting between reports, so the warning does come once it has been up long enough
+    expect(hookVerdict(fresh, T0 + 3_600_000 + HOOK_WARN_MS)).toEqual({ kind: 'missing', forMs: HOOK_WARN_MS + 5_000 })
+  })
+
+  it('hookVerdict: once a hook has been seen it reports the age of the last one and the count', () => {
+    const h = dispatchAll(emptyOffice(), [conn('open'), healthEvent(report({ hooksSeen: 42, lastHookAt: T0 - 12_000, uptimeMs: 99_000 }))], at(T0)).state.health
+    expect(hookVerdict(h, T0)).toEqual({ kind: 'seen', agoMs: 12_000, count: 42 })
+    // A clock a hair ahead of the server's never shows a negative age
+    const ahead = { ...h, server: report({ hooksSeen: 1, lastHookAt: T0 + 50 }) }
+    expect(hookVerdict(ahead, T0)).toEqual({ kind: 'seen', agoMs: 0, count: 1 })
+  })
+
+  it('hookVerdict: while offline or reconnecting the hooks question is moot — never "missing"', () => {
+    const lost = dispatchAll(emptyOffice(), [conn('open'), healthEvent(report({ uptimeMs: 10 * 60_000 })), conn('closed')], at(T0)).state.health
+    expect(lost.connection).toBe('reconnecting')
+    expect(hookVerdict(lost, T0 + 2 * HOOK_WARN_MS)).toEqual({ kind: 'waiting', forMs: 0 })
+    const never = dispatchAll(emptyOffice(), [conn('closed')], at(T0)).state.health
+    expect(hookVerdict(never, T0 + 2 * HOOK_WARN_MS)).toEqual({ kind: 'unknown' })
+  })
+
+  it('the office keeps working through connection changes: a spawn after a reconnect seats the agent as usual', () => {
+    const { state } = dispatchAll(emptyOffice(), [conn('open'), conn('closed'), conn('open'), spawn('w1')], at(T0))
+    expect(agent(state, 'w1')?.state).toBe('new-hire')
+    expect(state.health.connection).toBe('online')
   })
 })
 
