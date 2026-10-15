@@ -24,7 +24,8 @@
     "server": "node server/index.js",
     "test": "vitest run",
     "test:watch": "vitest",
-    "install-hooks": "bash hooks/install-hooks.sh"
+    "install-hooks": "bash hooks/install-hooks.sh",
+    "uninstall-hooks": "bash hooks/install-hooks.sh --uninstall"
   },
   "dependencies": {
     "better-sqlite3": "^12.8.0",
