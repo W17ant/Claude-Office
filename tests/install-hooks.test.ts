@@ -1,6 +1,6 @@
 /**
  * hooks/install-hooks.sh — registers agent-tracker.sh in ~/.claude/settings.json,
- * and repoints entries left behind by a checkout that moved.
+ * repoints entries left behind by a checkout that moved, and takes it all back out with --uninstall.
  * Runs the real script with HOME pointed at a temp dir.
  */
 
@@ -351,5 +351,200 @@ describe('install-hooks.sh: status line (payroll / electricity / memory)', () =>
     for (const event of EVENTS) expect(trackerGroups(settings, event)).toHaveLength(1)
     expect(out).toContain('[skip]')
     expect(out).toContain('--no-status-line')
+  })
+})
+
+describe('install-hooks.sh --uninstall', () => {
+  const env = (home: string) => ({ ...process.env, HOME: home, AGENT_OFFICE_HOME: join(home, '.agent-office') })
+  const install = (home: string, args: string[] = []) => execFileSync('bash', [INSTALLER, ...args], { encoding: 'utf8', env: env(home) })
+  const uninstall = (home: string, args: string[] = []) => execFileSync('bash', [INSTALLER, '--uninstall', ...args], { encoding: 'utf8', env: env(home) })
+  /** Writes settings.json the way the installer does (two-space indent, trailing newline), so a put-back file can be compared byte for byte */
+  function writeSettings(home: string, settings: unknown) {
+    mkdirSync(join(home, '.claude'), { recursive: true })
+    const text = JSON.stringify(settings, null, 2) + '\n'
+    writeFileSync(settingsPath(home), text)
+    return text
+  }
+  const readText = (home: string) => readFileSync(settingsPath(home), 'utf8')
+  const backups = (home: string) => readdirSync(join(home, '.claude')).filter(f => f.startsWith('settings.json.backup.'))
+  const prevFile = (home: string, name: string) => join(home, '.agent-office', name)
+  const foreign = { matcher: 'Bash', hooks: [{ type: 'command', command: 'echo foreign' }] }
+  const foreignStop = { hooks: [{ type: 'command', command: 'say done' }] }
+
+  it('after an install on a fresh HOME, removes all 17 events and both status lines and leaves {}', () => {
+    const home = freshHome()
+    install(home)
+    expect(readSettings(home).statusLine).toBeDefined()
+
+    const out = uninstall(home)
+    expect(readText(home)).toBe('{}\n')
+    for (const event of EVENTS) expect(out).toContain(`[remove] ${event} (`)
+    expect(out).toContain(`hooks: ${EVENTS.length} office entries removed`)
+    expect(out).toContain('[remove] statusLine (was ')
+    expect(out).toContain('[remove] subagentStatusLine (was ')
+    expect(out).toContain('Uninstall complete')
+    expect(out).toMatch(/backup saved: .*settings\.json\.backup\./)
+  })
+
+  it('install then uninstall gives a file with unrelated settings back byte for byte', () => {
+    const home = freshHome()
+    const before = writeSettings(home, { permissions: { allow: ['Bash(ls:*)'] }, model: 'opus' })
+    install(home)
+    expect(Object.keys(readSettings(home).hooks)).toHaveLength(EVENTS.length)
+
+    uninstall(home)
+    expect(readText(home)).toBe(before)
+  })
+
+  it('puts back a status line the install wrapped (command, padding, refreshInterval) and keeps foreign hooks where they were, byte for byte', () => {
+    const home = freshHome()
+    const before = writeSettings(home, {
+      hooks: { PreToolUse: [foreign], Stop: [foreignStop] },
+      statusLine: { type: 'command', command: '~/.claude/statusline.sh', padding: 2, refreshInterval: 5 },
+      subagentStatusLine: { type: 'command', command: 'jq -c \'.tasks[] | {id, content: .label}\'' },
+    })
+    const installed = install(home)
+    expect(installed).toContain('[wrap] statusLine')
+    expect(existsSync(prevFile(home, 'statusline-prev'))).toBe(true)
+    expect(existsSync(prevFile(home, 'subagent-statusline-prev'))).toBe(true)
+    expect(readSettings(home).hooks.PreToolUse).toHaveLength(2)
+
+    const out = uninstall(home)
+    expect(readText(home)).toBe(before)
+    expect(out).toContain('[restore] statusLine: ~/.claude/statusline.sh')
+    expect(out).toContain('[restore] subagentStatusLine: jq -c \'.tasks[] | {id, content: .label}\'')
+    // The saved commands are back in settings.json, so the files go
+    expect(existsSync(prevFile(home, 'statusline-prev'))).toBe(false)
+    expect(existsSync(prevFile(home, 'subagent-statusline-prev'))).toBe(false)
+  })
+
+  it('leaves a file with nothing of ours alone: foreign hooks, an empty event, a foreign status line; no backup, exit 0', () => {
+    const home = freshHome()
+    const before = writeSettings(home, {
+      hooks: { PreToolUse: [foreign], Stop: [] },
+      statusLine: { type: 'command', command: '~/.claude/statusline.sh', padding: 2 },
+    })
+    // A saved command left over from an earlier install is not ours to delete while our status line is not registered
+    mkdirSync(join(home, '.agent-office'), { recursive: true })
+    writeFileSync(prevFile(home, 'statusline-prev'), 'old-status\n')
+
+    const out = uninstall(home)
+    expect(readText(home)).toBe(before)
+    expect(out).toMatch(/nothing to remove/i)
+    expect(out).toContain('hooks: no office entries found')
+    expect(out).toContain('[skip] statusLine is not the office\'s')
+    expect(out).toContain('[note]')
+    expect(existsSync(prevFile(home, 'statusline-prev'))).toBe(true)
+    expect(backups(home)).toEqual([])
+  })
+
+  it('exits 0 with nothing to remove when there is no settings file at all, and creates none', () => {
+    const home = freshHome()
+    const out = uninstall(home)
+    expect(out).toMatch(/nothing to remove/i)
+    expect(existsSync(join(home, '.claude'))).toBe(false)
+  })
+
+  it('removes entries that point at a checkout that moved, duplicates included, and the stale status line (put back from the saved command)', () => {
+    const home = freshHome()
+    mkdirSync(join(home, '.agent-office'), { recursive: true })
+    writeFileSync(prevFile(home, 'statusline-prev'), '~/.claude/statusline.sh\n')
+    const old: any = { hooks: {} }
+    for (const event of EVENTS) old.hooks[event] = [{ matcher: '', hooks: [stale()] }]
+    // Foreign hooks in a group of their own and sharing a group with ours; two office entries for one event
+    old.hooks.PreToolUse = [foreign, { matcher: '', hooks: [stale('/old/a')] }, { matcher: '', hooks: [stale('/old/b')] }]
+    old.hooks.PostToolUse = [{ matcher: '', hooks: [{ type: 'command', command: 'echo first' }, stale()] }]
+    old.statusLine = { type: 'command', command: 'bash /old/checkout/hooks/status-line.sh', padding: 2, refreshInterval: 5 }
+    old.subagentStatusLine = { type: 'command', command: 'bash "/old/checkout/hooks/status-line.sh" --subagents' }
+    writeSettings(home, old)
+
+    const out = uninstall(home)
+    const settings = readSettings(home)
+    expect(readText(home)).not.toContain('agent-tracker.sh')
+    expect(readText(home)).not.toContain('status-line.sh')
+    expect(settings.hooks).toEqual({
+      PreToolUse: [foreign],
+      PostToolUse: [{ matcher: '', hooks: [{ type: 'command', command: 'echo first' }] }],
+    })
+    expect(settings.statusLine).toEqual({ type: 'command', command: '~/.claude/statusline.sh', padding: 2, refreshInterval: 5 })
+    expect(settings).not.toHaveProperty('subagentStatusLine')
+    expect(out).toContain('[remove] PreToolUse (/old/a/hooks/agent-tracker.sh)')
+    expect(out).toContain('[remove] PreToolUse (/old/b/hooks/agent-tracker.sh)')
+    for (const event of EVENTS.filter(e => e !== 'PreToolUse')) expect(out).toContain(`[remove] ${event} (/old/moved/path/hooks/agent-tracker.sh)`)
+    expect(out).toContain(`hooks: ${EVENTS.length + 1} office entries removed`)
+    expect(out).toContain('[restore] statusLine: ~/.claude/statusline.sh')
+    expect(out).toContain('[remove] subagentStatusLine (was /old/checkout/hooks/status-line.sh)')
+    expect(existsSync(prevFile(home, 'statusline-prev'))).toBe(false)
+    expect(backups(home)).toHaveLength(1)
+  })
+
+  it('--no-status-line removes the hooks only', () => {
+    const home = freshHome()
+    install(home)
+    const out = uninstall(home, ['--no-status-line'])
+    const settings = readSettings(home)
+    expect(settings).not.toHaveProperty('hooks')
+    expect(settings.statusLine).toBeDefined()
+    expect(settings.subagentStatusLine).toBeDefined()
+    expect(out).toContain('[skip] statusLine + subagentStatusLine (--no-status-line)')
+  })
+
+  describe('shapes Claude Code would reject do not crash it', () => {
+    it.each([
+      ['an empty array', []],
+      ['null', null],
+      ['a string', 'nope'],
+    ])('"hooks" given as %s holds nothing of ours and is left as it is', (_label, hooks) => {
+      const home = freshHome()
+      const before = writeSettings(home, { permissions: { allow: ['Bash(ls:*)'] }, hooks })
+      const out = uninstall(home)
+      expect(out).not.toMatch(/Traceback|AttributeError|TypeError/)
+      expect(out).toContain('[skip] "hooks" is a JSON')
+      expect(out).toMatch(/nothing to remove/i)
+      expect(readText(home)).toBe(before)
+    })
+
+    it('an unparseable settings file is left as it is', () => {
+      const home = freshHome()
+      mkdirSync(join(home, '.claude'), { recursive: true })
+      writeFileSync(settingsPath(home), '{ this is not json')
+      const out = uninstall(home)
+      expect(out).not.toMatch(/Traceback/)
+      expect(out).toMatch(/nothing to remove/i)
+      expect(readText(home)).toBe('{ this is not json')
+    })
+
+    it('finds ours inside an event given as one object, next to entries that are not objects, and leaves the odd shapes themselves alone', () => {
+      const home = freshHome()
+      writeSettings(home, {
+        hooks: {
+          PreToolUse: foreign, // one foreign group, not a list: left as it is
+          PostToolUse: { matcher: '', hooks: ['junk', stale()] }, // ours removed, the junk entry and the object shape stay
+          SubagentStop: ['junk', 42, { matcher: '', hooks: [stale()] }], // ours and its emptied group go, the junk entries stay
+          SessionStart: { matcher: '', hooks: [stale()] }, // one group, ours, emptied: the event goes
+          Stop: [{ hooks: 'not a list' }, { matcher: '', hooks: [stale()] }],
+          SessionEnd: 'nope',
+        },
+        statusLine: 'not an object',
+        subagentStatusLine: { type: 'command' },
+      })
+
+      const out = uninstall(home)
+      expect(out).not.toMatch(/Traceback|AttributeError|TypeError/)
+      expect(readSettings(home)).toEqual({
+        hooks: {
+          PreToolUse: foreign,
+          PostToolUse: { matcher: '', hooks: ['junk'] },
+          SubagentStop: ['junk', 42],
+          Stop: [{ hooks: 'not a list' }],
+          SessionEnd: 'nope',
+        },
+        statusLine: 'not an object',
+        subagentStatusLine: { type: 'command' },
+      })
+      expect(out).toContain('hooks: 4 office entries removed')
+      expect(out).toContain('[skip] statusLine is not the office\'s')
+      expect(out).toContain('[skip] subagentStatusLine is not the office\'s')
+    })
   })
 })

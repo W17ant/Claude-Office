@@ -23,23 +23,35 @@
 # you have since moved, re-cloned or deleted is repointed at this one. Hooks
 # that are not ours are never touched.
 #
+# --uninstall takes it all back out: every hook entry whose command runs
+# agent-tracker.sh goes (whatever checkout it points at), a statusLine /
+# subagentStatusLine that runs status-line.sh is put back to the command it
+# chained (saved in $AGENT_OFFICE_HOME/statusline-prev and
+# subagent-statusline-prev) or removed, and the saved files are deleted.
+#
 # Usage:
 #   bash hooks/install-hooks.sh [--no-status-line]
+#   bash hooks/install-hooks.sh --uninstall [--no-status-line]
 # =============================================================================
 
 set -euo pipefail
 
-# --no-status-line: register the hooks only (no payroll / electricity / memory meters)
+# --no-status-line: register the hooks only (no payroll / electricity / memory
+#                   meters); with --uninstall, leave the status line alone
+# --uninstall:      remove what this script registered (see above)
 STATUS_LINE=1
+UNINSTALL=0
 for arg in "$@"; do
     case "$arg" in
         --no-status-line|--no-statusline) STATUS_LINE=0 ;;
+        --uninstall) UNINSTALL=1 ;;
         -h|--help)
             echo "Usage: bash hooks/install-hooks.sh [--no-status-line]"
+            echo "       bash hooks/install-hooks.sh --uninstall [--no-status-line]"
             exit 0
             ;;
         *)
-            echo "Unknown option: $arg (try --no-status-line)" >&2
+            echo "Unknown option: $arg (try --no-status-line or --uninstall)" >&2
             exit 1
             ;;
     esac
@@ -49,6 +61,8 @@ SETTINGS_FILE="$HOME/.claude/settings.json"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TRACKER_SCRIPT="$SCRIPT_DIR/agent-tracker.sh"
 HOOK_COMMAND="bash \"$TRACKER_SCRIPT\""
+STATUS_SCRIPT="$SCRIPT_DIR/status-line.sh"
+OFFICE_HOME="${AGENT_OFFICE_HOME:-$HOME/.agent-office}"
 
 # Colours
 RED='\033[0;31m'
@@ -59,9 +73,167 @@ RESET='\033[0m'
 
 echo ""
 echo -e "${CYAN}╔═══════════════════════════════════════════╗${RESET}"
+if [ "$UNINSTALL" = "1" ]; then
+echo -e "${CYAN}║    Agent Office — Hook Uninstaller        ║${RESET}"
+else
 echo -e "${CYAN}║    Agent Office — Hook Installer          ║${RESET}"
+fi
 echo -e "${CYAN}╚═══════════════════════════════════════════╝${RESET}"
 echo ""
+
+# ---------------------------------------------------------------------------
+# --uninstall: take the office back out of settings.json
+#
+# Every hook entry whose command runs agent-tracker.sh is removed, whatever
+# checkout it points at (a stale path from a moved clone included), and a
+# group, an event list or "hooks" itself that this leaves empty goes with it.
+# A statusLine / subagentStatusLine that runs status-line.sh is put back to
+# the command it chained when the installer saved one (padding and
+# refreshInterval stay), otherwise the key is removed; the saved files are
+# deleted. Anything that is not ours — other hooks, other settings, a status
+# line we never wrapped — is left as it is, and so are the shapes the install
+# path repairs (nothing of ours can hide in a "hooks" that is not an object).
+# The file is backed up first, and only written when there is something to
+# remove.
+# ---------------------------------------------------------------------------
+if [ "$UNINSTALL" = "1" ]; then
+    if [ ! -f "$SETTINGS_FILE" ]; then
+        echo -e "${YELLOW}[info]${RESET} $SETTINGS_FILE does not exist — nothing to remove"
+        exit 0
+    fi
+    BACKUP_FILE="${SETTINGS_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
+    echo -e "${CYAN}[...]${RESET} Removing the office hooks and status line from $SETTINGS_FILE..."
+
+    rc=0
+    python3 - "$SETTINGS_FILE" "$BACKUP_FILE" "$(basename "$TRACKER_SCRIPT")" "$(basename "$STATUS_SCRIPT")" "$OFFICE_HOME" "$STATUS_LINE" <<'PYEOF' || rc=$?
+import json, os, shlex, shutil, sys
+
+settings_path, backup_path, tracker_name, status_name, office_home, status_line = sys.argv[1:7]
+NOTHING_TO_REMOVE = 3
+
+def kind(value):
+    return 'null' if value is None else type(value).__name__
+
+def script_path(command, name):
+    # The path to `name` a hook command runs, or None when the command is not ours
+    if not isinstance(command, str) or name not in command:
+        return None
+    try:
+        words = shlex.split(command)
+    except ValueError:
+        words = command.split()
+    return next((w for w in words if os.path.basename(w) == name), command)
+
+with open(settings_path, 'r') as f:
+    try:
+        settings = json.load(f)
+    except json.JSONDecodeError:
+        print('  [skip] the settings file is not valid JSON; nothing of ours can be read from it, so it is left as it is')
+        sys.exit(NOTHING_TO_REMOVE)
+if not isinstance(settings, dict):
+    print(f'  [skip] the settings file holds a JSON {kind(settings)}, not an object; left as it is')
+    sys.exit(NOTHING_TO_REMOVE)
+
+changed = False
+
+# -- hooks: every entry that runs agent-tracker.sh, under any event ----------
+removed = 0
+hooks = settings.get('hooks')
+if isinstance(hooks, dict):
+    for event in list(hooks):
+        groups = hooks[event]
+        # A single group written where Claude Code expects a list of them is searched as it is
+        candidates = groups if isinstance(groups, list) else [groups] if isinstance(groups, dict) else []
+        emptied = False
+        for group in list(candidates):
+            if not isinstance(group, dict) or not isinstance(group.get('hooks'), list):
+                continue
+            ours = [h for h in group['hooks'] if isinstance(h, dict) and script_path(h.get('command'), tracker_name) is not None]
+            for h in ours:
+                print(f'  [remove] {event} ({script_path(h["command"], tracker_name)})')
+                group['hooks'].remove(h)
+                removed += 1
+            # Only a group we emptied goes; one that was empty before is not ours to drop
+            if ours and not group['hooks']:
+                if isinstance(groups, list):
+                    groups.remove(group)
+                emptied = True
+        if emptied and (isinstance(groups, dict) or not groups):
+            del hooks[event]
+    if removed:
+        changed = True
+        if not hooks:
+            del settings['hooks']
+    print(f'  hooks: {removed} office {"entry" if removed == 1 else "entries"} removed' if removed else '  hooks: no office entries found')
+elif 'hooks' in settings:
+    print(f'  [skip] "hooks" is a JSON {kind(hooks)}, not an object; nothing of ours can be in it, left as it is')
+
+# -- status line: put the chained command back, or remove the key -----------
+if status_line == '1':
+    for key, prev_name in (('statusLine', 'statusline-prev'), ('subagentStatusLine', 'subagent-statusline-prev')):
+        prev_file = os.path.join(office_home, prev_name)
+        current = settings.get(key)
+        old_path = script_path(current.get('command'), status_name) if isinstance(current, dict) else None
+        if old_path is None:
+            if key in settings:
+                print(f'  [skip] {key} is not the office\'s; left as it is')
+            if os.path.isfile(prev_file):
+                print(f'  [note] {prev_file} kept: only the office status line reads it, and that is not registered')
+            continue
+        previous = ''
+        if os.path.isfile(prev_file):
+            with open(prev_file, 'r') as f:
+                previous = f.read().strip()
+        if previous:
+            # The command the installer chained goes back in place; padding / refreshInterval stay as they are
+            current['command'] = previous
+            print(f'  [restore] {key}: {previous}')
+        else:
+            del settings[key]
+            print(f'  [remove] {key} (was {old_path})')
+        if os.path.exists(prev_file):
+            os.remove(prev_file)
+            print(f'  [delete] {prev_file}')
+        changed = True
+else:
+    print('  [skip] statusLine + subagentStatusLine (--no-status-line)')
+
+if not changed:
+    print(f'  nothing to remove: no office hooks or status line in {settings_path}')
+    sys.exit(NOTHING_TO_REMOVE)
+
+output = json.dumps(settings, indent=2) + '\n'
+shutil.copyfile(settings_path, backup_path)
+print(f'  [ok] backup saved: {backup_path}')
+with open(settings_path, 'w') as f:
+    f.write(output)
+PYEOF
+
+    case "$rc" in
+        0)
+            echo -e "${GREEN}[ok]${RESET} Office entries removed from $SETTINGS_FILE"
+            echo ""
+            echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+            echo -e "${GREEN}Uninstall complete.${RESET}"
+            echo ""
+            echo "  Claude Code sessions already open keep the old hooks until they restart."
+            echo "  Your pre-uninstall settings are in:"
+            echo "    $BACKUP_FILE"
+            echo "  To put the office back: bash hooks/install-hooks.sh"
+            echo ""
+            ;;
+        3)
+            echo -e "${GREEN}[ok]${RESET} Nothing to remove — $SETTINGS_FILE has no office hooks or status line and was not changed"
+            echo ""
+            ;;
+        *)
+            echo -e "${RED}[error]${RESET} Could not update $SETTINGS_FILE" >&2
+            [ -f "$BACKUP_FILE" ] && echo "        Your previous settings are in $BACKUP_FILE" >&2
+            exit 1
+            ;;
+    esac
+    exit 0
+fi
 
 # ---------------------------------------------------------------------------
 # Validate tracker script exists and is executable
@@ -231,8 +403,6 @@ echo -e "${GREEN}[ok]${RESET} Hooks up to date in $SETTINGS_FILE"
 # is already ours but points at another checkout is repointed in place, so
 # the command you chained (and its padding / refreshInterval) stay as they are.
 # ---------------------------------------------------------------------------
-STATUS_SCRIPT="$SCRIPT_DIR/status-line.sh"
-OFFICE_HOME="${AGENT_OFFICE_HOME:-$HOME/.agent-office}"
 if [ "$STATUS_LINE" = "1" ] && [ -f "$STATUS_SCRIPT" ]; then
     chmod +x "$STATUS_SCRIPT"
     mkdir -p "$OFFICE_HOME"
