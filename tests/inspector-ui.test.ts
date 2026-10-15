@@ -98,6 +98,8 @@ describe('how long, and the totals', () => {
 describe('the transcript section', () => {
   it('says why it is empty: prompts off, no path yet, file gone, nothing said', () => {
     expect(transcriptEmptyText({ transcriptAvailable: false, transcriptReason: 'prompts off' })).toBe('transcript hidden: prompts off')
+    // The server answers a request without the UI token like this; the page has one once the snapshot arrives
+    expect(transcriptEmptyText({ transcriptAvailable: false, transcriptReason: 'needs the office token' })).toBe('transcript appears once the office is connected')
     expect(transcriptEmptyText({ transcriptAvailable: false, transcriptReason: 'no transcript path yet' })).toBe('no transcript yet')
     expect(transcriptEmptyText({ transcriptAvailable: false, transcriptReason: 'transcript file not found' })).toBe('transcript file not found')
     expect(transcriptEmptyText({ transcriptAvailable: true, transcript: [] })).toBe('nothing said yet')
@@ -138,6 +140,10 @@ describe('fallbackInspection — what the office alone knows (?sim, a 404)', () 
     expect(mainStateLabel(insp.main)).toBe('waiting on 1 worker')
     expect(promptAndReply(insp, sessions[0])).toEqual({ prompt: 'fix it', reply: 'on it', hidden: false })
     expect(promptAndReply({ ...insp, transcriptReason: 'prompts off' }, undefined).hidden).toBe(true)
+    // With the UI token the server's own answer carries the text; the socket's session is only the fallback
+    const served = { ...insp, main: { state: 'idle' as const, lastPrompt: 'served prompt', lastReply: 'served reply' } }
+    expect(promptAndReply(served, undefined)).toEqual({ prompt: 'served prompt', reply: 'served reply', hidden: false })
+    expect(promptAndReply({ ...insp, main: { state: 'idle' as const } }, sessions[0])).toEqual({ prompt: 'fix it', reply: 'on it', hidden: false })
   })
 
   it('the boss', () => {

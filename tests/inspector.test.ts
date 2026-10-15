@@ -15,6 +15,12 @@ import { loadOffice, postAuthed, postEvent, removeOffice, type Office } from './
 
 const AT = '2026-10-14T19:05:35.842Z'
 
+/** GET /agents/:id, as the office page (UI token), a token holder, or nobody in particular. */
+function inspect(server: Office['server'], id: string, token?: string) {
+  const req = request(server.app).get(`/agents/${id}`)
+  return token ? req.set('Authorization', `Bearer ${token}`) : req
+}
+
 /** A few assistant records in the shape Claude Code writes (see tests/transcript.test.ts). */
 function transcriptLines(said: string, tool = 'Bash', input: object = { command: 'ls /etc | wc -l' }): string {
   const rec = (id: string, block: object) => JSON.stringify({ type: 'assistant', uuid: `u-${id}-${Math.random()}`, timestamp: AT, message: { id, role: 'assistant', content: [block] } })
@@ -70,7 +76,7 @@ describe('GET /agents/:id for a worker', () => {
     await postEvent(office.server, { type: 'agent_working', ...ev, agentId: 'sub-w1', agentType: 'general-purpose', status: 'running: npm test' })
     await postEvent(office.server, { type: 'agent_working', ...ev, agentId: 'sub-w1', agentType: 'general-purpose', status: 'failed: Bash — Exit code 1 FAIL tests/parser.test.ts', failed: true, tool: 'Bash' })
 
-    const res = await request(office.server.app).get('/agents/agent-w1')
+    const res = await inspect(office.server, 'agent-w1', office.server.UI_TOKEN)
     expect(res.status).toBe(200)
     const body = res.body
     expect(body).toMatchObject({
@@ -101,10 +107,27 @@ describe('GET /agents/:id for a worker', () => {
     ])
     expect(body.transcriptPath).toBeUndefined()  // the path itself stays on the server
 
+    // Who gets the tail: the office page (UI token, above) and a token holder;
+    // nobody else, though the rest of the card — history, counts, stats — is
+    // the same for everyone (tool names and status lines, as on GET /agents)
+    const fileToken = (await inspect(office.server, 'agent-w1', office.server.AUTH_TOKEN)).body
+    expect(fileToken.transcript).toEqual(body.transcript)
+    for (const token of [undefined, 'not-the-token']) {
+      const res = await inspect(office.server, 'agent-w1', token)
+      expect(res.status).toBe(200)  // the route stays open: a wrong token is no token, not a 401
+      expect(res.body.transcriptAvailable).toBe(false)
+      expect(res.body.transcriptReason).toBe('needs the office token')
+      expect(res.body.transcript).toBeUndefined()
+      expect(res.body.history).toEqual(body.history)
+      expect(res.body.toolCounts).toEqual(body.toolCounts)
+      expect(res.body.stats).toEqual(body.stats)
+      expect(res.body.task).toBe(body.task)
+    }
+
     // The same card by the Claude subagent id
     expect((await request(office.server.app).get('/agents/sub-w1')).body.id).toBe('agent-w1')
     // The parent: spawning the worker was its Agent call; its own file does not exist
-    const parent = (await request(office.server.app).get('/agents/agent-parent')).body
+    const parent = (await inspect(office.server, 'agent-parent', office.server.UI_TOKEN)).body
     expect(parent.toolCounts).toEqual({ Agent: 1 })
     expect(parent.history).toEqual([expect.objectContaining({ kind: 'tool', tool: 'Agent', text: 'spawned Tester: Write tests for the parser' })])
     // ...and spawning the parent was the session Claude's
@@ -132,7 +155,7 @@ describe('GET /agents/:id for a worker', () => {
       agentTranscriptPath: workerTranscript,
     })
     expect(res.status).toBe(200)
-    const body = (await request(office.server.app).get('/agents/agent-w1')).body
+    const body = (await inspect(office.server, 'agent-w1', office.server.UI_TOKEN)).body
     expect(body.state).toBe('completed')
     expect(body.history.at(-1)).toMatchObject({ kind: 'completed', text: 'All 12 tests pass' })
     expect(body.stats).toMatchObject({ tokens: 4200, durationMs: 61_000, toolUses: 3, model: 'claude-haiku-5-5', parent: { id: 'agent-parent', name: 'Reviewer' } })
@@ -168,10 +191,12 @@ describe('GET /agents/:id for a worker', () => {
     expect(done.stats).toMatchObject({ tokens: 20676, model: 'claude-haiku-5-5', toolUses: 1, derived: ['tokens', 'durationMs', 'toolUses', 'model'] })
     expect(done.stats.durationMs).toBe(done.stats.completedAt - done.stats.spawnedAt)
 
-    // logPrompts off hides the tail, but the numbers are not conversation and stay
+    // The numbers are not conversation: no token needed (the GETs above sent
+    // none), and logPrompts off hides the tail even from the office page
     await postAuthed(office.server, '/settings', { logPrompts: 'off' })
-    const off = (await request(office.server.app).get('/agents/agent-bg')).body
+    const off = (await inspect(office.server, 'agent-bg', office.server.UI_TOKEN)).body
     expect(off.transcriptAvailable).toBe(false)
+    expect(off.transcriptReason).toBe('prompts off')
     expect(off.transcript).toBeUndefined()
     expect(off.stats.tokens).toBe(20676)
     await postAuthed(office.server, '/settings', { logPrompts: 'summary' })
@@ -181,7 +206,7 @@ describe('GET /agents/:id for a worker', () => {
     await postEvent(office.server, { type: 'agent_spawned', ...session, agent: { id: 'agent-w2', name: 'Agent', role: 'general-purpose' } })
     await postEvent(office.server, { type: 'agent_completed', ...session, agentId: 'agent-w2', result: 'done', agentTranscriptPath: '/etc/passwd' })
     expect(office.server.activeAgents.get('agent-w2').transcriptPath).toBeUndefined()
-    const w2 = (await request(office.server.app).get('/agents/agent-w2')).body
+    const w2 = (await inspect(office.server, 'agent-w2', office.server.UI_TOKEN)).body
     expect(w2.transcriptAvailable).toBe(false)
     expect(w2.transcriptReason).toBe('no transcript path yet')  // never linked to a subagent
 
@@ -311,44 +336,65 @@ describe('GET /agents/main-<sessionId> — the session\'s own Claude', () => {
       ['status', null, 'waiting — turn ended, 1 background task(s) still running'],
     ])
 
-    // The session transcript is Claude's own
-    expect(body.transcriptAvailable).toBe(true)
-    expect(body.transcript).toEqual([
-      { at: Date.parse(AT), kind: 'tool', tool: 'Read', tools: ['Read'], input: '/home/me/proj/parser.ts' },
-      { at: Date.parse(AT), kind: 'said', text: 'Done, the parser is fixed.' },
-    ])
+    // No token: no transcript either, and the card is told why
+    expect(body.transcriptAvailable).toBe(false)
+    expect(body.transcriptReason).toBe('needs the office token')
+    expect(body.transcript).toBeUndefined()
 
-    const withToken = await request(office.server.app).get(`/agents/main-${sid}`).set('Authorization', `Bearer ${office.server.AUTH_TOKEN}`)
-    expect(withToken.body.main.lastPrompt).toBe('Fix the parser please')
-    expect(withToken.body.main.lastReply).toBe('Done, the parser is fixed.')
+    // The office page (UI token) and a token holder get the prompt, the reply
+    // and the session transcript — Claude's own
+    for (const token of [office.server.UI_TOKEN, office.server.AUTH_TOKEN]) {
+      const withText = (await inspect(office.server, `main-${sid}`, token)).body
+      expect(withText.main.lastPrompt).toBe('Fix the parser please')
+      expect(withText.main.lastReply).toBe('Done, the parser is fixed.')
+      expect(withText.transcriptAvailable).toBe(true)
+      expect(withText.transcript).toEqual([
+        { at: Date.parse(AT), kind: 'tool', tool: 'Read', tools: ['Read'], input: '/home/me/proj/parser.ts' },
+        { at: Date.parse(AT), kind: 'said', text: 'Done, the parser is fixed.' },
+      ])
+      // ...the rest of the card is the same with or without
+      expect(withText.history).toEqual(body.history)
+      expect(withText.toolCounts).toEqual(body.toolCounts)
+    }
+
+    // A wrong token is no token: still 200, still no text
+    const wrong = await inspect(office.server, `main-${sid}`, 'not-the-token')
+    expect(wrong.status).toBe(200)
+    expect(wrong.body.main.lastPrompt).toBeUndefined()
+    expect(wrong.body.transcriptReason).toBe('needs the office token')
   })
 
   it('logPrompts off hides the transcript tail and stores no new prompt text; summary brings the tail back at 200 characters', async () => {
     expect((await postAuthed(office.server, '/settings', { logPrompts: 'off' })).status).toBe(200)
     await postEvent(office.server, { type: 'session_prompt', ...ev({}), text: 'Another prompt', promptId: 'p2' })
-    const off = await request(office.server.app).get(`/agents/main-${sid}`).set('Authorization', `Bearer ${office.server.AUTH_TOKEN}`)
-    expect(off.body.transcriptAvailable).toBe(false)
-    expect(off.body.transcriptReason).toBe('prompts off')
-    expect(off.body.transcript).toBeUndefined()
-    expect(off.body.main.lastPrompt).toBe('')
-    expect(off.body.state).toBe('working')
+    // Off wins over any token: no tail, no text
+    for (const token of [office.server.AUTH_TOKEN, office.server.UI_TOKEN]) {
+      const off = await inspect(office.server, `main-${sid}`, token)
+      expect(off.body.transcriptAvailable).toBe(false)
+      expect(off.body.transcriptReason).toBe('prompts off')
+      expect(off.body.transcript).toBeUndefined()
+      expect(off.body.main.lastPrompt).toBe('')
+      expect(off.body.state).toBe('working')
+    }
 
     // A long reply in the file: summary clamps each entry to 200 characters, full to 2000
     writeFileSync(sessionTranscript, transcriptLines('r'.repeat(600)))
     expect((await postAuthed(office.server, '/settings', { logPrompts: 'summary' })).status).toBe(200)
-    const summary = (await request(office.server.app).get(`/agents/main-${sid}`)).body
+    const summary = (await inspect(office.server, `main-${sid}`, office.server.UI_TOKEN)).body
     expect(summary.transcriptAvailable).toBe(true)
     expect(summary.transcript.at(-1).text).toHaveLength(200)
     expect((await postAuthed(office.server, '/settings', { logPrompts: 'full' })).status).toBe(200)
-    expect((await request(office.server.app).get(`/agents/main-${sid}`)).body.transcript.at(-1).text).toHaveLength(600)
+    expect((await inspect(office.server, `main-${sid}`, office.server.UI_TOKEN)).body.transcript.at(-1).text).toHaveLength(600)
+    // Even at full, nothing without a token
+    expect((await inspect(office.server, `main-${sid}`)).body.transcript).toBeUndefined()
     await postAuthed(office.server, '/settings', { logPrompts: 'summary' })
   })
 
   it('a session whose transcript file is gone says so; a session without a path says so', async () => {
     await postEvent(office.server, { type: 'session_started', sessionId: 's-gone', project: 'p', cwd: '/p', transcriptPath: join(office.dir, 'nowhere.jsonl'), source: 'startup' })
-    expect((await request(office.server.app).get('/agents/main-s-gone')).body).toMatchObject({ transcriptAvailable: false, transcriptReason: 'transcript file not found' })
+    expect((await inspect(office.server, 'main-s-gone', office.server.UI_TOKEN)).body).toMatchObject({ transcriptAvailable: false, transcriptReason: 'transcript file not found' })
     await postEvent(office.server, { type: 'session_started', sessionId: 's-bare', project: 'p', cwd: '/p', source: 'startup' })
-    expect((await request(office.server.app).get('/agents/main-s-bare')).body).toMatchObject({ transcriptAvailable: false, transcriptReason: 'no transcript path yet' })
+    expect((await inspect(office.server, 'main-s-bare', office.server.UI_TOKEN)).body).toMatchObject({ transcriptAvailable: false, transcriptReason: 'no transcript path yet' })
   })
 
   it('a forgotten session takes its activity with it', async () => {

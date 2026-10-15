@@ -19,6 +19,7 @@ import {
   mainStateLabel, workerStateLabel, toolCountRows, recentHistory, clockTime, atItFor, finishedStats,
   historyMark, transcriptEmptyText, transcriptLine, fallbackInspection, promptAndReply, shortSession, derivedNote, cardSide,
 } from '../inspector'
+import { getUiToken } from '../permissions'
 import '../styles/inspector.css'
 
 interface AgentCardProps {
@@ -55,7 +56,14 @@ const AgentCard: React.FC<AgentCardProps> = ({ agentId, agent, sessions = [], on
     let cancelled = false
     const load = async () => {
       try {
-        const res = await fetch(inspectUrl(agentId), { signal: AbortSignal.timeout(1500) })
+        // The UI token from the WebSocket snapshot (src/permissions.ts keeps it) is
+        // what lets the server hand over the transcript tail and prompt text; read
+        // per request, so the first poll after the snapshot already carries it
+        const token = getUiToken()
+        const res = await fetch(inspectUrl(agentId), {
+          signal: AbortSignal.timeout(1500),
+          ...(token ? { headers: { Authorization: `Bearer ${token}` } } : {}),
+        })
         if (cancelled) return
         // A finished worker answers 404 once the server lets it go: keep its last card
         if (res.status === 404) { setMissing('unknown'); return }

@@ -206,6 +206,8 @@ export function transcriptEmptyText(insp: Pick<Inspection, 'transcriptAvailable'
   if (!insp.transcriptAvailable) {
     switch (insp.transcriptReason) {
       case 'prompts off':               return 'transcript hidden: prompts off'
+      // The page has no UI token until the WebSocket snapshot arrives
+      case 'needs the office token':    return 'transcript appears once the office is connected'
       case 'no transcript path yet':    return 'no transcript yet'
       case 'transcript file not found': return 'transcript file not found'
       default:                          return 'transcript unavailable'
@@ -257,13 +259,17 @@ export function fallbackInspection(agent: Agent, sessions: SessionInfo[] = []): 
 
 /**
  * The prompt / reply the card shows for a session's Claude: the server's
- * card leaves the text out without the token, so the WebSocket-fed session
- * record (which carries it at the logPrompts level) is the first choice.
+ * answer carries them once the card sends the UI token; until then the
+ * WebSocket-fed session record (which has them at the logPrompts level)
+ * fills in. Empty text is '' from the server when logPrompts is off.
  */
 export function promptAndReply(insp: Inspection, session: SessionInfo | undefined): { prompt?: string; reply?: string; hidden: boolean } {
-  const main = session?.main ?? insp.main
   const hidden = insp.transcriptReason === 'prompts off'
-  return { prompt: main?.lastPrompt || undefined, reply: main?.lastReply || undefined, hidden }
+  return {
+    prompt: insp.main?.lastPrompt || session?.main?.lastPrompt || undefined,
+    reply: insp.main?.lastReply || session?.main?.lastReply || undefined,
+    hidden,
+  }
 }
 
 /**

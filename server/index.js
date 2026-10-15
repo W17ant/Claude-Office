@@ -1632,12 +1632,16 @@ app.get('/agents', (_req, res) => {
  * `usage` the last message's { tokens, model } — numbers, not conversation,
  * so they are read whatever logPrompts says.
  */
-function transcriptFor(path) {
+function transcriptFor(path, { withText }) {
   const maxChars = LOG_PROMPTS_LEVELS.get(settings.logPrompts) ?? 0
   const readable = !!path && isTranscriptPath(path) && existsSync(path)
-  const read = readable ? readTranscript(path, { maxChars: maxChars || 1 }) : null
+  // Without a token the entries are dropped, so they need not be built at length
+  const read = readable ? readTranscript(path, { maxChars: (withText && maxChars) || 1 }) : null
   let section
   if (!maxChars) section = { transcriptAvailable: false, transcriptReason: 'prompts off' }
+  // What an agent said is conversation: only for the office page (UI token)
+  // or a token holder, like the prompt / reply text on GET /sessions
+  else if (!withText) section = { transcriptAvailable: false, transcriptReason: 'needs the office token' }
   else if (!path) section = { transcriptAvailable: false, transcriptReason: 'no transcript path yet' }
   else if (!readable) section = { transcriptAvailable: false, transcriptReason: 'transcript file not found' }
   else section = { transcriptAvailable: true, transcript: read.entries }
@@ -1650,12 +1654,12 @@ function activityFor(id) {
 }
 
 /** A worker's inspection: its GET /agents fields, its activity, its stats and its transcript tail. */
-function inspectAgent(agent) {
+function inspectAgent(agent, { withText }) {
   const parentId = agent.parentId ?? lookupAgentId(agent.parentSubagentId) ?? null
   const session = agent.sessionId ? sessions.get(agent.sessionId) : null
   // The file SubagentStop named, else the one its session transcript and Claude agent id imply
   const path = agent.transcriptPath ?? agentTranscriptPath(session?.transcriptPath, agent.sessionId, agent.subagentId)
-  const { section, usage } = transcriptFor(path)
+  const { section, usage } = transcriptFor(path, { withText })
   const activityNow = activityFor(agent.id)
   // What Claude Code reported (a foreground agent's PostToolUse(Agent)) wins;
   // a background agent's SubagentStop carries none of it, so the office
@@ -1721,7 +1725,7 @@ function inspectMain(session, { withText }) {
   const main = json.main ?? newMain()
   // The session transcript's last message: its usage is how full the context
   // window is (the meters' MEMORY), its model a fallback for the session's
-  const { section, usage } = transcriptFor(session.transcriptPath)
+  const { section, usage } = transcriptFor(session.transcriptPath, { withText })
   const model = session.model ?? usage?.model
   return {
     id: mainActivityId(session.id),
@@ -1776,23 +1780,30 @@ function inspectMain(session, { withText }) {
  * tool uses and model when it has finished, its parent, unread) and the tail
  * of its own transcript. :id is an office id, a Claude subagent id, or
  * `main-<sessionId>` for a session's own Claude (its main record, model and
- * crons). Open on loopback like GET /agents; the transcript tail follows
- * logPrompts (off: hidden; summary: 200 characters per entry; full: 2000),
- * and the main record's prompt / reply text needs the token, as on
- * GET /sessions. An agent in its completed grace window still answers;
- * anything else is a 404.
+ * crons). Open on loopback like GET /agents, but conversation text — the
+ * transcript tail and the main record's prompt / reply — goes only to the
+ * office page (UI token) or a token holder, as on GET /sessions and
+ * GET /chat; without one the card says `transcriptReason: 'needs the office
+ * token'`. With one the tail follows logPrompts (off: none; summary: 200
+ * characters per entry; full: 2000). The history, counts and stats stay open:
+ * tool names, status lines and the completion line are what GET /agents,
+ * GET /sessions and the agent broadcasts already show. An agent in its
+ * completed grace window still answers; anything else is a 404.
  */
 app.get('/agents/:id', (req, res) => {
+  // The route stays open; a missing or wrong token only means no conversation text
+  const supplied = bearerToken(req)
+  const withText = tokenMatches(supplied) || uiTokenMatches(supplied)
   const ref = req.params.id
   if (ref.startsWith(MAIN_ID_PREFIX)) {
     const session = sessions.get(ref.slice(MAIN_ID_PREFIX.length))
     if (!session) return res.status(404).json({ error: 'Unknown agent' })
-    return res.json(inspectMain(session, { withText: tokenMatches(bearerToken(req)) }))
+    return res.json(inspectMain(session, { withText }))
   }
   const id = lookupAgentId(ref)
   const agent = id ? activeAgents.get(id) : null
   if (!agent || agent.server) return res.status(404).json({ error: 'Unknown agent' })
-  res.json(inspectAgent(agent))
+  res.json(inspectAgent(agent, { withText }))
 })
 
 /**
