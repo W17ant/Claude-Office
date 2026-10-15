@@ -32,6 +32,7 @@ import { mountRegistry } from './sessions.js'
 import { mountPermissions, sanitiseSuggestions } from './permissions.js'
 import { mountHealth, readVersion } from './health.js'
 import { readPort, readUiPort, readHost, loadOfficeConfig, bossFromConfig } from './config.js'
+import { agentTranscriptPath, readTranscript, isTranscriptPath, clampLine } from './transcript.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -307,6 +308,77 @@ const FIRST_TOOL_BIND_MS = 5 * 60_000
 const STALE_AGENT_MS = (Number(process.env.AGENT_OFFICE_STALE_MINUTES) || 120) * 60_000
 
 // ---------------------------------------------------------------------------
+// Activity — what each character has done, for the inspector card
+//
+// GET /agents/:id answers "what is it doing and what has it done": the last
+// ACTIVITY_MAX things an agent did (its tool calls from agent_working, the
+// failed ones marked, its completion line, the directed messages it sent)
+// and a count per tool. The session's own Claude is kept the same way under
+// the id the office gives it, `main-<sessionId>`: its tool calls reach the
+// server as agent_working without an agentId and as mcp_call, and every
+// change of its main state is one 'status' line.
+//
+// The buffers live in their own Map, off the agent records, so agents.json
+// (which saveAgents writes whole on every event) stays a few hundred bytes
+// per agent. A restart starts them afresh: a worker's record is gone ten
+// seconds after it finishes anyway, and the transcript tail covers the rest.
+// ---------------------------------------------------------------------------
+
+const ACTIVITY_MAX = 50
+const ACTIVITY_TEXT_MAX = 160
+const MAIN_ID_PREFIX = 'main-'
+
+/** @type {Map<string, {history: object[], toolCounts: Record<string, number>}>} office id or main-<sessionId> -> activity */
+const activity = new Map()
+
+/** The office id of a session's own Claude (what the frontend's mainId() gives it). */
+function mainActivityId(sessionId) {
+  return `${MAIN_ID_PREFIX}${sessionId}`
+}
+
+function activityOf(id) {
+  let entry = activity.get(id)
+  if (!entry) {
+    entry = { history: [], toolCounts: {} }
+    activity.set(id, entry)
+  }
+  return entry
+}
+
+/**
+ * Append one entry { at, kind: 'tool' | 'failed' | 'status' | 'completed' | 'message', tool?, text }
+ * to an agent's history (the oldest falls off past ACTIVITY_MAX) and count
+ * the tool. The text is one line clamped to ACTIVITY_TEXT_MAX.
+ */
+function recordActivity(id, { kind, tool, text }, now = Date.now()) {
+  if (!id) return
+  const entry = activityOf(id)
+  const row = { at: now, kind, text: clampLine(text, ACTIVITY_TEXT_MAX) }
+  if (tool) {
+    row.tool = tool
+    // A failed call was already counted by its PreToolUse; the failure only marks it
+    if (kind === 'tool') entry.toolCounts[tool] = (entry.toolCounts[tool] ?? 0) + 1
+  }
+  entry.history.push(row)
+  if (entry.history.length > ACTIVITY_MAX) entry.history.splice(0, entry.history.length - ACTIVITY_MAX)
+}
+
+// The tracker's own status phrasings, for a hook that sends no `tool`
+// (an older agent-tracker.sh): "reading x" is a Read, "running: ..." a Bash,
+// "using WebFetch" a WebFetch, "failed: Bash — ..." a Bash that errored.
+const STATUS_TOOLS = [
+  ['reading ', 'Read'], ['writing ', 'Write'], ['editing ', 'Edit'], ['running: ', 'Bash'],
+  ['searching for ', 'Grep'], ['finding files: ', 'Glob'], ['using /', 'Skill'],
+]
+
+function toolFromStatus(status) {
+  if (typeof status !== 'string') return undefined
+  for (const [prefix, tool] of STATUS_TOOLS) if (status.startsWith(prefix)) return tool
+  const m = /^(?:using|failed:) (\S+)/.exec(status)
+  return m ? m[1] : undefined
+}
+
+// ---------------------------------------------------------------------------
 // Session tracking — one Claude Code session (terminal) per session_id
 //
 // Every hook payload carries session_id / cwd / transcript_path, which the
@@ -441,6 +513,8 @@ function setMainState(session, state, reason, now = Date.now()) {
   console.log(`[main] ${sessionName(session)}: ${main.state} -> ${state}${reason ? ` (${reason})` : ''}`)
   main.state = state
   main.since = now
+  // One line per transition in Claude's own history (the inspector card)
+  recordActivity(mainActivityId(session.id), { kind: 'status', text: `${state}${reason ? ` — ${reason}` : ''}` }, now)
   return true
 }
 
@@ -565,7 +639,7 @@ function sessionEvent(session, type = 'session_started') {
   return { type, sessionId: id, ...json, timestamp: Date.now() }
 }
 
-function createSession({ id, project, cwd, source, model, title, now = Date.now() }) {
+function createSession({ id, project, cwd, source, model, title, transcriptPath, now = Date.now() }) {
   const session = {
     id,
     hooked: true,
@@ -580,6 +654,8 @@ function createSession({ id, project, cwd, source, model, title, now = Date.now(
   }
   if (model) session.model = model
   if (title) session.title = title
+  // The session's own transcript; a worker's file is derived from it (server/transcript.js)
+  if (transcriptPath) session.transcriptPath = transcriptPath
   sessions.set(id, session)
   console.log(`[session] ${session.source}: ${session.project ?? id} (${id})`)
   return session
@@ -614,7 +690,7 @@ function touchSession(body, now = Date.now()) {
   if (!id) return null
   let session = sessions.get(id)
   if (!session) {
-    session = createSession({ id, project: body.project, cwd: body.cwd, source: 'implicit', now })
+    session = createSession({ id, project: body.project, cwd: body.cwd, source: 'implicit', transcriptPath: body.transcriptPath, now })
     saveAgents()
     broadcast(sessionEvent(session))
     return session
@@ -626,6 +702,7 @@ function touchSession(body, now = Date.now()) {
   if (session.state === 'active') session.lastActivityAt = now
   if (!session.project) session.project = projectName(body.project, body.cwd)
   if (!session.cwd && body.cwd) session.cwd = body.cwd
+  if (body.transcriptPath && session.transcriptPath !== body.transcriptPath) session.transcriptPath = body.transcriptPath
   return session
 }
 
@@ -655,6 +732,7 @@ function forgetSession(id) {
   const session = sessions.get(id)
   if (!session) return
   sessions.delete(id)
+  activity.delete(mainActivityId(id))
   saveAgents()
   console.log(`[session] forgot ${session.project ?? id} (${id})`)
 }
@@ -799,6 +877,7 @@ function forgetAgent(id) {
   }
   if (agent?.sessionId) sessions.get(agent.sessionId)?.agentIds.delete(id)
   activeAgents.delete(id)
+  activity.delete(id)
   saveAgents()
 }
 
@@ -1348,6 +1427,8 @@ app.post('/event', requireToken, (req, res) => {
     tokens:           clampCount(body.tokens),
     durationMs:       clampCount(body.durationMs),
     toolUses:         clampCount(body.toolUses),
+    // The worker's own transcript file (SubagentStop.agent_transcript_path), for the inspector's tail
+    agentTranscriptPath: clampString(body.agentTranscriptPath, 400),
     // What the Bash call meant (see Signals): relayed below, not by processEvent
     signals:          undefined,
   }
@@ -1614,6 +1695,9 @@ function sendAgentMessage({ sender, role, text, recipient, type, replyTo, sender
     msgType,
   })
 
+  // The sender's own history (inspector card) remembers what it said
+  if (senderAgent) recordActivity(senderAgent.id, { kind: 'message', text: to ? `to ${to}: ${msg.text}` : msg.text })
+
   // Broadcast as a chat message — the frontend will attribute it to an agent
   broadcast({
     type: 'chat_message',
@@ -1657,6 +1741,190 @@ app.get('/agents', (_req, res) => {
       project,
     }))
   res.json({ agents })
+})
+
+// ---------------------------------------------------------------------------
+// GET /agents/:id — the inspector card
+// ---------------------------------------------------------------------------
+
+/**
+ * A character's transcript, read from its end once: `section` is what of the
+ * tail the card may show at the current logPrompts level (or why nothing),
+ * `usage` the last message's { tokens, model } — numbers, not conversation,
+ * so they are read whatever logPrompts says.
+ */
+function transcriptFor(path, { withText }) {
+  const maxChars = LOG_PROMPTS_LEVELS.get(settings.logPrompts) ?? 0
+  const readable = !!path && isTranscriptPath(path) && existsSync(path)
+  // Without a token the entries are dropped, so they need not be built at length
+  const read = readable ? readTranscript(path, { maxChars: (withText && maxChars) || 1 }) : null
+  let section
+  if (!maxChars) section = { transcriptAvailable: false, transcriptReason: 'prompts off' }
+  // What an agent said is conversation: only for the office page (UI token)
+  // or a token holder, like the prompt / reply text on GET /sessions
+  else if (!withText) section = { transcriptAvailable: false, transcriptReason: 'needs the office token' }
+  else if (!path) section = { transcriptAvailable: false, transcriptReason: 'no transcript path yet' }
+  else if (!readable) section = { transcriptAvailable: false, transcriptReason: 'transcript file not found' }
+  else section = { transcriptAvailable: true, transcript: read.entries }
+  return { section, usage: read?.usage ?? null }
+}
+
+function activityFor(id) {
+  const entry = activity.get(id)
+  return { history: entry ? entry.history.slice() : [], toolCounts: { ...(entry?.toolCounts ?? {}) } }
+}
+
+/** A worker's inspection: its GET /agents fields, its activity, its stats and its transcript tail. */
+function inspectAgent(agent, { withText }) {
+  const parentId = agent.parentId ?? lookupAgentId(agent.parentSubagentId) ?? null
+  const session = agent.sessionId ? sessions.get(agent.sessionId) : null
+  // The file SubagentStop named, else the one its session transcript and Claude agent id imply
+  const path = agent.transcriptPath ?? agentTranscriptPath(session?.transcriptPath, agent.sessionId, agent.subagentId)
+  const { section, usage } = transcriptFor(path, { withText })
+  const activityNow = activityFor(agent.id)
+  // What Claude Code reported (a foreground agent's PostToolUse(Agent)) wins;
+  // a background agent's SubagentStop carries none of it, so the office
+  // fills the gaps itself and lists the fields it filled in `derived`:
+  // tokens and model from its transcript's last message (the same sum Claude
+  // Code reports), once finished the duration from spawn to completion and
+  // the tool uses the hook saw
+  const derived = []
+  const fill = (key, reported, value) => {
+    if (reported !== undefined && reported !== null) return { [key]: reported }
+    if (value === undefined || value === null) return {}
+    derived.push(key)
+    return { [key]: value }
+  }
+  const toolsSeen = Object.values(activityNow.toolCounts).reduce((sum, n) => sum + n, 0)
+  const finished = typeof agent.completedAt === 'number'
+  const stats = {
+    spawnedAt: agent.spawnedAt,
+    lastActivityAt: agent.lastActivityAt,
+    ...(finished ? { completedAt: agent.completedAt } : {}),
+    ...fill('tokens', agent.tokens, usage?.tokens),
+    ...fill('durationMs', agent.durationMs, finished && typeof agent.spawnedAt === 'number' ? agent.completedAt - agent.spawnedAt : undefined),
+    ...fill('toolUses', agent.toolUses, finished ? toolsSeen : undefined),
+    ...fill('model', agent.model || undefined, usage?.model),
+    parent: parentId ? { id: parentId, name: activeAgents.get(parentId)?.name ?? parentId } : null,
+    unread: agent.unread ?? 0,
+  }
+  if (derived.length) stats.derived = derived
+  return {
+    id: agent.id,
+    kind: 'worker',
+    name: agent.name,
+    role: agent.role,
+    task: agent.task,
+    agentType: agent.agentType,
+    background: !!agent.background,
+    // Back from agents.json after a server restart: its history starts at the restart
+    restored: !!agent.restored,
+    state: agent.state,
+    status: agent.status,
+    lastError: agent.lastError,
+    spawnedAt: agent.spawnedAt,
+    lastActivityAt: agent.lastActivityAt,
+    unread: agent.unread ?? 0,
+    parentId: parentId ?? undefined,
+    parentSubagentId: agent.parentSubagentId,
+    subagentId: agent.subagentId,
+    sessionId: agent.sessionId,
+    project: agent.project,
+    ...activityNow,
+    stats,
+    ...section,
+  }
+}
+
+/**
+ * A session's own Claude: its main record (the prompt / reply text only with
+ * the token, as GET /sessions), the model and crons, the session, its
+ * activity and the tail of the session transcript.
+ */
+function inspectMain(session, { withText }) {
+  const json = sessionToJSON(session, { withText })
+  const main = json.main ?? newMain()
+  // The session transcript's last message: its usage is how full the context
+  // window is (the meters' MEMORY), its model a fallback for the session's
+  const { section, usage } = transcriptFor(session.transcriptPath, { withText })
+  const model = session.model ?? usage?.model
+  return {
+    id: mainActivityId(session.id),
+    kind: 'main',
+    name: 'Claude',
+    role: 'assistant',
+    state: main.state,
+    status: session.lastStatus,
+    lastStatusAt: session.lastStatusAt,
+    sessionId: session.id,
+    project: session.project,
+    cwd: session.cwd,
+    title: session.title,
+    model,
+    crons: main.crons ?? 0,
+    // false: the session is known from Claude Code's registry only, no hook has reported yet
+    hooked: session.hooked !== false,
+    main,
+    session: {
+      id: session.id,
+      project: session.project,
+      cwd: session.cwd,
+      title: session.title,
+      source: session.source,
+      state: session.state,
+      hooked: session.hooked !== false,
+      startedAt: session.startedAt,
+      lastActivityAt: session.lastActivityAt,
+      ...(session.endedAt ? { endedAt: session.endedAt, reason: session.reason } : {}),
+      agentCount: json.agentCount,
+      workingCount: json.workingCount,
+    },
+    ...activityFor(mainActivityId(session.id)),
+    stats: {
+      spawnedAt: session.startedAt,
+      since: main.since,
+      lastActivityAt: session.lastActivityAt,
+      ...(model ? { model } : {}),
+      ...(usage ? { contextTokens: usage.tokens } : {}),
+      ...(!session.model && usage?.model ? { derived: ['model'] } : {}),
+      parent: null,
+      unread: 0,
+    },
+    ...section,
+  }
+}
+
+/**
+ * GET /agents/:id — one character for the inspector card: the agent's record
+ * plus `history` (its last ACTIVITY_MAX tool calls, failures, completion and
+ * messages), `toolCounts`, `stats` (spawnedAt, completedAt, tokens, duration,
+ * tool uses and model when it has finished, its parent, unread) and the tail
+ * of its own transcript. :id is an office id, a Claude subagent id, or
+ * `main-<sessionId>` for a session's own Claude (its main record, model and
+ * crons). Open on loopback like GET /agents, but conversation text — the
+ * transcript tail and the main record's prompt / reply — goes only to the
+ * office page (UI token) or a token holder, as on GET /sessions and
+ * GET /chat; without one the card says `transcriptReason: 'needs the office
+ * token'`. With one the tail follows logPrompts (off: none; summary: 200
+ * characters per entry; full: 2000). The history, counts and stats stay open:
+ * tool names, status lines and the completion line are what GET /agents,
+ * GET /sessions and the agent broadcasts already show. An agent in its
+ * completed grace window still answers; anything else is a 404.
+ */
+app.get('/agents/:id', (req, res) => {
+  // The route stays open; a missing or wrong token only means no conversation text
+  const supplied = bearerToken(req)
+  const withText = tokenMatches(supplied) || uiTokenMatches(supplied)
+  const ref = req.params.id
+  if (ref.startsWith(MAIN_ID_PREFIX)) {
+    const session = sessions.get(ref.slice(MAIN_ID_PREFIX.length))
+    if (!session) return res.status(404).json({ error: 'Unknown agent' })
+    return res.json(inspectMain(session, { withText }))
+  }
+  const id = lookupAgentId(ref)
+  const agent = id ? activeAgents.get(id) : null
+  if (!agent || agent.server) return res.status(404).json({ error: 'Unknown agent' })
+  res.json(inspectAgent(agent, { withText }))
 })
 
 /**
@@ -1986,6 +2254,11 @@ function processEvent(body) {
       setLineage(record, agent.parentSubagentId)
       attachAgentToSession(record, session)
       activeAgents.set(id, record)
+      // The Agent call is a tool use of whoever made it: the parent worker for
+      // a nested spawn, else the session's own Claude. Not for the stand-in
+      // the server makes for a subagent it never saw spawned (`recovered`).
+      const spawner = agent.parentSubagentId ? record.parentId : session ? mainActivityId(session.id) : null
+      if (spawner && !body.recovered) recordActivity(spawner, { kind: 'tool', tool: 'Agent', text: `spawned ${record.name}: ${record.task}` }, now)
       console.log(`[+] Agent spawned: ${record.name} (${record.role}) — ${id}${record.parentId ? ` (parent ${record.parentId})` : ''}${session ? ` [${session.project ?? session.id}]` : ''}`)
       // A SubagentStart that overtook this spawn on the way here is waiting for it
       adoptPendingStart(record)
@@ -2065,6 +2338,7 @@ function processEvent(body) {
           pendingStarts.delete(body.agentId)
           const spawned = processEvent({
             type: 'agent_spawned',
+            recovered: true,
             sessionId: body.sessionId,
             project: body.project,
             cwd: body.cwd,
@@ -2100,6 +2374,7 @@ function processEvent(body) {
           agent.lastError = agent.status
           console.log(`[!] Agent ${id} ${agent.status}`)
         }
+        recordActivity(id, { kind: body.failed ? 'failed' : 'tool', tool: body.tool ?? toolFromStatus(body.status), text: body.status }, agent.lastActivityAt)
         // An agent spawned before the hook knew its session learns it here
         if (session && !agent.sessionId) attachAgentToSession(agent, session)
         saveAgents()
@@ -2121,6 +2396,7 @@ function processEvent(body) {
         session.lastStatus = body.status ?? ''
         session.lastStatusAt = now
         mainWorking(session, body.status, now)
+        recordActivity(mainActivityId(session.id), { kind: body.failed ? 'failed' : 'tool', tool: body.tool ?? toolFromStatus(body.status), text: body.status }, now)
         // PreToolUse / PostToolUseFailure on the main thread: a dialog that
         // was up has been answered — unless this is the PreToolUse of the very
         // call that raised it, which can arrive after it (PERMISSION_RACE_MS)
@@ -2156,7 +2432,11 @@ function processEvent(body) {
       if (id) {
         const agent = activeAgents.get(id)
         agent.state = 'completed'
+        agent.completedAt = Date.now()
         Object.assign(agent, stats)
+        // SubagentStop names the worker's own transcript; kept only when it looks like one
+        if (isTranscriptPath(body.agentTranscriptPath)) agent.transcriptPath = body.agentTranscriptPath
+        recordActivity(id, { kind: 'completed', text: body.result ?? 'done' }, agent.completedAt)
         saveAgents()
         // Remove after a short grace period so frontends can animate exit
         setTimeout(() => forgetAgent(id), 10_000)
@@ -2202,6 +2482,14 @@ function processEvent(body) {
       // Track MCP agents transiently
       activeAgents.set(record.id, record)
       console.log(`[mcp] ${body.server} / ${body.tool}`)
+      // An MCP call is the session's Claude at work (the hook sends them without an agent id)
+      if (session) {
+        recordActivity(mainActivityId(session.id), {
+          kind: 'tool',
+          tool: body.tool ? `mcp__${body.server}__${body.tool}` : `mcp__${body.server}`,
+          text: `${body.server ?? 'mcp'}${body.tool ? ` / ${body.tool}` : ''}`,
+        })
+      }
       return {
         type: 'mcp_call', server: body.server, tool: body.tool, agentId: record.id,
         ...(session ? { sessionId: session.id } : {}),
@@ -2231,7 +2519,7 @@ function processEvent(body) {
       const source = body.source || 'startup'
       let session = sessions.get(id)
       if (!session) {
-        session = createSession({ id, project: body.project, cwd: body.cwd, source, model: body.model, title: body.title, now })
+        session = createSession({ id, project: body.project, cwd: body.cwd, source, model: body.model, title: body.title, transcriptPath: body.transcriptPath, now })
       } else {
         if (session.state === 'ended') {
           clearSessionTimer(id)
@@ -2251,6 +2539,7 @@ function processEvent(body) {
         if (body.cwd) session.cwd = body.cwd
         if (body.model) session.model = body.model
         if (body.title) session.title = body.title
+        if (body.transcriptPath) session.transcriptPath = body.transcriptPath
       }
       saveAgents()
       return sessionEvent(session)
@@ -2798,6 +3087,7 @@ export {
   pendingNeedsYou,
   permissions,
   settings,
+  activity,
   processEvent,
   sendAgentMessage,
   sweepStale,

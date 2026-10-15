@@ -1,0 +1,241 @@
+/* ===== AGENT INSPECTOR CARD (src/components/AgentCard.tsx) =====
+   Floats over the top-left of the room inside the app window, 300 px wide, so
+   it never reaches the chat column on the right. Colours are variables so a
+   theme can restyle it. The character click target and the inspected ring
+   live next to .character-wrapper in office.css. */
+
+:root {
+  --ac-bg: rgba(14, 16, 19, 0.96);
+  --ac-border: #2b2e33;
+  --ac-fg: #e6e6e6;
+  --ac-muted: #8b8d91;
+  --ac-dim: #6b6e75;
+  --ac-chip: #1d2024;
+  --ac-accent: #4fa3ff;
+  --ac-ok: #2bac76;
+  --ac-warn: #f0b429;
+  --ac-danger: #ff5f57;
+  --ac-quote: #c9b48a;
+}
+
+.agent-card {
+  position: absolute;
+  top: 36px;
+  left: 8px;
+  width: 300px;
+  max-height: calc(100% - 66px);
+  overflow-y: auto;
+  /* The room's layers share this stacking context (the boss's effect is 999) */
+  z-index: 1100;
+  background: var(--ac-bg);
+  border: 1px solid var(--ac-border);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.04);
+  color: var(--ac-fg);
+  font: 11px/1.45 'JetBrains Mono', monospace;
+  padding: 8px 10px 6px;
+  user-select: text;
+  animation: agentCardIn 0.16s ease-out both;
+  scrollbar-width: thin;
+  scrollbar-color: #35363a transparent;
+}
+/* The character stands under the default spot: the right side of the room,
+   left of the 300 px chat column */
+.agent-card.side-right {
+  left: auto;
+  right: 308px;
+}
+@keyframes agentCardIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.ac-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.ac-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  box-shadow: 0 0 4px currentColor;
+}
+.ac-name {
+  font-weight: 700;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ac-role {
+  color: var(--ac-muted);
+  font-size: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ac-model {
+  margin-left: auto;
+  padding: 0 5px;
+  border-radius: 3px;
+  background: var(--ac-chip);
+  color: var(--ac-muted);
+  font-size: 9px;
+  line-height: 15px;
+  white-space: nowrap;
+}
+.ac-close {
+  margin-left: 4px;
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--ac-border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ac-muted);
+  font: 700 13px/15px 'JetBrains Mono', monospace;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.ac-close:hover { color: var(--ac-fg); border-color: #4a4d53; }
+
+.ac-state-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid var(--ac-border);
+  margin-bottom: 2px;
+}
+.ac-state {
+  font-weight: 700;
+  color: var(--ac-muted);
+}
+.ac-state.state-working,
+.ac-state.state-compacting        { color: var(--ac-ok); }
+.ac-state.state-waiting           { color: var(--ac-accent); }
+.ac-state.state-needs-you         { color: var(--ac-warn); }
+.ac-state.state-error             { color: var(--ac-danger); }
+.ac-state.state-completed         { color: var(--ac-quote); }
+.ac-elapsed { color: var(--ac-dim); font-size: 10px; }
+
+.ac-section {
+  padding: 5px 0 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+.ac-section:last-of-type { border-bottom: none; }
+.ac-h {
+  color: var(--ac-dim);
+  font-size: 9px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  margin: 2px 0 2px;
+}
+.ac-text {
+  color: var(--ac-fg);
+  overflow-wrap: anywhere;
+}
+.ac-quote {
+  color: var(--ac-quote);
+  max-height: 58px;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+}
+.ac-sub {
+  color: var(--ac-muted);
+  font-size: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ac-muted { color: var(--ac-muted); }
+.ac-empty { color: var(--ac-dim); font-style: italic; }
+
+.ac-kv {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin-top: 3px;
+  color: var(--ac-muted);
+  font-size: 10px;
+}
+.ac-kv-item.unread { color: var(--ac-danger); }
+.ac-kv-item.needs-you { color: var(--ac-warn); font-weight: 700; }
+
+.ac-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-bottom: 4px;
+}
+.ac-chip {
+  padding: 0 5px;
+  border-radius: 3px;
+  background: var(--ac-chip);
+  color: var(--ac-muted);
+  font-size: 10px;
+  line-height: 16px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ac-chip b { color: var(--ac-fg); }
+
+.ac-hist,
+.ac-transcript {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.ac-hist li,
+.ac-transcript li {
+  display: grid;
+  grid-template-columns: 52px 10px 1fr;
+  gap: 0 4px;
+  align-items: baseline;
+  padding: 1px 0;
+  color: var(--ac-fg);
+}
+.ac-time { color: var(--ac-dim); font-size: 9px; }
+.ac-mark { color: var(--ac-dim); text-align: center; }
+.ac-hist-text,
+.ac-tr-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.ac-hist-text b { color: var(--ac-accent); font-weight: 600; }
+.ac-hist li.kind-failed .ac-hist-text,
+.ac-hist li.kind-failed .ac-mark { color: var(--ac-danger); }
+.ac-hist li.kind-completed .ac-mark { color: var(--ac-ok); }
+.ac-hist li.kind-message .ac-mark { color: var(--ac-quote); }
+.ac-hist li.kind-status .ac-hist-text { color: var(--ac-muted); }
+.ac-transcript li.kind-said .ac-tr-text {
+  white-space: normal;
+  color: var(--ac-quote);
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+.ac-transcript li.kind-tool .ac-tr-text { color: var(--ac-fg); }
+.ac-transcript li.kind-said .ac-mark { color: var(--ac-quote); }
+
+.ac-foot {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--ac-border);
+  color: var(--ac-dim);
+  font-size: 9px;
+}
+.agent-card.done .ac-foot::before { content: 'finished · '; }
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-card { animation: none; }
+}
