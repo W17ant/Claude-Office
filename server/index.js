@@ -1443,6 +1443,7 @@ app.post('/event', requireToken, (req, res) => {
   // After the event that carried them, so the office has its tool status first
   relaySignals(sanitised, signals)
   health.markHook()  // a hook reached us: what the strip's "last seen" counts (after the event, so its counts include it)
+  status.noteHook(sanitised)  // MEMORY from the transcript for a session with no status line (throttled, read after we answer)
 
   // A PermissionRequest the hook will wait on: the response names the pending
   // record and how to poll it (server/permissions.js). Only while the setting

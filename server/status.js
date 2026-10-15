@@ -4,9 +4,17 @@
  *
  * Fed by hooks/status-line.sh, the `statusLine` command Claude Code runs on
  * every state change of an interactive session (and, with --subagents, the
- * `subagentStatusLine` command that ticks while subagents are visible).
- * Nothing here parses transcripts: the numbers are the ones Claude Code hands
- * its status line.
+ * `subagentStatusLine` command that ticks while subagents are visible): the
+ * numbers are the ones Claude Code hands its status line, and every record
+ * the status line has reported for carries `source: 'statusline'`.
+ *
+ * A session that never reports — the plugin install, which cannot register a
+ * statusLine, and headless `claude -p` — still sends hook events, and
+ * server/index.js hands each one to noteHook(): its MEMORY is then estimated
+ * from the last reply's usage in its transcript (server/meterEstimate.js),
+ * with `source: 'transcript'` and an `estimate` block saying how. Only the
+ * context fields are estimated; cost, burn and rate limits stay at nothing,
+ * and the first status-line report for the session ends the estimate for good.
  *
  *   POST /status  { type: 'session_status', sessionId, project, model, modelId,
  *                   cost, durationMs, apiDurationMs, linesAdded, linesRemoved,
@@ -16,6 +24,10 @@
  *   POST /status  { type: 'agent_status', sessionId,
  *                   agents: [{ id, tokens, contextSize?, status?, agentType?, name?, model?, description? }] }
  *   GET  /status  → { sessions: [...], totals: { costToday, tokensPerMin, dollarsPerMin } }
+ *
+ * Each session carries `source` ('statusline' | 'transcript'; absent on a
+ * stub only agent_status has filled) and, when estimated,
+ *   estimate: { tokens, basis: 'model' | '1m-tag' | 'unknown' | 'overflow', approximate, compacted? }
  *
  * Same bearer check as POST /event: server/index.js passes its `requireToken`
  * middleware (constant-time compare) in. Broadcasts `session_status` (one
@@ -31,6 +43,8 @@
  * line's total_input_tokens + total_output_tokens of each new response —
  * context re-reads included, which is what you pay for).
  */
+
+import { createMeterEstimator, estimateMemory, ESTIMATE_THROTTLE_MS } from './meterEstimate.js'
 
 export const HISTORY_POINTS = 60
 export const BURN_WINDOW_MS = 5 * 60_000
@@ -187,6 +201,12 @@ export function createStatusStore({ staleMs = 120 * 60_000, sessions = null, now
     const output = clampNumber(ctx.output) ?? 0
     const cost = clampNumber(body.cost) ?? 0
 
+    // The status line wins over a transcript estimate, from now on
+    if (rec.source === 'transcript') {
+      delete rec.estimate
+      console.log(`[status] ${rec.project ?? id}: the status line reports now; memory estimate stopped`)
+    }
+    rec.source = 'statusline'
     rec.project = clampString(body.project) || rec.project || sessions?.get(id)?.project
     rec.model = clampString(body.model) || rec.model
     rec.modelId = clampString(body.modelId) || rec.modelId
@@ -249,6 +269,48 @@ export function createStatusStore({ staleMs = 120 * 60_000, sessions = null, now
     return body.type === 'agent_status' ? ingestAgents(body, t) : ingestSession(body, t)
   }
 
+  /** Whether the status line has reported for this session (then it is never estimated). */
+  function reportsStatusLine(id) {
+    return statuses.get(id)?.source === 'statusline'
+  }
+
+  /**
+   * A transcript reading for a session (server/meterEstimate.js lastUsage)
+   * becomes its MEMORY meter, unless the status line reports for it. Creates
+   * the record on the first reading; fills only model and context, so the
+   * cost, burn and rate limits stay empty. Returns the session_status event
+   * to broadcast when what the meter shows changed, else null (a same reading
+   * still counts as activity for the stale sweep).
+   */
+  function applyEstimate(sessionId, reading, t = now()) {
+    const id = clampString(sessionId)
+    if (!id || reportsStatusLine(id)) return null
+    let rec = statuses.get(id)
+    const est = estimateMemory(reading, rec?.source === 'transcript' ? rec : null)
+    if (!est) return null
+    const first = rec?.source !== 'transcript'
+    const same = !first && JSON.stringify([rec.context, rec.estimate, rec.model]) === JSON.stringify([est.context, est.estimate, est.model])
+    if (!rec) {
+      rec = stub(id, t)
+      statuses.set(id, rec)
+    }
+    rec.source = 'transcript'
+    rec.project = rec.project || sessions?.get(id)?.project
+    rec.model = est.model ?? rec.model
+    rec.modelId = est.modelId ?? rec.modelId
+    rec.context = est.context
+    rec.estimate = est.estimate
+    rec.updatedAt = t
+    if (same) return null
+    const { used, size } = est.context
+    console.log(
+      `[status] ${rec.project ?? id} · ${rec.model ?? '?'} · ctx ${used === null ? '?' : used + '%'}` +
+      ` (${est.estimate.tokens ?? '?'}/${size}${est.estimate.approximate ? ', approximate' : ''})` +
+      ` · estimated from the transcript${first ? ' (no status line)' : ''}`,
+    )
+    return { type: 'session_status', sessionId: id, session: toJSON(rec, t), totals: totals(t), timestamp: t }
+  }
+
   /** Drop sessions quiet for staleMs; returns the removal events to broadcast. */
   function expireStale(t = now()) {
     const events = []
@@ -271,6 +333,8 @@ export function createStatusStore({ staleMs = 120 * 60_000, sessions = null, now
 
   return {
     ingest,
+    applyEstimate,
+    reportsStatusLine,
     expireStale,
     summary,
     totals,
@@ -284,13 +348,30 @@ export function createStatusStore({ staleMs = 120 * 60_000, sessions = null, now
  * Mount POST /status + GET /status on an Express app. `requireToken` is the
  * office's bearer middleware (server/index.js's constant-time token check),
  * handed in rather than imported so this module never pulls in index.js.
- * Returns the store, which is also reachable as app.locals.status. The stale
- * sweep runs every `sweepMs` on an unref'd timer, so importing the server
- * never keeps a process alive.
+ * Returns the store, which is also reachable as app.locals.status, plus
+ * `noteHook(event)`: POST /event calls it with every sanitised hook event, and
+ * a session the status line does not report for gets its MEMORY estimated
+ * from the transcript the event (or the session in `sessions`) names —
+ * throttled per session and read after /event has answered (see
+ * server/meterEstimate.js). The stale sweep runs every `sweepMs` on an
+ * unref'd timer, so importing the server never keeps a process alive.
  */
-export function mountStatus(app, { requireToken, broadcast, staleMs, sessions, sweepMs = 60_000 } = {}) {
+export function mountStatus(app, { requireToken, broadcast, staleMs, sessions, sweepMs = 60_000, estimateThrottleMs = ESTIMATE_THROTTLE_MS } = {}) {
   if (typeof requireToken !== 'function') throw new TypeError('mountStatus needs the requireToken middleware')
   const store = createStatusStore({ staleMs, sessions })
+  const estimator = createMeterEstimator({
+    skip: id => store.reportsStatusLine(id),
+    apply: (id, reading) => {
+      const event = store.applyEstimate(id, reading)
+      if (event) broadcast(event)
+    },
+    throttleMs: estimateThrottleMs,
+  })
+  store.estimator = estimator
+  store.noteHook = body => {
+    if (!body?.sessionId) return
+    estimator.note(body.sessionId, body.transcriptPath || sessions?.get(body.sessionId)?.transcriptPath)
+  }
   app.locals.status = store
 
   app.post('/status', requireToken, (req, res) => {
@@ -299,6 +380,7 @@ export function mountStatus(app, { requireToken, broadcast, staleMs, sessions, s
       return res.status(400).json({ error: validationError })
     }
     const event = store.ingest(req.body)
+    if (req.body.type === 'session_status') estimator.forget(event.sessionId)
     if (event) broadcast(event)
     res.json({ ok: true })
   })
@@ -309,6 +391,7 @@ export function mountStatus(app, { requireToken, broadcast, staleMs, sessions, s
 
   const timer = setInterval(() => {
     for (const event of store.expireStale()) broadcast(event)
+    estimator.prune(Date.now() - (staleMs ?? 120 * 60_000))
   }, sweepMs)
   timer.unref?.()
 

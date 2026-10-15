@@ -70,7 +70,7 @@ Works on macOS and Linux, and on Windows through WSL or Git Bash with `python3` 
 - Under that, a transcript tail: the last few things the agent itself said and the tools it called, read from the end of its own Claude Code transcript (never the whole file) at the detail `logPrompts` allows — `off` hides it, `summary` shows 200 characters per entry, `full` 2000. `GET /agents/:id` serves the same card as JSON (`main-<sessionId>` for a session's Claude), with the transcript tail and prompt text only for the office page or a token holder (see [Security](#security)); the card refreshes every two seconds while open and the office keeps moving underneath
 
 **Meters**
-- Payroll (cost so far and $/min), electricity (tokens per minute) and memory (context-window fill) per session, straight from Claude Code's status line; claude.ai subscribers also get the five-hour rate-limit pill — see [Payroll, electricity and memory](#payroll-electricity-and-memory)
+- Payroll (cost so far and $/min), electricity (tokens per minute) and memory (context-window fill) per session, straight from Claude Code's status line; claude.ai subscribers also get the five-hour rate-limit pill. A session without the status line (the plugin install, `claude -p`) still gets memory, estimated from its transcript and marked *est.* — see [Payroll, electricity and memory](#payroll-electricity-and-memory)
 
 **Incident mode**
 - A failed deploy, or three failed tool calls in five minutes, turn the office red: beacon over the door, rollback on the wall TV, "days since last incident" sign at 0, a live timer in the chat and a one-line postmortem when it ends — see [Incident mode](#incident-mode--prod-is-down)
@@ -88,7 +88,7 @@ Requirements everywhere: Node 22 (what CI runs; `better-sqlite3` is a native mod
 
 ## How it works
 
-Claude Code hooks report agent spawns, tool calls, failures, subagent starts/stops, session starts/ends and the main thread's own turn (prompt, reply, permission waits, API errors, compaction) to a local Express + WebSocket server; the Claude Code status line reports cost, tokens and context fill to the same server. The server broadcasts everything to the React office over a WebSocket and, after `npm run build`, serves the office itself.
+Claude Code hooks report agent spawns, tool calls, failures, subagent starts/stops, session starts/ends and the main thread's own turn (prompt, reply, permission waits, API errors, compaction) to a local Express + WebSocket server; the Claude Code status line reports cost, tokens and context fill to the same server (for a session that runs no status line, the server reads the context fill from the transcript the hooks name). The server broadcasts everything to the React office over a WebSocket and, after `npm run build`, serves the office itself.
 
 ```
 Claude Code ──hooks (PreToolUse, PostToolUse, PostToolUseFailure,
@@ -285,7 +285,7 @@ claude plugin install agent-office@agent-office
 
 `hooks/hooks.json` registers `hooks/agent-tracker.sh` from the installed copy (`${CLAUDE_PLUGIN_ROOT}`) for the same 17 events as the installer, with no matchers (the tracker acts on every tool call, and exits silently on anything it does not act on). `/agent-office:office` checks `http://127.0.0.1:3334/health` and prints how to start the server, which still runs from a clone or from the installed plugin directory (`npm install && npm run build && npm run server`). To remove it: `claude plugin uninstall agent-office@agent-office` (and `claude plugin marketplace remove agent-office` to drop the marketplace too).
 
-Two things to know. Plugin hooks merge with the ones in your settings, so pick one path: if you ran `npm run install-hooks` earlier, remove its entries as described under **Uninstall**, or every agent arrives twice. And a plugin can set [`subagentStatusLine` but not `statusLine`](https://code.claude.com/docs/en/plugins/components#default-settings), so the payroll / electricity / memory meters below still come from `npm run install-hooks`; run it from the clone when you want them. `claude plugin validate . --strict` runs in CI, and plugins do not load in cloud sessions.
+Two things to know. Plugin hooks merge with the ones in your settings, so pick one path: if you ran `npm run install-hooks` earlier, remove its entries as described under **Uninstall**, or every agent arrives twice. And a plugin can set [`subagentStatusLine` but not `statusLine`](https://code.claude.com/docs/en/plugins/components#default-settings): the MEMORY meter works without the status line (estimated from the session transcript, marked *est.*); payroll and electricity need `npm run install-hooks`, run from the clone. `claude plugin validate . --strict` runs in CI, and plugins do not load in cloud sessions.
 
 ### Troubleshooting
 
@@ -299,9 +299,20 @@ Two things to know. Plugin hooks merge with the ones in your settings, so pick o
 
 ## Payroll, electricity and memory
 
-A wall panel appears above the chat the moment Claude Code sends its first status line, and not before (an office without one looks exactly as it did). **PAYROLL** is what the open sessions have cost, with the $/min burn over the last five minutes underneath; **ELECTRICITY** is the tokens the API chews through per minute (context re-reads included — that is what you pay for) as a gauge whose stripes flow faster the harder it burns; **MEMORY** is the context-window fill — amber past 70 %, red past 90 %, and once a session passes 85 % the chat gets a "Claude's desk is getting cluttered" line (once per session). claude.ai subscribers also get a **5h** pill with the five-hour rate-limit utilisation. Hover any meter for the exact numbers and the model; with several terminals open the panel stacks one row per session (up to four).
+A wall panel appears above the chat the moment Claude Code sends its first status line — or, for a session without one, once its transcript has a reply in it (see below) — and not before. **PAYROLL** is what the open sessions have cost, with the $/min burn over the last five minutes underneath; **ELECTRICITY** is the tokens the API chews through per minute (context re-reads included — that is what you pay for) as a gauge whose stripes flow faster the harder it burns; **MEMORY** is the context-window fill — amber past 70 %, red past 90 %, and once a session passes 85 % the chat gets a "Claude's desk is getting cluttered" line (once per session). claude.ai subscribers also get a **5h** pill with the five-hour rate-limit utilisation. Hover any meter for the exact numbers and the model; with several terminals open the panel stacks one row per session (up to four).
 
 The numbers are Claude Code's own: `npm run install-hooks` registers `hooks/status-line.sh` as the [`statusLine`](https://code.claude.com/docs/en/statusline) command (and as `subagentStatusLine`, which adds per-worker token counts) next to the hooks. It forwards the JSON to `POST /status` (same bearer token as `/event`) and prints `<model> · ctx <used>% · $<cost>`. **If you already had a status line, you keep it**: the installer saves your command in `~/.agent-office/statusline-prev` and `status-line.sh` runs it with the same input and prints its output, so what you see does not change. `bash hooks/install-hooks.sh --no-status-line` skips the status line altogether. `GET /status` returns the sessions and the totals (cost today, tokens/min, $/min); nothing is persisted, and a session that goes quiet for `AGENT_OFFICE_STALE_MINUTES` drops off the panel.
+
+**Without the status line.** Two common setups never send one: the plugin install (a plugin cannot register `statusLine`) and headless `claude -p` runs (no status line is rendered at all). Their hooks still report, and every hook event names the session's transcript, so for such a session the server estimates **MEMORY** from it (`server/meterEstimate.js`): the context in use is the last reply's `input_tokens + cache_creation_input_tokens + cache_read_input_tokens + output_tokens` (the number Claude Code itself reports as a resumed session's `context_tokens` and a compaction's `preTokens`), and the window is the model's:
+
+| Model | Window | Where the number comes from |
+|---|---|---|
+| any model id with a `[1m]` tag (`requestedModel` in the transcript keeps it) | 1,000,000 | Claude Code's own rule for the status line's `context_window_size` |
+| `claude-haiku-5-5`, `claude-sonnet-5`, `claude-sonnet-5-5`, `claude-opus-4-7`, `claude-opus-4-8`, `claude-opus-5`, `claude-opus-5-5`, `claude-fable-5`, `claude-fable-5-1`, `claude-mythos-5`, `claude-mythos-5-1`, `claude-mythos-preview` | 1,000,000 | native 1M context in Claude Code 2.1.300's model table; for `claude-haiku-5-5` also the `-p` result's `modelUsage[…].contextWindow` and the status line's `context_window_size` |
+| `claude-haiku-4-5`, `claude-3-5-haiku`, `claude-3-5-sonnet`, `claude-3-7-sonnet`, `claude-sonnet-4(-0)`, `claude-sonnet-4-5`, `claude-sonnet-4-6`, `claude-opus-4(-0)`, `claude-opus-4-1`, `claude-opus-4-5`, `claude-opus-4-6` | 200,000 | the same table |
+| anything else | 200,000, marked approximate (`≈`) | the default; more than 200k tokens in use means the 1M variant, so the window becomes 1M (also approximate) |
+
+Dated, Bedrock and Vertex spellings of an id count as the id. The reading refreshes when a hook event for the session arrives, at most once every 5 s per session (a burst ends in one trailing read), from the end of the file only, after the server has answered the hook. The panel draws it with a small **est.** marker; its tooltip says it comes from the transcript because no status line is registered. **PAYROLL** and **ELECTRICITY** are not estimated — the transcript has no cost and no rate limits, and the office does not price tokens or invent limits — so when no session reports them the tiles say *needs the status line* (hover for `npm run install-hooks`), and an estimated session's row shows no cost. The moment a real status line reports for that session it wins and the estimate stops for good. The estimate is numbers and a model id only, never what was said, so it is on the open `GET /status` with `source: "transcript"` and an `estimate` block (`tokens`, `basis`: `model` / `1m-tag` / `unknown` / `overflow`, `approximate`); status-line sessions carry `source: "statusline"`.
 
 ## Incident mode — "Prod Is Down"
 
@@ -679,6 +690,7 @@ Claude-Office/
 ├── server/                 # Express + WebSocket server
 │   ├── index.js            # HTTP endpoints + WS broadcast
 │   ├── status.js           # /status: payroll / electricity / memory feed
+│   ├── meterEstimate.js    # MEMORY from the transcript for a session without the status line
 │   ├── health.js           # /health: hooks seen, sessions, version — the status strip's feed
 │   └── chat-db.js          # SQLite wrapper
 ├── scripts/                # Shell + Python scripts
