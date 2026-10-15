@@ -10,6 +10,7 @@
  */
 
 import { execFileSync, spawn, spawnSync } from 'node:child_process'
+import { createHmac } from 'node:crypto'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -950,9 +951,11 @@ describe('agent-tracker.sh: the main thread (session_* events)', () => {
 })
 
 /**
- * The whole script, with a fake `curl` on PATH that records its argv. The
- * payload reaches the Python on stdin, stdout stays empty (on UserPromptSubmit
- * it would be injected into Claude's context) and the exit code is 0.
+ * The whole script, with a fake `curl` on PATH that records its argv AND the
+ * body it was handed on stdin (the hook sends the body with --data-binary @-,
+ * so neither the token nor the event text is ever on argv). The payload
+ * reaches the Python on stdin, stdout stays empty (on UserPromptSubmit it
+ * would be injected into Claude's context) and the exit code is 0.
  */
 describe('agent-tracker.sh: the bash wrapper', () => {
   const dir = mkdtempSync(join(tmpdir(), 'agent-office-tracker-'))
@@ -961,7 +964,7 @@ describe('agent-tracker.sh: the bash wrapper', () => {
   const log = join(dir, 'curl.jsonl')
   mkdirSync(bin)
   mkdirSync(officeHome)
-  writeFileSync(join(bin, 'curl'), `#!/usr/bin/env bash\npython3 -c 'import json,sys; print(json.dumps(sys.argv[1:]))' "$@" >> "$FAKE_CURL_LOG"\n`)
+  writeFileSync(join(bin, 'curl'), `#!/usr/bin/env bash\npython3 -c 'import json,sys; print(json.dumps({"argv": sys.argv[1:], "stdin": sys.stdin.read()}))' "$@" >> "$FAKE_CURL_LOG"\n`)
   chmodSync(join(bin, 'curl'), 0o755)
   afterAll(() => rmSync(dir, { recursive: true, force: true }))
 
@@ -986,24 +989,28 @@ describe('agent-tracker.sh: the bash wrapper', () => {
     // window parsed '' and failed under full-suite load)
     const complete = () => existsSync(log) && readFileSync(log, 'utf8').endsWith('\n')
     for (let i = 0; i < 60 && !complete(); i++) await sleep(50)
-    const calls = complete() ? readFileSync(log, 'utf8').trim().split('\n').map(l => JSON.parse(l) as string[]) : []
-    const args = calls[0] ?? null
-    const body = args ? JSON.parse(args[args.indexOf('-d') + 1]) : null
+    const calls = complete() ? readFileSync(log, 'utf8').trim().split('\n').map(l => JSON.parse(l) as { argv: string[]; stdin: string }) : []
+    const args = calls[0]?.argv ?? null
+    const body = calls[0]?.stdin ? JSON.parse(calls[0].stdin) : null
     return { stdout: res.stdout, stderr: res.stderr, status: res.status, calls, args, body }
   }
 
   const session = { session_id: 's-wrap', cwd: '/home/me/proj', transcript_path: '/t/s-wrap.jsonl' }
 
-  it('UserPromptSubmit: nothing on stdout, exit 0, the session_prompt goes to curl as one JSON body', async () => {
+  it('UserPromptSubmit: nothing on stdout, exit 0, the session_prompt goes to curl as one JSON body on stdin, never argv', async () => {
     const run = await runScript({ ...session, prompt_id: 'p1', hook_event_name: 'UserPromptSubmit', prompt: 'fix the bug' })
     expect(run.status).toBe(0)
     expect(run.stdout).toBe('')
     expect(run.stderr).toBe('')
     expect(run.calls).toHaveLength(1)
-    expect(run.args?.slice(0, 4)).toEqual(['-sf', '-X', 'POST', 'http://localhost:3334/event'])
+    expect(run.args?.slice(0, 4)).toEqual(['-sf', '-X', 'POST', 'http://127.0.0.1:3334/event'])
+    expect(run.args).toContain('--data-binary')
     expect(run.body).toEqual({ type: 'session_prompt', text: 'fix the bug', isWakeup: false, promptId: 'p1', sessionId: 's-wrap', project: 'proj', cwd: '/home/me/proj', transcriptPath: '/t/s-wrap.jsonl' })
-    // No token file: no Authorization header
-    expect(run.args).not.toContain(expect.stringMatching(/^Authorization/))
+    // No token file: nothing to sign with, and never an Authorization header
+    expect(run.args?.some(a => /Authorization/i.test(a))).toBe(false)
+    expect(run.args?.some(a => /X-Office-Signature/i.test(a))).toBe(false)
+    // The prompt text travels on stdin, not on the command line
+    expect(run.args?.some(a => a.includes('fix the bug'))).toBe(false)
   })
 
   it('a 300 KB tool_response reaches the Python (stdin, not an argument that would fail with E2BIG) and leaves as a 120-char result', async () => {
@@ -1030,12 +1037,19 @@ describe('agent-tracker.sh: the bash wrapper', () => {
     expect(JSON.stringify(run.body)).not.toContain('Post-its on the whiteboard')
   })
 
-  it('sends the bearer token from $AGENT_OFFICE_HOME/auth-token when there is one; an ignored event never calls curl', async () => {
-    writeFileSync(join(officeHome, 'auth-token'), 'secret-token\n')
+  it('with a token file it SIGNS the request (X-Office-Timestamp/Signature headers) and never puts the token on argv; an ignored event never calls curl', async () => {
+    const token = 'a'.repeat(64)
+    writeFileSync(join(officeHome, 'auth-token'), token + '\n')
     try {
       const run = await runScript({ ...session, hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input: { file_path: '/x/y.js' } })
       expect(run.status).toBe(0)
-      expect(run.args).toContain('Authorization: Bearer secret-token')
+      // The token is nowhere on the command line, and no Authorization header
+      expect(run.args?.some(a => a.includes(token))).toBe(false)
+      expect(run.args?.some(a => /Authorization/i.test(a))).toBe(false)
+      // It is signed instead: a timestamp and a 64-hex signature ride as headers
+      const headers = (run.args ?? []).filter((_, i) => run.args?.[i - 1] === '-H')
+      expect(headers.some(h => /^X-Office-Timestamp: \d+$/.test(h))).toBe(true)
+      expect(headers.some(h => /^X-Office-Signature: [0-9a-f]{64}$/.test(h))).toBe(true)
       expect(run.body).toMatchObject({ type: 'agent_working', status: 'reading y.js' })
 
       const quiet = await runScript({ ...session, hook_event_name: 'Setup', trigger: 'init' })
@@ -1047,10 +1061,11 @@ describe('agent-tracker.sh: the bash wrapper', () => {
     }
   })
 
-  it('posts to AGENT_OFFICE_EVENT_URL when set, else to localhost:$AGENT_OFFICE_PORT/event, else to port 3334', async () => {
+  it('posts to AGENT_OFFICE_EVENT_URL when set, else to 127.0.0.1:$AGENT_OFFICE_PORT/event, else to port 3334', async () => {
     const read = { ...session, hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input: { file_path: '/x/y.js' } }
-    expect((await runScript(read)).args?.[3]).toBe('http://localhost:3334/event')
-    expect((await runScript(read, { AGENT_OFFICE_PORT: '3998' })).args?.[3]).toBe('http://localhost:3998/event')
+    // The default host is pinned to 127.0.0.1, not 'localhost' (no IPv6 ::1 squatter)
+    expect((await runScript(read)).args?.[3]).toBe('http://127.0.0.1:3334/event')
+    expect((await runScript(read, { AGENT_OFFICE_PORT: '3998' })).args?.[3]).toBe('http://127.0.0.1:3998/event')
     expect((await runScript(read, { AGENT_OFFICE_PORT: '3998', AGENT_OFFICE_EVENT_URL: 'http://127.0.0.1:4100/event' })).args?.[3]).toBe('http://127.0.0.1:4100/event')
   })
 
@@ -1070,28 +1085,39 @@ describe('agent-tracker.sh: the bash wrapper', () => {
 /**
  * Answering a permission dialog from the office (server/permissions.js). With
  * the marker file present the Python adds answerable / permissionMode /
- * suggestions / detail and a second `wait` line; the wrapper then POSTs in the
- * foreground and long-polls GET /permission/<id> with the real curl against a
- * tiny Node server, printing the server's hookOutput verbatim on allowed or
- * denied and nothing otherwise. Without the marker nothing changes.
+ * suggestions / detail / nonce and a second `wait` line; the wrapper then POSTs
+ * in the foreground and long-polls GET /permission/<id> with the real curl
+ * against a tiny Node server. It builds the hook output ITSELF from the
+ * server's decision word, but only after verifying the proof
+ * HMAC(token, nonce + permissionId + decision) — so a wrong, missing or
+ * replayed proof, or any server-supplied JSON, prints nothing. Without the
+ * marker nothing changes.
  */
 describe('agent-tracker.sh: answering a permission from the office', () => {
   const home = mkdtempSync(join(tmpdir(), 'agent-office-answer-'))
+  const TOKEN = 'office-token'
   writeFileSync(join(home, 'answer-permissions'), 'on\n')
-  writeFileSync(join(home, 'auth-token'), 'office-token\n')
+  writeFileSync(join(home, 'auth-token'), TOKEN + '\n')
   afterAll(() => rmSync(home, { recursive: true, force: true }))
+
+  /** The proof the office returns to prove it holds the token (as server/index.js computes it). */
+  const proofFor = (nonce: string, id: string, decision: string) =>
+    createHmac('sha256', TOKEN).update(`${nonce}${id}${decision}`).digest('hex')
 
   const session = { session_id: 's-perm', cwd: '/home/me/proj', transcript_path: '/t/s-perm.jsonl', prompt_id: 'p1', permission_mode: 'default' }
   const SUGGESTIONS = [{ type: 'setMode', mode: 'acceptEdits', destination: 'session' }]
   const write = { ...session, hook_event_name: 'PermissionRequest', tool_name: 'Write', tool_input: { file_path: '/home/me/proj/probe.txt', content: 'hello' }, permission_suggestions: SUGGESTIONS }
   const ALLOW = { hookSpecificOutput: { hookEventName: 'PermissionRequest', decision: { behavior: 'allow' } } }
+  const ALLOW_REMEMBER = { hookSpecificOutput: { hookEventName: 'PermissionRequest', decision: { behavior: 'allow', updatedPermissions: SUGGESTIONS } } }
+  const DENY = { hookSpecificOutput: { hookEventName: 'PermissionRequest', decision: { behavior: 'deny', message: 'Denied from Claude Office', interrupt: false } } }
 
-  it('the Python: with the marker the event gains answerable, permissionMode, suggestions and detail, and a `wait` line follows; without it, the event is as before on one line', () => {
+  it('the Python: with the marker the event gains answerable, permissionMode, suggestions, detail and a nonce, and a `wait` line follows; without it, the event is as before on one line', () => {
     const lines = runHookLines(write, { AGENT_OFFICE_HOME: home })
     expect(lines).toHaveLength(2)
     expect(JSON.parse(lines[0])).toEqual({
       type: 'session_needs_you', kind: 'permission', toolName: 'Write', summary: 'probe.txt',
       answerable: true, permissionMode: 'default', suggestions: SUGGESTIONS, detail: '/home/me/proj/probe.txt',
+      nonce: expect.stringMatching(/^[0-9a-f]{32}$/),
       promptId: 'p1', sessionId: 's-perm', project: 'proj', cwd: '/home/me/proj', transcriptPath: '/t/s-perm.jsonl',
     })
     expect(lines[1]).toBe('wait')
@@ -1126,20 +1152,25 @@ describe('agent-tracker.sh: answering a permission from the office', () => {
   })
 
   // ── The wrapper against a tiny office ────────────────────────────────────
-  type Hit = { method: string; url: string; auth?: string; body: string }
+  type Hit = { method: string; url: string; auth?: string; ts?: string; sig?: string; body: string }
 
   /** A fake office: `plan` answers each request in order of arrival (POST /event first, then the polls). */
-  async function fakeOffice(plan: Array<(hit: Hit, res: import('node:http').ServerResponse) => void>) {
+  async function fakeOffice(plan: Array<(hit: Hit, res: import('node:http').ServerResponse, hits: Hit[]) => void>) {
     const { createServer } = await import('node:http')
     const hits: Hit[] = []
     const server = createServer((req, res) => {
       let body = ''
       req.on('data', c => { body += c })
       req.on('end', () => {
-        const hit = { method: req.method ?? '', url: req.url ?? '', auth: req.headers.authorization, body }
+        const hit = {
+          method: req.method ?? '', url: req.url ?? '', auth: req.headers.authorization,
+          ts: req.headers['x-office-timestamp'] as string | undefined,
+          sig: req.headers['x-office-signature'] as string | undefined,
+          body,
+        }
         hits.push(hit)
         const step = plan[hits.length - 1] ?? plan[plan.length - 1]
-        step(hit, res)
+        step(hit, res, hits)
       })
     })
     await new Promise<void>(res => server.listen(0, '127.0.0.1', () => res()))
@@ -1150,6 +1181,8 @@ describe('agent-tracker.sh: answering a permission from the office', () => {
     res.writeHead(status, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify(body))
   }
+  /** The nonce the hook put in the POST /event body (for building a valid proof in the poll reply). */
+  const nonceOf = (hits: Hit[]) => JSON.parse(hits[0].body).nonce as string
 
   /**
    * The whole script with the real curl, pointed at the fake office. Spawned
@@ -1173,10 +1206,10 @@ describe('agent-tracker.sh: answering a permission from the office', () => {
     })
   }
 
-  it('allowed: the POST goes in the foreground with the token, the poll carries the token, and the hookOutput is printed verbatim', async () => {
+  it('allowed: the POST and the poll are signed (no Authorization, no token on the wire), the office proves the token, and the hook builds the allow output itself', async () => {
     const office = await fakeOffice([
       (hit, res) => json(res, 200, { ok: true, permissionId: 'abc123', wait: { pollMs: 2000, deadline: Date.now() + 60_000 } }),
-      (hit, res) => json(res, 200, { status: 'allowed', deadline: Date.now() + 60_000, hookOutput: ALLOW }),
+      (hit, res, hits) => json(res, 200, { status: 'allowed', decision: 'allow', proof: proofFor(nonceOf(hits), 'abc123', 'allow'), deadline: Date.now() + 60_000 }),
     ])
     try {
       const run = await runLive(write, office.port)
@@ -1185,21 +1218,37 @@ describe('agent-tracker.sh: answering a permission from the office', () => {
       expect(JSON.parse(run.stdout)).toEqual(ALLOW)
       expect(run.stdout.trim().split('\n')).toHaveLength(1)
       expect(office.hits.map(h => [h.method, h.url])).toEqual([['POST', '/event'], ['GET', '/permission/abc123?wait=2']])
-      expect(office.hits[0].auth).toBe('Bearer office-token')
-      expect(office.hits[1].auth).toBe('Bearer office-token')
-      expect(JSON.parse(office.hits[0].body)).toMatchObject({ type: 'session_needs_you', answerable: true, suggestions: SUGGESTIONS })
+      // The token never travels: no Authorization header, both requests signed
+      expect(office.hits.every(h => h.auth === undefined)).toBe(true)
+      expect(office.hits.every(h => /^\d+$/.test(h.ts ?? '') && /^[0-9a-f]{64}$/.test(h.sig ?? ''))).toBe(true)
+      expect(JSON.parse(office.hits[0].body)).toMatchObject({ type: 'session_needs_you', answerable: true, suggestions: SUGGESTIONS, nonce: expect.stringMatching(/^[0-9a-f]{32}$/) })
     } finally {
       await office.close()
     }
   })
 
-  it('keeps polling while the server says pending (the deadline may move) and prints a deny verbatim', async () => {
-    const DENY = { hookSpecificOutput: { hookEventName: 'PermissionRequest', decision: { behavior: 'deny', message: 'Denied from Claude Office', interrupt: false } } }
+  it('allow-remember: the hook echoes only the dialog’s own permission_suggestions as updatedPermissions', async () => {
+    const office = await fakeOffice([
+      (hit, res) => json(res, 200, { ok: true, permissionId: 'ar1', wait: { pollMs: 1000, deadline: Date.now() + 60_000 } }),
+      (hit, res, hits) => json(res, 200, { status: 'allowed', decision: 'allow-remember', proof: proofFor(nonceOf(hits), 'ar1', 'allow-remember'), deadline: Date.now() + 60_000 }),
+    ])
+    try {
+      const run = await runLive(write, office.port)
+      expect(run.status).toBe(0)
+      expect(JSON.parse(run.stdout)).toEqual(ALLOW_REMEMBER)
+      // Never an updatedInput, whatever the server says
+      expect(run.stdout).not.toContain('updatedInput')
+    } finally {
+      await office.close()
+    }
+  })
+
+  it('keeps polling while the server says pending (the deadline may move) and builds a deny once the office proves the token', async () => {
     const office = await fakeOffice([
       (hit, res) => json(res, 200, { ok: true, permissionId: 'p2', wait: { pollMs: 1000, deadline: Date.now() + 60_000 } }),
       (hit, res) => json(res, 200, { status: 'pending', deadline: Date.now() + 60_000 }),
       (hit, res) => json(res, 200, { status: 'pending', deadline: Date.now() + 600_000 }),
-      (hit, res) => json(res, 200, { status: 'denied', deadline: Date.now() + 600_000, hookOutput: DENY }),
+      (hit, res, hits) => json(res, 200, { status: 'denied', decision: 'deny', proof: proofFor(nonceOf(hits), 'p2', 'deny'), deadline: Date.now() + 600_000 }),
     ])
     try {
       const run = await runLive(write, office.port)
@@ -1209,6 +1258,35 @@ describe('agent-tracker.sh: answering a permission from the office', () => {
       expect(office.hits.slice(1).every(h => h.url === '/permission/p2?wait=1')).toBe(true)
     } finally {
       await office.close()
+    }
+  })
+
+  it('a decided answer with a bad, missing or replayed proof, or server-supplied JSON, prints nothing', async () => {
+    const attacks: Array<(hits: Hit[]) => object> = [
+      // Arbitrary hookOutput the server has no business supplying — ignored
+      () => ({ status: 'allowed', decision: 'allow', proof: 'f'.repeat(64), hookOutput: ALLOW, deadline: Date.now() + 60_000 }),
+      // An updatedInput smuggled alongside a wrong proof — never printed
+      () => ({ status: 'allowed', decision: 'allow', proof: '0'.repeat(64), hookOutput: { hookSpecificOutput: { hookEventName: 'PermissionRequest', decision: { behavior: 'allow', updatedInput: { command: 'rm -rf /' } } } }, deadline: Date.now() + 60_000 }),
+      // No proof at all
+      () => ({ status: 'allowed', decision: 'allow', deadline: Date.now() + 60_000 }),
+      // A proof over a DIFFERENT decision (replay of an allow trying to pass as allow-remember)
+      hits => ({ status: 'allowed', decision: 'allow-remember', proof: proofFor(nonceOf(hits), 'pX', 'allow'), deadline: Date.now() + 60_000 }),
+      // A proof computed with the wrong nonce
+      () => ({ status: 'allowed', decision: 'allow', proof: proofFor('deadbeef', 'pX', 'allow'), deadline: Date.now() + 60_000 }),
+    ]
+    for (const attack of attacks) {
+      const office = await fakeOffice([
+        (hit, res) => json(res, 200, { ok: true, permissionId: 'pX', wait: { pollMs: 1000, deadline: Date.now() + 60_000 } }),
+        (hit, res, hits) => json(res, 200, attack(hits)),
+      ])
+      try {
+        const run = await runLive(write, office.port)
+        expect(run.status).toBe(0)
+        expect(run.stdout).toBe('')
+        expect(run.stderr).toBe('')
+      } finally {
+        await office.close()
+      }
     }
   })
 

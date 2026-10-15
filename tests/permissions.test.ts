@@ -7,6 +7,7 @@
  * answerPermissions setting and its marker file.
  */
 
+import { createHmac } from 'node:crypto'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
@@ -14,8 +15,14 @@ import request from 'supertest'
 import WebSocket from 'ws'
 import { listen, loadOffice, officeProtocols, postAuthed, postEvent, removeOffice, type Office, type OfficeServer } from './helpers'
 import {
-  DENY_MESSAGE, PERMISSION_WAIT_MAX_MS, PERMISSION_WAIT_MS, createPermissionStore, hookOutputFor, sanitiseSuggestions,
+  DENY_MESSAGE, PERMISSION_WAIT_MAX_MS, PERMISSION_WAIT_MS, createPermissionStore, sanitiseSuggestions,
 } from '../server/permissions.js'
+
+/** The fixed nonce permissionRequest() carries, so the server's proof is reproducible in tests. */
+const NONCE = 'a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4'
+/** The proof the server returns on a decided permission: HMAC(token, nonce + id + decision). */
+const proofFor = (server: OfficeServer, id: string, decision: string) =>
+  createHmac('sha256', server.AUTH_TOKEN).update(`${NONCE}${id}${decision}`).digest('hex')
 
 const ALPHA = {
   sessionId: 'aaaaaaaa-1111-4111-8111-111111111111',
@@ -32,7 +39,7 @@ function permissionRequest(overrides: Record<string, unknown> = {}) {
   return {
     type: 'session_needs_you', kind: 'permission', ...ALPHA, promptId: 'p-1',
     toolName: 'Write', summary: 'probe.txt', detail: '/home/me/alpha/probe.txt',
-    answerable: true, permissionMode: 'default', suggestions: SUGGESTIONS,
+    answerable: true, permissionMode: 'default', suggestions: SUGGESTIONS, nonce: NONCE,
     ...overrides,
   }
 }
@@ -53,14 +60,6 @@ const pendingIds = async (server: OfficeServer) =>
   ((await request(server.app).get('/permissions')).body.permissions as Array<{ id: string }>).map(p => p.id)
 
 describe('the pure parts', () => {
-  it('hookOutputFor builds the exact PermissionRequest hook output per decision, never with updatedInput', () => {
-    expect(hookOutputFor('allow')).toEqual(ALLOW_OUTPUT)
-    expect(hookOutputFor('allow-remember', SUGGESTIONS)).toEqual(ALLOW_REMEMBER_OUTPUT)
-    expect(hookOutputFor('deny')).toEqual(DENY_OUTPUT)
-    expect(hookOutputFor('maybe')).toBeNull()
-    expect(JSON.stringify(hookOutputFor('allow-remember', SUGGESTIONS))).not.toContain('updatedInput')
-  })
-
   it('sanitiseSuggestions keeps the PermissionUpdate shape (rules[] included) but bounds count, depth and sizes', () => {
     const addRules = { type: 'addRules', rules: [{ toolName: 'Bash', ruleContent: 'npm test:*' }], behavior: 'allow', destination: 'localSettings' }
     expect(sanitiseSuggestions([addRules, ...SUGGESTIONS])).toEqual([addRules, ...SUGGESTIONS])
@@ -120,7 +119,9 @@ describe('the pure parts', () => {
     expect(store.decide('nope', 'allow')).toEqual({ error: 'Unknown permission', code: 404 })
     expect(store.decide(noSuggestions.id, 'maybe')).toMatchObject({ code: 400 })
     expect(store.decide(noSuggestions.id, 'allow-remember')).toMatchObject({ code: 400, error: expect.stringContaining('Nothing to remember') })
-    expect(store.decide(noSuggestions.id, 'deny').permission).toMatchObject({ status: 'denied', decidedBy: 'office', decision: 'deny', hookOutput: DENY_OUTPUT })
+    expect(store.decide(noSuggestions.id, 'deny').permission).toMatchObject({ status: 'denied', decidedBy: 'office', decision: 'deny' })
+    // The record never carries a server-built hookOutput; the hook builds it from the word
+    expect(store.get(noSuggestions.id)).not.toHaveProperty('hookOutput')
     expect(store.decide(noSuggestions.id, 'allow')).toMatchObject({ code: 409, status: 'denied' })
 
     const a = store.create({ sessionId: 's1', toolName: 'Write', summary: 'a' }).permission
@@ -204,7 +205,7 @@ describe('the hook long-poll and the office decision', () => {
   afterAll(() => removeOffice(office))
   afterEach(() => { office.server.permissions.resolveSession(ALPHA.sessionId, ''); office.server.permissions.resolveSession(BETA.sessionId, '') })
 
-  it('GET /permission/:id waits, POST allow with the UI token releases it with the exact allow hookOutput, and the hand comes down', async () => {
+  it('GET /permission/:id waits, POST allow with the UI token releases it with the decision word and a token-proof, and the hand comes down', async () => {
     const { permissionId: id } = (await postEvent(office.server, permissionRequest())).body
     await new Promise(r => setTimeout(r, 350))
     expect(office.server.sessions.get(ALPHA.sessionId)?.main.state).toBe('needs-you')
@@ -219,31 +220,34 @@ describe('the hook long-poll and the office decision', () => {
     const res = await waiting
     expect(Date.now() - started).toBeLessThan(5_000)   // released by the click, not by the wait
     expect(res.status).toBe(200)
-    expect(res.body).toEqual({ status: 'allowed', deadline: expect.any(Number), hookOutput: ALLOW_OUTPUT })
+    // The reply names the decision and proves the office holds the token; it
+    // carries no server-built hookOutput (the hook builds that from the word)
+    expect(res.body).toEqual({ status: 'allowed', deadline: expect.any(Number), decision: 'allow', proof: proofFor(office.server, id, 'allow') })
+    expect(res.body).not.toHaveProperty('hookOutput')
     expect(office.server.sessions.get(ALPHA.sessionId)?.main).toMatchObject({ state: 'working' })
     expect(office.server.sessions.get(ALPHA.sessionId)?.main.needsYou).toBeUndefined()
     // A later poll of a decided record still answers (the hook may have raced the click)
-    expect((await poll(office.server, id, 0)).body).toMatchObject({ status: 'allowed', hookOutput: ALLOW_OUTPUT })
+    expect((await poll(office.server, id, 0)).body).toMatchObject({ status: 'allowed', decision: 'allow', proof: proofFor(office.server, id, 'allow') })
   })
 
-  it('allow-remember echoes the suggestions as updatedPermissions; deny carries the office message; a decision before the debounce withdraws the parked hand', async () => {
+  it('allow-remember and deny are named with their own proof; a decision before the debounce withdraws the parked hand', async () => {
     const a = (await postEvent(office.server, permissionRequest())).body.permissionId
     expect((await decide(office.server, a, 'allow-remember')).body).toMatchObject({ status: 'allowed' })
-    expect((await poll(office.server, a, 0)).body.hookOutput).toEqual(ALLOW_REMEMBER_OUTPUT)
+    expect((await poll(office.server, a, 0)).body).toEqual({ status: 'allowed', deadline: expect.any(Number), decision: 'allow-remember', proof: proofFor(office.server, a, 'allow-remember') })
     // Decided within the 300 ms debounce: the parked wait never becomes a raised hand
     await new Promise(r => setTimeout(r, 350))
     expect(office.server.sessions.get(ALPHA.sessionId)?.main.state).not.toBe('needs-you')
 
     const b = (await postEvent(office.server, permissionRequest({ promptId: 'p-2' }))).body.permissionId
     expect((await decide(office.server, b, 'deny')).body).toMatchObject({ status: 'denied' })
-    expect((await poll(office.server, b, 0)).body).toEqual({ status: 'denied', deadline: expect.any(Number), hookOutput: DENY_OUTPUT })
+    expect((await poll(office.server, b, 0)).body).toEqual({ status: 'denied', deadline: expect.any(Number), decision: 'deny', proof: proofFor(office.server, b, 'deny') })
   })
 
   it('a long-poll with wait=0 answers at once with pending; wait is capped at 30 s', async () => {
     const id = (await postEvent(office.server, permissionRequest())).body.permissionId
     const res = await poll(office.server, id, 0)
     expect(res.body).toEqual({ status: 'pending', deadline: expect.any(Number) })
-    expect(res.body).not.toHaveProperty('hookOutput')
+    expect(res.body).not.toHaveProperty('decision')
     // The cap is not observable without waiting 30 s; the parameter itself is accepted
     const started = Date.now()
     const capped = poll(office.server, id, 9999)

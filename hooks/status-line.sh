@@ -56,15 +56,41 @@ if [ -z "$PAYLOAD" ]; then
 fi
 
 # Auth token (written by the server on start; optional — the same lookup as
-# agent-tracker.sh)
-AUTH_HEADER=""
+# agent-tracker.sh). The token is NEVER put on curl's argv, where every local
+# user can read it in `ps`: this script SIGNS its POST with the token instead
+# (sign_headers below) and sends the signature as a header. The token stays in
+# this variable and this process's memory (owner-readable only), reaching the
+# signing python through the environment, never argv.
+TOKEN=""
 TOKEN_FILE="$OFFICE_HOME/auth-token"
 if [ -f "$TOKEN_FILE" ]; then
     TOKEN=$(cat "$TOKEN_FILE" 2>/dev/null)
-    if [ -n "$TOKEN" ]; then
-        AUTH_HEADER="Authorization: Bearer $TOKEN"
-    fi
 fi
+
+# Given a method and the request URL (via the environment, so the token never
+# reaches argv) and the body on stdin, print "<timestamp><US><signature>",
+# the HMAC-SHA256(token, method\npath\ntimestamp\nbody) the server verifies.
+# Nothing is printed when there is no token (the POST then goes out unsigned
+# and the server answers 401, which the backgrounded call ignores).
+PY_SIGN='
+import os, sys, time, hmac, hashlib
+from urllib.parse import urlsplit
+token = os.environ.get("OFFICE_TOKEN", "")
+if not token:
+    sys.exit(0)
+method = os.environ.get("OFFICE_METHOD", "")
+split = urlsplit(os.environ.get("OFFICE_URL", ""))
+path = (split.path or "/") + (("?" + split.query) if split.query else "")
+body = sys.stdin.buffer.read()
+ts = str(int(time.time() * 1000))
+msg = (method + "\n" + path + "\n" + ts + "\n").encode() + body
+sig = hmac.new(token.encode(), msg, hashlib.sha256).hexdigest()
+sys.stdout.write(ts + "\x1f" + sig)
+'
+# Prints "<timestamp><US><signature>" for a request. $1 method, $2 URL; body on stdin.
+sign_headers() {
+    OFFICE_TOKEN="$TOKEN" OFFICE_METHOD="$1" OFFICE_URL="$2" python3 -I -c "$PY_SIGN"
+}
 
 # One Python pass. Line 1 is the event to POST (empty = nothing to send), the
 # rest is the default status line. The payload travels through the
@@ -191,19 +217,25 @@ if [ "$DEFAULT_LINE" = "$OUT" ]; then
     DEFAULT_LINE=""
 fi
 
-# Send the event in the background (never waits on the server)
+# Send the event in the background (never waits on the server), signed so the
+# token is never on curl's argv and the body goes in on stdin.
 if [ -n "$EVENT_JSON" ]; then
-    if [ -n "$AUTH_HEADER" ]; then
-        curl -sf -X POST "$SERVER_URL" \
+    STATUS_TS_SIG=$(printf '%s' "$EVENT_JSON" | sign_headers POST "$SERVER_URL")
+    IFS=$'\x1f' read -r STATUS_TS STATUS_SIG <<EOF
+$STATUS_TS_SIG
+EOF
+    if [ -n "$STATUS_SIG" ]; then
+        printf '%s' "$EVENT_JSON" | curl -sf -X POST "$SERVER_URL" \
             -H "Content-Type: application/json" \
-            -H "$AUTH_HEADER" \
-            --data-binary "$EVENT_JSON" \
+            -H "X-Office-Timestamp: $STATUS_TS" \
+            -H "X-Office-Signature: $STATUS_SIG" \
+            --data-binary @- \
             --max-time 1 \
             > /dev/null 2>&1 &
     else
-        curl -sf -X POST "$SERVER_URL" \
+        printf '%s' "$EVENT_JSON" | curl -sf -X POST "$SERVER_URL" \
             -H "Content-Type: application/json" \
-            --data-binary "$EVENT_JSON" \
+            --data-binary @- \
             --max-time 1 \
             > /dev/null 2>&1 &
     fi

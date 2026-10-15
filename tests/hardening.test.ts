@@ -11,7 +11,9 @@
  * to draw, and derived ids never collide.
  */
 
-import { chmodSync, existsSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { createHmac } from 'node:crypto'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import request from 'supertest'
@@ -281,6 +283,140 @@ describe('start() and the token file (C09)', () => {
     } finally {
       await new Promise<void>(res => a.server.wss.close(() => res()))
       await new Promise<void>(res => a.server.httpServer.close(() => res()))
+    }
+  })
+})
+
+describe('signed requests authenticate the hook without the token on the wire', () => {
+  let office: Office
+  beforeAll(async () => { office = await loadOffice() })
+  afterAll(() => removeOffice(office))
+
+  /** A request signed the way the hook signs it: HMAC(token, method\npath\nts\nbody). */
+  function signed(method: 'post' | 'get', path: string, bodyObj: unknown, opts: { token?: string; ts?: number } = {}) {
+    const body = bodyObj === undefined ? '' : JSON.stringify(bodyObj)
+    const ts = String(opts.ts ?? Date.now())
+    const key = opts.token ?? office.server.AUTH_TOKEN
+    const sig = createHmac('sha256', key).update(`${method.toUpperCase()}\n${path}\n${ts}\n`).update(body).digest('hex')
+    let req = request(office.server.app)[method](path).set('X-Office-Timestamp', ts).set('X-Office-Signature', sig)
+    if (bodyObj !== undefined) req = req.set('Content-Type', 'application/json').send(body)
+    return req
+  }
+
+  const event = () => ({ type: 'session_started', sessionId: 's-sign', project: 'p', cwd: '/home/me/p', source: 'startup' })
+  const status = () => ({ type: 'session_status', sessionId: 's-sign', project: 'p', model: 'claude', cost: 0 })
+
+  it('a valid signature is accepted on POST /event and POST /status (no Authorization header)', async () => {
+    expect((await signed('post', '/event', event())).status).toBe(200)
+    expect((await signed('post', '/status', status())).status).toBe(200)
+  })
+
+  it('a task_created from the hook is accepted when signed', async () => {
+    const res = await signed('post', '/event', { type: 'task_created', taskId: '1', subject: 'board', sessionId: 's-sign', project: 'p', cwd: '/home/me/p' })
+    expect(res.status).toBe(200)
+  })
+
+  it('a bad signature, or one over a different body, is 401', async () => {
+    const ts = String(Date.now())
+    const bad = request(office.server.app).post('/event').set('X-Office-Timestamp', ts).set('X-Office-Signature', 'f'.repeat(64)).set('Content-Type', 'application/json').send(JSON.stringify(event()))
+    expect((await bad).status).toBe(401)
+    // A signature wrong only because a different token was used
+    expect((await signed('post', '/event', event(), { token: 'not-the-token' })).status).toBe(401)
+  })
+
+  it('a stale timestamp (older than the window) is 401 even with a correct signature', async () => {
+    expect((await signed('post', '/event', event(), { ts: Date.now() - 120_000 })).status).toBe(401)
+    expect((await signed('post', '/event', event(), { ts: Date.now() + 120_000 })).status).toBe(401)
+  })
+
+  it('the bearer token is still accepted where it was (the Python scripts and A2A clients keep sending it)', async () => {
+    expect((await postEvent(office.server, event())).status).toBe(200)
+    expect((await postAuthed(office.server, '/status', status())).status).toBe(200)
+    // GET /tasks still shows descriptions only to a bearer-token holder
+    expect((await request(office.server.app).get('/tasks').set('Authorization', `Bearer ${office.server.AUTH_TOKEN}`)).status).toBe(200)
+  })
+})
+
+describe('Host-header guard defeats DNS rebinding (finding 30)', () => {
+  let office: Office
+  beforeAll(async () => { office = await loadOffice() })
+  afterAll(() => removeOffice(office))
+
+  it('a non-loopback Host is 421 on every route; the three loopback forms (any port) pass', async () => {
+    for (const path of ['/permissions', '/sessions', '/agents', '/chat', '/health']) {
+      const res = await request(office.server.app).get(path).set('Host', 'attacker.example:3334')
+      expect(res.status, path).toBe(421)
+      expect(res.body).toEqual({ error: 'Forbidden host' })
+    }
+    for (const host of ['127.0.0.1:3334', 'localhost:3333', '[::1]:3334', 'localhost', '127.0.0.1']) {
+      expect((await request(office.server.app).get('/health').set('Host', host)).status, host).toBe(200)
+    }
+    // A missing Host is refused too
+    const res = await request(office.server.app).get('/health').set('Host', '')
+    expect(res.status).toBe(421)
+  })
+
+  it('the WebSocket refuses a non-loopback Host (close 1008)', async () => {
+    const port = await listen(office.server.httpServer)
+    try {
+      const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`, { headers: { Host: 'attacker.example' } })
+      const code = await new Promise<number>((res, rej) => {
+        ws.on('close', c => res(c))
+        ws.on('error', () => { /* a refused upgrade may surface as an error first */ })
+        setTimeout(() => rej(new Error('no close')), 3_000)
+      })
+      expect(code).toBe(1008)
+    } finally {
+      await new Promise<void>(res => office.server.httpServer.close(() => res()))
+    }
+  })
+})
+
+describe('the answer-permissions marker is removed when the office stops (finding 27)', () => {
+  it('start() (re)writes the marker and closing the server removes it', async () => {
+    const office = await loadOffice()
+    const marker = office.server.ANSWER_MARKER_FILE
+    try {
+      vi.spyOn(console, 'log').mockImplementation(() => {})
+      const listening = new Promise<void>(res => office.server.httpServer.once('listening', res))
+      office.server.start({ port: 0 })
+      await listening
+      expect(existsSync(marker)).toBe(true)
+      await new Promise<void>(res => office.server.wss.close(() => res()))
+      await new Promise<void>(res => office.server.httpServer.close(() => res()))
+      // The close handler removed it, so a stopped office never makes the hook wait
+      expect(existsSync(marker)).toBe(false)
+    } finally {
+      vi.restoreAllMocks()
+      removeOffice(office)
+    }
+  })
+})
+
+describe('chat.db and the runtime dir are private, and repaired on an upgrade (findings 29/32)', () => {
+  it('chat.db, its -wal/-shm and the dir are tightened even when an older build left them world-readable', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agent-office-modes-'))
+    try {
+      // First import creates the office and its chat database (opening it in
+      // WAL mode creates chat.db and its -wal/-shm siblings, all 0600)
+      await loadOffice({ dir })
+      expect(mode(join(dir, 'chat.db'))).toBe(0o600)
+      // Simulate an older build / the installer: loosen everything
+      chmodSync(dir, 0o755)
+      for (const f of ['chat.db', 'chat.db-wal', 'chat.db-shm']) {
+        if (existsSync(join(dir, f))) chmodSync(join(dir, f), 0o644)
+      }
+      expect(mode(dir)).toBe(0o755)
+      // A restart (fresh import against the same dir) repairs them
+      const again = await loadOffice({ dir })
+      expect(again.server.RUNTIME_DIR).toBe(dir)
+      expect(mode(dir)).toBe(0o700)
+      expect(mode(join(dir, 'chat.db'))).toBe(0o600)
+      for (const f of ['chat.db-wal', 'chat.db-shm']) {
+        if (existsSync(join(dir, f))) expect(mode(join(dir, f)), f).toBe(0o600)
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
     }
   })
 })

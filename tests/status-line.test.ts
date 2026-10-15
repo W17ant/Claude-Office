@@ -90,7 +90,7 @@ const SUBAGENT_JSON = {
   ],
 }
 
-interface Captured { url: string; authorization?: string; body: any }
+interface Captured { url: string; authorization?: string; ts?: string; sig?: string; body: any }
 
 let server: Server
 let serverUrl: string
@@ -103,7 +103,12 @@ beforeAll(async () => {
     let data = ''
     req.on('data', chunk => { data += chunk })
     req.on('end', () => {
-      captured.push({ url: req.url ?? '', authorization: req.headers.authorization, body: JSON.parse(data) })
+      captured.push({
+        url: req.url ?? '', authorization: req.headers.authorization,
+        ts: req.headers['x-office-timestamp'] as string | undefined,
+        sig: req.headers['x-office-signature'] as string | undefined,
+        body: JSON.parse(data),
+      })
       res.setHeader('Content-Type', 'application/json')
       res.end('{"ok":true}')
     })
@@ -152,23 +157,27 @@ async function posted(count = 1, ms = 3000): Promise<Captured[]> {
 }
 
 describe('status-line.sh: statusLine', () => {
-  it('prints "<model> · ctx <used>% · $<cost>" and POSTs a session_status with the bearer token', async () => {
-    const home = officeHome({ token: 'secret-token' })
+  it('prints "<model> · ctx <used>% · $<cost>" and POSTs a session_status SIGNED (no token on the wire)', async () => {
+    const home = officeHome({ token: 'a'.repeat(64) })
     const { out } = run(STATUS_JSON, home)
     expect(out).toBe('Haiku 5.5 · ctx 4% · $0.01\n')
 
     const [req] = await posted()
     expect(req).toBeDefined()
     expect(req.url).toBe('/status')
-    expect(req.authorization).toBe('Bearer secret-token')
+    // The token is never sent; the request is signed instead
+    expect(req.authorization).toBeUndefined()
+    expect(req.ts).toMatch(/^\d+$/)
+    expect(req.sig).toMatch(/^[0-9a-f]{64}$/)
     expect(req.body).toEqual(EXPECTED_EVENT)
   })
 
-  it('posts without an Authorization header when there is no token file', async () => {
+  it('posts without an Authorization or signature header when there is no token file', async () => {
     const { out } = run(STATUS_JSON, officeHome())
     expect(out).toBe('Haiku 5.5 · ctx 4% · $0.01\n')
     const [req] = await posted()
     expect(req.authorization).toBeUndefined()
+    expect(req.sig).toBeUndefined()
     expect(req.body.type).toBe('session_status')
   })
 
@@ -190,7 +199,7 @@ describe('status-line.sh: statusLine', () => {
     expect(req.body.type).toBe('session_status')
   })
 
-  it('defaults to localhost:3334/status, like agent-tracker.sh', () => {
+  it('defaults to localhost:3334/status', () => {
     const source = readFileSync(SCRIPT, 'utf8')
     expect(source).toContain('SERVER_URL="${AGENT_OFFICE_STATUS_URL:-http://localhost:${AGENT_OFFICE_PORT:-3334}/status}"')
   })
@@ -270,10 +279,11 @@ describe('status-line.sh: statusLine', () => {
 
 describe('status-line.sh --subagents: subagentStatusLine', () => {
   it('posts an agent_status with every visible row\'s tokens and context size, printing nothing (default rows kept)', async () => {
-    const { out } = run(SUBAGENT_JSON, officeHome({ token: 'secret-token' }), { args: ['--subagents'] })
+    const { out } = run(SUBAGENT_JSON, officeHome({ token: 'a'.repeat(64) }), { args: ['--subagents'] })
     expect(out).toBe('')
     const [req] = await posted()
-    expect(req.authorization).toBe('Bearer secret-token')
+    expect(req.authorization).toBeUndefined()
+    expect(req.sig).toMatch(/^[0-9a-f]{64}$/)
     expect(req.body).toEqual({
       type: 'agent_status',
       sessionId: '8cf68f64-5433-40f7-a130-557fc7f67e42',
