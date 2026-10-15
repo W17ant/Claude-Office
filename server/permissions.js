@@ -34,7 +34,8 @@
  *   store.create(fields)                  -> { permission, wait: { pollMs, deadline } }
  *   GET  /permission/:id?wait=<s>         (token) long-poll: { status, deadline, hookOutput? }
  *   POST /permission/:id { decision }     (UI token or token) allow | allow-remember | deny
- *   GET  /permissions                     (open) the pending ones
+ *   GET  /permissions                     (open) the pending ones; the command line and
+ *                                         the suggestions only with a token (redactPermission)
  *
  * Broadcasts: permission_request on creation, permission_extended when a
  * deadline moves, permission_resolved {permissionId, status, decidedBy} on
@@ -111,6 +112,20 @@ export function hookOutputFor(decision, suggestions = []) {
 function toJSON(rec) {
   const { timer, waiters, forget, ...pub } = rec
   return pub
+}
+
+/**
+ * A record as a caller without the office token sees it: what the session's
+ * hand already shows on GET /sessions (the tool, its one-line summary, the
+ * project, the deadline) but not `detail` — the full command, path or tool
+ * input — nor the suggestions (rules that may quote the command) or a
+ * decided record's hookOutput. Used for GET /permissions and the WebSocket's
+ * read-only connections (server/index.js).
+ */
+export function redactPermission(rec) {
+  if (!rec || typeof rec !== 'object') return rec
+  const { detail, suggestions, hookOutput, ...rest } = rec
+  return rest
 }
 
 /**
@@ -279,18 +294,21 @@ export function createPermissionStore({ broadcast = () => {}, now = Date.now } =
  * Mount the routes on the Express app. `requireToken` guards the hook's
  * long-poll (only the hook, which read the 0600 token file, may learn a
  * decision), `requireUi` guards the decision itself (the office page's UI
- * token from the origin-gated WebSocket snapshot, or the token). `onDecided`
- * is called with the record after a click here, so server/index.js can lower
- * the session's needs-you hand.
+ * token, which only a WebSocket that presented the file token receives, or
+ * the token). `canSeeDetail(req)` says whether GET /permissions may show a
+ * caller the full records; everyone else gets redactPermission's view.
+ * `onDecided` is called with the record after a click here, so
+ * server/index.js can lower the session's needs-you hand.
  */
-export function mountPermissions(app, { requireToken, requireUi, broadcast, onDecided = () => {}, store } = {}) {
+export function mountPermissions(app, { requireToken, requireUi, broadcast, onDecided = () => {}, canSeeDetail = () => true, store } = {}) {
   if (typeof requireToken !== 'function') throw new TypeError('mountPermissions needs the requireToken middleware')
   if (typeof requireUi !== 'function') throw new TypeError('mountPermissions needs the requireUi middleware')
   const permissions = store ?? createPermissionStore({ broadcast })
   app.locals.permissions = permissions
 
-  app.get('/permissions', (_req, res) => {
-    res.json({ permissions: permissions.pending() })
+  app.get('/permissions', (req, res) => {
+    const pending = permissions.pending()
+    res.json({ permissions: canSeeDetail(req) ? pending : pending.map(redactPermission) })
   })
 
   app.get('/permission/:id', requireToken, async (req, res) => {

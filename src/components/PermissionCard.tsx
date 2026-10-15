@@ -11,6 +11,11 @@
  * server gives the dialog back to the terminal. With exactly one card up,
  * `y` allows and `n` denies (not while typing in the chat). A bell rings once
  * per new card, never for an extension.
+ *
+ * On a read-only page (no office token: the server sent no UI token and
+ * left out the command line) the card still says which tool is waiting,
+ * but offers no buttons and no keys — the server would refuse the answer —
+ * and points at the terminal instead.
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react'
@@ -24,6 +29,8 @@ import { playBell } from '../sounds'
 interface PermissionCardsProps {
   cards: PermissionCardState[]
   dispatch: (action: PermissionAction) => void
+  /** The page has no office token: show the cards, offer no answers */
+  readOnly?: boolean
 }
 
 function isTyping(target: EventTarget | null): boolean {
@@ -32,7 +39,7 @@ function isTyping(target: EventTarget | null): boolean {
   return el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable
 }
 
-const PermissionCards: React.FC<PermissionCardsProps> = ({ cards, dispatch }) => {
+const PermissionCards: React.FC<PermissionCardsProps> = ({ cards, dispatch, readOnly = false }) => {
   // One bell per card id, however many times the list re-renders or a deadline moves
   const rungRef = useRef<Set<string>>(new Set())
   useEffect(() => {
@@ -70,6 +77,7 @@ const PermissionCards: React.FC<PermissionCardsProps> = ({ cards, dispatch }) =>
 
   // y / n answer the only open card; ambiguous with two, so nothing then
   useEffect(() => {
+    if (readOnly) return
     const open = cards.filter(c => !c.resolved && !c.sent)
     if (open.length !== 1) return
     const card = open[0]
@@ -80,7 +88,7 @@ const PermissionCards: React.FC<PermissionCardsProps> = ({ cards, dispatch }) =>
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [cards, decide])
+  }, [cards, decide, readOnly])
 
   if (cards.length === 0) return null
 
@@ -108,6 +116,10 @@ const PermissionCards: React.FC<PermissionCardsProps> = ({ cards, dispatch }) =>
             </div>
             {card.resolved ? (
               <div className="perm-outcome">{fadeLabel(card.resolved)}</div>
+            ) : readOnly ? (
+              <div className="perm-outcome perm-readonly" data-testid="permission-read-only">
+                answer it in the terminal (this page is read-only)
+              </div>
             ) : (
               <div className="perm-actions">
                 <button className="perm-btn allow" disabled={busy} onClick={() => decide(card, 'allow')} title="Allow this call (y)">

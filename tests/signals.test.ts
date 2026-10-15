@@ -12,7 +12,7 @@ import request from 'supertest'
 import WebSocket from 'ws'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { listen, loadOffice, postEvent, removeOffice, spawnAgent, type Office } from './helpers'
+import { listen, loadOffice, officeProtocols, postEvent, removeOffice, spawnAgent, type Office } from './helpers'
 import { reduceOffice, initialOfficeState, MAIN_ROOM, BOSS_ID, type OfficeEnv, type OfficeState, type OfficeEffect, type OfficeAction } from '../src/officeReducer'
 import { mainId } from '../src/mainState'
 import { createAgent } from '../src/agentManager'
@@ -21,10 +21,13 @@ import type { SignalEvent } from '../src/types'
 
 type Message = Record<string, any>
 
-/** A WebSocket client that buffers every message (the snapshot included) */
-function connect(url: string): Promise<{ ws: WebSocket; messages: Message[]; next: (pred: (m: Message) => boolean) => Promise<Message> }> {
+/**
+ * A WebSocket client that buffers every message (the snapshot included);
+ * with the office page's subprotocols (helpers officeProtocols) it is trusted
+ */
+function connect(url: string, protocols: string[] = []): Promise<{ ws: WebSocket; messages: Message[]; next: (pred: (m: Message) => boolean) => Promise<Message> }> {
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(url)
+    const ws = new WebSocket(url, protocols)
     const messages: Message[] = []
     const waiters: Array<{ pred: (m: Message) => boolean; resolve: (m: Message) => void }> = []
     ws.on('message', raw => {
@@ -124,18 +127,19 @@ describe('the signal rings and GET /signals', () => {
     await postEvent(office.server, { type: 'signal', sessionId: 's-b', project: 'web', signals: [{ kind: 'deploy_start', target: 'web' }] })
     const after = await request(office.server.app).get(`/signals?since=${mark}`)
     expect(after.body.signals.map((s: Message) => s.kind)).toEqual(['deploy_start'])
-    const sa = await request(office.server.app).get('/signals?sessionId=s-a')
+    const sa = await request(office.server.app).get('/signals?sessionId=s-a').set('Authorization', `Bearer ${office.server.AUTH_TOKEN}`)
     expect(sa.body.signals).toEqual([expect.objectContaining({ kind: 'test_failed', target: 'api', detail: '3 failing', sessionId: 's-a', project: 'api' })])
     expect((await request(office.server.app).get('/signals?sessionId=nobody')).body.signals).toEqual([])
   })
 
-  it('is open like GET /sessions; the command each came from only with the office token', async () => {
-    await postEvent(office.server, { type: 'signal', sessionId: 's-cmd', signals: [{ kind: 'deploy_success', target: 'api', command: 'VERCEL_TOKEN=abc vercel deploy --prod' }] })
+  it('is open like GET /sessions; the command each came from, and its output (error, detail), only with the office token', async () => {
+    await postEvent(office.server, { type: 'signal', sessionId: 's-cmd', signals: [{ kind: 'deploy_fail', target: 'api', branch: 'main', command: 'VERCEL_TOKEN=abc vercel deploy --prod', error: 'Error: token abc rejected', detail: '1 failing', exitCode: 1 }] })
     const open = await request(office.server.app).get('/signals?sessionId=s-cmd')
     expect(open.status).toBe(200)
-    expect(open.body.signals[0]).not.toHaveProperty('command')
+    expect(open.body.signals[0]).toMatchObject({ kind: 'deploy_fail', target: 'api', branch: 'main', exitCode: 1 })
+    for (const field of ['command', 'error', 'detail']) expect(open.body.signals[0]).not.toHaveProperty(field)
     const withToken = await request(office.server.app).get('/signals?sessionId=s-cmd').set('Authorization', `Bearer ${office.server.AUTH_TOKEN}`)
-    expect(withToken.body.signals[0].command).toBe('VERCEL_TOKEN=abc vercel deploy --prod')
+    expect(withToken.body.signals[0]).toMatchObject({ command: 'VERCEL_TOKEN=abc vercel deploy --prod', error: 'Error: token abc rejected', detail: '1 failing' })
   })
 
   it('persists nothing: agents.json and the session records never carry signals', async () => {
@@ -167,7 +171,7 @@ describe('signal broadcasts and the WS snapshot', () => {
   })
 
   it('one `signal` per signal, right after the event that carried it, without the command; one log line each', async () => {
-    const client = await connect(url)
+    const client = await connect(url, officeProtocols(office.server))
     clients.push(client.ws)
     await client.next(m => m.type === 'snapshot')
     const log = vi.spyOn(console, 'log')
@@ -201,7 +205,7 @@ describe('signal broadcasts and the WS snapshot', () => {
   it('a worker\'s standalone `signal` names the office agent (its subagent id resolved) and lands in its inspector history', async () => {
     spawnAgent(office.server, { id: 'agent-toolu_W', name: 'Tester', role: 'test-engineer', task: 'run the suite', agentType: 'general-purpose' })
     office.server.processEvent({ type: 'agent_linked', agentId: 'agent-toolu_W', subagentId: 'a1b2c3d4e5f6a7b8c' })
-    const client = await connect(url)
+    const client = await connect(url, officeProtocols(office.server))
     clients.push(client.ws)
     await client.next(m => m.type === 'snapshot')
     const res = await postEvent(office.server, {
@@ -216,7 +220,7 @@ describe('signal broadcasts and the WS snapshot', () => {
   })
 
   it('signals on a session_tool_done (which broadcasts nothing itself) still go out', async () => {
-    const client = await connect(url)
+    const client = await connect(url, officeProtocols(office.server))
     clients.push(client.ws)
     await client.next(m => m.type === 'snapshot')
     await postEvent(office.server, { type: 'session_tool_done', sessionId: 's-done', project: 'api', toolName: 'Bash', signals: [{ kind: 'push_done', target: 'api', branch: 'main', toDefault: true }] })
@@ -228,7 +232,7 @@ describe('signal broadcasts and the WS snapshot', () => {
       const signals = Array.from({ length: 8 }, (_, j) => ({ kind: 'test_start', target: `t${i * 8 + j}`, command: 'npm test' }))
       await postEvent(office.server, { type: 'agent_working', sessionId: 's-snap', status: 'running: npm test', signals })
     }
-    const client = await connect(url)
+    const client = await connect(url, officeProtocols(office.server))
     clients.push(client.ws)
     const snapshot = await client.next(m => m.type === 'snapshot')
     expect(snapshot.signals).toHaveLength(20)

@@ -23,6 +23,8 @@
     "electron": "electron .",
     "start": "npm run dev:electron",
     "server": "node server/index.js",
+    "open": "node scripts/open-office.mjs",
+    "rotate-token": "node scripts/rotate-token.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "check-assets": "node scripts/check-assets.mjs",

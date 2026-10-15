@@ -18,6 +18,7 @@
   --meter-electric-hi: #9ad1ff;
   --meter-money: #c9b48a;
   --meter-tip-bg: #0f1113;
+  --meter-est: #9aa3b5;
 }
 
 /* The chat column: meters on top, chat filling the rest */
@@ -137,6 +138,32 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* A session without the status line: MEMORY is estimated from its transcript
+   (a small "est." beside the reading), PAYROLL and ELECTRICITY have nothing */
+.meter-est,
+.ms-est {
+  display: inline-block;
+  margin-left: 3px;
+  padding: 0 2px;
+  border: 1px dashed var(--meter-est);
+  border-radius: 2px;
+  font-size: 6px;
+  font-weight: 400;
+  line-height: 8px;
+  letter-spacing: 0.3px;
+  color: var(--meter-est);
+  vertical-align: 2px;
+}
+.ms-est { margin-left: 2px; vertical-align: 1px; }
+.meter-needs { border-style: dashed; }
+.meter-needs-text {
+  font-size: 8px;
+  line-height: 1.25;
+  color: var(--meter-sub);
+  margin-top: 1px;
+}
+.ms-cost-none { color: var(--meter-label); }
+
 /* ELECTRICITY gauge: log-scale fill, stripes flow faster the more it burns */
 .meter-gauge {
   position: relative;
@@ -195,7 +222,7 @@
 
 .meters-session {
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(0, 0.9fr) 1fr 28px 44px;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 0.9fr) 1fr 44px 44px;
   align-items: center;
   gap: 5px;
   font-size: 8px;
@@ -221,7 +248,7 @@
 .meters-session.tone-danger .ms-bar-fill { background: var(--meter-danger); }
 .meters-session.tone-warn .ms-pct        { color: var(--meter-warn); }
 .meters-session.tone-danger .ms-pct      { color: var(--meter-danger); font-weight: 700; }
-.ms-pct  { text-align: right; }
+.ms-pct  { text-align: right; white-space: nowrap; }
 .ms-cost { text-align: right; color: var(--meter-money); }
 
 /* Hover strip with the exact numbers */

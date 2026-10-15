@@ -367,7 +367,7 @@ export async function checkServer({ port = DEFAULT_PORT, fetchImpl = globalThis.
   const version = body.version ? `v${body.version}` : '(version unknown — older server)'
   const up = typeof body.uptimeMs === 'number' ? `, up ${formatSpan(body.uptimeMs)}` : ''
   out.push(result(PASS, `server: ${version}${up} on :${port} — ${body.sessions ?? '?'} session(s), ${body.agents ?? 0} agent(s), ${body.clients ?? 0} office window(s) connected`,
-    body.clients === 0 ? `no office window is connected: open http://127.0.0.1:${port}/ (built UI) or http://localhost:3333 (${COMMANDS.dev})` : null))
+    body.clients === 0 ? `no office window is connected: npm run open opens it with the office token (or the link the server printed; npm run open -- --dev for Vite on :3333 under ${COMMANDS.dev})` : null))
   if (typeof body.hooksSeen !== 'number') {
     out.push(result(WARN, 'server: this server predates hook counting — restart it from this checkout to see whether hooks arrive'))
   } else if (body.hooksSeen > 0) {

@@ -17,7 +17,7 @@ import express from 'express'
 import request from 'supertest'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import WebSocket from 'ws'
-import { listen, loadOffice, postEvent, removeOffice, type Office } from './helpers'
+import { listen, loadOffice, officeProtocols, postEvent, removeOffice, type Office } from './helpers'
 import {
   DEFAULT_DEBOUNCE_MS, DEFAULT_POLL_MS, MAX_TASKS, compareTaskIds, countTasks, isSafeSessionId, mountTasks,
   parseTask, publicTask, readTaskDir,
@@ -418,27 +418,38 @@ describe('mountTasks', () => {
 describe('the task board in the office', () => {
   let office: Office
   let tasksDir: string
-  let ws: WebSocket
+  let ws: WebSocket          // the office page with the token: trusted
+  let readOnly: WebSocket    // no token: what redactForReadOnly leaves of each broadcast
   let port: number
   const messages: any[] = []
+  const readOnlyMessages: any[] = []
   const S = 'dddddddd-4444-4444-8444-dddddddddddd'
 
   const tb = () => office.server.tasks
   const boardMsgs = () => messages.filter(m => m.type === 'task_board' && m.sessionId === S)
 
+  async function connect(into: any[], protocols?: string[]) {
+    const socket = new WebSocket(`ws://127.0.0.1:${port}/ws`, protocols)
+    socket.on('message', raw => into.push(JSON.parse(raw.toString())))
+    await new Promise<void>((res, rej) => { socket.once('open', () => res()); socket.once('error', rej) })
+    await waitFor('the snapshot', () => into.find(m => m.type === 'snapshot'))
+    return socket
+  }
+
   beforeAll(async () => {
     tasksDir = tempDir('claude-tasks-office-')
     office = await loadOffice({ env: { AGENT_OFFICE_TASKS_DIR: tasksDir } })
     port = await listen(office.server.httpServer)
-    ws = new WebSocket(`ws://127.0.0.1:${port}/ws`)
-    ws.on('message', raw => messages.push(JSON.parse(raw.toString())))
-    await new Promise<void>((res, rej) => { ws.once('open', () => res()); ws.once('error', rej) })
-    await waitFor('the snapshot', () => messages.find(m => m.type === 'snapshot'))
+    ws = await connect(messages, officeProtocols(office.server))
+    readOnly = await connect(readOnlyMessages)
+    expect(messages[0]).toEqual({ type: 'auth', trusted: true })
+    expect(readOnlyMessages[0]).toEqual({ type: 'auth', trusted: false })
   })
 
   afterAll(async () => {
     tb().stop()
     ws.terminate()
+    readOnly.terminate()
     await new Promise<void>(res => office.server.wss.close(() => res()))
     await new Promise<void>(res => office.server.httpServer.close(() => res()))
     removeOffice(office)
@@ -478,17 +489,25 @@ describe('the task board in the office', () => {
     expect(boardMsgs()[1].board.tasks[0]).toEqual({ id: '1', subject: 'Fix the parser', status: 'in_progress', activeForm: 'Fixing the parser', blockedBy: [] })
   })
 
-  it('a new WS client gets the boards in its snapshot, without descriptions', async () => {
-    const late = new WebSocket(`ws://127.0.0.1:${port}/ws`)
-    const snap = await new Promise<any>((res, rej) => {
-      late.once('message', raw => res(JSON.parse(raw.toString())))
-      late.once('error', rej)
-    })
-    late.terminate()
-    expect(snap.taskBoards).toHaveLength(1)
-    expect(snap.taskBoards[0]).toMatchObject({ sessionId: S, counts: { pending: 0, in_progress: 1, completed: 0 } })
-    expect(JSON.stringify(snap)).not.toContain('Trailing commas')
+  it('a new WS client gets the boards in its snapshot, trusted or not, without descriptions', async () => {
+    for (const protocols of [officeProtocols(office.server), undefined]) {
+      const got: any[] = []
+      const late = await connect(got, protocols)
+      late.terminate()
+      const snap = got.find(m => m.type === 'snapshot')
+      expect(snap.taskBoards).toHaveLength(1)
+      expect(snap.taskBoards[0]).toMatchObject({ sessionId: S, counts: { pending: 0, in_progress: 1, completed: 0 } })
+      expect(JSON.stringify(snap)).not.toContain('Trailing commas')
+    }
     expect(JSON.stringify(messages)).not.toContain('Trailing commas')
+  })
+
+  it('task_board carries no conversation text, so a read-only connection gets every one exactly as the trusted page does', () => {
+    const readOnlyBoards = readOnlyMessages.filter(m => m.type === 'task_board' && m.sessionId === S)
+    expect(readOnlyBoards.length).toBeGreaterThan(0)
+    expect(readOnlyBoards).toEqual(boardMsgs())
+    expect(office.server.redactForReadOnly(boardMsgs()[0])).toBe(boardMsgs()[0])
+    expect(JSON.stringify(readOnlyMessages)).not.toContain('Trailing commas')
   })
 
   it('GET /tasks: subjects open, the description only with the office token', async () => {

@@ -14,7 +14,7 @@ import { join } from 'node:path'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import request from 'supertest'
 import WebSocket from 'ws'
-import { listen, loadOffice, postAuthed, postEvent, removeOffice, type Office } from './helpers'
+import { listen, loadOffice, officeProtocols, postAuthed, postEvent, removeOffice, type Office } from './helpers'
 
 const ALPHA = {
   sessionId: 'aaaaaaaa-1111-4111-8111-111111111111',
@@ -844,10 +844,10 @@ describe('where main travels', () => {
     expect(byId[BETA.sessionId].main).toMatchObject({ state: 'idle', lastPrompt: 'hi', lastReply: 'Hello!', waitingOn: 0 })
   })
 
-  it('the WS snapshot carries main (text included), and a needs-you that outlives the debounce is broadcast with needsYou and main', async () => {
+  it('the WS snapshot carries main (text included, for the office page with the token), and a needs-you that outlives the debounce is broadcast with needsYou and main', async () => {
     const port = await listen(office.server.httpServer)
     const snapshot = await new Promise<any>((resolve, reject) => {
-      ws = new WebSocket(`ws://127.0.0.1:${port}/ws`)
+      ws = new WebSocket(`ws://127.0.0.1:${port}/ws`, officeProtocols(office.server))
       ws.on('message', raw => {
         const msg = JSON.parse(raw.toString())
         messages.push(msg)

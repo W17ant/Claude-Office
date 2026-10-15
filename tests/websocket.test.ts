@@ -65,6 +65,8 @@ describe('WebSocket /ws', () => {
     const client = await connect(url)
     clients.push(client.ws)
 
+    // First what this connection may see (tests/ws-auth.test.ts has the rest), then the snapshot
+    expect(await client.next()).toEqual({ type: 'auth', trusted: false })
     const snapshot = await client.next()
     expect(snapshot.type).toBe('snapshot')
     expect(snapshot.activeAgents).toEqual([expect.objectContaining({ id: 'agent-ws-1', name: 'Debugger', state: 'new-hire' })])
@@ -113,7 +115,7 @@ describe('WebSocket /ws', () => {
   it('accepts the dev-server origin', async () => {
     const client = await connect(url, { Origin: 'http://localhost:3333' })
     clients.push(client.ws)
-    const snapshot = await client.next()
+    const snapshot = await client.next(m => m.type === 'snapshot')
     expect(snapshot.type).toBe('snapshot')
   })
 })

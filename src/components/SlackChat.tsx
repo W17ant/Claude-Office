@@ -34,9 +34,10 @@ export interface ChatMessage {
 
 const EMOJI_PICKER = ['👍', '👎', '😊', '🎉', '😡', '🔥', '💯']
 
-// The server's prompt-logging level (GET /settings). Changing it needs the
-// office bearer token, which the browser does not have, so the chat header
-// only shows the level and how to change it. Absent until the route exists.
+// The server's prompt-logging level (GET /settings). How much of the
+// conversation is kept is changed from a terminal, with the office token, so
+// the chat header only shows the level and how to change it. Absent until
+// the route exists.
 const SETTINGS_URL = `${officeHttpBase()}/settings`
 const LOG_PROMPTS_WHAT: Record<string, string> = {
   off:     'state only — no prompt or reply text is stored, broadcast or shown',
@@ -66,9 +67,11 @@ interface SlackChatProps {
   typingUser?: string | null
   /** ID of the last message seen by the assistant — renders a tiny seen avatar */
   lastSeenId?: number | null
+  /** The page has no office token: the "Answer here" toggle is hidden (the server would refuse it) */
+  readOnly?: boolean
 }
 
-const SlackChat: React.FC<SlackChatProps> = ({ messages, muted, volume, onToggleMute, onVolumeChange, onSendMessage, onReaction, autoTypeText, dayPhase, typingUser, lastSeenId }) => {
+const SlackChat: React.FC<SlackChatProps> = ({ messages, muted, volume, onToggleMute, onVolumeChange, onSendMessage, onReaction, autoTypeText, dayPhase, typingUser, lastSeenId, readOnly = false }) => {
   const theme = useTheme()
   void theme // Why: subscribe so avatars re-render when /the-office toggles
   const bodyRef = useRef<HTMLDivElement>(null)
@@ -215,14 +218,14 @@ const SlackChat: React.FC<SlackChatProps> = ({ messages, muted, volume, onToggle
       {/* The two settings pills sit on their own row: with the AI toggle,
           mute and volume they no longer fit the 300 px panel, and the
           overflow made the whole window scroll sideways */}
-      {(logPrompts || answerHere !== null) && (
+      {(logPrompts || (!readOnly && answerHere !== null)) && (
         <div className="slack-settings-row">
           {logPrompts && (
             <span className={`slack-logprompts ${logPrompts}`} title={logPromptsHint(logPrompts)} data-testid="log-prompts">
               prompts: {logPrompts}
             </span>
           )}
-          {answerHere !== null && (
+          {!readOnly && answerHere !== null && (
             <span
               className={`slack-answer-toggle ${answerHere ? 'on' : 'off'}`}
               onClick={toggleAnswerHere}
