@@ -1,104 +1,58 @@
 # Claude Office
 
-A pixel art virtual office that visualizes your AI agents working in real-time. Watch Claude Code agents spawn, sit at desks, take coffee breaks, and chat in a Slack-inspired office chat panel — all rendered in an isometric pixel art office.
+A pixel-art office that shows what Claude Code is really doing: every terminal gets its own session pill, every subagent a worker at a desk, a failed tool call shows on the worker that made it, the lights go red when the build really breaks, and the wall meters show what the day cost.
 
-## Update — Dunder Mifflin mode
+Claude Office is a local web page (or a desktop app) fed by Claude Code's hooks and status line. Agents walk in through the door, sit at desks, type, take coffee breaks and leave when they finish; you talk to them in a Slack-style chat panel; a "Prod Is Down" incident mode switches itself on after three failed tool calls; and the payroll / electricity / memory meters show cost, tokens per minute and context-window fill for each open session. Everything stays on your machine — the server listens on `127.0.0.1` only.
 
-Type `/the-office` in the Slack chat panel to flip the whole office into a Scranton-branch tribute. The room, the cast, and the chatter all swap over — Michael Scott runs the place, Jim is your assistant, and Dwight guards the beet cellar.
+```bash
+git clone https://github.com/W17ant/Claude-Office.git && cd Claude-Office
+npm install
+npm run install-hooks              # registers the Claude Code hooks + status line (safe to re-run)
+npm run build && npm run server    # the whole office on one port: http://127.0.0.1:3334
+```
 
-### Pretzel day, every day
-<p>
-  <img src="docs/images/dunder-mifflin-day.png" alt="Dunder Mifflin — Day" width="48%">
-  <img src="docs/images/dunder-mifflin-night.png" alt="Dunder Mifflin — Night" width="48%">
-</p>
+For development, `npm run dev:all` runs the server and Vite (UI on `http://localhost:3333`), and `bash scripts/start-office.sh` does the same plus the chat AI watcher and opens the browser. Then spawn agents in Claude Code and watch them arrive. Full steps in [Quick start](#quick-start); hook details in [Connect Claude Code](#connect-claude-code).
 
-**What changes when you toggle it on**
-- 27 cast members (Michael, Jim, Pam, Dwight, Kevin, Angela, Stanley, Creed, David Wallace, Bob Vance — the whole office) dealt to agent roles
-- Role chatter swaps to in-character lines (`"Bears. Beets. Battlestar Galactica."`, `"selling paper"`, `"Schrute bucks awarded"`)
-- Michael occasionally lands his signature `"That's what she said 😏"` when replying to finished work
-- Character prop overlays — Michael rotates World's Best Boss mug / Dundie / Golden Ticket / Prison Mike bandana / "NO GOD PLEASE NO", Dwight gets the CPR dummy mask or a Schrute Buck, Jim keeps his jello stapler, Stanley gets a pretzel, Jan gets a Serenity by Jan candle, Oscar / Pam / Toby share the Finer Things Club
-- Angela gets a follower cat *and* a head-cat (randomized from 12 cat sprites)
-- Kevin's chili, pretzel day, and Finer Things Club references sprinkled through the break-room chatter
+Works on macOS and Linux, and on Windows through WSL or Git Bash with `python3` on the PATH (the hooks are bash scripts) — see [Platform support](#platform-support). MIT-licensed; the Dunder Mifflin skin is fan art, see [NOTICE.md](NOTICE.md).
 
-### The cast
-<p align="center">
-  <img src="docs/images/michael-scott.png" alt="Michael Scott" height="140">
-  <img src="docs/images/jim-halpert.png" alt="Jim Halpert" height="140">
-  <img src="docs/images/pam-beesly.png" alt="Pam Beesly" height="140">
-  <img src="docs/images/dwight-schrute.png" alt="Dwight Schrute" height="140">
-  <img src="docs/images/angela-martin.png" alt="Angela Martin" height="140">
-  <img src="docs/images/kevin-malone.png" alt="Kevin Malone" height="140">
-  <img src="docs/images/stanley-hudson.png" alt="Stanley Hudson" height="140">
-  <img src="docs/images/andy-bernard.png" alt="Andy Bernard" height="140">
-  <img src="docs/images/kelly-kapoor.png" alt="Kelly Kapoor" height="140">
-  <img src="docs/images/ryan-howard.png" alt="Ryan Howard" height="140">
-  <img src="docs/images/creed-bratton.png" alt="Creed Bratton" height="140">
-  <img src="docs/images/robert-california.png" alt="Robert California" height="140">
-  <img src="docs/images/david-wallace.png" alt="David Wallace" height="140">
-  <img src="docs/images/bob-vance.png" alt="Bob Vance, Vance Refrigeration" height="140">
-</p>
+## What you see
 
-### Easter-egg props
-Each cast member gets a signature prop floating above their desk in place of the usual coffee/Red Bull bubble.
-
-<p align="center">
-  <img src="docs/images/prop-worlds-best-boss.png" alt="World's Best Boss mug (Michael)" height="70">
-  &nbsp;&nbsp;
-  <img src="docs/images/prop-dundie.png" alt="Dundie Award (Michael)" height="70">
-  &nbsp;&nbsp;
-  <img src="docs/images/prop-golden-ticket.png" alt="Golden Ticket (Michael)" height="70">
-  &nbsp;&nbsp;
-  <img src="docs/images/prop-prison-mike.png" alt="Prison Mike bandana (Michael)" height="70">
-  &nbsp;&nbsp;
-  <img src="docs/images/prop-no-god.png" alt="NO GOD PLEASE NO (Michael)" height="70">
-  &nbsp;&nbsp;
-  <img src="docs/images/prop-cpr-mask.png" alt="CPR Dummy Mask (Dwight)" height="70">
-  &nbsp;&nbsp;
-  <img src="docs/images/prop-schrute-buck.png" alt="Schrute Buck (Dwight)" height="70">
-  &nbsp;&nbsp;
-  <img src="docs/images/prop-jello-stapler.png" alt="Jello Stapler (Jim)" height="70">
-  &nbsp;&nbsp;
-  <img src="docs/images/prop-pretzel.png" alt="Pretzel Day (Stanley)" height="70">
-  &nbsp;&nbsp;
-  <img src="docs/images/prop-serenity-candle.png" alt="Serenity by Jan (Jan)" height="70">
-  &nbsp;&nbsp;
-  <img src="docs/images/prop-finer-things.png" alt="Finer Things Club (Oscar / Pam / Toby)" height="70">
-  &nbsp;&nbsp;
-  <img src="docs/images/prop-paper-box.png" alt="Dunder Mifflin Paper Box" height="70">
-  &nbsp;&nbsp;
-  <img src="docs/images/prop-dunder-logo.png" alt="Dunder Mifflin Logo" height="70">
-  &nbsp;&nbsp;
-  <img src="docs/images/prop-angela-cat.png" alt="Angela's cat" height="70">
-</p>
-
-Toggle it off any time with `/the-office` again — state persists in `localStorage`.
-
----
-
-### Full office — agents working, chatting, and taking coffee breaks
+### The office — agents working, chatting and taking coffee breaks
 ![Day Mode](docs/images/Day-Mode.png)
+
+### Payroll, electricity and memory — fed by the Claude Code status line
+![Office meters: payroll, electricity and memory per session, with the 5h rate-limit pill](docs/images/meters.png)
+
+### "Prod Is Down" — incident mode, switched on by real failures
+![Incident mode: red-tinted night office, beacon over the door, rollback on the wall TV, live incident timer in the chat](docs/images/incident-mode.png)
+
+### Night mode — the office after dark, agents still grinding
+![Night Mode](docs/images/night-mode.png)
+
+### Waiting for tokens... the office keeps itself entertained
+![Waiting for tokens](docs/images/entertainment-waiting-tokenreset.png)
 
 ## Features
 
-**Live Agent Visualization**
-- Agents appear as pixel art characters that walk into the office through the door
-- Each agent type gets a unique character sprite and desk assignment
-- Agents show typing bubbles, take coffee/water breaks, and leave when done
-- Boss character (you) with Red Bull, Claude with coffee
+**Live agent visualization**
+- Agents appear as pixel-art characters that walk into the office through the door, sit at a desk, show typing bubbles, take coffee/water breaks, and leave when done
+- Workers walk in before they work: a tool call that lands mid-walk waits until they reach the desk; when every desk is taken, new arrivals wait in a lobby by the door and are seated oldest-first as desks free up; on a reconnect the office reconciles with the server's snapshot — agents that finished are removed, the ones still there stay put, only new ones walk in
+- Each agent wears one of eight worker sprites picked by role (`src/config.ts` maps debugger, reviewer, frontend, tester, security, devops and the rest; several roles share a look), and general-purpose agents are spread across the pool so a busy office is not a row of clones
+- Subagents are linked to their worker the moment Claude Code starts them (`SubagentStart`), and a tool call that errors shows as `failed:` on the agent that made it
+- Boss character (you) with an energy drink, Claude with coffee
 - Random office events: pizza deliveries, fire drills, power flickers, printer jams
 - Day/night cycle with smooth transitions
 
-**AI-Powered Office Chat**
-- Back-and-forth conversation with Claude through the office chat panel
-- Claude has a witty office manager personality with running jokes
+**Office chat**
+- Back-and-forth conversation with Claude through the office chat panel — a `claude -p` watcher with a witty office-manager personality and running jokes
 - Multi-agent routing — mention a bug and the Debugger responds, ask about UI and Frontend answers
 - Typing indicators, emoji reactions, read receipts
-- Slash commands: `/status`, `/agents`, `/help`, `/incident`, `/all-clear`
+- Slash commands: `/status`, `/agents`, `/incident`, `/all-clear`, `/clear`, `/help` (and `/the-office` for the skin)
 - Chat history persists across restarts (SQLite)
 - Proactive messages — agents announce when they start and finish work
-- Smart macOS notifications for important events
+- Desktop notifications for important events (macOS via `osascript`, Linux via `notify-send`)
 
-**Context-Aware AI**
+**Context-aware AI**
 - Claude knows your current git branch and active agents
 - Conversation memory — remembers the last 10 messages
 - AI On/Off toggle to control token usage
@@ -109,25 +63,40 @@ Toggle it off any time with `/the-office` again — state persists in `localStor
 - Claude's own tool calls (no subagent) are shown on that session's pill when none of its agents is at a desk, never on another terminal's worker
 - `GET /sessions` lists them (project, cwd, model, agent counts, last main-thread status); sessions survive a server restart and are forgotten a minute after they end
 
-### Night mode — the office after dark, agents still grinding
-![Night Mode](docs/images/night-mode.png)
+**Meters**
+- Payroll (cost so far and $/min), electricity (tokens per minute) and memory (context-window fill) per session, straight from Claude Code's status line; claude.ai subscribers also get the five-hour rate-limit pill — see [Payroll, electricity and memory](#payroll-electricity-and-memory)
 
-### Waiting for tokens... the office keeps itself entertained
-![Waiting for tokens](docs/images/entertainment-waiting-tokenreset.png)
+**Incident mode**
+- Three failed tool calls in five minutes turn the office red: beacon over the door, rollback on the wall TV, "days since last incident" sign at 0, a live timer in the chat and a one-line postmortem when it ends — see [Incident mode](#incident-mode--prod-is-down)
 
-## How It Works
+## Platform support
 
-Claude Code hooks capture agent spawns, tool calls, and completions via `PreToolUse` and `PostToolUse` hooks. Events are sent to a local Express + WebSocket server, which broadcasts them to the React frontend.
+| Platform | Office in the browser | Claude Code hooks + status line | Desktop app (Electron) |
+|---|---|---|---|
+| **macOS** | Yes — `start-office.sh` opens the browser with `open`; notifications via `osascript` | Yes — the hooks are bash scripts that call `python3` and `curl`; macOS ships `bash` and `curl`, `python3` comes with the Xcode command-line tools | `npm run build:electron` produces a `.dmg`; the packaged build was not re-verified this week |
+| **Linux** | Yes (verified) — `xdg-open` opens the browser; notifications via `notify-send` when present | Yes | Yes — the self-contained bundle (`npm run pack`) was built, launched and screenshotted on Linux this week |
+| **Windows** | Node runs the server natively: `npm run build && npm run server`, then open `http://127.0.0.1:3334` yourself | Through **WSL** or **Git Bash**, with `python3` and `curl` on the PATH: the installer and the hooks are bash scripts. A native Node hook is on the [roadmap](#roadmap) | Untested |
+
+Requirements everywhere: Node 22 (what CI runs; `better-sqlite3` is a native module), `bash`, `python3` and `curl` for the hooks and the installer, and the Claude Code CLI (`claude`) for the chat AI watcher.
+
+## How it works
+
+Claude Code hooks report agent spawns, tool calls, failures, subagent starts/stops and session starts/ends to a local Express + WebSocket server; the Claude Code status line reports cost, tokens and context fill to the same server. The server broadcasts everything to the React office over a WebSocket and, after `npm run build`, serves the office itself.
 
 ```
-Claude Code ──hook──> Express Server ──WebSocket──> React Frontend
-                           │
-                     SQLite (chat)
-                           │
-                   Chat AI Watcher ──claude -p──> Reply
+Claude Code ──hooks (PreToolUse, PostToolUse, PostToolUseFailure,
+             SubagentStart, SubagentStop, SessionStart, SessionEnd)──> POST /event  ─┐
+Claude Code ──statusLine / subagentStatusLine──────────────────────> POST /status ─┤
+                                                                                     ▼
+                                              Express + WebSocket server (127.0.0.1:3334)
+                                               │               │                │
+                                         SQLite (chat)     WebSocket        serves dist/
+                                               │               ▼
+                                     Chat AI watcher     React office (browser tab on :3334,
+                                     ──claude -p──> reply   Vite on :3333, or the Electron window)
 ```
 
-## Quick Start
+## Quick start
 
 ```bash
 # Clone
@@ -137,40 +106,43 @@ cd Claude-Office
 # Install
 npm install
 
-# Start everything (server + frontend + chat watcher)
-bash scripts/start-office.sh
+# Option A — one port, the same page the desktop app shows
+npm run build && npm run server          # open http://127.0.0.1:3334
 
-# Stop everything
-bash scripts/stop-office.sh
+# Option B — development: server + Vite + the chat AI watcher, opens the browser
+bash scripts/start-office.sh             # open http://localhost:3333
+bash scripts/stop-office.sh              # stop everything it started
 ```
 
-Open `http://localhost:3333` — the office is ready.
+`npm run dev:all` is option B without the chat watcher (server + Vite in one terminal); `npm run dev` is Vite alone and expects `npm run server` in another terminal. `office.config.json` is optional — copy `office.config.example.json` to it to name your boss character (see [Customise your character](#customise-your-character)).
+
+Then [connect Claude Code](#connect-claude-code) so agents show up.
 
 ### The start/stop scripts
 
 `start-office.sh` starts the server, Vite and the chat AI watcher, each in its own process group, and records their pids in `~/.agent-office/server.pid`, `vite.pid` and `chat-watcher.pid`. `stop-office.sh` stops exactly those processes — a browser holding a WebSocket to `:3334`, the Electron app or an unrelated Vite on `:3333` are never touched. If you started the server some other way, `bash scripts/stop-office.sh --force` additionally kills whatever is *listening* on the office ports. Ctrl+C in `start-office.sh` stops everything it started; on a box without `open`/`xdg-open` it prints the URL instead of aborting.
 
-The chat AI watcher (`scripts/chat-ai-watcher.sh`, log in `~/.agent-office/chat-ai.log`) only answers messages a person typed in the office chat — its own replies, the agents' `starting:`/`done:` announcements, agent-to-agent messages and `/commands` are never answered — and runs `claude -p` with `--model claude-haiku-5-5 --safe-mode --strict-mcp-config --tools "" --no-session-persistence` under a timeout, so a reply never fires the office's own hooks or loads your project's MCP servers. Knobs (all optional): `CHAT_AI_MODEL`, `CHAT_AI_TIMEOUT` (seconds, default 60), `CHAT_AI_MAX_REPLIES_PER_MIN` (default 5), `CHAT_AI_POLL_INTERVAL` (default 8). Every script honours `AGENT_OFFICE_HOME` (state dir) and `AGENT_OFFICE_PORT` (server port, default 3334); `start-office.sh`/`stop-office.sh` also take `AGENT_OFFICE_UI_PORT` (default 3333).
+The chat AI watcher (`scripts/chat-ai-watcher.sh`, log in `~/.agent-office/chat-ai.log`) only answers messages a person typed in the office chat — its own replies, the agents' `starting:`/`done:` announcements, agent-to-agent messages and `/commands` are never answered — and runs `claude -p` with `--max-turns 1 --model claude-haiku-5-5 --safe-mode --strict-mcp-config --tools "" --no-session-persistence` under a timeout, so a reply never fires the office's own hooks or loads your project's MCP servers. Knobs (all optional): `CHAT_AI_MODEL`, `CHAT_AI_TIMEOUT` (seconds, default 60), `CHAT_AI_MAX_REPLIES_PER_MIN` (default 5), `CHAT_AI_POLL_INTERVAL` (default 8). Every script honours `AGENT_OFFICE_HOME` (state dir); `start-office.sh`/`stop-office.sh` also take `AGENT_OFFICE_PORT` (default 3334) and `AGENT_OFFICE_UI_PORT` (default 3333) — note that the server itself, the hook and the UI are fixed at 3334 today, so changing the port end to end is a [roadmap](#roadmap) item.
 
 ### Running tests
 
-`npm test` runs the Vitest suite in `tests/` (server API, WebSocket, hook script, installer, shell scripts) against a temp `AGENT_OFFICE_HOME`, so your real `~/.agent-office` is never touched; `npm run test:watch` keeps it running. CI runs `tsc --noEmit` and `npm test` on every push to `main` and every pull request.
+`npm test` runs the Vitest suite in `tests/` (server API, WebSocket, sessions, status/meters, incident commands, the office reducer, hook script, status line, installer, shell scripts — 289 tests) against a temp `AGENT_OFFICE_HOME`, so your real `~/.agent-office` is never touched; `npm run test:watch` keeps it running. CI (`.github/workflows/ci.yml`) runs `tsc --noEmit`, `npm test` and `vite build` on every push to `main` and every pull request.
 
-### Auto-Permissions
+### Auto-permissions
 
 The repo includes `.claude/settings.json` which auto-allows curl commands to the local office server (`127.0.0.1:3334`) and the start/stop scripts. This means the chat monitor cron and office commands run without permission prompts.
 
-### Connect Claude Code
+## Connect Claude Code
 
-Run the installer (registers the seven hook events below, safe to re-run):
+Run the installer (registers the seven hook events below plus the status line, safe to re-run):
 
 ```bash
 npm run install-hooks
 ```
 
-If you move, rename or re-clone the checkout, re-run the installer: entries that still name the old `agent-tracker.sh` / `status-line.sh` path are repointed at the current one, so Claude Code stops reporting a hook error on every tool call.
+It backs up `~/.claude/settings.json` first (`settings.json.backup.<timestamp>`). If you move, rename or re-clone the checkout, re-run the installer: entries that still name the old `agent-tracker.sh` / `status-line.sh` path are repointed at the current one, so Claude Code stops reporting a hook error on every tool call. `bash hooks/install-hooks.sh --no-status-line` registers the hooks only (no meters).
 
-Or add the hook to `~/.claude/settings.json` yourself:
+Or add the hooks to `~/.claude/settings.json` yourself:
 
 ```json
 {
@@ -210,7 +182,9 @@ Or add the hook to `~/.claude/settings.json` yourself:
         "hooks": [{ "type": "command", "command": "bash /path/to/Claude-Office/hooks/agent-tracker.sh" }]
       }
     ]
-  }
+  },
+  "statusLine": { "type": "command", "command": "bash /path/to/Claude-Office/hooks/status-line.sh", "padding": 0 },
+  "subagentStatusLine": { "type": "command", "command": "bash /path/to/Claude-Office/hooks/status-line.sh --subagents" }
 }
 ```
 
@@ -220,49 +194,23 @@ Now spawn agents in Claude Code and watch them appear in the office.
 
 **Sessions.** Every hook payload names the Claude Code session it fired in (`session_id`, `cwd`, `transcript_path`), and the tracker forwards that on every event, so the office knows which terminal each agent works for. `SessionStart` adds a pill to the title bar (`SessionEnd` removes it and walks that session's agents out); a session the server first hears of mid-way — hooks installed while Claude was already running, or a server restart — is picked up from its next event. Sessions that go quiet for `AGENT_OFFICE_STALE_MINUTES` end the same way.
 
-### Payroll, electricity and memory
+**Uninstall.** There is no `--uninstall` flag yet (one is coming). Today, open `~/.claude/settings.json` and delete the entries whose command runs `hooks/agent-tracker.sh` (one under each of the seven events above) and the `statusLine` / `subagentStatusLine` entries that run `hooks/status-line.sh`. If the installer chained a status line you already had, its command is saved in `~/.agent-office/statusline-prev` (and `subagent-statusline-prev`) — put it back by hand. The installer's `settings.json.backup.<timestamp>` is the quick way back to the pre-install file.
+
+## Payroll, electricity and memory
 
 A wall panel appears above the chat the moment Claude Code sends its first status line, and not before (an office without one looks exactly as it did). **PAYROLL** is what the open sessions have cost, with the $/min burn over the last five minutes underneath; **ELECTRICITY** is the tokens the API chews through per minute (context re-reads included — that is what you pay for) as a gauge whose stripes flow faster the harder it burns; **MEMORY** is the context-window fill — amber past 70 %, red past 90 %, and once a session passes 85 % the chat gets a "Claude's desk is getting cluttered" line (once per session). claude.ai subscribers also get a **5h** pill with the five-hour rate-limit utilisation. Hover any meter for the exact numbers and the model; with several terminals open the panel stacks one row per session (up to four).
 
 The numbers are Claude Code's own: `npm run install-hooks` registers `hooks/status-line.sh` as the [`statusLine`](https://code.claude.com/docs/en/statusline) command (and as `subagentStatusLine`, which adds per-worker token counts) next to the hooks. It forwards the JSON to `POST /status` (same bearer token as `/event`) and prints `<model> · ctx <used>% · $<cost>`. **If you already had a status line, you keep it**: the installer saves your command in `~/.agent-office/statusline-prev` and `status-line.sh` runs it with the same input and prints its output, so what you see does not change. `bash hooks/install-hooks.sh --no-status-line` skips the status line altogether. `GET /status` returns the sessions and the totals (cost today, tokens/min, $/min); nothing is persisted, and a session that goes quiet for `AGENT_OFFICE_STALE_MINUTES` drops off the panel.
 
-## Customise Your Character
+## Incident mode — "Prod Is Down"
 
-The boss character (you) is configurable via `office.config.json`:
+The office declares an incident **by itself** when real failures happen: three failed tool calls (`PostToolUseFailure`) inside five minutes switch it on. A `deploy-fail` or `who-broke-build` random event starts a 90 s mini-incident instead, and `/incident` in the chat declares one by hand (relayed to every open office).
 
-```json
-{
-  "boss": {
-    "name": "YourName",
-    "sprite": "MyChar-1",
-    "color": "#ff4444",
-    "emoji": "crown"
-  }
-}
-```
+While it is on, the room is forced to night and tinted red, a beacon flashes over the door, the wall TV shows the rollback status page, the "days since last incident" sign flips to 0, agents whose last tool call failed carry a build-failed bubble, the chat header shows a live incident timer, and the spawn / working / done / boss lines come from an incident pool.
 
-### Creating a custom sprite
+It ends with `/all-clear`, ten minutes without a new failure, or a `deploy-success` during a mini-incident, and posts a one-line postmortem (duration, failures by tool, who was involved). The sign then counts the days from `localStorage['agent-office-last-incident']`. `?variant=incident` pins it on with auto-exit off, for screenshots. Incident mode is a *variant*, so it stacks with the Dunder Mifflin skin.
 
-Use the Helper sprite sheet as a reference for the 4-direction layout — here's an example of mine next to it:
-
-<p>
-  <img src="docs/images/Helper.png" alt="Helper Sprite Template" height="250">
-  <img src="docs/images/Me-1-front-right.png" alt="Custom Boss — Front Right" height="250">
-  <img src="docs/images/Me-1-rear-left.png" alt="Custom Boss — Rear Left" height="250">
-</p>
-
-Here's Mini Claude — I asked Claude to describe itself after showing it the office with my avatar, then used the prompt to generate the sprite:
-
-<img src="docs/images/mini-claude.png" alt="Mini Claude" height="500">
-
-1. Open ChatGPT (with DALL-E image generation)
-2. Upload `public/sprites/characters/Helper.png` as a reference
-3. Ask it to generate a pixel art character in the same style and layout (4 directions: front-left, rear-right, front-right, rear-left)
-4. Save the output and extract the sprites:
-
-```bash
-python3 scripts/extract-boss-sprite.py your-character.png MyChar-1
-```
+The dedicated incident art (beacon frames, pizza tower, incident board, per-role props) is a follow-up: `src/incidentAssets.ts` lists the slots and today's fallbacks, and `public/sprites/incident/README.md` lists the files to draw. The office picks them up with no code change.
 
 ## Chat
 
@@ -270,9 +218,13 @@ python3 scripts/extract-boss-sprite.py your-character.png MyChar-1
 |---------|-------------|
 | `/status` | Office stats — agents, clients |
 | `/agents` | List active agents |
+| `/incident` | Declare an incident by hand (every open office switches) |
+| `/all-clear` | End the incident and post the postmortem |
+| `/clear` | Wipe the chat history — needs the office bearer token, so it works from `scripts/chat-post.py`-style callers, not from the panel |
 | `/help` | Show available commands |
+| `/the-office` | Toggle the Dunder Mifflin skin (client-side, see [Skins](#skins)) |
 
-### Agent Routing
+### Agent routing
 
 The chat AI routes your messages to specialist agents based on keywords:
 
@@ -345,94 +297,127 @@ The recipient goes in `metadata.to` (name, role or office id); replies thread th
 
 | URL | Mode |
 |-----|------|
-| `localhost:3333` | Live — connected to Claude Code via WebSocket |
+| `localhost:3333` | Live — connected to Claude Code via WebSocket (Vite dev server) |
 | `localhost:3333?sim` | Simulation — scripted demo with fake agents |
 | `localhost:3333?video` | Video — scripted recording mode |
 | `localhost:3333?helper` | Placement helper — dev tool for positioning furniture |
 | `localhost:3333?variant=incident` | Incident — pins "Prod Is Down" mode on (for screenshots) |
 | `localhost:3334` | Built — the office server serving `dist/` after `npm run build`; what the desktop app loads. The `?` flags above work here too |
 
-### Incident mode — "Prod Is Down"
+## Skins
 
-The office declares an incident **by itself** when real failures happen: three failed tool calls (`PostToolUseFailure`) inside five minutes switch it on. A `deploy-fail` or `who-broke-build` random event starts a 90 s mini-incident instead, and `/incident` in the chat declares one by hand (relayed to every open office).
+### Dunder Mifflin mode
 
-While it is on, the room is forced to night and tinted red, a beacon flashes over the door, the wall TV shows the rollback status page, the "days since last incident" sign flips to 0, agents whose last tool call failed carry a build-failed bubble, the chat header shows a live incident timer, and the spawn / working / done / boss lines come from an incident pool.
+Type `/the-office` in the Slack chat panel to flip the whole office into a Scranton-branch tribute. The room, the cast, and the chatter all swap over — Michael Scott runs the place, Jim is your assistant, and Dwight guards the beet cellar.
 
-It ends with `/all-clear`, ten minutes without a new failure, or a `deploy-success` during a mini-incident, and posts a one-line postmortem (duration, failures by tool, who was involved). The sign then counts the days from `localStorage['agent-office-last-incident']`. `?variant=incident` pins it on with auto-exit off, for screenshots. Incident mode is a *variant*, so it stacks with the Dunder Mifflin theme.
+This skin is fan art. It is not affiliated with, endorsed by or licensed by NBCUniversal or anyone else connected with *The Office*; the character art and quotes it contains are excluded from this repository's MIT grant — see [NOTICE.md](NOTICE.md).
 
-The dedicated incident art (beacon frames, pizza tower, incident board, per-role props) is a follow-up: `src/incidentAssets.ts` lists the slots and today's fallbacks, and `public/sprites/incident/README.md` lists the files to draw. The office picks them up with no code change.
+#### Pretzel day, every day
+<p>
+  <img src="docs/images/dunder-mifflin-day.png" alt="Dunder Mifflin — Day" width="48%">
+  <img src="docs/images/dunder-mifflin-night.png" alt="Dunder Mifflin — Night" width="48%">
+</p>
 
-## Tech Stack
+**What changes when you toggle it on**
+- 27 cast members (Michael, Jim, Pam, Dwight, Kevin, Angela, Stanley, Creed, David Wallace, Bob Vance — the whole office) dealt to agent roles
+- Role chatter swaps to in-character lines (`"Bears. Beets. Battlestar Galactica."`, `"selling paper"`, `"Schrute bucks awarded"`)
+- Michael occasionally lands his signature `"That's what she said 😏"` when replying to finished work
+- Character prop overlays — Michael rotates World's Best Boss mug / Dundie / Golden Ticket / Prison Mike bandana / "NO GOD PLEASE NO", Dwight gets the CPR dummy mask or a Schrute Buck, Jim keeps his jello stapler, Stanley gets a pretzel, Jan gets a Serenity by Jan candle, Oscar / Pam / Toby share the Finer Things Club
+- Angela gets a follower cat *and* a head-cat (randomized from 12 cat sprites)
+- Kevin's chili, pretzel day, and Finer Things Club references sprinkled through the break-room chatter
 
-- **Frontend**: React + TypeScript + Vite
-- **Server**: Express + WebSocket (ws)
-- **Storage**: SQLite (better-sqlite3)
-- **Chat AI**: Claude CLI (`claude -p`)
-- **Sprites**: Custom pixel art (isometric)
-- **Desktop**: Electron (optional)
+#### The cast
+<p align="center">
+  <img src="docs/images/michael-scott.png" alt="Michael Scott" height="140">
+  <img src="docs/images/jim-halpert.png" alt="Jim Halpert" height="140">
+  <img src="docs/images/pam-beesly.png" alt="Pam Beesly" height="140">
+  <img src="docs/images/dwight-schrute.png" alt="Dwight Schrute" height="140">
+  <img src="docs/images/angela-martin.png" alt="Angela Martin" height="140">
+  <img src="docs/images/kevin-malone.png" alt="Kevin Malone" height="140">
+  <img src="docs/images/stanley-hudson.png" alt="Stanley Hudson" height="140">
+  <img src="docs/images/andy-bernard.png" alt="Andy Bernard" height="140">
+  <img src="docs/images/kelly-kapoor.png" alt="Kelly Kapoor" height="140">
+  <img src="docs/images/ryan-howard.png" alt="Ryan Howard" height="140">
+  <img src="docs/images/creed-bratton.png" alt="Creed Bratton" height="140">
+  <img src="docs/images/robert-california.png" alt="Robert California" height="140">
+  <img src="docs/images/david-wallace.png" alt="David Wallace" height="140">
+  <img src="docs/images/bob-vance.png" alt="Bob Vance, Vance Refrigeration" height="140">
+</p>
 
-## Project Structure
+#### Easter-egg props
+Each cast member gets a signature prop floating above their desk in place of the usual coffee/energy-drink bubble.
 
+<p align="center">
+  <img src="docs/images/prop-worlds-best-boss.png" alt="World's Best Boss mug (Michael)" height="70">
+  &nbsp;&nbsp;
+  <img src="docs/images/prop-dundie.png" alt="Dundie Award (Michael)" height="70">
+  &nbsp;&nbsp;
+  <img src="docs/images/prop-golden-ticket.png" alt="Golden Ticket (Michael)" height="70">
+  &nbsp;&nbsp;
+  <img src="docs/images/prop-prison-mike.png" alt="Prison Mike bandana (Michael)" height="70">
+  &nbsp;&nbsp;
+  <img src="docs/images/prop-no-god.png" alt="NO GOD PLEASE NO (Michael)" height="70">
+  &nbsp;&nbsp;
+  <img src="docs/images/prop-cpr-mask.png" alt="CPR Dummy Mask (Dwight)" height="70">
+  &nbsp;&nbsp;
+  <img src="docs/images/prop-schrute-buck.png" alt="Schrute Buck (Dwight)" height="70">
+  &nbsp;&nbsp;
+  <img src="docs/images/prop-jello-stapler.png" alt="Jello Stapler (Jim)" height="70">
+  &nbsp;&nbsp;
+  <img src="docs/images/prop-pretzel.png" alt="Pretzel Day (Stanley)" height="70">
+  &nbsp;&nbsp;
+  <img src="docs/images/prop-serenity-candle.png" alt="Serenity by Jan (Jan)" height="70">
+  &nbsp;&nbsp;
+  <img src="docs/images/prop-finer-things.png" alt="Finer Things Club (Oscar / Pam / Toby)" height="70">
+  &nbsp;&nbsp;
+  <img src="docs/images/prop-paper-box.png" alt="Dunder Mifflin Paper Box" height="70">
+  &nbsp;&nbsp;
+  <img src="docs/images/prop-dunder-logo.png" alt="Dunder Mifflin Logo" height="70">
+  &nbsp;&nbsp;
+  <img src="docs/images/prop-angela-cat.png" alt="Angela's cat" height="70">
+</p>
+
+Toggle it off any time with `/the-office` again — state persists in `localStorage`.
+
+## Customise your character
+
+The boss character (you) is configurable via `office.config.json`:
+
+```json
+{
+  "boss": {
+    "name": "YourName",
+    "sprite": "MyChar-1",
+    "color": "#ff4444",
+    "emoji": "crown"
+  }
+}
 ```
-Claude-Office/
-├── src/                    # React frontend
-│   ├── components/         # Character, SlackChat, FurnitureRenderer
-│   ├── hooks/              # useAgentSocket (WebSocket + reconnect)
-│   ├── styles/             # office.css, rooms.css
-│   └── App.tsx             # Main app (agent lifecycle, events, chat)
-├── server/                 # Express + WebSocket server
-│   ├── index.js            # HTTP endpoints + WS broadcast
-│   ├── status.js           # /status: payroll / electricity / memory feed
-│   └── chat-db.js          # SQLite wrapper
-├── scripts/                # Shell scripts
-│   ├── start-office.sh     # Start everything (writes pid files)
-│   ├── stop-office.sh      # Stop everything (by pid file; --force for ports)
-│   ├── chat-ai-watcher.sh  # Polls chat, generates Claude replies
-│   ├── notify.sh           # Desktop notification (osascript / notify-send)
-│   └── gather-context.sh   # Git/agent context for prompts
-├── hooks/                  # Claude Code hooks
-│   ├── agent-tracker.sh    # Forwards events to server
-│   └── status-line.sh      # Claude Code status line → /status (meters)
-├── public/                 # Static assets
-│   └── sprites/            # Pixel art characters + effects
-└── electron/               # Optional Electron wrapper
+
+### Creating a custom sprite
+
+Use the Helper sprite sheet as a reference for the 4-direction layout — here's an example of mine next to it:
+
+<p>
+  <img src="docs/images/Helper.png" alt="Helper Sprite Template" height="250">
+  <img src="docs/images/Me-1-front-right.png" alt="Custom Boss — Front Right" height="250">
+  <img src="docs/images/Me-1-rear-left.png" alt="Custom Boss — Rear Left" height="250">
+</p>
+
+Here's Mini Claude — I asked Claude to describe itself after showing it the office with my avatar, then used the prompt to generate the sprite:
+
+<img src="docs/images/mini-claude.png" alt="Mini Claude" height="500">
+
+1. Open ChatGPT (with DALL-E image generation)
+2. Upload `public/sprites/characters/Helper.png` as a reference
+3. Ask it to generate a pixel art character in the same style and layout (4 directions: front-left, rear-right, front-right, rear-left)
+4. Save the output and extract the sprites:
+
+```bash
+python3 scripts/extract-boss-sprite.py your-character.png MyChar-1
 ```
 
-## Security
-
-The server listens on `127.0.0.1` only, so it is never on the network. The
-threat it defends against is therefore other processes on the same machine (a
-malicious npm dependency, another local user on a shared host): loopback is not
-user-isolated, and nothing stops a local process from reaching the port.
-Browsers are kept out separately — the origin allowlist refuses every origin
-but the loopback UI (ports 3333/3334), and the JSON content type makes a
-cross-site POST preflight.
-
-So every route that **acts as an agent or destroys state** requires a bearer
-token, and the rest stay open:
-
-| | Routes | Why |
-|---|---|---|
-| **Token required** | `POST /event`, `/chat/reply`, `/a2a`, `/chat/inbox/read`, `/chat/seen`, `/chat/react`, `/chat/video-mode`, and `POST /chat` for a destructive slash command (`/clear`) | Speaks for an agent, writes another agent's inbox, or wipes history — a local process must not be able to do these |
-| **Open** | every `GET`, `POST /chat` (a plain line a person typed, and the read-only `/status` · `/agents` · `/help` · `/incident` · `/all-clear` commands), `POST /chat/typing`, `POST /chat/cron-state` | The office UI has no token; the worst these do is read what the office already shows or post a chat line |
-
-- The token is 32 random bytes generated at startup and written to
-  `~/.agent-office/auth-token` (mode `0600`) **only once the port is bound**, so
-  starting a second server while one is running no longer clobbers the live
-  token. Send it as `Authorization: Bearer <token>`; the hook and the office
-  scripts (`chat-reply.py`, `agent-message.py`, the chat watchers) read the file
-  and do this for you. The token check is constant-time.
-- Everything the server writes under `~/.agent-office` (the token, `agents.json`,
-  the A2A inbox files, `last-chat`, the chat-monitor state) is mode `0600` and
-  the dir is `0700`, so another local user can't read directed messages or the
-  latest chat.
-- Errors are returned as `{ "error": ... }` with no stack trace or absolute
-  path; message ids are validated and a message's reactions are capped.
-- `GET /roster` and `GET /agents` do expose each agent's task text and the names
-  of the configured MCP servers. That is the office's purpose, it is localhost
-  only, and anything on the machine can already read `~/.claude/settings.json`.
-
-## Desktop App (Electron)
+## Desktop app (Electron)
 
 The desktop app is self-contained: it bundles the office server, the built UI and `node_modules`, runs the server on the Node that ships inside Electron (nothing needs to be installed, and no `node` on the PATH), and loads the office from `http://127.0.0.1:3334/` — one port for the page, its assets and the WebSocket.
 
@@ -449,8 +434,102 @@ How a build is put together (the `build` section of `package.json`):
 - `npmRebuild` is off, so the checkout's `node_modules` stay built for your system Node and `npm test` / `node server/index.js` keep working after a pack. `electron/after-pack.cjs` fetches the Electron build of `better-sqlite3` (through its own `prebuild-install`) into the packaged copy only.
 - Debugging a build headlessly: `AGENT_OFFICE_SCREENSHOT=/tmp/office.png` makes the app save a screenshot of its window a few seconds after the page loads, then quit (works under `xvfb-run`).
 
-The same single-port mode works without Electron: `npm run build && npm run server`, then open `http://localhost:3334`.
+The same single-port mode works without Electron: `npm run build && npm run server`, then open `http://localhost:3334`. The Linux bundle was built and launched this week; the macOS and Windows packages have not been re-verified since the bundle became self-contained — see [Platform support](#platform-support).
+
+## Security
+
+The server listens on `127.0.0.1` only, so it is never on the network. The
+threat it defends against is therefore other processes on the same machine (a
+malicious npm dependency, another local user on a shared host): loopback is not
+user-isolated, and nothing stops a local process from reaching the port.
+Browsers are kept out separately — the origin allowlist refuses every origin
+but the loopback UI (ports 3333/3334), and the JSON content type makes a
+cross-site POST preflight.
+
+So every route that **acts as an agent or destroys state** requires a bearer
+token, and the rest stay open:
+
+| | Routes | Why |
+|---|---|---|
+| **Token required** | `POST /event`, `POST /status`, `/chat/reply`, `/a2a`, `/chat/inbox/read`, `/chat/seen`, `/chat/react`, `/chat/video-mode`, and `POST /chat` for a destructive slash command (`/clear`) | Speaks for an agent, writes another agent's inbox, feeds the meters, or wipes history — a local process must not be able to do these |
+| **Open** | every `GET`, `POST /chat` (a plain line a person typed, and the read-only `/status` · `/agents` · `/help` · `/incident` · `/all-clear` commands), `POST /chat/typing`, `POST /chat/cron-state` | The office UI has no token; the worst these do is read what the office already shows or post a chat line |
+
+- The token is 32 random bytes generated at startup and written to
+  `~/.agent-office/auth-token` (mode `0600`) **only once the port is bound**, so
+  starting a second server while one is running no longer clobbers the live
+  token. Send it as `Authorization: Bearer <token>`; the hook, the status line
+  and the office scripts (`chat-reply.py`, `agent-message.py`, the chat
+  watchers) read the file and do this for you. The token check is constant-time.
+- Everything the server writes under `~/.agent-office` (the token, `agents.json`,
+  the A2A inbox files, `last-chat`, the chat-monitor state) is mode `0600` and
+  the dir is `0700`, so another local user can't read directed messages or the
+  latest chat.
+- Errors are returned as `{ "error": ... }` with no stack trace or absolute
+  path; message ids are validated and a message's reactions are capped.
+- `GET /roster` and `GET /agents` do expose each agent's task text (the first
+  80 characters of the subagent's description) and the names of the configured
+  MCP servers. That is the office's purpose, it is localhost only, and anything
+  on the machine can already read `~/.claude/settings.json`.
+
+## Tech stack
+
+- **Frontend**: React + TypeScript + Vite
+- **Server**: Express + WebSocket (ws)
+- **Storage**: SQLite (better-sqlite3)
+- **Chat AI**: Claude CLI (`claude -p`)
+- **Sprites**: Custom pixel art (isometric)
+- **Tests**: Vitest + GitHub Actions
+- **Desktop**: Electron (optional)
+
+## Project structure
+
+```
+Claude-Office/
+├── src/                    # React frontend
+│   ├── components/         # Character, SlackChat, SessionStrip, IncidentLayer, FurnitureRenderer
+│   ├── hooks/              # useAgentSocket (WebSocket + reconnect)
+│   ├── styles/             # office.css, rooms.css
+│   ├── officeReducer.ts    # Pure office state machine (arrival gate, lobby, snapshot reconcile)
+│   ├── incident.ts         # Incident mode state machine
+│   ├── theme.ts            # Dunder Mifflin skin (cast, props, chatter)
+│   └── App.tsx             # Main app (agent lifecycle, events, chat)
+├── server/                 # Express + WebSocket server
+│   ├── index.js            # HTTP endpoints + WS broadcast
+│   ├── status.js           # /status: payroll / electricity / memory feed
+│   └── chat-db.js          # SQLite wrapper
+├── scripts/                # Shell + Python scripts
+│   ├── start-office.sh     # Start everything (writes pid files)
+│   ├── stop-office.sh      # Stop everything (by pid file; --force for ports)
+│   ├── chat-ai-watcher.sh  # Polls chat, generates Claude replies
+│   ├── agent-message.py    # Agent-to-agent messages from the shell
+│   ├── notify.sh           # Desktop notification (osascript / notify-send)
+│   └── gather-context.sh   # Git/agent context for prompts
+├── hooks/                  # Claude Code hooks
+│   ├── install-hooks.sh    # Registers the hooks + status line in ~/.claude/settings.json
+│   ├── agent-tracker.sh    # Forwards hook events to the server
+│   └── status-line.sh      # Claude Code status line → /status (meters)
+├── tests/                  # Vitest suite (npm test)
+├── public/                 # Static assets
+│   └── sprites/            # Pixel art characters, effects, incident slots, the skin
+├── electron/               # Optional Electron wrapper (self-contained bundle)
+└── .github/                # CI workflow, issue templates
+```
+
+## Roadmap
+
+Open and planned work lives in [GitHub issues](https://github.com/W17ant/Claude-Office/issues). Next up, roughly in order:
+
+- **Claude acts out the turn** — the session's Claude types when you prompt, sleeps when the turn ends, and shows a memory wipe on compaction
+- **Needs-you states** — a hand goes up (and a chime plays) the instant Claude is waiting on a permission from you, with a `logPrompts` setting so you decide whether prompt text is stored at all
+- **Plugin install** — `claude plugin marketplace add` + `/plugin install` instead of the hook installer, with a matching uninstall
+- **`npx` one-liner** to start the office without a checkout
+- **Tray badge** for the desktop app (count of working agents), plus remembered window bounds
+- **Spooky Sprint**, a seasonal variant on the incident-mode axis — art-gated
+
+## Contributing
+
+Bug reports and feature requests go through the [issue templates](.github/ISSUE_TEMPLATE); the ground rules for pull requests are in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE). The Office-themed assets are fan art and are not covered by that grant; see [NOTICE.md](NOTICE.md).
