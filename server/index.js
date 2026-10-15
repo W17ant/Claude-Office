@@ -60,9 +60,9 @@ const UI_DEV_PORT = readUiPort()
 // effects outside RUNTIME_DIR and a second instance that loses the port race
 // never clobbers the running instance's token.
 //
-// Threat model. The server only listens on loopback (AGENT_OFFICE_HOST may
-// spell it 127.0.0.1, localhost or ::1; anything else is refused by
-// readHost, with the reason, and loopback is bound). Browsers on other
+// Threat model. The server only listens on loopback (127.0.0.1;
+// AGENT_OFFICE_HOST may spell it 127.0.0.1 or localhost, anything else is
+// refused by readHost, with the reason, and 127.0.0.1 is bound). Browsers on other
 // origins are kept out by the origin allowlist below (every other origin
 // gets 403 / a 1008 close) and by the JSON content type, which makes
 // cross-site POSTs preflight. What is left is any other process on this
@@ -1609,7 +1609,7 @@ app.post('/chat', (req, res) => {
     if (PRIVILEGED_COMMANDS.has(cmd) && !tokenMatches(bearerToken(req))) {
       // Tell the person in the chat panel why nothing happened (the UI ignores
       // the HTTP status), and the caller through the status
-      const sysMsg = addMessage({ sender: 'system', text: `🔒 ${cmd} needs the office auth token — send it as Authorization: Bearer <token> (see README › Security)`, isSystem: true })
+      const sysMsg = addMessage({ sender: 'system', text: `🔒 ${cmd} needs the office auth token — run python3 scripts/chat-post.py ${cmd} from the office checkout, which sends it (see README › Chat)`, isSystem: true })
       broadcast({ type: 'chat_message', ...sysMsg, isSystem: true })
       console.warn(`[chat] Refused ${cmd} from ${clampString(sender)}: no auth token`)
       return unauthorized(res, { error: `${cmd} needs the office auth token` })
@@ -3187,8 +3187,8 @@ function broadcast(payload) {
  * so every hook event to the surviving server was a 401 until it was
  * restarted. Now the loser exits without touching the file.
  * The host comes from AGENT_OFFICE_HOST here, at start, so a refused value
- * is logged next to the banner: loopback forms bind as given, anything else
- * binds 127.0.0.1 (readHost in server/config.js has the reason).
+ * is logged next to the banner: whatever it says, 127.0.0.1 is bound
+ * (readHost in server/config.js has the reasons).
  * @param {{ port?: number, host?: string }} [opts] — tests bind an ephemeral port
  */
 export function start({ port = PORT, host = readHost() } = {}) {

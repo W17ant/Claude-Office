@@ -484,10 +484,11 @@ describe('the page: est. marker and the needs-the-status-line tooltips', () => {
   })
 
   it('PAYROLL and ELECTRICITY name the status line and the install command', () => {
-    expect(STATUS_LINE_INSTALL).toBe('npm run install-hooks')
+    // The status line alone: next to the plugin, npm run install-hooks would register every hook a second time
+    expect(STATUS_LINE_INSTALL).toBe('npm run install-status-line')
     const payroll = needsStatusLineTip('PAYROLL', [session()])
     expect(payroll[0]).toBe('PAYROLL needs the status line — Claude Code reports cost only to its statusLine command')
-    expect(payroll).toContain('register it with: npm run install-hooks (from the Claude-Office checkout)')
+    expect(payroll).toContain('register it with: npm run install-status-line (from the Claude-Office checkout)')
     expect(payroll).toContain('Claude-Office: needs the status line')
     const electricity = needsStatusLineTip('ELECTRICITY', [session(), session({ sessionId: 'b', project: 'other' })])
     expect(electricity[0]).toContain('tokens per minute')
