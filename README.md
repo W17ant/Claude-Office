@@ -62,6 +62,8 @@ Works on macOS and Linux, and on Windows through WSL or Git Bash with `python3` 
 - Multiple terminals = multiple pills; each session's agents stay its own, and when several sessions share the office every character wears its project name
 - Claude's own tool calls (no subagent) are shown on that session's pill when none of its agents is at a desk, never on another terminal's worker
 - `GET /sessions` lists them (project, cwd, model, agent counts, last main-thread status); sessions survive a server restart and are forgotten a minute after they end
+- Each session's own Claude is tracked through its turn (`main` on the session): the boss's prompt arrives, Claude works, waits when its turn ends with background workers still running, replies, goes idle; compaction, a `cd` and a model switch are visible — see [Claude's turn and needs-you](#connect-claude-code)
+- Needs-you: a permission wait, an idle prompt, a quota pause or an API error becomes a session state instead of looking like work; how much prompt text the office keeps is yours to set (`logPrompts`)
 
 **Meters**
 - Payroll (cost so far and $/min), electricity (tokens per minute) and memory (context-window fill) per session, straight from Claude Code's status line; claude.ai subscribers also get the five-hour rate-limit pill — see [Payroll, electricity and memory](#payroll-electricity-and-memory)
@@ -81,11 +83,14 @@ Requirements everywhere: Node 22 (what CI runs; `better-sqlite3` is a native mod
 
 ## How it works
 
-Claude Code hooks report agent spawns, tool calls, failures, subagent starts/stops and session starts/ends to a local Express + WebSocket server; the Claude Code status line reports cost, tokens and context fill to the same server. The server broadcasts everything to the React office over a WebSocket and, after `npm run build`, serves the office itself.
+Claude Code hooks report agent spawns, tool calls, failures, subagent starts/stops, session starts/ends and the main thread's own turn (prompt, reply, permission waits, API errors, compaction) to a local Express + WebSocket server; the Claude Code status line reports cost, tokens and context fill to the same server. The server broadcasts everything to the React office over a WebSocket and, after `npm run build`, serves the office itself.
 
 ```
 Claude Code ──hooks (PreToolUse, PostToolUse, PostToolUseFailure,
-             SubagentStart, SubagentStop, SessionStart, SessionEnd)──> POST /event  ─┐
+             SubagentStart, SubagentStop, SessionStart, SessionEnd,
+             UserPromptSubmit, Stop, PermissionRequest, Notification,
+             StopFailure, PreCompact, PostCompact, PostToolBatch,
+             CwdChanged, PostModelSwitch)────────────────────────────> POST /event  ─┐
 Claude Code ──statusLine / subagentStatusLine──────────────────────> POST /status ─┤
                                                                                      ▼
                                               Express + WebSocket server (127.0.0.1:3334)
@@ -134,7 +139,7 @@ The repo includes `.claude/settings.json` which auto-allows curl commands to the
 
 ## Connect Claude Code
 
-Run the installer (registers the seven hook events below plus the status line, safe to re-run):
+Run the installer (registers the 17 hook events below plus the status line, safe to re-run):
 
 ```bash
 npm run install-hooks
@@ -181,6 +186,56 @@ Or add the hooks to `~/.claude/settings.json` yourself:
       {
         "hooks": [{ "type": "command", "command": "bash /path/to/Claude-Office/hooks/agent-tracker.sh" }]
       }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [{ "type": "command", "command": "bash /path/to/Claude-Office/hooks/agent-tracker.sh" }]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [{ "type": "command", "command": "bash /path/to/Claude-Office/hooks/agent-tracker.sh" }]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [{ "type": "command", "command": "bash /path/to/Claude-Office/hooks/agent-tracker.sh" }]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [{ "type": "command", "command": "bash /path/to/Claude-Office/hooks/agent-tracker.sh" }]
+      }
+    ],
+    "StopFailure": [
+      {
+        "hooks": [{ "type": "command", "command": "bash /path/to/Claude-Office/hooks/agent-tracker.sh" }]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [{ "type": "command", "command": "bash /path/to/Claude-Office/hooks/agent-tracker.sh" }]
+      }
+    ],
+    "PostCompact": [
+      {
+        "hooks": [{ "type": "command", "command": "bash /path/to/Claude-Office/hooks/agent-tracker.sh" }]
+      }
+    ],
+    "PostToolBatch": [
+      {
+        "hooks": [{ "type": "command", "command": "bash /path/to/Claude-Office/hooks/agent-tracker.sh" }]
+      }
+    ],
+    "CwdChanged": [
+      {
+        "hooks": [{ "type": "command", "command": "bash /path/to/Claude-Office/hooks/agent-tracker.sh" }]
+      }
+    ],
+    "PostModelSwitch": [
+      {
+        "hooks": [{ "type": "command", "command": "bash /path/to/Claude-Office/hooks/agent-tracker.sh" }]
+      }
     ]
   },
   "statusLine": { "type": "command", "command": "bash /path/to/Claude-Office/hooks/status-line.sh", "padding": 0 },
@@ -194,7 +249,9 @@ Now spawn agents in Claude Code and watch them appear in the office.
 
 **Sessions.** Every hook payload names the Claude Code session it fired in (`session_id`, `cwd`, `transcript_path`), and the tracker forwards that on every event, so the office knows which terminal each agent works for. `SessionStart` adds a pill to the title bar (`SessionEnd` removes it and walks that session's agents out); a session the server first hears of mid-way — hooks installed while Claude was already running, or a server restart — is picked up from its next event. Sessions that go quiet for `AGENT_OFFICE_STALE_MINUTES` end the same way.
 
-**Uninstall.** There is no `--uninstall` flag yet (one is coming). Today, open `~/.claude/settings.json` and delete the entries whose command runs `hooks/agent-tracker.sh` (one under each of the seven events above) and the `statusLine` / `subagentStatusLine` entries that run `hooks/status-line.sh`. If the installer chained a status line you already had, its command is saved in `~/.agent-office/statusline-prev` (and `subagent-statusline-prev`) — put it back by hand. The installer's `settings.json.backup.<timestamp>` is the quick way back to the pre-install file.
+**Claude's turn and needs-you.** The other ten events describe the session's own Claude, kept as `main` on each session (`GET /sessions`, the WebSocket snapshot, every `session_*` broadcast): `UserPromptSubmit` is the boss's prompt (`session_prompt` — or, when a background worker reports back, a wake-up that names the worker and carries only its summary line), every main-thread tool call is Claude *working*, `Stop` is the reply (`session_turn_end`: *waiting* when background tasks are still running, else *idle*), `PermissionRequest` and `Notification` (`permission_prompt`, `idle_prompt`, `quota_auto_resume_*`, `agent_needs_input`) make the session *needs-you* with what it waits on, `StopFailure` is an API *error* (rate limit, overloaded, ...), `PreCompact`/`PostCompact` show *compacting*, `CwdChanged` moves the project tag after a `cd`, and `PostModelSwitch` updates the model. A permission wait is shown only once it has lasted 300 ms (a headless `-p` session auto-denies and moves on faster than that), the tool's own completion or the end of the batch (`PostToolBatch`) lowers the hand, and a hand nobody answers comes down after ten minutes. The hook prints nothing on `UserPromptSubmit` and always exits 0, so nothing is injected into Claude's context and no prompt is ever blocked; the compaction summary and a worker's result are never forwarded. What the office keeps of the conversation is a setting — see `logPrompts` under [Security](#security).
+
+**Uninstall.** There is no `--uninstall` flag yet (one is coming). Today, open `~/.claude/settings.json` and delete the entries whose command runs `hooks/agent-tracker.sh` (one under each of the 17 events above) and the `statusLine` / `subagentStatusLine` entries that run `hooks/status-line.sh`. If the installer chained a status line you already had, its command is saved in `~/.agent-office/statusline-prev` (and `subagent-statusline-prev`) — put it back by hand. The installer's `settings.json.backup.<timestamp>` is the quick way back to the pre-install file.
 
 ## Payroll, electricity and memory
 
@@ -451,8 +508,9 @@ token, and the rest stay open:
 
 | | Routes | Why |
 |---|---|---|
-| **Token required** | `POST /event`, `POST /status`, `/chat/reply`, `/a2a`, `/chat/inbox/read`, `/chat/seen`, `/chat/react`, `/chat/video-mode`, and `POST /chat` for a destructive slash command (`/clear`) | Speaks for an agent, writes another agent's inbox, feeds the meters, or wipes history — a local process must not be able to do these |
+| **Token required** | `POST /event`, `POST /status`, `POST /settings`, `/chat/reply`, `/a2a`, `/chat/inbox/read`, `/chat/seen`, `/chat/react`, `/chat/video-mode`, and `POST /chat` for a destructive slash command (`/clear`) | Speaks for an agent, writes another agent's inbox, feeds the meters, changes what is kept of the conversation, or wipes history — a local process must not be able to do these |
 | **Open** | every `GET`, `POST /chat` (a plain line a person typed, and the read-only `/status` · `/agents` · `/help` · `/incident` · `/all-clear` commands), `POST /chat/typing`, `POST /chat/cron-state` | The office UI has no token; the worst these do is read what the office already shows or post a chat line |
+| **Open, but the transcript needs the token** | `GET /chat`, `GET /sessions` | Without the token the boss's prompts and Claude's replies are left out: the chat rows with `msg_type` `prompt` / `reply`, and `main.lastPrompt` / `main.lastReply` on each session. With it (the office scripts), they are included. The office UI reads them from the origin-gated WebSocket snapshot instead |
 
 - The token is 32 random bytes generated at startup and written to
   `~/.agent-office/auth-token` (mode `0600`) **only once the port is bound**, so
@@ -464,6 +522,16 @@ token, and the rest stay open:
   the A2A inbox files, `last-chat`, the chat-monitor state) is mode `0600` and
   the dir is `0700`, so another local user can't read directed messages or the
   latest chat.
+- **Your prompts and Claude's replies are stored locally**, in `~/.agent-office/chat.db`
+  (mode `0600`) and in `agents.json`, at the level `logPrompts` sets:
+  `summary` (the default) keeps the first 200 characters of each, `full` keeps up
+  to 2000, `off` keeps nothing — state transitions only, no text stored or
+  broadcast. Change it with
+  `curl -X POST http://127.0.0.1:3334/settings -H "Authorization: Bearer $(cat ~/.agent-office/auth-token)" -H 'Content-Type: application/json' -d '{"logPrompts":"off"}'`
+  (it persists in `~/.agent-office/settings.json`; `GET /settings` shows it).
+  The hook itself never forwards more than 2000 characters, nor a compaction
+  summary or a worker's result. Rows already stored are removed with `/clear`
+  in the chat (token required).
 - Errors are returned as `{ "error": ... }` with no stack trace or absolute
   path; message ids are validated and a message's reactions are capped.
 - `GET /roster` and `GET /agents` do expose each agent's task text (the first
@@ -519,8 +587,7 @@ Claude-Office/
 
 Open and planned work lives in [GitHub issues](https://github.com/W17ant/Claude-Office/issues). Next up, roughly in order:
 
-- **Claude acts out the turn** — the session's Claude types when you prompt, sleeps when the turn ends, and shows a memory wipe on compaction
-- **Needs-you states** — a hand goes up (and a chime plays) the instant Claude is waiting on a permission from you, with a `logPrompts` setting so you decide whether prompt text is stored at all
+- **Claude acts out the turn** and **Needs-you states** — the hook and server side is in (the `main` record per session, the `session_*` events, `logPrompts`); the office visuals are next: the session's Claude types when you prompt, sleeps when the turn ends, shows a memory wipe on compaction, and a hand goes up (with a chime) while Claude waits on a permission from you
 - **Plugin install** — `claude plugin marketplace add` + `/plugin install` instead of the hook installer, with a matching uninstall
 - **`npx` one-liner** to start the office without a checkout
 - **Tray badge** for the desktop app (count of working agents), plus remembered window bounds
