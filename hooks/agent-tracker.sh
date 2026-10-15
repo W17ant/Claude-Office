@@ -562,6 +562,739 @@ def error_summary(err, limit=60):
     # "Exit code 1" + newline + "cat: /x: No such file" -> "Exit code 1 cat: /x: No such file"
     return ' '.join(str(err or '').split())[:limit] or 'unknown error'
 
+# ── Signals: what a Bash command means ──────────────────────────────────────
+# A Bash call that deploys, builds, tests or pushes becomes `signals` the
+# office acts on (a shipping scene, incident mode, chat lines).
+# classify_command(command, cwd) is pure — no I/O — and returns one entry per
+# meaningful segment: {kind, target?} with kind deploy | build | test | push;
+# a push also says which branch it names (branch, toDefault) when the
+# refspec does. The hook phase turns each entry into a signal:
+#
+#   kind     PreToolUse      PostToolUse      PostToolUseFailure
+#   deploy   deploy_start    deploy_success   deploy_fail
+#   build    build_start     build_ok         build_failed
+#   test     test_start      test_ok          test_failed
+#   push     push            push_done        push_failed
+#
+# How a command is read: it is split on && || ; | & and newlines (outside
+# quotes, backticks and $(...); a heredoc body is never read), each segment
+# loses its leading env assignments and wrappers (sudo, env, npx, time,
+# timeout, uv run, bundle exec, ...), `cd DIR` moves the directory the next
+# segments run in, and the segment's program is looked up in SIGNAL_RULES:
+#
+#   deploy  vercel deploy | vercel --prod, netlify deploy, fly/flyctl deploy,
+#           railway up, heroku ... push, gcloud run|app|functions deploy,
+#           aws ... deploy, sam deploy, serverless/sls deploy, kubectl apply |
+#           rollout, helm upgrade|install, terraform/tofu apply, pulumi up,
+#           cdk deploy, wrangler deploy|publish, firebase deploy, npm/pnpm/
+#           yarn publish, gh release create, docker/podman push, mvn deploy,
+#           make deploy|release|publish, git push of a tag (--tags, v1.2.3)
+#           or to a heroku remote
+#   build   npm/pnpm/yarn/bun scripts named build* | compile* | typecheck*,
+#           vite build, next build, tsc, vue-tsc, cargo build, go build, make
+#           (any target but clean/help/fmt and the test/deploy ones), gradle
+#           build|assemble, mvn package|install|compile|verify, docker build,
+#           webpack, esbuild, dotnet build
+#   test    npm test / npm run test*, pnpm/yarn/bun test*, vitest, jest,
+#           mocha, pytest (python -m pytest|unittest too), cargo test, go
+#           test, mvn test, gradle test|check, rspec, phpunit, playwright
+#           test, deno test, dotnet test, make test|check
+#   push    git push (branch from the refspec; main or master is toDefault)
+#
+# Extending it is one row in SIGNAL_RULES: (program names, a function of the
+# arguments that returns the kind or None, a function that returns the
+# target or None). A --dry-run / --version / --help run never counts.
+#
+# Outcome. A segment followed by `|`, `||`, `;` or `&` (or that runs only
+# after a `||`) does not decide the call's exit status: `npm test | tail`
+# exits 0 whatever the tests did. Such a segment is judged by its output
+# instead (a failure count, "Build failed", "[rejected]", or for tests and
+# builds an explicit pass line) and says nothing when the output is silent.
+# Every other segment of a successful call succeeded. When the call fails,
+# the segment whose kind the error text points at is blamed, else the first
+# segment that could have ended the call; the rest say nothing. A Bash call
+# run in the background has no outcome yet on PostToolUse; an interrupted
+# one (Esc) is reported as a failure marked `interrupted`, which the office
+# never counts against prod.
+#
+# Where they travel. The hook sends ONE JSON per invocation, so the signals
+# ride on the event this call sends anyway: `signals: [...]` on the
+# agent_working of PreToolUse and of PostToolUseFailure, and on the
+# session_tool_done of a main-thread PostToolUse. A worker's PostToolUse (or
+# one without a session id) sends nothing of its own, so there they go out
+# alone as {type: 'signal', signals: [...]}, tagged with the subagent like
+# any of its events. Each signal: kind, target, command (160), and on a
+# failure error (the first meaningful line, 200), exitCode, detail ("3
+# failing", "2 errors") and interrupted. Classification never changes the
+# exit status and never fails the event it rides on.
+DEFAULT_BRANCHES = ('main', 'master')
+SIGNAL_NAMES = {
+    'deploy': ('deploy_start', 'deploy_success', 'deploy_fail'),
+    'build':  ('build_start', 'build_ok', 'build_failed'),
+    'test':   ('test_start', 'test_ok', 'test_failed'),
+    'push':   ('push', 'push_done', 'push_failed'),
+}
+MAX_SIGNALS = 8
+ENV_ASSIGN = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*=')
+TAG_REF = re.compile(r'^(refs/tags/|v\d)')
+NEVER_FLAGS = ('--dry-run', '--version', '--help')
+
+def positionals(args, with_value=()):
+    # The non-flag arguments, skipping the values of the flags that take one
+    out, i = [], 0
+    while i < len(args):
+        a = args[i]
+        if a == '--':
+            out.extend(args[i + 1:])
+            break
+        if a.startswith('-') and len(a) > 1:
+            i += 2 if (a in with_value and '=' not in a) else 1
+            continue
+        out.append(a)
+        i += 1
+    return out
+
+def flag_value(args, names):
+    # The value of the first of `names` given as `-x v`, `--name v` or `--name=v`
+    for i, a in enumerate(args):
+        for n in names:
+            if a == n and i + 1 < len(args):
+                return args[i + 1]
+            if n.startswith('--') and a.startswith(n + '='):
+                return a[len(n) + 1:]
+    return None
+
+def name_of(path):
+    # A directory or package as a display name: its last path segment, no @scope/
+    p = str(path or '').strip().rstrip('/')
+    p = p.split('/')[-1] if '/' in p else p
+    return p if p not in ('', '.', '..', '~', '-', '*') else None
+
+PM_VALUE_FLAGS = ('--prefix', '-w', '--workspace', '--filter', '-F', '-C', '--dir', '--cwd')
+
+def pm_script(prog, args):
+    # The script an npm / pnpm / yarn / bun call runs: `npm run build:x` ->
+    # build:x, `npm test` / `npm t` -> test, `pnpm --filter web build` -> build
+    pos = positionals(args, PM_VALUE_FLAGS)
+    if not pos:
+        return None
+    if pos[0] in ('run', 'run-script', 'rum', 'urn'):
+        return pos[1] if len(pos) > 1 else None
+    if pos[0] in ('t', 'tst') and prog == 'npm':
+        return 'test'
+    return pos[0]
+
+SCRIPT_BUILD = re.compile(r'^(build|compile|typecheck|type-check|tsc)([:\-_.].*)?$')
+SCRIPT_TEST = re.compile(r'^(test|tests|e2e|spec)([:\-_.].*)?$')
+
+def pm_kind(prog, args):
+    pos = positionals(args, PM_VALUE_FLAGS)
+    if not pos:
+        return None
+    if pos[0] == 'publish' or (prog == 'yarn' and pos[:2] == ['npm', 'publish']):
+        return 'deploy'
+    script = pm_script(prog, args)
+    if not script:
+        return None
+    if SCRIPT_BUILD.match(script):
+        return 'build'
+    if SCRIPT_TEST.match(script):
+        return 'test'
+    return None
+
+def pm_target(prog, args):
+    v = flag_value(args, ('--filter', '-F', '--workspace', '-w'))
+    if v:
+        return name_of(v.lstrip('.').lstrip('/') if v.startswith('./') else v) or name_of(v)
+    return name_of(flag_value(args, ('--prefix', '-C', '--dir', '--cwd')))
+
+def make_kind(args):
+    targets = [a for a in positionals(args, ('-C', '-f', '--file', '--directory', '-I', '-o', '-W')) if '=' not in a and not a.isdigit()]
+    goal = targets[0] if targets else ''
+    if goal in ('clean', 'distclean', 'mrproper', 'help', 'fmt', 'format', 'lint', 'install-deps', 'deps'):
+        return None
+    if goal in ('test', 'tests', 'check'):
+        return 'test'
+    if goal in ('deploy', 'release', 'publish'):
+        return 'deploy'
+    return 'build'
+
+def gradle_kind(args):
+    tasks = [t.split(':')[-1] for t in positionals(args, ('-p', '--project-dir', '-x'))]
+    if any(t in ('build', 'assemble', 'jar', 'bootJar', 'compileJava', 'compileKotlin', 'shadowJar') for t in tasks):
+        return 'build'
+    if any(t in ('test', 'check') for t in tasks):
+        return 'test'
+    return None
+
+def mvn_kind(args):
+    phases = positionals(args, ('-pl', '-f', '-P', '-s', '-D'))
+    if 'deploy' in phases:
+        return 'deploy'
+    if any(p in ('package', 'install', 'compile', 'verify') for p in phases):
+        return 'build'
+    if 'test' in phases:
+        return 'test'
+    return None
+
+def docker_kind(args):
+    pos = positionals(args, ('-t', '--tag', '-f', '--file', '-H', '--host', '--context', '--platform'))
+    if not pos:
+        return None
+    if pos[0] == 'push' or pos[:2] == ['image', 'push']:
+        return 'deploy'
+    if pos[0] == 'build' or pos[:2] in (['buildx', 'build'], ['compose', 'build'], ['image', 'build'], ['builder', 'build']):
+        return 'build'
+    return None
+
+def image_name(ref):
+    # ghcr.io/me/api:1.2 -> api
+    ref = str(ref or '').split('@')[0]
+    last = ref.split('/')[-1]
+    return last.split(':')[0] or None
+
+def docker_target(args):
+    pos = positionals(args, ('-t', '--tag', '-f', '--file', '-H', '--host', '--context', '--platform'))
+    if pos[:1] == ['push']:
+        return image_name(pos[1]) if len(pos) > 1 else None
+    if pos[:2] == ['image', 'push']:
+        return image_name(pos[2]) if len(pos) > 2 else None
+    tag = flag_value(args, ('-t', '--tag'))
+    return image_name(tag) if tag else None
+
+KUBECTL_VALUE_FLAGS = ('-n', '--namespace', '--context', '--kubeconfig', '-s', '--server', '--cluster', '--user', '-f', '--filename', '-l', '--selector')
+
+def kubectl_kind(args):
+    pos = positionals(args, KUBECTL_VALUE_FLAGS)
+    if pos[:1] == ['apply'] or pos[:2] in (['rollout', 'restart'], ['rollout', 'undo'], ['rollout', 'resume'], ['rollout', 'status']):
+        return 'deploy'
+    return None
+
+def kubectl_target(args):
+    pos = positionals(args, KUBECTL_VALUE_FLAGS)
+    if pos[:1] == ['rollout'] and len(pos) > 2:
+        return name_of(pos[2])
+    return None
+
+def first_pos(args, with_value=()):
+    pos = positionals(args, with_value)
+    return pos[0] if pos else ''
+
+def nth_pos(args, n, with_value=()):
+    pos = positionals(args, with_value)
+    return pos[n] if len(pos) > n else None
+
+VERCEL_NON_DEPLOY = ('env', 'login', 'logout', 'dev', 'link', 'logs', 'ls', 'list', 'pull', 'whoami', 'domains', 'alias',
+                     'rm', 'remove', 'inspect', 'secrets', 'teams', 'projects', 'certs', 'dns', 'build', 'promote', 'rollback')
+
+# (program names, kind of the call or None, its target or None). First match wins.
+SIGNAL_RULES = [
+    (('vercel',),
+     lambda a: 'deploy' if first_pos(a, ('--scope', '-t', '--token', '-A', '--local-config')) == 'deploy'
+         or (('--prod' in a or '--production' in a) and first_pos(a, ('--scope', '-t', '--token')) not in VERCEL_NON_DEPLOY) else None,
+     lambda a: None),
+    (('netlify',),      lambda a: 'deploy' if first_pos(a) == 'deploy' else None, lambda a: name_of(flag_value(a, ('--site', '-s')))),
+    (('fly', 'flyctl'), lambda a: 'deploy' if first_pos(a, ('-a', '--app', '-c', '--config')) == 'deploy' else None,
+     lambda a: name_of(flag_value(a, ('-a', '--app')))),
+    (('railway',),      lambda a: 'deploy' if first_pos(a, ('-s', '--service', '-e', '--environment')) == 'up' else None,
+     lambda a: name_of(flag_value(a, ('-s', '--service')))),
+    (('heroku',),       lambda a: 'deploy' if any(x == 'push' or x.endswith(':push') for x in a) else None,
+     lambda a: name_of(flag_value(a, ('-a', '--app')))),
+    (('gcloud',),       lambda a: 'deploy' if positionals(a, ('--project', '--region'))[:2] in (['run', 'deploy'], ['app', 'deploy'], ['functions', 'deploy']) else None,
+     lambda a: name_of(nth_pos(a, 2, ('--project', '--region', '--image', '--source'))) if first_pos(a, ('--project',)) in ('run', 'functions') else None),
+    (('aws',),          lambda a: 'deploy' if 'deploy' in positionals(a, ('--profile', '--region', '--output'))[:2] else None, lambda a: name_of(flag_value(a, ('--stack-name',)))),
+    (('sam',),          lambda a: 'deploy' if first_pos(a) == 'deploy' else None, lambda a: name_of(flag_value(a, ('--stack-name',)))),
+    (('serverless', 'sls'), lambda a: 'deploy' if first_pos(a) == 'deploy' else None, lambda a: None),
+    (('kubectl',),      kubectl_kind, kubectl_target),
+    (('helm',),         lambda a: 'deploy' if first_pos(a, ('-n', '--namespace', '--kube-context')) in ('upgrade', 'install') else None,
+     lambda a: name_of(nth_pos(a, 1, ('-n', '--namespace', '--kube-context', '-f', '--values', '--set', '--version', '--timeout')))),
+    (('terraform', 'tofu'), lambda a: 'deploy' if first_pos(a) == 'apply' else None,
+     lambda a: name_of(next((x.split('=', 1)[1] for x in a if x.startswith('-chdir=')), None))),
+    (('pulumi',),       lambda a: 'deploy' if first_pos(a, ('-s', '--stack', '-C', '--cwd')) == 'up' else None, lambda a: name_of(flag_value(a, ('-s', '--stack')))),
+    (('cdk',),          lambda a: 'deploy' if first_pos(a, ('--profile', '-c', '--context', '-a', '--app')) == 'deploy' else None, lambda a: None),
+    (('wrangler',),     lambda a: 'deploy' if positionals(a, ('-c', '--config', '-e', '--env', '--name', '--project-name'))[:1] in (['deploy'], ['publish'])
+         or positionals(a, ('-c', '--config', '--project-name'))[:2] == ['pages', 'deploy'] else None,
+     lambda a: name_of(flag_value(a, ('--name', '--project-name')))),
+    (('firebase',),     lambda a: 'deploy' if first_pos(a, ('-P', '--project', '--only')) == 'deploy' else None, lambda a: None),
+    (('gh',),           lambda a: 'deploy' if positionals(a, ('-R', '--repo'))[:2] == ['release', 'create'] else None, lambda a: None),
+    (('docker', 'podman'), docker_kind, docker_target),
+    (('docker-compose',), lambda a: 'build' if first_pos(a, ('-f', '--file', '-p', '--project-name')) == 'build' else None, lambda a: None),
+    (('npm', 'pnpm', 'yarn', 'bun'), lambda a, p=None: None, lambda a: None),  # placeholder: package managers are matched below
+    (('vite', 'next'),  lambda a: 'build' if first_pos(a) == 'build' else None, lambda a: None),
+    (('tsc', 'vue-tsc'), lambda a: None if any(x in a for x in ('--init', '-v', '--showConfig', '-w', '--watch')) else 'build',
+     lambda a: name_of(flag_value(a, ('-p', '--project'))) if (flag_value(a, ('-p', '--project')) or '').find('.json') < 0 else None),
+    (('cargo',),        lambda a: {'build': 'build', 'b': 'build', 'test': 'test', 't': 'test', 'nextest': 'test'}.get(first_pos(a, ('-p', '--package', '--manifest-path', '--target', '-j'))),
+     lambda a: name_of(flag_value(a, ('-p', '--package')))),
+    (('go',),           lambda a: {'build': 'build', 'test': 'test'}.get(first_pos(a)), lambda a: None),
+    (('make', 'gmake'), make_kind, lambda a: name_of(flag_value(a, ('-C', '--directory')))),
+    (('gradle', 'gradlew'), gradle_kind, lambda a: None),
+    (('mvn', 'mvnw'),   mvn_kind, lambda a: name_of(flag_value(a, ('-pl',)))),
+    (('webpack',),      lambda a: None if first_pos(a) in ('serve', 'init', 'info') else 'build', lambda a: None),
+    (('esbuild',),      lambda a: None if '--serve' in a or any(x.startswith('--serve=') for x in a) else 'build', lambda a: None),
+    (('dotnet',),       lambda a: {'build': 'build', 'test': 'test', 'publish': 'build'}.get(first_pos(a)), lambda a: None),
+    (('vitest',),       lambda a: None if first_pos(a) in ('bench', 'init', 'list') else 'test', lambda a: None),
+    (('jest', 'mocha', 'pytest', 'py.test', 'rspec', 'phpunit'), lambda a: 'test', lambda a: None),
+    (('playwright',),   lambda a: 'test' if first_pos(a, ('-c', '--config', '--project')) == 'test' else None, lambda a: None),
+    (('deno',),         lambda a: 'test' if first_pos(a) == 'test' else None, lambda a: None),
+]
+
+def classify_program(prog, args):
+    # One segment's program and arguments -> (kind, target) or None
+    if any(x in args for x in NEVER_FLAGS):
+        return None
+    if prog in ('npm', 'pnpm', 'yarn', 'bun'):
+        kind = pm_kind(prog, args)
+        return (kind, pm_target(prog, args)) if kind else None
+    if prog.startswith('python') and len(args) >= 2 and args[0] == '-m' and args[1] in ('pytest', 'unittest', 'nose2'):
+        return ('test', None)
+    for progs, kind_of, target_of in SIGNAL_RULES:
+        if prog in progs:
+            kind = kind_of(args)
+            if not kind:
+                return None
+            try:
+                target = target_of(args)
+            except Exception:
+                target = None
+            return (kind, target)
+    return None
+
+def git_push(args):
+    # git push [flags] [remote [refspec...]] -> entries (a tag push is a deploy)
+    flags, pos, i = set(), [], 0
+    while i < len(args):
+        a = args[i]
+        if a in ('-o', '--push-option', '--repo', '--receive-pack', '--exec'):
+            i += 2
+            continue
+        if a.startswith('-') and len(a) > 1:
+            flags.add(a.split('=')[0])
+            i += 1
+            continue
+        pos.append(a)
+        i += 1
+    if flags & {'-n', '--dry-run', '-d', '--delete', '--prune'}:
+        return []
+    remote = pos[0] if pos else None
+    if remote and remote.startswith('heroku'):
+        return [{'kind': 'deploy'}]
+    def dest(ref):
+        ref = ref.lstrip('+')
+        if ':' in ref:
+            ref = ref.split(':', 1)[1]
+        return ref[len('refs/heads/'):] if ref.startswith('refs/heads/') else ref
+    dests = [dest(r) for r in pos[1:] if dest(r)]
+    tags = [x for x in dests if TAG_REF.match(x)]
+    branches = [x for x in dests if not TAG_REF.match(x)]
+    out = []
+    if tags or '--tags' in flags or '--follow-tags' in flags:
+        out.append({'kind': 'deploy'})
+    if '--tags' in flags and not branches:
+        return out
+    if tags and not branches:
+        return out
+    entry = {'kind': 'push'}
+    named = [b for b in branches if b != 'HEAD']
+    if named and not (flags & {'--all', '--mirror', '--branches'}):
+        entry['branch'] = named[0]
+        entry['toDefault'] = any(b in DEFAULT_BRANCHES for b in named)
+    out.append(entry)
+    return out
+
+def split_command(command):
+    # [(segment, operator after it)] — split on && || ; | & and newlines that
+    # are outside quotes, backticks and $(...). `2>&1`, `&>` and `>&2` are
+    # redirections, not operators. A heredoc body is never read as commands.
+    s = str(command or '')
+    m = re.search(r'<<-?\s*[\'"]?\w+', s)
+    if m:
+        nl = s.find('\n', m.end())
+        if nl >= 0:
+            s = s[:nl]
+    segs, buf, quote, depth, i, n = [], [], None, 0, 0, len(s)
+    def cut(op):
+        segs.append((''.join(buf), op))
+        del buf[:]
+    while i < n:
+        c = s[i]
+        if quote:
+            buf.append(c)
+            if c == '\\' and quote == '"' and i + 1 < n:
+                buf.append(s[i + 1])
+                i += 2
+                continue
+            if c == quote:
+                quote = None
+            i += 1
+            continue
+        if c == '\\' and i + 1 < n:
+            buf.append(s[i:i + 2])
+            i += 2
+            continue
+        if c in ('"', "'", '`'):
+            quote = c
+            buf.append(c)
+            i += 1
+            continue
+        if c == '$' and s[i + 1:i + 2] == '(':
+            depth += 1
+            buf.append('$(')
+            i += 2
+            continue
+        if depth:
+            if c == '(':
+                depth += 1
+            elif c == ')':
+                depth -= 1
+            buf.append(c)
+            i += 1
+            continue
+        if c == '#' and (not buf or buf[-1][-1:].isspace()):
+            nl = s.find('\n', i)
+            i = n if nl < 0 else nl
+            continue
+        two = s[i:i + 2]
+        if two in ('&&', '||'):
+            cut(two)
+            i += 2
+            continue
+        if c == '&':
+            prev = buf[-1][-1:] if buf else ''
+            if prev in ('>', '<') or s[i + 1:i + 2] == '>':
+                buf.append(c)
+                i += 1
+                continue
+            cut('&')
+            i += 1
+            continue
+        if c == '|':
+            cut('|')
+            i += 2 if s[i + 1:i + 2] == '&' else 1
+            continue
+        if c in (';', '\n'):
+            cut(';')
+            i += 1
+            continue
+        buf.append(c)
+        i += 1
+    cut(None)
+    return [(seg.strip(), op) for seg, op in segs]
+
+WRAPPER_PAIRS = {('uv', 'run'), ('poetry', 'run'), ('pipenv', 'run'), ('bundle', 'exec'), ('pnpm', 'exec'), ('pnpm', 'dlx'),
+                 ('yarn', 'dlx'), ('yarn', 'exec'), ('npm', 'exec'), ('hatch', 'run'), ('rye', 'run'), ('pdm', 'run')}
+WRAPPER_VALUE_FLAGS = {'sudo': ('-u', '-g', '-C', '-D', '-p', '-r', '-t', '-U', '-h'), 'env': ('-u', '--unset', '-C', '--chdir', '-S'),
+                       'npx': ('-p', '--package', '-c'), 'pnpx': ('-p', '--package'), 'bunx': ('-p', '--package'),
+                       'nice': ('-n', '--adjustment'), 'timeout': ('-s', '--signal', '-k', '--kill-after')}
+
+def strip_wrappers(tokens):
+    # FOO=1 sudo -E npx --yes vitest run -> [vitest, run]
+    i, n = 0, len(tokens)
+    while i < n:
+        t = tokens[i]
+        base = t.split('/')[-1]
+        if ENV_ASSIGN.match(t):
+            i += 1
+            continue
+        if base in ('sudo', 'env', 'npx', 'pnpx', 'bunx', 'time', 'nohup', 'exec', 'command', 'builtin', 'nice', 'timeout', 'stdbuf'):
+            with_value = WRAPPER_VALUE_FLAGS.get(base, ())
+            i += 1
+            while i < n and (tokens[i].startswith('-') or (base == 'env' and ENV_ASSIGN.match(tokens[i]))):
+                i += 2 if (tokens[i] in with_value) else 1
+            if base == 'timeout' and i < n:
+                i += 1  # the duration
+            continue
+        if i + 1 < n and (base, tokens[i + 1]) in WRAPPER_PAIRS:
+            i += 2
+            while i < n and tokens[i].startswith('-'):
+                i += 1
+            continue
+        break
+    return tokens[i:]
+
+def tokenize(segment):
+    try:
+        import shlex
+        tokens = shlex.split(segment, posix=True)
+    except Exception:
+        tokens = segment.split()
+    # A subshell's parentheses and a group's braces are not part of the program
+    while tokens and tokens[0] in ('(', '{', '!'):
+        tokens = tokens[1:]
+    if tokens and tokens[0][:1] in ('(', '{'):
+        tokens[0] = tokens[0].lstrip('({')
+    while tokens and tokens[-1] in (')', '}'):
+        tokens = tokens[:-1]
+    if tokens and tokens[-1][-1:] in (')', '}'):
+        tokens[-1] = tokens[-1].rstrip(')}')
+    # Redirections are not arguments (2>&1, >out.log, < in)
+    out, skip = [], False
+    for t in tokens:
+        if skip:
+            skip = False
+            continue
+        if re.match(r'^\d*(>>?|<|&>>?)$', t):
+            skip = True
+            continue
+        if re.match(r'^\d*(>>?|<|&>>?)\S|^\d*>&\d$', t):
+            continue
+        out.append(t)
+    return [t for t in out if t]
+
+def classify_segments(command, cwd=None):
+    # Every meaningful segment of a command, with what the outcome logic needs:
+    # {kind, target?, branch?, toDefault?, masked, dir}
+    out = []
+    here = cwd if isinstance(cwd, str) and cwd else None
+    prev_op = None
+    for text, op in split_command(command):
+        tokens = strip_wrappers(tokenize(text)) if text else []
+        masked = op in ('|', '||', ';', '&') or prev_op == '||'
+        prev_op = op
+        if not tokens:
+            continue
+        prog = tokens[0].split('/')[-1]
+        args = tokens[1:]
+        if prog in ('cd', 'pushd') and args:
+            dest = os.path.expanduser(args[0]) if args[0] != '-' else None
+            if dest:
+                here = os.path.normpath(os.path.join(here, dest)) if here else os.path.normpath(dest)
+            continue
+        if prog == 'git':
+            gdir = flag_value(args, ('-C',))
+            sub = positionals(args, ('-C', '-c', '--git-dir', '--work-tree', '--namespace'))
+            if not sub or sub[0] != 'push':
+                continue
+            rest = args[args.index('push') + 1:] if 'push' in args else []
+            where = os.path.normpath(os.path.join(here or '', gdir)) if gdir else here
+            for entry in git_push(rest):
+                entry.update({'masked': masked, 'dir': where})
+                out.append(entry)
+            continue
+        if prog == 'gradlew':
+            prog = 'gradle'
+        if prog == 'mvnw':
+            prog = 'mvn'
+        hit = classify_program(prog, args)
+        if not hit:
+            continue
+        kind, target = hit
+        entry = {'kind': kind, 'masked': masked, 'dir': here}
+        if target:
+            entry['target'] = str(target)[:80]
+        out.append(entry)
+    return out
+
+def classify_command(command, cwd=None):
+    # The pure classifier: [{kind, target?, branch?, toDefault?}], one per
+    # meaningful segment, deduplicated. A target the command does not name
+    # comes from the directory a `cd` in the command moved to.
+    seen, out = set(), []
+    for e in classify_segments(command, cwd):
+        entry = {'kind': e['kind']}
+        target = e.get('target') or (name_of(e['dir']) if e.get('dir') and e['dir'] != cwd else None)
+        if target:
+            entry['target'] = target
+        for key in ('branch', 'toDefault'):
+            if key in e:
+                entry[key] = e[key]
+        key = json.dumps(entry, sort_keys=True)
+        if key not in seen:
+            seen.add(key)
+            out.append(entry)
+    return out
+
+# What the output says about a run whose exit status was masked, and which
+# segment a failed call should be blamed on
+FAIL_PRINTS = {
+    'test':   re.compile(r'\b[1-9]\d*\s+(?:failed|failing|failures?)\b|^\s*FAIL\b|^--- FAIL|test result: FAILED|FAILURES!|\bTests? failed\b', re.M | re.I),
+    'build':  re.compile(r'error TS\d+|\bbuild failed\b|Failed to compile|error\[E\d+\]|error: could not compile|BUILD FAILURE|FAILURE: Build failed|make(?:\[\d+\])?: \*\*\*|^ERROR in |Compilation failed|Found [1-9]\d* errors?', re.M | re.I),
+    'deploy': re.compile(r'\b(?:deploy(?:ment)?|release|rollout|publish(?:ing)?|upload)\b[^\n]{0,40}\b(?:failed|errored)\b|\bdeploy(?:ment)? error\b', re.I),
+    'push':   re.compile(r'\[rejected\]|\[remote rejected\]|failed to push|non-fast-forward|could not read from remote|Authentication failed'),
+}
+PASS_PRINTS = {
+    'test':  re.compile(r'\b[1-9]\d*\s+pass(?:ed|ing)\b|test result: ok\b|^ok\s|\bOK \(\d+ tests?|\b\d+ examples?, 0 failures', re.M | re.I),
+    'build': re.compile(r'\bbuilt in\b|Compiled successfully|\bFinished\b.*\btarget\(s\)|BUILD SUCCESS|\bbuild succeeded\b', re.I),
+}
+ANSI = re.compile(r'\x1b\[[0-9;?]*[ -/]*[@-~]')
+DECORATION = re.compile(r'^[\s\-=_*#~.+|>:─━═│┃╌┄⎯]*$')
+ERRORISH = re.compile(r'error|fail|fatal|denied|not found|no such|cannot|could not|unable|refused|rejected|exception|panic|ERR!|timed out', re.I)
+
+def output_tail(value, limit=6000):
+    if isinstance(value, dict):
+        text = '\n'.join(str(value.get(k) or '') for k in ('stdout', 'stderr', 'output'))
+    else:
+        text = str(value or '')
+    return ANSI.sub('', text[-limit:])
+
+def judged(kind, text):
+    # A masked run, judged by its output: 'fail', 'ok' or None (silent)
+    if FAIL_PRINTS[kind].search(text):
+        return 'fail'
+    if kind in PASS_PRINTS and PASS_PRINTS[kind].search(text):
+        return 'ok'
+    return None
+
+def first_meaningful(text):
+    lines = [ANSI.sub('', l).strip() for l in str(text or '').splitlines()]
+    lines = [l for l in lines if l and not DECORATION.match(l)]
+    for l in lines:
+        if ERRORISH.search(l):
+            return l
+    return lines[0] if lines else ''
+
+def failure_detail(kind, text):
+    # "3 failing" for a test run, "2 errors" for a build, when the output says
+    if kind == 'test':
+        for pattern in (r'Tests?:?\s+([1-9]\d*)\s+failed', r'\b([1-9]\d*)\s+failing\b', r'\b([1-9]\d*)\s+failed\b',
+                        r'\b([1-9]\d*)\s+failures?\b', r'Failures:\s*([1-9]\d*)'):
+            m = re.search(pattern, text, re.I)
+            if m:
+                return f'{m.group(1)} failing'
+        go = len(re.findall(r'^--- FAIL', text, re.M))
+        if go:
+            return f'{go} failing'
+        m = re.search(r'^\s*(FAIL\b.*)$', text, re.M)
+        if m:
+            return one_line(m.group(1), 80)
+    if kind == 'build':
+        m = re.search(r'Found ([1-9]\d*) errors?', text)
+        if m:
+            return f'{m.group(1)} error{"" if m.group(1) == "1" else "s"}'
+        n = len(re.findall(r'error TS\d+', text))
+        if n:
+            return f'{n} error{"" if n == 1 else "s"}'
+    return None
+
+GIT_HEAD_CACHE = {}
+
+def current_branch(start):
+    # The branch checked out where a bare `git push` runs: .git/HEAD of the
+    # nearest repository (a worktree's .git file points at its own HEAD).
+    # A handful of stats and one small read; None when it cannot be known.
+    if not start or not os.path.isabs(start):
+        return None
+    here = start
+    for _ in range(40):
+        dotgit = os.path.join(here, '.git')
+        try:
+            if os.path.isdir(dotgit):
+                head = os.path.join(dotgit, 'HEAD')
+            elif os.path.isfile(dotgit):
+                with open(dotgit) as fh:
+                    line = fh.read(512).strip()
+                if not line.startswith('gitdir:'):
+                    return None
+                gitdir = line[len('gitdir:'):].strip()
+                head = os.path.join(gitdir if os.path.isabs(gitdir) else os.path.join(here, gitdir), 'HEAD')
+            else:
+                parent = os.path.dirname(here)
+                if parent == here:
+                    return None
+                here = parent
+                continue
+            with open(head) as fh:
+                ref = fh.read(256).strip()
+            return ref[len('ref: refs/heads/'):] if ref.startswith('ref: refs/heads/') else None
+        except Exception:
+            return None
+    return None
+
+def bash_signals():
+    # This Bash call's signals for the current hook phase ([] for most calls)
+    inp = d.get('tool_input')
+    inp = inp if isinstance(inp, dict) else {}
+    command = inp.get('command')
+    if not isinstance(command, str) or not command.strip():
+        return []
+    cwd = d.get('cwd') if isinstance(d.get('cwd'), str) else None
+    segs = classify_segments(command, cwd)
+    if not segs:
+        return []
+    phase = {'PreToolUse': 0, 'PostToolUse': 1, 'PostToolUseFailure': 2}.get(hook_event)
+    if phase is None:
+        return []
+    outcomes = [None] * len(segs)
+    error, exit_code, text, interrupted = None, None, '', False
+    if phase == 0:
+        outcomes = ['start'] * len(segs)
+    elif phase == 1:
+        # A backgrounded command is still running: its outcome comes later, if ever
+        if inp.get('run_in_background'):
+            return []
+        resp = d.get('tool_response')
+        interrupted = isinstance(resp, dict) and resp.get('interrupted') is True
+        text = output_tail(resp)
+        for i, s in enumerate(segs):
+            outcomes[i] = 'fail' if interrupted else ('ok' if not s['masked'] else judged(s['kind'], text))
+    else:
+        err = str(d.get('error') or '')
+        interrupted = d.get('is_interrupt') is True
+        m = re.match(r'\s*Exit code (\d+)', err)
+        if m:
+            exit_code = int(m.group(1))
+            text = ANSI.sub('', err[m.end():][-6000:])
+        else:
+            text = ANSI.sub('', err[-6000:])
+        error = first_meaningful(text) or (f'exit code {exit_code}' if exit_code is not None else one_line(err, 200))
+        if interrupted:
+            outcomes = ['fail'] * len(segs)
+        else:
+            pointed = [i for i, s in enumerate(segs) if FAIL_PRINTS[s['kind']].search(text)]
+            gates = [i for i, s in enumerate(segs) if not s['masked']]
+            blamed = pointed[0] if pointed else (gates[0] if gates else None)
+            for i, s in enumerate(segs):
+                if i == blamed or (s['masked'] and i in pointed):
+                    outcomes[i] = 'fail'
+    project = SESSION.get('project')
+    out, seen = [], set()
+    for s, outcome in zip(segs, outcomes):
+        if outcome is None:
+            continue
+        names = SIGNAL_NAMES[s['kind']]
+        sig = {'kind': names[{'start': 0, 'ok': 1, 'fail': 2}[outcome]]}
+        target = s.get('target') or name_of(s.get('dir')) or project
+        if target:
+            sig['target'] = str(target)[:80]
+        if s['kind'] == 'push':
+            branch = s.get('branch')
+            if branch is None:
+                branch = current_branch(s.get('dir'))
+                if branch:
+                    sig['branch'] = branch[:120]
+                    sig['toDefault'] = branch in DEFAULT_BRANCHES
+            else:
+                sig['branch'] = branch[:120]
+                sig['toDefault'] = bool(s.get('toDefault'))
+        sig['command'] = clamp(command, 160)
+        if outcome == 'fail':
+            if interrupted:
+                sig['interrupted'] = True
+            if error:
+                sig['error'] = clamp(error, 200)
+            if exit_code is not None:
+                sig['exitCode'] = exit_code
+            detail = failure_detail(s['kind'], text)
+            if detail:
+                sig['detail'] = clamp(detail, 120)
+        key = (sig['kind'], sig.get('target'), sig.get('branch'))
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(sig)
+    return out[:MAX_SIGNALS]
+
+def with_signals(event):
+    # Attach this Bash call's signals to the event it sends anyway; a bug in
+    # the classifier costs the signals, never the event
+    if tool_name == 'Bash':
+        try:
+            signals = bash_signals()
+        except Exception:
+            signals = []
+        if signals:
+            event['signals'] = signals
+    return event
+
 # ── Agent tool calls  (tool_name == "Agent" or "Task") ─────────────────────
 if tool_name in ('Agent', 'Task'):
     inp = d.get('tool_input', {}) or {}
