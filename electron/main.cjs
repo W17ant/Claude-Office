@@ -10,6 +10,15 @@ const {
   APP_NAME,
   serverPortFromEnv,
   serverUrls,
+  classifyHealth,
+  classifyIndex,
+  serverPlan,
+  serverConflictMessage,
+  singleFlight,
+  reopenAction,
+  childSlot,
+  acceleratorFor,
+  shortcutFor,
   viewportFor,
   minSizeFor,
   defaultSizeFor,
@@ -65,7 +74,8 @@ const HIDE_ON_CLOSE = process.platform !== 'linux'
 
 let win = null
 let tray = null
-let serverProcess = null
+// The server child this app spawned (helpers.cjs childSlot): the one stopServer stops
+const server = childSlot()
 let quitting = false
 
 // Window state: the full window's bounds, the compact widget's bounds, which
@@ -85,20 +95,37 @@ function stateFile() {
 // ---------------------------------------------------------------------------
 
 /**
- * Check if the server is already responding on SERVER_PORT.
- * Returns a Promise<boolean>.
+ * GET a URL: { statusCode, contentType, body } (the body capped at 64 KB),
+ * or null when nothing answers within `timeoutMs`.
  */
-function isServerRunning() {
+function httpGet(url, timeoutMs = 1000) {
   return new Promise((resolve) => {
-    const req = http.get(HEALTH_URL, (res) => {
-      resolve(res.statusCode === 200)
+    const req = http.get(url, (res) => {
+      let body = ''
+      res.setEncoding('utf8')
+      res.on('data', (chunk) => { if (body.length < 65536) body += chunk })
+      res.on('end', () => resolve({ statusCode: res.statusCode, contentType: res.headers['content-type'], body }))
+      res.on('error', () => resolve(null))
     })
-    req.on('error', () => resolve(false))
-    req.setTimeout(1000, () => {
+    req.on('error', () => resolve(null))
+    req.setTimeout(timeoutMs, () => {
       req.destroy()
-      resolve(false)
+      resolve(null)
     })
   })
+}
+
+/**
+ * What is already on SERVER_PORT (helpers.cjs classifyHealth): 'none',
+ * 'usable' (an office server that serves the office page) or 'no-ui'. A
+ * server too old to say whether it has the UI is asked for its page.
+ */
+async function probeServer() {
+  const health = await httpGet(HEALTH_URL)
+  const found = health ? classifyHealth(health.statusCode, health.body) : 'none'
+  if (found !== 'unknown') return found
+  const index = await httpGet(`${SERVER_URL}/`)
+  return index ? classifyIndex(index.statusCode, index.contentType) : 'no-ui'
 }
 
 /**
@@ -154,6 +181,11 @@ function waitForServer(retries = 30, intervalMs = 300) {
  * npm (`npm_node_execpath`, set by `npm run ...`), or `node` from PATH.
  */
 function startServer() {
+  const running = server.get()
+  if (running && running.exitCode === null && running.signalCode === null) {
+    console.log('[main] Server process already running — not spawning another')
+    return
+  }
   const packaged = app.isPackaged
   const command = packaged ? process.execPath : (process.env.npm_node_execpath || 'node')
   // The child binds the port this process resolved, so an unparsable
@@ -163,27 +195,29 @@ function startServer() {
 
   console.log(`[main] Spawning server: ${command} ${SERVER_ENTRY} (port ${SERVER_PORT})`)
 
-  serverProcess = spawn(command, [SERVER_ENTRY], {
+  const child = server.adopt(spawn(command, [SERVER_ENTRY], {
     stdio: 'pipe',
     env,
-  })
+  }))
 
-  serverProcess.stdout.on('data', (data) => {
+  child.stdout.on('data', (data) => {
     process.stdout.write(`[server] ${data}`)
   })
 
-  serverProcess.stderr.on('data', (data) => {
+  child.stderr.on('data', (data) => {
     process.stderr.write(`[server] ${data}`)
   })
 
-  serverProcess.on('exit', (code, signal) => {
+  // Only this child's own end clears the slot: a duplicate that lost the
+  // port must not make the app forget the server it has to stop on quit
+  child.on('exit', (code, signal) => {
     console.log(`[main] Server process exited — code=${code} signal=${signal}`)
-    serverProcess = null
+    server.release(child)
   })
 
-  serverProcess.on('error', (err) => {
+  child.on('error', (err) => {
     console.error('[main] Failed to start server process:', err.message)
-    serverProcess = null
+    server.release(child)
   })
 }
 
@@ -191,10 +225,10 @@ function startServer() {
  * Kill the server child process if we own it.
  */
 function stopServer() {
-  if (serverProcess) {
+  const child = server.take()
+  if (child) {
     console.log('[main] Stopping server process...')
-    serverProcess.kill('SIGTERM')
-    serverProcess = null
+    child.kill('SIGTERM')
   }
 }
 
@@ -373,7 +407,17 @@ function menuState() {
   }
 }
 
-const menuActions = { toggleWindow, setCompact, setAlwaysOnTop, openInBrowser, quit: quitApp }
+const menuActions = { toggleWindow, setCompact, setAlwaysOnTop, resetBounds, openInBrowser, quit: quitApp }
+
+/** A keyboard shortcut (helpers.cjs SHORTCUTS), the same as its menu item. */
+function runShortcut(action) {
+  switch (action) {
+    case 'toggleCompact': setCompact(!compact); break
+    case 'toggleAlwaysOnTop': if (!compact) setAlwaysOnTop(!state.alwaysOnTop); break
+    case 'openInBrowser': openInBrowser(); break
+    case 'resetBounds': resetBounds(); break
+  }
+}
 
 function applicationMenuTemplate() {
   const isMac = process.platform === 'darwin'
@@ -382,11 +426,11 @@ function applicationMenuTemplate() {
     {
       label: 'Office',
       submenu: [
-        { label: 'Compact widget', type: 'checkbox', checked: compact, accelerator: 'CmdOrCtrl+Shift+C', click: () => setCompact(!compact) },
-        { label: 'Always on top', type: 'checkbox', checked: isAlwaysOnTop(), enabled: !compact, accelerator: 'CmdOrCtrl+Shift+T', click: () => setAlwaysOnTop(!state.alwaysOnTop) },
-        { label: 'Reset window size', click: resetBounds },
+        { label: 'Compact widget', type: 'checkbox', checked: compact, accelerator: acceleratorFor('toggleCompact'), click: () => setCompact(!compact) },
+        { label: 'Always on top', type: 'checkbox', checked: isAlwaysOnTop(), enabled: !compact, accelerator: acceleratorFor('toggleAlwaysOnTop'), click: () => setAlwaysOnTop(!state.alwaysOnTop) },
+        { label: 'Reset window size', accelerator: acceleratorFor('resetBounds'), click: resetBounds },
         { type: 'separator' },
-        { label: 'Open in browser', accelerator: 'CmdOrCtrl+Shift+O', click: openInBrowser },
+        { label: 'Open in browser', accelerator: acceleratorFor('openInBrowser'), click: openInBrowser },
         { type: 'separator' },
         { role: 'reload' },
         { role: 'toggleDevTools' },
@@ -409,10 +453,19 @@ function refreshMenus() {
 
 async function createWindow() {
   // Check if a server is already running (e.g. launched separately during dev)
-  const alreadyRunning = await isServerRunning()
+  const found = await probeServer()
+  const plan = serverPlan(found, app.isPackaged)
 
-  if (alreadyRunning) {
-    console.log(`[main] Server already running on port ${SERVER_PORT} — skipping spawn`)
+  if (plan === 'conflict') {
+    // The packaged window would show that server's "UI not built" error body.
+    // Starting a second server on the same port cannot help (it would fail to
+    // bind), so say what is going on instead.
+    console.error(`[main] The server on port ${SERVER_PORT} serves no office page — not loading it`)
+    dialog.showErrorBox(APP_NAME, serverConflictMessage(SERVER_PORT))
+    quitApp()
+    return
+  } else if (plan === 'reuse') {
+    console.log(`[main] Server already running on port ${SERVER_PORT} — skipping spawn${found === 'usable' ? '' : ' (it has no built UI; this window loads the Vite dev server)'}`)
   } else {
     startServer()
     const ready = await waitForServer()
@@ -497,6 +550,17 @@ async function createWindow() {
     console.error(`[main] Window failed to load ${failedUrl}: ${description} (${code})`)
   })
 
+  // The window's shortcuts, handled before the page or a menu sees the keys:
+  // on Windows and Linux the frameless window has no menu bar to carry them
+  // (helpers.cjs, "Keyboard shortcuts"). Consuming the key also keeps a menu
+  // accelerator for the same keys from firing a second time.
+  win.webContents.on('before-input-event', (event, input) => {
+    const action = shortcutFor(input)
+    if (!action) return
+    event.preventDefault()
+    runShortcut(action)
+  })
+
   // Right-click anywhere that is not a text field: the tray menu, so the
   // frameless window has its controls on every platform.
   win.webContents.on('context-menu', (event, params) => {
@@ -546,6 +610,8 @@ async function createWindow() {
 // ---------------------------------------------------------------------------
 
 function createTrayIcon() {
+  // One icon, however many times a window is created
+  if (tray) { tray.dispose(); tray = null }
   try {
     tray = createTray({
       serverUrl: SERVER_URL,
@@ -577,9 +643,28 @@ function createTrayIcon() {
 if (app.isPackaged && !app.requestSingleInstanceLock()) {
   app.quit()
 } else {
-  app.on('second-instance', () => showWindow())
+  // Startup (probe the port, start the server, wait for it, open the window)
+  // takes seconds; one run at a time, so a Dock click or a second launch in
+  // the meantime cannot spawn a second server and open a second window
+  const startOffice = singleFlight(createWindow)
+  const openOffice = () => startOffice().catch((err) => console.error('[main] Could not open the office:', err))
 
-  app.whenReady().then(createWindow)
+  // Opened again (a Dock click, a second launch): wait for a startup in
+  // progress, else show the window, else make one
+  const reopen = () => {
+    const action = reopenAction({
+      quitting,
+      starting: startOffice.pending(),
+      hasWindow: !!win && !win.isDestroyed(),
+      windowCount: BrowserWindow.getAllWindows().length,
+    })
+    if (action === 'show') showWindow()
+    else if (action === 'create') openOffice()
+  }
+
+  app.on('second-instance', reopen)
+
+  app.whenReady().then(openOffice)
 
   app.on('window-all-closed', () => {
     stopServer()
@@ -592,8 +677,5 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     stopServer()
   })
 
-  app.on('activate', () => {
-    if (win && !win.isDestroyed()) showWindow()
-    else if (BrowserWindow.getAllWindows().length === 0) createWindow()
-  })
+  app.on('activate', reopen)
 }
