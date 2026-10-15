@@ -1170,6 +1170,8 @@ function relaySignals(body, signals) {
     }
     const what = [record.target, record.branch && `→ ${record.branch}`, record.detail, record.error && `— ${logText(record.error, 80)}`].filter(Boolean).join(' ')
     console.log(`[signal] ${project ?? body.sessionId ?? 'unknown session'}: ${record.kind}${what ? ` ${what}` : ''}${record.interrupted ? ' (interrupted)' : ''}${agentName ? ` [${agentName}]` : ''}`)
+    // The inspector card of whoever ran the command shows it in its history
+    recordActivity(agentId ?? (body.sessionId ? mainActivityId(body.sessionId) : null), { kind: 'status', text: `${record.kind}${what ? ` ${what}` : ''}` }, at)
     broadcast({ type: 'signal', ...publicSignal(record), timestamp: at })
   }
 }
