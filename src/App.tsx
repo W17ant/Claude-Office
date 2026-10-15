@@ -34,7 +34,7 @@ import {
 } from './theme'
 import {
   dispatchIncident, subscribeIncidentTransitions, incidentTransitionLines,
-  useVariant, getIncident, pinIncidentFromUrl, failureToolFromStatus,
+  useVariant, getIncident, pinIncidentFromUrl, failureToolFromStatus, signalIncidentInput,
 } from './incident'
 import IncidentLayer from './components/IncidentLayer'
 
@@ -645,14 +645,21 @@ const App: React.FC = () => {
     // on to the office reducer as before
     if (isPermissionEvent(action)) { dispatchPermissions(action); return }
     if (action.type === 'snapshot') { setUiToken(action.uiToken); dispatchPermissions(action) }
-    // Incident mode: count failed tool calls, and apply /incident + /all-clear
-    // relayed by the server
+    // Incident mode: count failed tool calls, hear what the Bash commands
+    // meant (a failed deploy opens it, a green run closes it), and apply
+    // /incident + /all-clear relayed by the server. A signal then goes on to
+    // the office reducer for its scene and chat line.
     if (action.type === 'agent_working' && action.failed) {
       const failedAgent = action.agentId ? agentsRef.current.find(a => a.id === action.agentId) : undefined
       dispatchIncident({
         type: 'failure', at: Date.now(), tool: failureToolFromStatus(action.status),
-        agentId: failedAgent?.id, agentName: failedAgent?.name,
+        agentId: failedAgent?.id, agentName: failedAgent?.name, sessionId: action.sessionId,
       })
+    }
+    if (action.type === 'signal') {
+      const worker = action.agentId ? agentsRef.current.find(a => a.id === action.agentId) : undefined
+      const input = signalIncidentInput(action, Date.now(), worker?.name)
+      if (input) dispatchIncident(input)
     }
     if (action.type === 'variant_change') {
       dispatchIncident({ type: 'command', at: Date.now(), cmd: action.variant === 'incident' ? 'incident' : 'all-clear', reason: 'remote' })

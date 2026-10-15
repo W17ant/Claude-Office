@@ -28,9 +28,16 @@
  * session_compact (memory wipe), session_cwd / session_model (pill tags), and
  * leaves after session_ended's grace. Under ?sim there are no sessions, so the
  * one decorative Claude (CLAUDE_ID) keeps its desk.
+ *
+ * Signals (src/signals.ts). What a session's Bash commands meant puts a scene
+ * on the character that ran the command — its worker, else the session's
+ * Claude: a rocket while a deploy ships (until it lands, fails or 10 min
+ * pass), a party when it lands, a red flash on a failed build or test run, a
+ * merge badge on a push to main — and a system line in the chat (never
+ * answered by the chat bot). Incident mode hears the same signals in App.tsx.
  */
 
-import { Agent, OfficeEvent, Position, SnapshotAgent, ServerHealth, SessionInfo, SessionMain, MainState, NeedsYou, AGENT_CONFIGS } from './types'
+import { Agent, AgentScene, OfficeEvent, Position, SignalEvent, SnapshotAgent, ServerHealth, SessionInfo, SessionMain, MainState, NeedsYou, AGENT_CONFIGS } from './types'
 import { ROOMS, AgentSpot } from './rooms'
 import {
   mainId, isMainAgent, isFreeMain, isHardNeedsYou, needsYouLabel, agentStateFor,
@@ -52,6 +59,7 @@ import {
 import { BOSS_ROLE, BOSS_NAME } from './config'
 import { getTheme } from './theme'
 import { getVariant, pickIncidentLine } from './incident'
+import { isSignalKind, signalFamily, signalOutcome, signalWhere, SCENE_MS } from './signals'
 
 // ---------------------------------------------------------------------------
 // Room constants
@@ -159,6 +167,8 @@ export interface OfficeState {
   handoverSeq: number
   /** Connection + the server's health report (the status strip) */
   health: HealthState
+  /** Build and test runs whose last run failed (`session|family|target` -> when), for the "green again" line */
+  redRuns: Record<string, number>
 }
 
 /** Everything impure the reducer needs, injected so tests are deterministic */
@@ -178,6 +188,10 @@ export type OfficeAction =
   | { type: 'handover_over'; seq: number }
   /** session_ended's grace is over: that session's Claude clocks out */
   | { type: 'session_claude_leave'; sessionId: string }
+  /** What a Bash command meant (the server's `signal` broadcast) */
+  | SignalEvent
+  /** A signal's scene has run its course (`until` guards against a newer scene) */
+  | { type: 'scene_over'; agentId: string; until: number }
 
 export type SfxName = 'doorOpen' | 'typing' | 'celebration' | 'coffee' | 'alarm' | 'error' | 'powerDown' | 'notification' | 'needsYou'
 
@@ -319,7 +333,7 @@ function bossReply(agentName: string, random: () => number): string {
 export function initialOfficeState(agents: Agent[], now: number): OfficeState {
   const meta: Record<string, AgentMeta> = {}
   for (const a of agents) meta[a.id] = newMeta(now, true)
-  return { agents, lobby: [], pendingStatus: {}, meta, recentChatKeys: [], endedSessions: {}, handoverSeq: 0, health: initialHealth(now) }
+  return { agents, lobby: [], pendingStatus: {}, meta, recentChatKeys: [], endedSessions: {}, handoverSeq: 0, health: initialHealth(now), redRuns: {} }
 }
 
 // ---------------------------------------------------------------------------
@@ -686,6 +700,98 @@ function bossHandover(state: OfficeState, claude: Agent, bubble: string, env: Of
     state: { ...state, handoverSeq: seq, agents: state.agents.map(a => (a.id === BOSS_ID ? next : a)) },
     effects,
   }
+}
+
+// ---------------------------------------------------------------------------
+// Signals: scenes on the character that ran the command
+// ---------------------------------------------------------------------------
+
+/** How many red runs the office remembers for its "green again" line */
+const MAX_RED_RUNS = 50
+
+/** A system row in the chat: shown, never answered by the chat bot */
+function systemMsg(text: string): OfficeEffect {
+  return { kind: 'msg', sender: 'system', role: 'default', color: SYSTEM_COLOR, text, isSystem: true }
+}
+
+/** Put a scene on an agent; it ends by itself after `ms` unless a newer one replaces it */
+function withScene(state: OfficeState, agentId: string, kind: AgentScene['kind'], ms: number, env: OfficeEnv, effects: OfficeEffect[], label?: string): OfficeState {
+  const scene: AgentScene = { kind, until: env.now + ms, ...(label ? { label } : {}) }
+  effects.push({ kind: 'schedule', action: { type: 'scene_over', agentId, until: scene.until }, delayMs: ms })
+  return { ...state, agents: state.agents.map(a => (a.id === agentId ? { ...a, scene } : a)) }
+}
+
+/** End an agent's scene of this kind now (a deploy that stopped shipping) */
+function withoutScene(state: OfficeState, agentId: string, kind: AgentScene['kind']): OfficeState {
+  const agent = state.agents.find(a => a.id === agentId)
+  if (agent?.scene?.kind !== kind) return state
+  return { ...state, agents: state.agents.map(a => (a.id === agentId ? { ...a, scene: undefined } : a)) }
+}
+
+/**
+ * One signal: the scene on the worker that ran the command (else the
+ * session's Claude) and the chat line. Incident mode is fed the same signal
+ * by App.tsx; this only draws and talks.
+ */
+function reduceSignal(state: OfficeState, action: SignalEvent, env: OfficeEnv): OfficeResult {
+  if (!isSignalKind(action.kind)) return { state, effects: [] }
+  const family = signalFamily(action.kind)
+  const outcome = signalOutcome(action.kind)
+  const effects: OfficeEffect[] = []
+  let cur = state
+  let actor = action.agentId ? cur.agents.find(a => a.id === action.agentId && a.state !== 'completed') : undefined
+  if (!actor && action.sessionId) {
+    const ensured = ensureClaude(cur, action.sessionId, { project: action.project }, env)
+    cur = ensured.state
+    effects.push(...ensured.effects)
+    actor = findMain(cur, action.sessionId)
+  }
+  const where = signalWhere(action)
+  const why = action.detail || action.error || (action.exitCode !== undefined ? `exit code ${action.exitCode}` : '')
+  const scene = (kind: AgentScene['kind'], ms: number, label?: string) => {
+    if (actor) cur = withScene(cur, actor.id, kind, ms, env, effects, label)
+  }
+
+  if (family === 'deploy') {
+    if (outcome === 'start') {
+      scene('shipping', SCENE_MS.shipping, `🚀 shipping${where ? ` ${where}` : ''}`)
+    } else if (action.interrupted) {
+      if (actor) cur = withoutScene(cur, actor.id, 'shipping')
+      effects.push(systemMsg(`⏹ ${where ? `${where} deploy` : 'deploy'} interrupted`))
+    } else if (outcome === 'ok') {
+      scene('shipped', SCENE_MS.shipped)
+      effects.push(systemMsg(`🚀 ${where ?? 'it'} deployed`), { kind: 'sfx', sfx: 'celebration' })
+    } else {
+      // The incident itself (and its alarm) opens in incident mode
+      scene('red', SCENE_MS.red)
+      effects.push(systemMsg(`💥 ${where ? `${where} deploy` : 'deploy'} failed${why ? ` — ${why}` : ''}`))
+    }
+    return { state: cur, effects }
+  }
+
+  if (family === 'push') {
+    if (outcome === 'ok' && action.toDefault) {
+      scene('pushed', SCENE_MS.pushed)
+      effects.push(systemMsg(`🎉 pushed to ${action.branch ?? 'main'}${where ? ` · ${where}` : ''}`), { kind: 'sfx', sfx: 'notification' })
+    }
+    return { state: cur, effects }
+  }
+
+  // A build or a test run: red when it fails, a line when it is green again
+  if (outcome === 'start' || action.interrupted) return { state: cur, effects }
+  const what = family === 'test' ? 'tests' : 'build'
+  const key = `${action.sessionId ?? ''}|${family}|${where ?? ''}`
+  if (outcome === 'fail') {
+    scene('red', SCENE_MS.red)
+    const redRuns = Object.fromEntries(Object.entries({ ...cur.redRuns, [key]: env.now }).slice(-MAX_RED_RUNS))
+    cur = { ...cur, redRuns }
+    effects.push(systemMsg(`❌ ${what} failed${where ? ` in ${where}` : ''}${why ? ` — ${why}` : ''}`), { kind: 'sfx', sfx: 'error' })
+    return { state: cur, effects }
+  }
+  if (!(key in cur.redRuns)) return { state: cur, effects }
+  cur = { ...cur, redRuns: without(cur.redRuns, key) }
+  effects.push(systemMsg(`✅ ${what} green again${where ? ` in ${where}` : ''}`))
+  return { state: cur, effects }
 }
 
 /** Sessions whose Claude has a hand up for a person (drives the '✋ ' title prefix) */
@@ -1256,6 +1362,16 @@ function reduceEvent(state: OfficeState, action: OfficeAction, env: OfficeEnv): 
       const id = mainId(sid)
       const cur = ensured.state
       return { state: { ...cur, agents: cur.agents.map(a => (a.id === id ? { ...a, model: action.model } : a)) }, effects: ensured.effects }
+    }
+
+    // ── What a Bash command meant: a scene on whoever ran it, a chat line ──
+    case 'signal':
+      return reduceSignal(state, action, env)
+
+    case 'scene_over': {
+      const agent = state.agents.find(a => a.id === action.agentId)
+      if (!agent || agent.scene?.until !== action.until) return none
+      return { state: { ...state, agents: state.agents.map(a => (a.id === agent.id ? { ...a, scene: undefined } : a)) }, effects: [] }
     }
 
     // ── Pipeline health: the socket's phase, the server's report ───────────

@@ -11,6 +11,8 @@
  * - GET /sessions lists the Claude Code sessions (terminals) the agents belong to,
  *   hooked ones and the ones only Claude Code's session registry knows about
  * - GET /registry shows that registry as the roster reads it (server/sessions.js)
+ * - GET /signals lists the last deploy / build / test / push signals the
+ *   hook classified out of the sessions' Bash commands
  */
 
 import express from 'express'
@@ -649,6 +651,7 @@ function forgetSession(id) {
   clearSessionTimer(id)
   cancelPendingNeedsYou(id)
   clearNeedsYouTimer(id)
+  sessionSignals.delete(id)
   const session = sessions.get(id)
   if (!session) return
   sessions.delete(id)
@@ -900,6 +903,8 @@ const KNOWN_EVENT_TYPES = new Set([
   'session_compact',
   'session_cwd',
   'session_model',
+  // A Bash call's signals when the call sends no other event (see Signals below)
+  'signal',
 ])
 
 const MAX_STRING_LEN = 200
@@ -991,10 +996,114 @@ function sanitiseTasks(list) {
   }))
 }
 
+// ---------------------------------------------------------------------------
+// Signals — what a session's Bash commands mean
+//
+// The tracker classifies Bash commands that deploy, build, test or push
+// (hooks/agent-tracker.sh, "Signals") and sends their start, success or
+// failure as `signals: [...]` on the event the call sends anyway (or alone,
+// as a `signal` event). The server checks them, keeps the last
+// SIGNAL_RING_SIZE in memory — for the whole office and per session — and
+// broadcasts one `signal` event per signal right after the event that
+// carried it, so the office has already applied that call's tool status
+// when the signal lands. GET /signals and the WS snapshot read the ring.
+// Nothing is persisted: signals are about the last few minutes.
+//
+//   { kind, target?, detail?, error?, exitCode?, branch?, toDefault?,
+//     interrupted?, sessionId?, project?, agentId?, agentName?, at, seq }
+//
+// agentId is the office id of the worker that ran the command (a subagent
+// id the office knows is resolved), absent on the main thread. The command
+// itself (clamped to 160) stays in the ring and is shown only to a caller
+// with the office token, the way GET /sessions treats prompt text.
+// ---------------------------------------------------------------------------
+
+const SIGNAL_KINDS = new Set([
+  'deploy_start', 'deploy_success', 'deploy_fail',
+  'build_start', 'build_ok', 'build_failed',
+  'test_start', 'test_ok', 'test_failed',
+  'push', 'push_done', 'push_failed',
+])
+const MAX_SIGNALS_PER_EVENT = 8
+const SIGNAL_RING_SIZE = 100
+const SNAPSHOT_SIGNALS = 20
+
+/** @type {object[]} the last SIGNAL_RING_SIZE signals, oldest first */
+const signalRing = []
+/** @type {Map<string, object[]>} sessionId -> that session's last SIGNAL_RING_SIZE signals */
+const sessionSignals = new Map()
+let signalSeq = 0
+
+/** A tracker's signal list, checked and clamped: unknown kinds and non-objects are dropped. */
+function sanitiseSignals(list) {
+  if (!Array.isArray(list)) return []
+  return list.filter(s => s && typeof s === 'object' && SIGNAL_KINDS.has(s.kind)).map(s => {
+    const out = { kind: s.kind }
+    const strings = { target: 80, command: 160, error: 200, detail: 120, branch: 120 }
+    for (const [key, max] of Object.entries(strings)) {
+      const value = clampString(s[key], max)
+      if (value) out[key] = value
+    }
+    if (Number.isInteger(s.exitCode) && s.exitCode >= 0 && s.exitCode <= 255) out.exitCode = s.exitCode
+    if (typeof s.toDefault === 'boolean') out.toDefault = s.toDefault
+    if (s.interrupted === true) out.interrupted = true
+    return out
+  })
+}
+
+function pushRing(ring, record) {
+  ring.push(record)
+  if (ring.length > SIGNAL_RING_SIZE) ring.splice(0, ring.length - SIGNAL_RING_SIZE)
+}
+
+/** A ring record as the office and an untokened caller see it: everything but the command. */
+function publicSignal(record) {
+  const { command, ...rest } = record
+  return rest
+}
+
+/**
+ * Record and broadcast the signals an event carried. Called after the event
+ * itself was processed and broadcast, so a subagent the event just bound is
+ * known by its office id here.
+ */
+function relaySignals(body, signals) {
+  if (!signals.length) return
+  const session = body.sessionId ? sessions.get(body.sessionId) : undefined
+  const project = session?.project ?? body.project
+  const agentId = lookupAgentId(body.agentId) ?? undefined
+  const agentName = agentId ? activeAgents.get(agentId)?.name : undefined
+  for (const signal of signals) {
+    const at = Date.now()
+    const record = {
+      ...signal,
+      ...(body.sessionId ? { sessionId: body.sessionId } : {}),
+      ...(project ? { project } : {}),
+      ...(agentId ? { agentId } : {}),
+      ...(agentName ? { agentName } : {}),
+      at,
+      seq: ++signalSeq,
+    }
+    pushRing(signalRing, record)
+    if (body.sessionId) {
+      if (!sessionSignals.has(body.sessionId)) sessionSignals.set(body.sessionId, [])
+      pushRing(sessionSignals.get(body.sessionId), record)
+    }
+    const what = [record.target, record.branch && `→ ${record.branch}`, record.detail, record.error && `— ${logText(record.error, 80)}`].filter(Boolean).join(' ')
+    console.log(`[signal] ${project ?? body.sessionId ?? 'unknown session'}: ${record.kind}${what ? ` ${what}` : ''}${record.interrupted ? ' (interrupted)' : ''}${agentName ? ` [${agentName}]` : ''}`)
+    broadcast({ type: 'signal', ...publicSignal(record), timestamp: at })
+  }
+}
+
 function validateEvent(body) {
   if (!body || typeof body !== 'object') return 'Missing body'
   if (!body.type || typeof body.type !== 'string') return 'Missing event type'
   if (!KNOWN_EVENT_TYPES.has(body.type)) return `Unknown event type: ${body.type}`
+  if (body.signals !== undefined) {
+    if (!Array.isArray(body.signals)) return 'signals must be an array'
+    if (body.signals.length > MAX_SIGNALS_PER_EVENT) return `At most ${MAX_SIGNALS_PER_EVENT} signals per event`
+  }
+  if (body.type === 'signal' && sanitiseSignals(body.signals).length === 0) return 'A signal event needs at least one known signal'
   return null
 }
 
@@ -1153,6 +1262,13 @@ app.get('/roster', (_req, res) => {
  *   { type: "session_model",     model, fromModel?, switchSource? }                (PostModelSwitch)
  * A foreground agent's agent_completed may add tokens, durationMs, toolUses, model.
  *
+ * What a Bash call meant (see Signals): agent_working (PreToolUse,
+ * PostToolUseFailure) and session_tool_done (PostToolUse) may carry
+ *   signals: [{ kind, target?, command?, error?, exitCode?, detail?, branch?, toDefault?, interrupted? }]
+ * (at most 8; kinds outside SIGNAL_KINDS are dropped), and a call that sends
+ * nothing else sends them alone:
+ *   { type: "signal", signals: [...], agentId? }
+ *
  * Every event may carry sessionId, project, cwd and transcriptPath — the
  * Claude Code session the hook fired in. Agents are filed under it.
  */
@@ -1232,12 +1348,17 @@ app.post('/event', requireToken, (req, res) => {
     tokens:           clampCount(body.tokens),
     durationMs:       clampCount(body.durationMs),
     toolUses:         clampCount(body.toolUses),
+    // What the Bash call meant (see Signals): relayed below, not by processEvent
+    signals:          undefined,
   }
+  const signals = sanitiseSignals(body.signals)
 
   const event = processEvent(sanitised)
   if (event) {
     broadcast(event)
   }
+  // After the event that carried them, so the office has its tool status first
+  relaySignals(sanitised, signals)
   health.markHook()  // a hook reached us: what the strip's "last seen" counts (after the event, so its counts include it)
 
   // A PermissionRequest the hook will wait on: the response names the pending
@@ -1549,6 +1670,21 @@ app.get('/sessions', (req, res) => {
   // The prompt / reply text in `main` only for a caller with the office token
   const withText = tokenMatches(bearerToken(req))
   res.json({ sessions: Array.from(sessions.values()).map(s => sessionToJSON(s, { withText })) })
+})
+
+/**
+ * GET /signals?since=<ms>&sessionId=<id> — the last signals (see Signals),
+ * oldest first: those after `since` (a timestamp, exclusive), from one
+ * session's ring when sessionId names one. Open like GET /sessions; the
+ * command each came from only for a caller with the office token.
+ */
+app.get('/signals', (req, res) => {
+  const since = Number(req.query.since)
+  const sessionId = typeof req.query.sessionId === 'string' ? req.query.sessionId : undefined
+  const ring = sessionId ? (sessionSignals.get(sessionId) ?? []) : signalRing
+  const withCommand = tokenMatches(bearerToken(req))
+  const signals = ring.filter(s => !Number.isFinite(since) || s.at > since).map(s => (withCommand ? { ...s } : publicSignal(s)))
+  res.json({ signals, now: Date.now() })
 })
 
 /**
@@ -2381,6 +2517,16 @@ function processEvent(body) {
       }
     }
 
+    case 'signal': {
+      // A Bash call's signals with no event of their own (a worker's
+      // PostToolUse): the session is alive; POST /event relays the signals
+      const session = touchSession(body)
+      const id = lookupAgentId(body.agentId)
+      if (id) activeAgents.get(id).lastActivityAt = Date.now()
+      if (session || id) saveAgents()
+      return null
+    }
+
     default:
       console.warn(`[?] Unknown event type: ${body.type}`)
       return null
@@ -2505,6 +2651,8 @@ wss.on('connection', (ws, req) => {
     // them — handed out here and nowhere else (see UI_TOKEN)
     pendingPermissions: permissions.pending(),
     uiToken: UI_TOKEN,
+    // The last few signals (see Signals), oldest first, as their broadcasts carried them
+    signals: signalRing.slice(-SNAPSHOT_SIGNALS).map(publicSignal),
     timestamp: Date.now(),
   }
   ws.send(JSON.stringify(snapshot))

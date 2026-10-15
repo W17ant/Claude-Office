@@ -62,6 +62,14 @@ function shouldShowBubble(state: AgentState): boolean {
   return state === 'talking-to-manager'
 }
 
+// A signal's scene (src/officeReducer.ts) wears an existing effect sprite
+const SCENE_SPRITES: Record<NonNullable<Agent['scene']>['kind'], string> = {
+  shipping: '/sprites/effects/rocket.png',
+  shipped:  '/sprites/effects/party.png',
+  red:      '/sprites/effects/build-failed.png',
+  pushed:   '/sprites/effects/github-pr-merge.png',
+}
+
 // Opposite direction for random "looking around"
 const OPPOSITE: Record<SpriteDirection, SpriteDirection> = {
   'front-left': 'rear-right',
@@ -141,11 +149,14 @@ const Character: React.FC<CharacterProps> = ({ agent, idleDurationMs = 0, zIndex
   const mainState = main ? agent.mainState : undefined
   const needsYou = mainState === 'needs-you' ? agent.needsYou : undefined
   const hardNeedsYou = isHardNeedsYou(needsYou)
+  // A deploy shipping, a red run, a push to main: shown unless a hand is up or the API failed
+  const scene = agent.state !== 'completed' ? agent.scene : undefined
   let effectSrc: string | null = null
   let badge: { text: string; cls: string } | null = null
   if (isTyping) effectSrc = '/sprites/effects/typing.png'
   else if (needsYou) badge = { text: needsYouBadge(needsYou.kind), cls: hardNeedsYou ? 'needs-you' : 'soft' }
   else if (mainState === 'error') badge = { text: '⚠', cls: 'error' }
+  else if (scene) effectSrc = SCENE_SPRITES[scene.kind]
   else if (mainState === 'compacting') effectSrc = null
   else if (mainState === 'waiting') effectSrc = '/sprites/effects/glass-water.png'
   else if (mainState === 'working' && agent.state === 'working') effectSrc = '/sprites/effects/typing.png'
@@ -160,7 +171,7 @@ const Character: React.FC<CharacterProps> = ({ agent, idleDurationMs = 0, zIndex
 
   return (
     <div
-      className={`character-wrapper state-${animState}${mainState ? ` main-${mainState}` : ''}`}
+      className={`character-wrapper state-${animState}${mainState ? ` main-${mainState}` : ''}${scene ? ` scene-${scene.kind}` : ''}`}
       style={{
         left: `${agent.position.x}%`,
         top: `${agent.position.y}%`,
@@ -178,6 +189,9 @@ const Character: React.FC<CharacterProps> = ({ agent, idleDurationMs = 0, zIndex
 
       {stateLabel ? (
         <div className={mainState === 'error' ? 'char-error' : `char-needs-you ${hardNeedsYou ? 'hard' : 'soft'}`}>{stateLabel}</div>
+      ) : scene?.kind === 'shipping' ? (
+        // The label names what ships (the target, else the project), so it stands in for the project tag
+        <div className="char-scene">{scene.label ?? '🚀 shipping'}</div>
       ) : projectTag && (
         <div className="char-project">{projectTag}</div>
       )}

@@ -12,21 +12,32 @@
  *      `useIncident`, `subscribeIncidentTransitions`) that mirrors the
  *      theme.ts pattern: module state + listeners + localStorage.
  *
- * Entry: 3 failed tool calls inside 5 min, a `deploy-fail` /
- * `who-broke-build` random event (90 s mini-incident), `/incident` in the
- * chat (relayed by the server as a `variant_change` event), or
- * `?variant=incident` (pins it; auto-exit off, for screenshots).
- * Exit: `/all-clear`, 10 min without a new failure, or `deploy-success`
- * during a mini-incident. Exit records `agent-office-last-incident`, which
- * the "days since last incident" sign reads in every mode.
+ * Entry: 3 failed tool calls inside 5 min (a failed build or test run
+ * counts, under its own name), a real deploy failing (a `deploy_fail`
+ * signal: at once), a `deploy-fail` / `who-broke-build` random event (90 s
+ * mini-incident), `/incident` in the chat (relayed by the server as a
+ * `variant_change` event), or `?variant=incident` (pins it; auto-exit off,
+ * for screenshots).
+ * Exit: `/all-clear`, 10 min without a new failure, a deploy that went out
+ * (`deploy_success` signal), the last red build or test run going green
+ * again, or `deploy-success` during a mini-incident. Exit records
+ * `agent-office-last-incident`, which the "days since last incident" sign
+ * reads in every mode.
+ *
+ * Signals (src/signals.ts) arrive right after the failed tool call that
+ * carried them, which this machine has already counted as a plain failure:
+ * the signal names that failure instead of counting the call twice.
  */
 
 import { useSyncExternalStore } from 'react'
+import type { SignalEvent, SignalKind } from './types'
+import { signalFamily, signalOutcome, signalFailureLabel, isSignalKind } from './signals'
 
 export type VariantName = 'none' | 'incident'
 
 export type IncidentReason =
   | 'failures'   // crossed the failure threshold
+  | 'deploy-fail' // a real deploy failed (deploy_fail signal)
   | 'event'      // deploy-fail / who-broke-build random event (mini-incident)
   | 'manual'     // /incident typed in this tab
   | 'remote'     // /incident relayed by the server (another tab, or this one)
@@ -37,9 +48,16 @@ export type IncidentEndedBy = 'all-clear' | 'timeout' | 'resolved'
 
 export interface IncidentFailure {
   at: number
+  /** The tool that failed, or 'deploy' / 'build' / 'test' for a signal */
   tool: string
   agentId?: string
   agentName?: string
+  /** The Claude Code session it happened in (pairs a signal with its tool failure) */
+  sessionId?: string
+  /** A signal's target (the app, package or directory) */
+  target?: string
+  /** A signal's failure as a sentence: "tests failed in api: 3 failing" */
+  label?: string
 }
 
 export interface IncidentState {
@@ -54,6 +72,12 @@ export interface IncidentState {
   expiresAt: number | null
   /** Idle: failures inside the 5 min window. Incident: every failure since it started. */
   failures: IncidentFailure[]
+  /**
+   * Deploys, builds and test runs whose last run failed, as `family:target`
+   * ("test:api"): a green run of one of them clears the window, and the
+   * last one going green resolves an open incident.
+   */
+  red: string[]
 }
 
 export interface IncidentSummary {
@@ -69,10 +93,27 @@ export interface IncidentSummary {
   /** Names of agents whose tool calls failed, first seen first. */
   participants: string[]
   lastTool: string | null
+  /** The last failure that had a name ("deploy of api failed: Error: 503"), null when none did */
+  cause: string | null
+}
+
+/** A `signal` event as incident mode reads it (signalIncidentInput) */
+export interface IncidentSignal {
+  type: 'signal'
+  at: number
+  kind: SignalKind
+  target?: string
+  detail?: string
+  error?: string
+  interrupted?: boolean
+  sessionId?: string
+  agentId?: string
+  agentName?: string
 }
 
 export type IncidentInput =
-  | { type: 'failure'; at: number; tool: string; agentId?: string; agentName?: string }
+  | { type: 'failure'; at: number; tool: string; agentId?: string; agentName?: string; sessionId?: string }
+  | IncidentSignal
   | { type: 'random-event'; at: number; id: string }
   | { type: 'command'; at: number; cmd: 'incident' | 'all-clear'; reason?: 'manual' | 'remote' | 'restored' }
   | { type: 'pin'; at: number }
@@ -97,6 +138,10 @@ export const INCIDENT_CONFIG = {
   resolveEvents: ['deploy-success'],
   /** Cap on the failure log kept during one incident. */
   maxFailures: 200,
+  /** How far back a signal looks for the plain tool failure of the same call. */
+  signalPairMs: 10_000,
+  /** Cap on the red runs remembered. */
+  maxRed: 20,
 } as const
 
 export const VARIANT_STORAGE_KEY = 'agent-office-variant'
@@ -108,7 +153,7 @@ const FIRST_SEEN_STORAGE_KEY = 'agent-office-first-seen'
 // ---------------------------------------------------------------------------
 
 export function createIncidentState(): IncidentState {
-  return { variant: 'none', startedAt: null, reason: null, mini: false, pinned: false, expiresAt: null, failures: [] }
+  return { variant: 'none', startedAt: null, reason: null, mini: false, pinned: false, expiresAt: null, failures: [], red: [] }
 }
 
 /** Failures that still count toward the threshold at time `at`. */
@@ -129,6 +174,7 @@ function begin(state: IncidentState, reason: IncidentReason, at: number, mini: b
       expiresAt,
       // Failures from the last 5 min are context for this incident
       failures: recentFailures(state.failures, at),
+      red: state.red,
     },
     entered: reason,
   }
@@ -143,6 +189,7 @@ function finish(state: IncidentState, at: number, endedBy: IncidentEndedBy): Inc
     if (f.agentName && !participants.includes(f.agentName)) participants.push(f.agentName)
   }
   const last = state.failures[state.failures.length - 1]
+  const named = [...state.failures].reverse().find(f => f.label)
   return {
     state: createIncidentState(),
     exited: {
@@ -156,7 +203,108 @@ function finish(state: IncidentState, at: number, endedBy: IncidentEndedBy): Inc
       tools,
       participants,
       lastTool: last?.tool ?? null,
+      cause: named?.label ?? null,
     },
+  }
+}
+
+/**
+ * One more failure: idle, it may cross the threshold; during an incident it
+ * joins the log and restarts the quiet-period clock (a mini-incident that
+ * crosses the threshold becomes a full one).
+ */
+function addFailure(state: IncidentState, failures: IncidentFailure[], at: number): IncidentTransition {
+  if (state.variant === 'incident') {
+    const log = failures.slice(-INCIDENT_CONFIG.maxFailures)
+    const crossed = state.mini && recentFailures(log, at).length >= INCIDENT_CONFIG.failureThreshold
+    const mini = state.mini && !crossed
+    // Every failure in a full incident restarts the 10 min quiet-period clock
+    const expiresAt = state.pinned ? null : mini ? state.expiresAt : at + INCIDENT_CONFIG.autoExitMs
+    return { state: { ...state, failures: log, mini, expiresAt, reason: crossed ? 'failures' : state.reason } }
+  }
+  const recent = recentFailures(failures, at)
+  if (recent.length >= INCIDENT_CONFIG.failureThreshold) {
+    return begin({ ...state, failures: recent }, 'failures', at, false)
+  }
+  return { state: { ...state, failures: recent } }
+}
+
+/**
+ * A signal's failure takes the place of the plain tool failure the same
+ * call logged a moment earlier (same session and worker, a Bash failure
+ * with no name yet), so one failed `npm test` counts once, under its name.
+ */
+function withSignalFailure(failures: IncidentFailure[], failure: IncidentFailure): IncidentFailure[] {
+  for (let i = failures.length - 1; i >= 0; i--) {
+    const f = failures[i]
+    if (failure.at - f.at > INCIDENT_CONFIG.signalPairMs) break
+    if (!f.label && f.tool === 'Bash' && f.sessionId === failure.sessionId && f.agentId === failure.agentId) {
+      return [...failures.slice(0, i), ...failures.slice(i + 1), failure]
+    }
+  }
+  return [...failures, failure]
+}
+
+/** A deploy, build or test run that ended: what it does to the incident. */
+function reduceSignal(state: IncidentState, input: IncidentSignal): IncidentTransition {
+  const at = input.at
+  const active = state.variant === 'incident'
+  const family = signalFamily(input.kind)
+  const outcome = signalOutcome(input.kind)
+  // A push is not prod, a start has no result yet, and a run stopped with Esc failed nobody
+  if (family === 'push' || outcome === 'start' || input.interrupted) return { state }
+  const key = `${family}:${input.target ?? ''}`
+
+  if (outcome === 'fail') {
+    const failure: IncidentFailure = {
+      at, tool: family, agentId: input.agentId, agentName: input.agentName, sessionId: input.sessionId,
+      target: input.target, label: signalFailureLabel(input),
+    }
+    const failures = withSignalFailure(state.failures, failure)
+    const red = state.red.includes(key) ? state.red : [...state.red, key].slice(-INCIDENT_CONFIG.maxRed)
+    if (family !== 'deploy') return addFailure({ ...state, red }, failures, at)
+    // A failed deploy is prod down: the incident opens at once
+    if (!active) return begin({ ...state, failures, red }, 'deploy-fail', at, false)
+    // Already on fire: it joins the log, and a mini-incident becomes a real one
+    return {
+      state: {
+        ...state,
+        failures: failures.slice(-INCIDENT_CONFIG.maxFailures),
+        red,
+        mini: false,
+        reason: state.mini ? 'deploy-fail' : state.reason,
+        expiresAt: state.pinned ? null : at + INCIDENT_CONFIG.autoExitMs,
+      },
+    }
+  }
+
+  // A green run
+  const wasRed = state.red.includes(key)
+  const red = state.red.filter(k => k !== key)
+  if (family === 'deploy') {
+    // A deploy that went out is the fix: whatever is burning is resolved
+    // (a pinned screenshot stays on; only /all-clear ends that)
+    if (active) return state.pinned ? { state: { ...state, red: [] } } : finish(state, at, 'resolved')
+    return wasRed ? { state: { ...state, red, failures: [] } } : { state }
+  }
+  if (!wasRed) return { state }
+  if (!active) {
+    // Red, then green again before it came to an incident: the window starts over
+    return { state: { ...state, red, failures: [] } }
+  }
+  // The last red build or test run is green again: prod is back
+  if (red.length === 0 && !state.pinned) return finish(state, at, 'resolved')
+  return { state: { ...state, red } }
+}
+
+/** A `signal` event as incident mode reads it; null for a kind this page does not know. */
+export function signalIncidentInput(s: SignalEvent, at: number, agentName?: string): IncidentSignal | null {
+  if (!isSignalKind(s.kind)) return null
+  return {
+    type: 'signal', at, kind: s.kind,
+    target: s.target || s.project || undefined,
+    detail: s.detail, error: s.error, interrupted: s.interrupted === true || undefined,
+    sessionId: s.sessionId, agentId: s.agentId, agentName: agentName ?? s.agentName,
   }
 }
 
@@ -170,24 +318,12 @@ export function reduceIncident(state: IncidentState, input: IncidentInput): Inci
 
   switch (input.type) {
     case 'failure': {
-      const failure: IncidentFailure = { at, tool: input.tool, agentId: input.agentId, agentName: input.agentName }
-
-      if (active) {
-        const failures = [...state.failures, failure].slice(-INCIDENT_CONFIG.maxFailures)
-        // A mini-incident that crosses the threshold becomes a real one
-        const crossed = state.mini && recentFailures(failures, at).length >= INCIDENT_CONFIG.failureThreshold
-        const mini = state.mini && !crossed
-        // Every failure in a full incident restarts the 10 min quiet-period clock
-        const expiresAt = state.pinned ? null : mini ? state.expiresAt : at + INCIDENT_CONFIG.autoExitMs
-        return { state: { ...state, failures, mini, expiresAt, reason: crossed ? 'failures' : state.reason } }
-      }
-
-      const failures = recentFailures([...state.failures, failure], at)
-      if (failures.length >= INCIDENT_CONFIG.failureThreshold) {
-        return begin({ ...state, failures }, 'failures', at, false)
-      }
-      return { state: { ...state, failures } }
+      const failure: IncidentFailure = { at, tool: input.tool, agentId: input.agentId, agentName: input.agentName, sessionId: input.sessionId }
+      return addFailure(state, [...state.failures, failure], at)
     }
+
+    case 'signal':
+      return reduceSignal(state, input)
 
     case 'random-event': {
       if ((INCIDENT_CONFIG.triggerEvents as readonly string[]).includes(input.id)) {
@@ -252,7 +388,11 @@ export function formatDuration(ms: number): string {
   return m % 60 ? `${h}h ${m % 60}m` : `${h}h`
 }
 
-const ROOT_CAUSES_WITHOUT_FAILURES = ['a Friday deploy', 'DNS. it is always DNS.', 'a config change nobody remembers', 'a null. always a null.']
+function clip(text: string, max: number): string {
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text
+}
+
+const ROOT_CAUSES_WITHOUT_FAILURES =['a Friday deploy', 'DNS. it is always DNS.', 'a config change nobody remembers', 'a null. always a null.']
 
 /** One-line "postmortem card" for the chat. `bystanders` = agents in the room when nobody's tool failed. */
 export function formatPostmortem(summary: IncidentSummary, bystanders: string[] = []): string {
@@ -271,7 +411,9 @@ export function formatPostmortem(summary: IncidentSummary, bystanders: string[] 
   const who = summary.participants.length > 0 ? summary.participants : bystanders
   parts.push(who.length > 0 ? `responders: ${who.slice(0, 6).join(', ')}` : 'responders: just the boss and Claude')
 
-  const cause = summary.lastTool
+  // A named failure (a deploy, build or test signal) beats the bare tool name
+  const cause = (summary.cause ? clip(summary.cause, 140) : null)
+    ?? summary.lastTool
     ?? ROOT_CAUSES_WITHOUT_FAILURES[summary.startedAt % ROOT_CAUSES_WITHOUT_FAILURES.length]
   parts.push(`root cause: ${cause}`)
 
@@ -289,7 +431,13 @@ export function incidentTransitionLines(t: IncidentTransition, agentsInRoom: { n
     switch (t.entered) {
       case 'failures': {
         const n = recentFailures(t.state.failures, t.state.startedAt ?? Date.now()).length
-        lines.push(`🔴 ${n} tool failures in 5 min — INCIDENT MODE ON. Prod is down. Everyone to the war room.`)
+        const last = t.state.failures[t.state.failures.length - 1]
+        lines.push(`🔴 ${n} tool failures in 5 min — INCIDENT MODE ON. Prod is down. Everyone to the war room.${last?.label ? ` Latest: ${clip(last.label, 120)}.` : ''}`)
+        break
+      }
+      case 'deploy-fail': {
+        const deploy = [...t.state.failures].reverse().find(f => f.tool === 'deploy')
+        lines.push(`🔴 ${deploy?.target ? `The ${deploy.target} deploy` : 'A deploy'} failed — INCIDENT MODE ON. Prod is down. Everyone to the war room.`)
         break
       }
       case 'event':

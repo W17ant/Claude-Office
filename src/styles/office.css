@@ -1537,6 +1537,40 @@
   transition: filter 0.4s;
 }
 
+/* ===== SIGNALS — a scene on whoever ran the command (src/officeReducer.ts) ===== */
+/* A failed build or test run: the character flashes red for a few beats */
+.character-wrapper.scene-red .char-body-group {
+  animation: sceneRedFlash 0.5s steps(2) 6;
+}
+@keyframes sceneRedFlash {
+  0%   { filter: drop-shadow(0 0 7px #ff3b30) brightness(1.2) sepia(0.4) hue-rotate(-30deg); }
+  100% { filter: none; }
+}
+/* A deploy that landed, a push to main: a short green glow */
+.character-wrapper.scene-shipped .char-body-group,
+.character-wrapper.scene-pushed .char-body-group {
+  filter: drop-shadow(0 0 6px #4ade80);
+}
+/* A deploy in flight: the rocket bobs twice as fast, and a label says what ships */
+.character-wrapper.scene-shipping .effect-bubble {
+  animation-duration: 0.8s;
+}
+.char-scene {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translate(-50%, -2px);
+  z-index: 12;
+  padding: 0 4px;
+  border-radius: 2px;
+  background: rgba(30, 64, 175, 0.9);
+  color: #e0e7ff;
+  font: 7px/11px 'JetBrains Mono', monospace;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 /* ===== CHAT — prompt / reply rows and the prompt-logging hint ===== */
 .slack-msg-prompt .slack-msg-text {
   border-left: 2px solid rgba(255, 209, 102, 0.7);

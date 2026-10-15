@@ -46,6 +46,55 @@ export interface Agent {
   needsYou?: NeedsYou       // set while mainState is 'needs-you'
   waitingOn?: number        // background workers a finished turn still waits for
   model?: string            // the session's model (session_model / session_started)
+  scene?: AgentScene        // a signal's scene on the character that ran the command
+}
+
+/**
+ * What a Bash command meant: hooks/agent-tracker.sh classifies the commands
+ * that deploy, build, test or push ("Signals") and the server broadcasts
+ * one `signal` event per signal, right after the event that carried it.
+ */
+export type SignalKind =
+  | 'deploy_start' | 'deploy_success' | 'deploy_fail'
+  | 'build_start' | 'build_ok' | 'build_failed'
+  | 'test_start' | 'test_ok' | 'test_failed'
+  | 'push' | 'push_done' | 'push_failed'
+
+/** The server's `signal` broadcast (also the snapshot's `signals` entries and GET /signals) */
+export interface SignalEvent {
+  type: 'signal'
+  kind: SignalKind
+  /** What it was about: the app, package or directory, else the project */
+  target?: string
+  /** "3 failing", "2 errors" */
+  detail?: string
+  /** The first meaningful line of a failure's output */
+  error?: string
+  exitCode?: number
+  /** A push: the branch, and whether it is main / master */
+  branch?: string
+  toDefault?: boolean
+  /** The run was stopped (Esc), not failed */
+  interrupted?: boolean
+  sessionId?: string
+  project?: string
+  /** The office worker that ran it (absent on the main thread) */
+  agentId?: string
+  agentName?: string
+  at?: number
+  seq?: number
+  timestamp?: number
+}
+
+/**
+ * A scene a signal puts on the character that ran the command: a deploy
+ * shipping (until it lands or 10 min pass), a deploy that landed, a red run,
+ * a push to main. `until` is when it ends by itself.
+ */
+export interface AgentScene {
+  kind: 'shipping' | 'shipped' | 'red' | 'pushed'
+  until: number
+  label?: string
 }
 
 /** What a session's main thread (its Claude) is doing — the server's `main.state` */

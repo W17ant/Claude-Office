@@ -1010,6 +1010,18 @@ describe('agent-tracker.sh: the bash wrapper', () => {
     expect((await runScript(read, { AGENT_OFFICE_PORT: '3998' })).args?.[3]).toBe('http://localhost:3998/event')
     expect((await runScript(read, { AGENT_OFFICE_PORT: '3998', AGENT_OFFICE_EVENT_URL: 'http://127.0.0.1:4100/event' })).args?.[3]).toBe('http://127.0.0.1:4100/event')
   })
+
+  it('a deploy: the signals ride on the one JSON body the call sends, stdout stays empty, exit 0', async () => {
+    const run = await runScript({ ...session, hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'vercel deploy --prod' } })
+    expect(run.status).toBe(0)
+    expect(run.stdout).toBe('')
+    expect(run.stderr).toBe('')
+    expect(run.calls).toHaveLength(1)
+    expect(run.body).toMatchObject({
+      type: 'agent_working', status: 'running: vercel deploy --prod', sessionId: 's-wrap',
+      signals: [{ kind: 'deploy_start', target: 'proj', command: 'vercel deploy --prod' }],
+    })
+  })
 })
 
 /**
@@ -1227,5 +1239,337 @@ describe('agent-tracker.sh: answering a permission from the office', () => {
     } finally {
       await hanging.close()
     }
+  })
+})
+
+/**
+ * Signals: what a Bash command means (the "Signals" section of the Python).
+ * classify_command is pure, so its table is driven directly: the heredoc is
+ * run with a tool-less payload (it defines everything and exits), the
+ * classifier is loaded the way the hook loads it (load_signals) and called.
+ * The rest drives whole payloads through the Python like every test above.
+ */
+describe('agent-tracker.sh: signals', () => {
+  const DRIVER = [
+    'import io, json, sys',
+    'job = json.loads(sys.stdin.read())',
+    "ns = {'__name__': '__main__'}",
+    "sys.stdin = io.StringIO(json.dumps(job.get('payload') or {'tool_name': 'x'}))",
+    'sys.stdout, real = io.StringIO(), sys.stdout',
+    'try:',
+    "    exec(compile(job['src'], 'agent-tracker', 'exec'), ns)",
+    'except SystemExit:',
+    '    pass',
+    'sys.stdout = real',
+    "loaded = ns.get('SIGNALS_LOADED')",
+    "if job.get('commands') is not None:",
+    "    ns['load_signals']()",
+    "print(json.dumps({'classified': [ns['classify_command'](c, job.get('cwd')) for c in job.get('commands') or []],",
+    "                  'prefilter': [ns['might_signal'](c) for c in job.get('commands') or []],",
+    "                  'loaded': loaded}))",
+  ].join('\n')
+
+  function drive(job: Record<string, unknown>) {
+    const out = execFileSync('python3', ['-I', '-c', DRIVER], {
+      input: JSON.stringify({ src: PYTHON, ...job }),
+      encoding: 'utf8',
+      env: { ...process.env, AGENT_OFFICE_HOME: NO_MARKER_HOME },
+    })
+    return JSON.parse(out) as { classified: Array<Array<Record<string, unknown>>>; prefilter: boolean[]; loaded: boolean }
+  }
+
+  /** command -> what classify_command returns for it (cwd /home/me/api) */
+  const TABLE: Array<[string, Array<Record<string, unknown>>]> = [
+    // deploy
+    ['vercel deploy --prod', [{ kind: 'deploy' }]],
+    ['vercel --prod', [{ kind: 'deploy' }]],
+    ['netlify deploy --prod', [{ kind: 'deploy' }]],
+    ['fly deploy -a shop-api', [{ kind: 'deploy', target: 'shop-api' }]],
+    ['flyctl deploy', [{ kind: 'deploy' }]],
+    ['railway up', [{ kind: 'deploy' }]],
+    ['heroku container:push web -a shop', [{ kind: 'deploy', target: 'shop' }]],
+    ['gcloud run deploy api --region europe-west1', [{ kind: 'deploy', target: 'api' }]],
+    ['gcloud app deploy app.yaml', [{ kind: 'deploy' }]],
+    ['aws cloudformation deploy --stack-name billing', [{ kind: 'deploy', target: 'billing' }]],
+    ['sam deploy', [{ kind: 'deploy' }]],
+    ['serverless deploy --stage prod', [{ kind: 'deploy' }]],
+    ['sls deploy', [{ kind: 'deploy' }]],
+    ['kubectl apply -f k8s/', [{ kind: 'deploy' }]],
+    ['kubectl -n prod rollout restart deployment/api', [{ kind: 'deploy', target: 'api' }]],
+    ['helm upgrade --install web ./chart', [{ kind: 'deploy', target: 'web' }]],
+    ['terraform -chdir=infra apply -auto-approve', [{ kind: 'deploy', target: 'infra' }]],
+    ['pulumi up -s prod --yes', [{ kind: 'deploy', target: 'prod' }]],
+    ['npx cdk deploy', [{ kind: 'deploy' }]],
+    ['wrangler deploy', [{ kind: 'deploy' }]],
+    ['npx wrangler publish', [{ kind: 'deploy' }]],
+    ['firebase deploy --only hosting', [{ kind: 'deploy' }]],
+    ['npm publish', [{ kind: 'deploy' }]],
+    ['gh release create v1.4.0 --generate-notes', [{ kind: 'deploy' }]],
+    ['docker push ghcr.io/me/api:1.4', [{ kind: 'deploy', target: 'api' }]],
+    ['git push origin v1.4.0', [{ kind: 'deploy' }]],
+    ['git push --tags', [{ kind: 'deploy' }]],
+    // build
+    ['npm run build', [{ kind: 'build' }]],
+    ['npm run build:electron', [{ kind: 'build' }]],
+    ['pnpm build', [{ kind: 'build' }]],
+    ['pnpm --filter web build', [{ kind: 'build', target: 'web' }]],
+    ['yarn build', [{ kind: 'build' }]],
+    ['vite build', [{ kind: 'build' }]],
+    ['tsc', [{ kind: 'build' }]],
+    ['tsc --noEmit', [{ kind: 'build' }]],
+    ['tsc -p packages/api/tsconfig.json', [{ kind: 'build', target: 'api' }]],
+    ['next build', [{ kind: 'build' }]],
+    ['cargo build --release', [{ kind: 'build' }]],
+    ['go build ./...', [{ kind: 'build' }]],
+    ['make', [{ kind: 'build' }]],
+    ['make -j 8 -C services/api', [{ kind: 'build', target: 'api' }]],
+    ['./gradlew assemble', [{ kind: 'build' }]],
+    ['mvn package -DskipTests', [{ kind: 'build' }]],
+    ['docker build -t api .', [{ kind: 'build', target: 'api' }]],
+    ['webpack --mode production', [{ kind: 'build' }]],
+    ['esbuild src/main.ts --bundle --outdir=dist', [{ kind: 'build' }]],
+    // test
+    ['npm test', [{ kind: 'test' }]],
+    ['npm run test:unit', [{ kind: 'test' }]],
+    ['npm t', [{ kind: 'test' }]],
+    ['npx vitest run', [{ kind: 'test' }]],
+    ['jest --ci', [{ kind: 'test' }]],
+    ['pytest -q tests/', [{ kind: 'test' }]],
+    ['python3 -m pytest', [{ kind: 'test' }]],
+    ['uv run pytest', [{ kind: 'test' }]],
+    ['cargo test -p core', [{ kind: 'test', target: 'core' }]],
+    ['go test ./...', [{ kind: 'test' }]],
+    ['mvn test', [{ kind: 'test' }]],
+    ['gradle test', [{ kind: 'test' }]],
+    ['bundle exec rspec', [{ kind: 'test' }]],
+    ['vendor/bin/phpunit', [{ kind: 'test' }]],
+    ['npx playwright test', [{ kind: 'test' }]],
+    ['make test', [{ kind: 'test' }]],
+    // push
+    ['git push origin main', [{ kind: 'push', branch: 'main', toDefault: true }]],
+    ['git push origin HEAD:master', [{ kind: 'push', branch: 'master', toDefault: true }]],
+    ['git push -u origin feature/x', [{ kind: 'push', branch: 'feature/x', toDefault: false }]],
+    ['git push', [{ kind: 'push' }]],
+    ['git push origin main --follow-tags', [{ kind: 'deploy' }, { kind: 'push', branch: 'main', toDefault: true }]],
+    // stripped prefixes, chains, directories
+    ['FOO=1 sudo -E npx --yes vitest run', [{ kind: 'test' }]],
+    ['timeout 120 npm test', [{ kind: 'test' }]],
+    ['cd packages/web && npm run build', [{ kind: 'build', target: 'web' }]],
+    ['(cd ../billing && npm test)', [{ kind: 'test', target: 'billing' }]],
+    ['npm test --prefix /tmp/nonexistent-project', [{ kind: 'test', target: 'nonexistent-project' }]],
+    ['npm run build && git push origin main', [{ kind: 'build' }, { kind: 'push', branch: 'main', toDefault: true }]],
+    ['npm run lint; npm test 2>&1 | tail -20', [{ kind: 'test' }]],
+    ['npm run build && npm run build:electron', [{ kind: 'build' }]],
+    // false-positive guards
+    ['echo deploy && false', []],
+    ['git commit -m "deploy; npm test && git push origin main"', []],
+    ["cat <<'EOF' > notes.md\nnpm test\nvercel deploy --prod\nEOF", []],
+    ['echo $(npm test)', []],
+    ['make clean', []],
+    ['npm run lint', []],
+    ['npm run builder', []],
+    ['npm install', []],
+    ['vercel env pull', []],
+    ['terraform plan', []],
+    ['kubectl get pods', []],
+    ['aws s3 sync deploy s3://bucket', []],
+    ['npm publish --dry-run', []],
+    ['git push --dry-run origin main', []],
+    ['git push --delete origin old-branch', []],
+    ['tsc --version', []],
+    ['grep -rn "npm test" docs/', []],
+    ['git status && git log --oneline -5', []],
+    ['ls /etc | wc -l', []],
+  ]
+
+  it('classify_command: the pattern table, chains, stripped prefixes and the false-positive guards', () => {
+    const { classified } = drive({ commands: TABLE.map(([c]) => c), cwd: '/home/me/api' })
+    const got = TABLE.map(([command], i) => [command, classified[i]])
+    expect(got).toEqual(TABLE)
+  })
+
+  it('the prefilter lets every command the table classifies through, and keeps the classifier unloaded for the rest', () => {
+    const { prefilter } = drive({ commands: TABLE.map(([c]) => c) })
+    TABLE.forEach(([command, expected], i) => {
+      if (expected.length) expect(prefilter[i], command).toBe(true)
+    })
+    expect(drive({ commands: ['git status', 'ls -la', 'cat README.md', 'sed -n 1,20p x'] }).prefilter).toEqual([false, false, false, false])
+    // An ordinary Bash call never compiles the classifier at all; a test run does
+    const plain = { session_id: 's', cwd: '/home/me/api', hook_event_name: 'PreToolUse', tool_name: 'Bash' }
+    expect(drive({ payload: { ...plain, tool_input: { command: 'git status' } } }).loaded).toBe(false)
+    expect(drive({ payload: { ...plain, tool_input: { command: 'npm test' } } }).loaded).toBe(true)
+  })
+
+  // The capture session these payloads borrow their shape from (2.1.300:
+  // Bash PreToolUse / PostToolUse / PostToolUseFailure keys, the error as
+  // "Exit code N\n<output>", the tool_response object)
+  const base = {
+    session_id: '17f46010-d2b1-4d95-bdde-34994b4b1d00',
+    transcript_path: '/root/.claude/projects/-home-me-api/17f46010-d2b1-4d95-bdde-34994b4b1d00.jsonl',
+    cwd: '/home/me/api',
+    prompt_id: '47795df5-e84a-4a57-8884-078b1e761a82',
+    permission_mode: 'bypassPermissions',
+    effort: { level: 'medium' },
+  }
+  const session = { sessionId: base.session_id, project: 'api', cwd: base.cwd, transcriptPath: base.transcript_path }
+  const bash = (command: string, extra: Record<string, unknown> = {}) => ({ ...base, tool_name: 'Bash', tool_input: { command, description: 'x' }, tool_use_id: 'toolu_01SIG', ...extra })
+
+  it('a deploy: PreToolUse -> deploy_start on agent_working, PostToolUse -> deploy_success on session_tool_done, PostToolUseFailure -> deploy_fail with the error', () => {
+    expect(runHook(bash('vercel deploy --prod', { hook_event_name: 'PreToolUse' }))).toEqual({
+      type: 'agent_working', status: 'running: vercel deploy --prod',
+      signals: [{ kind: 'deploy_start', target: 'api', command: 'vercel deploy --prod' }],
+      ...session,
+    })
+    expect(runHook(bash('vercel deploy --prod', {
+      hook_event_name: 'PostToolUse',
+      tool_response: { stdout: 'Production: https://api-7f3k.vercel.app [42s]', stderr: '', interrupted: false, isImage: false, noOutputExpected: false },
+      duration_ms: 42_113,
+    }))).toEqual({
+      type: 'session_tool_done', toolName: 'Bash', promptId: base.prompt_id,
+      signals: [{ kind: 'deploy_success', target: 'api', command: 'vercel deploy --prod' }],
+      ...session,
+    })
+    expect(runHook(bash('vercel deploy --prod', {
+      hook_event_name: 'PostToolUseFailure',
+      error: 'Exit code 1\nVercel CLI 39.1.0\n\nError: Deployment failed: the build step exited with 1\n',
+      is_interrupt: false,
+      duration_ms: 31_870,
+    }))).toEqual({
+      type: 'agent_working', status: 'failed: Bash — Exit code 1 Vercel CLI 39.1.0 Error: Deployment failed: the ', failed: true,
+      signals: [{
+        kind: 'deploy_fail', target: 'api', command: 'vercel deploy --prod',
+        error: 'Error: Deployment failed: the build step exited with 1', exitCode: 1,
+      }],
+      ...session,
+    })
+  })
+
+  it('a failing `vitest run`: test_failed with the first meaningful line, the exit code and "3 failing"', () => {
+    const ev = runHook(bash('npx vitest run', {
+      hook_event_name: 'PostToolUseFailure',
+      error: [
+        'Exit code 1', '', ' RUN  v3.2.4 /home/me/api', '',
+        ' ❯ tests/parser.test.ts (12 tests | 3 failed) 41ms',
+        '   × parses dates 9ms',
+        ' FAIL  tests/parser.test.ts > parses dates',
+        'AssertionError: expected 2 to be 3',
+        '',
+        ' Test Files  1 failed | 30 passed (31)',
+        '      Tests  3 failed | 593 passed (596)',
+      ].join('\n'),
+      is_interrupt: false,
+    }))
+    expect(ev?.signals).toEqual([{
+      kind: 'test_failed', target: 'api', command: 'npx vitest run',
+      error: '❯ tests/parser.test.ts (12 tests | 3 failed) 41ms', exitCode: 1, detail: '3 failing',
+    }])
+  })
+
+  it('a chained `npm run build && git push origin main`: both start; both land; a failure is blamed on the segment the output points at', () => {
+    const cmd = 'npm run build && git push origin main'
+    expect(runHook(bash(cmd, { hook_event_name: 'PreToolUse' }))?.signals).toEqual([
+      { kind: 'build_start', target: 'api', command: cmd },
+      { kind: 'push', target: 'api', branch: 'main', toDefault: true, command: cmd },
+    ])
+    expect(runHook(bash(cmd, { hook_event_name: 'PostToolUse', tool_response: { stdout: '✓ built in 2.1s', stderr: '' } }))?.signals).toEqual([
+      { kind: 'build_ok', target: 'api', command: cmd },
+      { kind: 'push_done', target: 'api', branch: 'main', toDefault: true, command: cmd },
+    ])
+    // tsc failed: the push never ran, so it says nothing
+    expect(runHook(bash(cmd, {
+      hook_event_name: 'PostToolUseFailure',
+      error: "Exit code 2\nsrc/app.ts(3,7): error TS2322: Type 'string' is not assignable to type 'number'.\nsrc/db.ts(9,1): error TS2304: Cannot find name 'pool'.\n\nFound 2 errors in 2 files.",
+      is_interrupt: false,
+    }))?.signals).toEqual([{
+      kind: 'build_failed', target: 'api', command: cmd,
+      error: "src/app.ts(3,7): error TS2322: Type 'string' is not assignable to type 'number'.", exitCode: 2, detail: '2 errors',
+    }])
+    // The push was rejected: the build had passed
+    expect(runHook(bash(cmd, {
+      hook_event_name: 'PostToolUseFailure',
+      error: 'Exit code 1\nTo github.com:me/api.git\n ! [rejected]        main -> main (fetch first)\nerror: failed to push some refs to \'github.com:me/api.git\'',
+      is_interrupt: false,
+    }))?.signals).toEqual([{
+      kind: 'push_failed', target: 'api', branch: 'main', toDefault: true, command: cmd,
+      error: '! [rejected]        main -> main (fetch first)', exitCode: 1,
+    }])
+  })
+
+  it('a masked exit status (`npm test | tail`) is judged by the output: a failure count, a pass line, or nothing', () => {
+    const cmd = 'npm test 2>&1 | tail -5'
+    const post = (stdout: string) => runHook(bash(cmd, { hook_event_name: 'PostToolUse', tool_response: { stdout, stderr: '' } }))?.signals
+    expect(post('      Tests  2 failed | 10 passed (12)')).toEqual([{ kind: 'test_failed', target: 'api', command: cmd, detail: '2 failing' }])
+    expect(post('      Tests  12 passed (12)')).toEqual([{ kind: 'test_ok', target: 'api', command: cmd }])
+    expect(post('done')).toBeUndefined()
+    // `|| true` hides the status the same way
+    expect(runHook(bash('npm test || true', { hook_event_name: 'PostToolUse', tool_response: { stdout: 'nothing to see', stderr: '' } }))?.signals).toBeUndefined()
+  })
+
+  it('where the call sends nothing of its own (a worker, no session id) the signals go out alone as a `signal` event', () => {
+    expect(runHook(bash('npm test', {
+      hook_event_name: 'PostToolUse', agent_id: 'a29964dc791f62039', agent_type: 'general-purpose',
+      tool_response: { stdout: 'Tests  4 passed (4)', stderr: '' },
+    }))).toEqual({
+      type: 'signal',
+      signals: [{ kind: 'test_ok', target: 'api', command: 'npm test' }],
+      agentId: 'a29964dc791f62039', agentType: 'general-purpose', role: 'general-purpose', name: 'Agent',
+      ...session,
+    })
+    expect(runHook({ hook_event_name: 'PostToolUse', tool_name: 'Bash', cwd: '/home/me/api', tool_input: { command: 'npm test' }, tool_response: { stdout: '', stderr: '' } }))
+      .toEqual({ type: 'signal', signals: [{ kind: 'test_ok', target: 'api', command: 'npm test' }], project: 'api', cwd: '/home/me/api' })
+    // An ordinary Bash call in a worker still sends nothing
+    expect(runHook(bash('ls', { hook_event_name: 'PostToolUse', agent_id: 'a29964dc791f62039', agent_type: 'general-purpose', tool_response: { stdout: '', stderr: '' } }))).toBeNull()
+  })
+
+  it('a backgrounded run has no outcome on PostToolUse; an Esc is a failure marked interrupted', () => {
+    expect(runHook(bash('vercel deploy --prod', {
+      hook_event_name: 'PostToolUse', tool_input: { command: 'vercel deploy --prod', run_in_background: true },
+      tool_response: { stdout: 'Command running in background with ID: bash_1', stderr: '' },
+    }))).toEqual({ type: 'session_tool_done', toolName: 'Bash', promptId: base.prompt_id, ...session })
+    expect(runHook(bash('npm test', { hook_event_name: 'PostToolUseFailure', error: 'Interrupted by user', is_interrupt: true }))?.signals)
+      .toEqual([{ kind: 'test_failed', target: 'api', command: 'npm test', interrupted: true, error: 'Interrupted by user' }])
+  })
+
+  it('a bare `git push` reads the branch from .git/HEAD (a worktree\'s .git file too); unknown, it has no toDefault', () => {
+    const repo = mkdtempSync(join(tmpdir(), 'agent-office-signal-repo-'))
+    try {
+      mkdirSync(join(repo, '.git'))
+      writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n')
+      mkdirSync(join(repo, 'web'))
+      const pre = (cwd: string, command = 'git push') => runHook({ ...base, cwd, hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command } })?.signals
+      expect(pre(join(repo, 'web'))).toEqual([{ kind: 'push', target: 'web', branch: 'main', toDefault: true, command: 'git push' }])
+      // A worktree: .git is a file naming its own git dir
+      const wt = join(repo, 'wt')
+      mkdirSync(join(repo, '.git', 'worktrees', 'wt'), { recursive: true })
+      writeFileSync(join(repo, '.git', 'worktrees', 'wt', 'HEAD'), 'ref: refs/heads/feature/signals\n')
+      mkdirSync(wt)
+      writeFileSync(join(wt, '.git'), `gitdir: ${join(repo, '.git', 'worktrees', 'wt')}\n`)
+      expect(pre(wt)).toEqual([{ kind: 'push', target: 'wt', branch: 'feature/signals', toDefault: false, command: 'git push' }])
+      // Detached HEAD: a push, nothing said about the branch
+      writeFileSync(join(repo, '.git', 'HEAD'), '4f449fe0c1a1d1d6c3d13d5b9e1c0e7a7c1ab0f2\n')
+      expect(pre(repo)).toEqual([{ kind: 'push', target: repo.split('/').pop(), command: 'git push' }])
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  it('false positives stay out of the events: `echo deploy && false` fails without signals, and the old shapes are unchanged', () => {
+    expect(runHook(bash('echo deploy && false', { hook_event_name: 'PostToolUseFailure', error: 'Exit code 1', is_interrupt: false })))
+      .toEqual({ type: 'agent_working', status: 'failed: Bash — Exit code 1', failed: true, ...session })
+    expect(runHook(bash('git commit -m "deploy; npm test"', { hook_event_name: 'PreToolUse' })))
+      .toEqual({ type: 'agent_working', status: 'running: git commit -m "deploy; npm test"', ...session })
+    // A tool other than Bash never carries signals, whatever its input says
+    expect(runHook({ ...base, hook_event_name: 'PreToolUse', tool_name: 'Grep', tool_input: { pattern: 'npm test', command: 'npm test' } }))
+      .toEqual({ type: 'agent_working', status: "searching for 'npm test'", ...session })
+  })
+
+  it('at most 8 signals per call, each string clamped; a command shlex cannot split still classifies', () => {
+    const many = Array.from({ length: 12 }, (_, i) => `cd pkg${i} && npm test`).join(' && ')
+    const ev = runHook(bash(many, { hook_event_name: 'PreToolUse' }))
+    expect(ev?.signals).toHaveLength(8)
+    expect(ev?.signals[0].command).toHaveLength(160)
+    expect(runHook(bash(`fly deploy -a ${'x'.repeat(300)}`, { hook_event_name: 'PreToolUse' }))?.signals[0].target).toHaveLength(80)
+    // An unbalanced quote: shlex gives up, the plain split still finds the test run
+    expect(runHook(bash('npm test -- -t "unterminated', { hook_event_name: 'PreToolUse' }))?.signals?.[0]).toMatchObject({ kind: 'test_start' })
   })
 })

@@ -17,10 +17,12 @@ import {
   formatPostmortem,
   incidentTransitionLines,
   INCIDENT_LINES,
+  signalIncidentInput,
   type IncidentInput,
   type IncidentState,
   type IncidentTransition,
 } from '../src/incident'
+import type { SignalKind } from '../src/types'
 import { INCIDENT_EVENTS, RANDOM_EVENTS } from '../src/events'
 
 const T0 = 1_760_000_000_000
@@ -34,6 +36,9 @@ const cmd = (at: number, c: 'incident' | 'all-clear', reason?: 'manual' | 'remot
   ({ type: 'command', at, cmd: c, reason })
 const tick = (at: number): IncidentInput => ({ type: 'tick', at })
 const pin = (at: number): IncidentInput => ({ type: 'pin', at })
+/** A `signal` event as App.tsx feeds it in (main thread of session s1 unless said otherwise) */
+const signal = (at: number, kind: SignalKind, extra: Partial<Omit<Extract<IncidentInput, { type: 'signal' }>, 'type' | 'at' | 'kind'>> = {}): IncidentInput =>
+  ({ type: 'signal', at, kind, target: 'api', sessionId: 's1', ...extra })
 
 /** Feed inputs in order; collect every transition that entered or exited. */
 function run(inputs: IncidentInput[], start: IncidentState = createIncidentState()) {
@@ -312,5 +317,110 @@ describe('INCIDENT_EVENTS', () => {
   it('covers the trigger and resolve events the state machine listens for', () => {
     const ids = new Set(INCIDENT_EVENTS.map(e => e.id))
     for (const id of [...INCIDENT_CONFIG.triggerEvents, ...INCIDENT_CONFIG.resolveEvents]) expect(ids.has(id)).toBe(true)
+  })
+})
+
+describe('incident mode — signals (what the Bash commands meant)', () => {
+  it('a failed deploy opens the incident at once; the summary names the project and the error', () => {
+    const { state, transitions } = run([signal(T0, 'deploy_fail', { error: 'Error: Deployment failed: 503 from the edge' })])
+    expect(state.variant).toBe('incident')
+    expect(state.reason).toBe('deploy-fail')
+    expect(state.mini).toBe(false)
+    expect(state.expiresAt).toBe(T0 + INCIDENT_CONFIG.autoExitMs)
+    expect(transitions[0].entered).toBe('deploy-fail')
+    expect(incidentTransitionLines(transitions[0])[0]).toBe('🔴 The api deploy failed — INCIDENT MODE ON. Prod is down. Everyone to the war room.')
+
+    const over = reduceIncident(state, cmd(T0 + 2 * MIN, 'all-clear'))
+    expect(over.exited).toMatchObject({ reason: 'deploy-fail', failureCount: 1, tools: { deploy: 1 }, cause: 'deploy of api failed: Error: Deployment failed: 503 from the edge' })
+    expect(formatPostmortem(over.exited!)).toContain('root cause: deploy of api failed: Error: Deployment failed: 503 from the edge')
+  })
+
+  it('a deploy that went out resolves it; a pinned screenshot stays on', () => {
+    const burning = run([signal(T0, 'deploy_fail')]).state
+    const t = reduceIncident(burning, signal(T0 + 3 * MIN, 'deploy_success'))
+    expect(t.state.variant).toBe('none')
+    expect(t.exited).toMatchObject({ endedBy: 'resolved', reason: 'deploy-fail', durationMs: 3 * MIN })
+    // ... whatever opened it (three plain failures here)
+    expect(reduceIncident(run(threeFailures(T0)).state, signal(T0 + MIN, 'deploy_success')).exited?.endedBy).toBe('resolved')
+    const pinned = reduceIncident(createIncidentState(), pin(T0)).state
+    expect(reduceIncident(pinned, signal(T0 + MIN, 'deploy_success')).state.variant).toBe('incident')
+    // Nothing burning: a deploy going out changes nothing
+    const idle = createIncidentState()
+    expect(reduceIncident(idle, signal(T0, 'deploy_success')).state).toBe(idle)
+  })
+
+  it('three failed builds open it under their own name', () => {
+    const { state, transitions } = run([
+      signal(T0 - 2 * MIN, 'build_failed', { detail: '2 errors' }),
+      signal(T0 - MIN, 'build_failed', { detail: '1 error' }),
+      signal(T0, 'build_failed', { detail: '4 errors' }),
+    ])
+    expect(state.variant).toBe('incident')
+    expect(state.reason).toBe('failures')
+    expect(state.failures.map(f => f.tool)).toEqual(['build', 'build', 'build'])
+    expect(incidentTransitionLines(transitions[0])[0]).toBe('🔴 3 tool failures in 5 min — INCIDENT MODE ON. Prod is down. Everyone to the war room. Latest: build failed in api: 4 errors.')
+  })
+
+  it('a failed test run names its reason for the summary ("tests failed in api: 3 failing")', () => {
+    const { state } = run([fail(T0 - MIN), fail(T0 - SEC), signal(T0, 'test_failed', { detail: '3 failing' })])
+    expect(state.variant).toBe('incident')
+    const t = reduceIncident(state, cmd(T0 + MIN, 'all-clear'))
+    expect(t.exited?.cause).toBe('tests failed in api: 3 failing')
+    expect(t.exited?.tools).toEqual({ Bash: 2, test: 1 })
+  })
+
+  it('a signal names the plain tool failure the same call logged a moment before instead of counting it twice', () => {
+    // App.tsx hears the failed Bash call (agent_working failed) and then its test_failed signal
+    const plainThenSignal = (at: number) => [fail(at, 'Bash'), signal(at + 50, 'test_failed', { detail: '1 failing' })]
+    const twoRuns = run([...plainThenSignal(T0 - MIN), ...plainThenSignal(T0)].map(i => ({ ...i, sessionId: 's1' }) as IncidentInput))
+    expect(twoRuns.state.variant).toBe('none')
+    expect(twoRuns.state.failures.map(f => f.tool)).toEqual(['test', 'test'])
+    expect(run([...plainThenSignal(T0 - 2 * MIN), ...plainThenSignal(T0 - MIN), ...plainThenSignal(T0)].map(i => ({ ...i, sessionId: 's1' }) as IncidentInput)).state.variant).toBe('incident')
+    // Another session's failure is not the same call
+    const other = run([{ ...fail(T0, 'Bash'), sessionId: 's2' } as IncidentInput, signal(T0 + 50, 'test_failed')])
+    expect(other.state.failures.map(f => f.tool)).toEqual(['Bash', 'test'])
+  })
+
+  it('test_ok after a red run clears the window while idle, and resolves the incident when it was the last red run', () => {
+    const idle = run([signal(T0, 'test_failed'), fail(T0 + SEC)]).state
+    expect(idle.failures).toHaveLength(2)
+    const green = reduceIncident(idle, signal(T0 + MIN, 'test_ok'))
+    expect(green.state.failures).toEqual([])
+    expect(green.state.red).toEqual([])
+    // Green without a red run before it: nothing to clear
+    const quiet = run([fail(T0)]).state
+    expect(reduceIncident(quiet, signal(T0 + SEC, 'test_ok')).state).toBe(quiet)
+
+    const burning = run([signal(T0 - 2 * MIN, 'test_failed'), signal(T0 - MIN, 'build_failed'), signal(T0, 'test_failed')]).state
+    expect(burning.variant).toBe('incident')
+    // Tests green, build still red: still burning
+    const half = reduceIncident(burning, signal(T0 + MIN, 'test_ok'))
+    expect(half.state.variant).toBe('incident')
+    const all = reduceIncident(half.state, signal(T0 + 2 * MIN, 'build_ok'))
+    expect(all.state.variant).toBe('none')
+    expect(all.exited).toMatchObject({ endedBy: 'resolved', failureCount: 3 })
+    // A green test run does not fix a failed deploy
+    expect(reduceIncident(run([signal(T0, 'deploy_fail')]).state, signal(T0 + MIN, 'test_ok')).state.variant).toBe('incident')
+  })
+
+  it('pushes, starts and interrupted runs change nothing; a failed deploy turns a mini-incident into a real one', () => {
+    const idle = createIncidentState()
+    for (const kind of ['push', 'push_done', 'push_failed', 'deploy_start', 'build_start', 'test_start'] as SignalKind[]) {
+      expect(reduceIncident(idle, signal(T0, kind, { toDefault: true } as never)).state, kind).toBe(idle)
+    }
+    expect(reduceIncident(idle, signal(T0, 'deploy_fail', { interrupted: true })).state).toBe(idle)
+
+    const mini = run([event(T0, 'deploy-fail')]).state
+    const real = reduceIncident(mini, signal(T0 + 10 * SEC, 'deploy_fail')).state
+    expect(real.mini).toBe(false)
+    expect(real.reason).toBe('deploy-fail')
+    expect(real.expiresAt).toBe(T0 + 10 * SEC + INCIDENT_CONFIG.autoExitMs)
+    expect(real.startedAt).toBe(T0)
+  })
+
+  it('reads a `signal` broadcast: target falls back to the project, unknown kinds are ignored', () => {
+    expect(signalIncidentInput({ type: 'signal', kind: 'test_failed', project: 'web', detail: '2 failing', sessionId: 's9', agentId: 'agent-1', agentName: 'Tester' }, T0))
+      .toEqual({ type: 'signal', at: T0, kind: 'test_failed', target: 'web', detail: '2 failing', error: undefined, interrupted: undefined, sessionId: 's9', agentId: 'agent-1', agentName: 'Tester' })
+    expect(signalIncidentInput({ type: 'signal', kind: 'deploy_rolled_back' as SignalKind }, T0)).toBeNull()
   })
 })
