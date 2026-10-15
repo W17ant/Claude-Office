@@ -3,7 +3,7 @@ import { ROLE_TO_CHAR } from '../config'
 import { getSpritePath, useTheme, toggleTheme, getTheme, themedDisplayName } from '../theme'
 import IncidentBadge from './IncidentBadge'
 
-function getAvatarSrc(role: string, agentId?: string): string {
+export function getAvatarSrc(role: string, agentId?: string): string {
   const charBase = ROLE_TO_CHAR[role] ?? 'employee-3'
   // Why: avatars in chat use agent.id when available so Office casting stays consistent
   return getSpritePath(agentId ?? `role-${role}`, role, charBase, 'front-right')
@@ -13,6 +13,7 @@ function getAvatarSrc(role: string, agentId?: string): string {
 const PROACTIVE_PATTERN = /\b(starting|started|done|finished|completed|ready|working on|picking up|taking over)\b/i
 
 export interface ChatMessage {
+  /** The server's chat row id for rows it broadcast; negative for local-only lines */
   id: number
   sender: string
   senderSprite: string
@@ -22,6 +23,9 @@ export interface ChatMessage {
   timestamp: string
   isSystem?: boolean
   reactions?: string[]
+  /** Name and avatar as they were when the line was posted (the Office cast may change later) */
+  displayName?: string
+  avatarSrc?: string
 }
 
 const EMOJI_PICKER = ['👍', '👎', '😊', '🎉', '😡', '🔥', '💯']
@@ -177,7 +181,7 @@ const SlackChat: React.FC<SlackChatProps> = ({ messages, muted, volume, onToggle
                 {!msg.isSystem && (
                   <div className="slack-avatar" style={{ border: `2px solid ${msg.senderColor}`, boxShadow: `0 0 6px ${msg.senderColor}40` }}>
                     <img
-                      src={getAvatarSrc(msg.senderSprite)}
+                      src={msg.avatarSrc ?? getAvatarSrc(msg.senderSprite)}
                       alt={msg.sender}
                       className="slack-avatar-img"
                       onError={(e) => {
@@ -194,7 +198,7 @@ const SlackChat: React.FC<SlackChatProps> = ({ messages, muted, volume, onToggle
                   {!msg.isSystem && (
                     <div className="slack-msg-header">
                       <span className="slack-sender" style={{ color: msg.senderColor }}>
-                        {themedDisplayName(msg.senderSprite, msg.sender)}
+                        {msg.displayName ?? themedDisplayName(msg.senderSprite, msg.sender)}
                       </span>
                       <span className="slack-time">{msg.timestamp}</span>
                     </div>
@@ -298,4 +302,6 @@ const SlackChat: React.FC<SlackChatProps> = ({ messages, muted, volume, onToggle
   )
 }
 
-export default SlackChat
+// Why: App re-renders every animation frame while anyone walks; the panel only
+// needs to when a message, the typing indicator or a control changes
+export default React.memo(SlackChat)
