@@ -27,7 +27,8 @@
     "test:watch": "vitest",
     "install-hooks": "bash hooks/install-hooks.sh",
     "uninstall-hooks": "bash hooks/install-hooks.sh --uninstall",
-    "doctor": "node scripts/doctor.mjs"
+    "doctor": "node scripts/doctor.mjs",
+    "version": "node scripts/sync-plugin-version.mjs && git add .claude-plugin/plugin.json"
   },
   "dependencies": {
     "better-sqlite3": "^12.8.0",
@@ -53,6 +54,7 @@
   "build": {
     "appId": "com.agentoffice.app",
     "productName": "Agent Office",
+    "artifactName": "Agent-Office-${version}-${os}-${arch}.${ext}",
     "directories": {
       "output": "release",
       "buildResources": "build"
@@ -67,19 +69,40 @@
     ],
     "npmRebuild": false,
     "afterPack": "electron/after-pack.cjs",
+    "publish": {
+      "provider": "github",
+      "releaseType": "draft"
+    },
     "mac": {
       "category": "public.app-category.developer-tools",
       "icon": "build/icon.png",
       "target": [
-        "dmg"
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
       ]
     },
     "win": {
-      "icon": "build/icon.png"
+      "icon": "build/icon.png",
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "differentialPackage": false
     },
     "linux": {
       "icon": "build/icon.png",
-      "category": "Development"
+      "category": "Development",
+      "target": [
+        "AppImage"
+      ]
     }
   }
 }

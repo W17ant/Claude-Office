@@ -75,9 +75,9 @@ Works on macOS and Linux, and on Windows through WSL or Git Bash with `python3` 
 
 | Platform | Office in the browser | Claude Code hooks + status line | Desktop app (Electron) |
 |---|---|---|---|
-| **macOS** | Yes — `start-office.sh` opens the browser with `open`; notifications via `osascript` | Yes — the hooks are bash scripts that call `python3` and `curl`; macOS ships `bash` and `curl`, `python3` comes with the Xcode command-line tools | `npm run build:electron` produces a `.dmg`; the packaged build was not re-verified this week |
-| **Linux** | Yes (verified) — `xdg-open` opens the browser; notifications via `notify-send` when present | Yes | Yes — the self-contained bundle (`npm run pack`) was built, launched and screenshotted on Linux this week |
-| **Windows** | Node runs the server natively: `npm run build && npm run server`, then open `http://127.0.0.1:3334` yourself | Through **WSL** or **Git Bash**, with `python3` and `curl` on the PATH: the installer and the hooks are bash scripts. A native Node hook is on the [roadmap](#roadmap) | Untested |
+| **macOS** | Yes — `start-office.sh` opens the browser with `open`; notifications via `osascript` | Yes — the hooks are bash scripts that call `python3` and `curl`; macOS ships `bash` and `curl`, `python3` comes with the Xcode command-line tools | Unsigned `.dmg` for Apple silicon and Intel on the [releases page](https://github.com/W17ant/Claude-Office/releases), built by the release workflow (first launch: see [Download](#desktop-app-electron)); not launched by hand this week |
+| **Linux** | Yes (verified) — `xdg-open` opens the browser; notifications via `notify-send` when present | Yes | Yes — `.AppImage` on the releases page; the self-contained bundle was built, launched and screenshotted on Linux this week |
+| **Windows** | Node runs the server natively: `npm run build && npm run server`, then open `http://127.0.0.1:3334` yourself | Through **WSL** or **Git Bash**, with `python3` and `curl` on the PATH: the installer and the hooks are bash scripts. A native Node hook is on the [roadmap](#roadmap) | NSIS `.exe` installer on the releases page, built by the release workflow; not launched by hand yet |
 
 Requirements everywhere: Node 22 (what CI runs; `better-sqlite3` is a native module), `bash`, `python3` and `curl` for the hooks and the installer, and the Claude Code CLI (`claude`) for the chat AI watcher.
 
@@ -510,10 +510,18 @@ python3 scripts/extract-boss-sprite.py your-character.png MyChar-1
 
 The desktop app is self-contained: it bundles the office server, the built UI and `node_modules`, runs the server on the Node that ships inside Electron (nothing needs to be installed, and no `node` on the PATH), and loads the office from `http://127.0.0.1:3334/` — one port for the page, its assets and the WebSocket.
 
+**Download.** Every tagged release carries installers built by the [release workflow](.github/workflows/release.yml); the [releases page](https://github.com/W17ant/Claude-Office/releases) has them, named `Agent-Office-<version>-<os>-<arch>`:
+
+- **macOS** — `…-mac-arm64.dmg` (Apple silicon) or `…-mac-x64.dmg` (Intel); drag the app into Applications. The app is not signed or notarised, so macOS refuses it on first launch: right-click (Control-click) the app and choose **Open**; if it says the app is damaged, clear the quarantine flag with `xattr -dr com.apple.quarantine "/Applications/Agent Office.app"` and open it again.
+- **Windows** — `…-win-x64.exe`, an ordinary installer that asks where to install. SmartScreen warns about an unknown publisher: **More info → Run anyway**.
+- **Linux** — `…-linux-x86_64.AppImage`: `chmod +x` it and run it. Like any AppImage it needs FUSE 2 (`libfuse2` on Debian and Ubuntu); without it, `./Agent-Office-*.AppImage --appimage-extract-and-run` works.
+
+The app is the office, not the hooks: agents only show up once the hooks are installed from a checkout with `npm run install-hooks` (see [Connect Claude Code](#connect-claude-code)).
+
 ```bash
 npm run dev:electron    # Development: Vite on 3333 + an Electron window; the server runs on your Node
 npm run pack            # Unpacked build in release/<platform>-unpacked (quick smoke test)
-npm run build:electron  # Installer (.dmg on macOS) in release/
+npm run build:electron  # Installer for this OS (.dmg, .exe or .AppImage) in release/
 ```
 
 **The window.** The office is a fixed 1056×682 layout, so the window opens at exactly that size, centred on the screen, and scales the office to fit whatever size you drag it to — the layout never reflows, it is zoomed and letterboxed, down to half size. The window remembers its size and position in `window-state.json` under the app's user-data directory (`~/Library/Application Support/Agent Office`, `%APPDATA%\Agent Office` or `~/.config/Agent Office`) and restores them clamped to the display's work area, so it cannot come back off-screen after a monitor is unplugged or a resolution changes. The office draws its own title bar: drag it to move the window, right-click anywhere else for the menu described under the tray below. `Office → Reset window size` puts the window back to its default size and spot.
@@ -530,9 +538,12 @@ How a build is put together (the `build` section of `package.json`):
 - `asar` is off: the server is a plain Node child process that reads `dist/`, `server/` and `node_modules` with ordinary `fs` calls.
 - `npmRebuild` is off, so the checkout's `node_modules` stay built for your system Node and `npm test` / `node server/index.js` keep working after a pack. `electron/after-pack.cjs` fetches the Electron build of `better-sqlite3` (through its own `prebuild-install`) into the packaged copy only.
 - `build/icon.png` is the app icon (see Icons above); electron-builder reads it from `build/`, its `buildResources` directory, and the tray icons ship with `electron/**`.
+- `mac.target` is one `dmg` per architecture (`arm64` and `x64`) rather than a universal app: `after-pack.cjs` fetches one `better-sqlite3` prebuilt per architecture and refuses `universal`, and a single-architecture download is half the size. `win.target` is an NSIS installer that asks where to install (and no `.blockmap` next to it: there is no auto-updater to use one), `linux.target` an AppImage. `artifactName` fixes the file names to `Agent-Office-<version>-<os>-<arch>.<ext>`, and `publish` names the GitHub draft release the release workflow uploads to — a local `npm run build:electron` never publishes; electron-builder only does that on CI or when asked with `--publish`.
 - Debugging a build headlessly: `AGENT_OFFICE_SCREENSHOT=/tmp/office.png` makes the app save a screenshot of its window a few seconds after the page loads, then quit (works under `xvfb-run`); add `--compact` to capture the widget.
 
-The same single-port mode works without Electron: `npm run build && npm run server`, then open `http://localhost:3334`. The Linux bundle was built, launched and screenshotted (full window and compact widget) under xvfb; the tray icon was created there but a headless X server has no panel to show it in, and the macOS and Windows packages have not been re-verified since the bundle became self-contained — see [Platform support](#platform-support).
+The same single-port mode works without Electron: `npm run build && npm run server`, then open `http://localhost:3334`. The Linux bundle was built, launched and screenshotted (full window and compact widget) under xvfb; the tray icon was created there but a headless X server has no panel to show it in, and the macOS and Windows packages come out of the release workflow but have not been launched by hand since the bundle became self-contained — see [Platform support](#platform-support).
+
+**Cutting a release** (maintainers). `npm version minor` (or `patch` / `major`) bumps `package.json` and `package-lock.json` and — through the `version` script, `scripts/sync-plugin-version.mjs` — `.claude-plugin/plugin.json`, then commits and tags `vX.Y.Z`; `git push --follow-tags` pushes the commit and the tag. The tag starts [`release.yml`](.github/workflows/release.yml): it checks that the tag matches `package.json`, creates a **draft** release for it, then builds on macOS, Windows and Linux runners and uploads the installers (and electron-builder's `latest*.yml` update metadata) to that draft. Nothing is public until you open the draft on the releases page, edit the notes and publish it. A failed leg can be re-run from the Actions tab, and **Run workflow** on the tag rebuilds everything; both upload to the same draft. A tag whose release is already published is left alone. Nothing in the pipeline signs — there is no Apple or Windows certificate — hence the first-launch steps under Download.
 
 ## Security
 
@@ -629,6 +640,7 @@ Claude-Office/
 │   ├── agent-message.py    # Agent-to-agent messages from the shell
 │   ├── notify.sh           # Desktop notification (osascript / notify-send)
 │   ├── generate-icons.mjs  # Draws the tray and app icons as PNGs (no dependencies)
+│   ├── sync-plugin-version.mjs  # npm version: copies the version into .claude-plugin/plugin.json
 │   └── gather-context.sh   # Git/agent context for prompts
 ├── hooks/                  # Claude Code hooks
 │   ├── install-hooks.sh    # Registers the hooks + status line in ~/.claude/settings.json
@@ -643,7 +655,7 @@ Claude-Office/
 │   ├── helpers.cjs         # Pure helpers (bounds, zoom-to-fit, window-state.json, status text)
 │   └── assets/             # Tray icons and the Linux window icon (generated)
 ├── build/                  # electron-builder resources: icon.png (generated)
-└── .github/                # CI workflow, issue templates
+└── .github/                # CI and release workflows, issue templates
 ```
 
 ## Roadmap
