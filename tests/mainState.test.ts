@@ -7,8 +7,16 @@ import { describe, expect, it } from 'vitest'
 import {
   mainId, isMainAgent, isHardNeedsYou, needsYouLabel, needsYouBadge, needsYouShort,
   agentStateFor, isFreeMain, mainTone, mainPillText, shortModel,
-  formatTokensShort, formatElapsed, completionStats, summarise, projectFromCwd, countRunningTasks,
+  formatTokensShort, formatElapsed, completionStats, summarise, projectFromCwd, countRunningTasks, stripCounts,
 } from '../src/mainState'
+import type { MainState, NeedsYou, SessionInfo } from '../src/types'
+
+function session(id: string, extra: Partial<SessionInfo> = {}): SessionInfo {
+  return { id, project: id, state: 'active', ...extra }
+}
+function waitingOn(needsYou: NeedsYou, state: MainState = 'needs-you'): Pick<SessionInfo, 'main'> {
+  return { main: { state, needsYou } }
+}
 
 describe('mainState helpers', () => {
   it('names a session\'s Claude', () => {
@@ -85,6 +93,54 @@ describe('mainState helpers', () => {
     expect(completionStats(42_000, 192_000)).toEqual(['42k tok', '3m12s'])
     expect(completionStats(undefined, 192_000)).toEqual(['3m12s'])
     expect(completionStats(undefined, undefined)).toEqual([])
+  })
+
+  it('counts the strip\'s sessions, the unhooked ones and the ones that need you, with the right plural', () => {
+    const counts = stripCounts([
+      session('alpha', { main: { state: 'working' } }),
+      session('beta', { hooked: false, registry: { pid: 1, name: 'beta-reg', status: 'busy' } }),
+      session('gamma', { hooked: true, ...waitingOn({ kind: 'permission', toolName: 'Bash', summary: 'npm test' }) }),
+      session('delta', { ...waitingOn({ kind: 'agent-input', summary: 'which env?' }) }),
+      // An unhooked session the registry marks "waiting" counts under both
+      session('eps', { hooked: false, ...waitingOn({ kind: 'registry', summary: 'waiting in the terminal' }) }),
+    ])
+    expect(counts.sessions).toBe(5)
+    expect(counts.notHooked.map(s => s.id)).toEqual(['beta', 'eps'])
+    expect(counts.needYou.map(s => s.id)).toEqual(['gamma', 'delta', 'eps'])
+    expect([counts.sessionsText, counts.notHookedText, counts.needYouText]).toEqual(['5 sessions', '2 not hooked', '3 need you'])
+  })
+
+  it('counts only the hard needs-you kinds: an idle prompt, a quota pause or a needs-you without a reason raises no hand', () => {
+    const counts = stripCounts([
+      session('idle', waitingOn({ kind: 'idle' })),
+      session('quota', waitingOn({ kind: 'quota' })),
+      session('bare', { main: { state: 'needs-you' } }),
+      // A stale needsYou left on a session that has moved on
+      session('moved-on', waitingOn({ kind: 'permission' }, 'working')),
+      session('asking', waitingOn({ kind: 'permission', toolName: 'Write' })),
+    ])
+    expect(counts.needYou.map(s => s.id)).toEqual(['asking'])
+    expect(counts.needYouText).toBe('1 needs you')
+    expect(counts.notHookedText).toBeNull()
+  })
+
+  it('has no text for a zero count and a singular for one session', () => {
+    expect(stripCounts([])).toEqual({
+      sessions: 0, notHooked: [], needYou: [], sessionsText: '0 sessions', notHookedText: null, needYouText: null,
+    })
+    const one = stripCounts([session('solo', { hooked: false })])
+    expect([one.sessionsText, one.notHookedText, one.needYouText]).toEqual(['1 session', '1 not hooked', null])
+  })
+
+  it('leaves out an ended session, whatever it was doing when it ended', () => {
+    const counts = stripCounts([
+      session('live'),
+      session('gone', { state: 'ended', hooked: false, ...waitingOn({ kind: 'permission' }) }),
+    ])
+    expect(counts.sessions).toBe(1)
+    expect(counts.notHooked).toEqual([])
+    expect(counts.needYou).toEqual([])
+    expect(counts.sessionsText).toBe('1 session')
   })
 
   it('summarises prompts, derives projects from cwds and counts unfinished background tasks', () => {

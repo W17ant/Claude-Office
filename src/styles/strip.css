@@ -1,5 +1,6 @@
 /* ===== STATUS STRIP — pipeline health along the bottom of the office =====
-   src/components/StatusStrip.tsx: connection, last hook, sessions, version.
+   src/components/StatusStrip.tsx: connection, last hook, sessions (not
+   hooked, need you), version.
    Its colours are the title bar's traffic lights (green / amber / red), so
    the two bars read as one piece of chrome. Variables so a theme or variant
    can restyle it by overriding --strip-* (no logic in here). */
@@ -12,6 +13,8 @@
   --strip-ok: #28c840;
   --strip-warn: #febc2e;
   --strip-danger: #ff5f57;
+  /* The needs-you amber of the session pills (office.css .session-pill.needs-you) */
+  --strip-needs-you: #ffd166;
   --strip-code-bg: rgba(255,255,255,0.05);
 }
 
@@ -86,6 +89,11 @@
 .strip-hooks.warn { color: var(--strip-warn); }
 
 .strip-sessions { color: var(--strip-fg); }
+/* "3 sessions · 1 not hooked · 2 need you": not hooked is the strip's warning
+   amber (something to install), need you the session pills' needs-you amber */
+.strip-mid       { color: var(--strip-dim); }
+.strip-unhooked  { color: var(--strip-warn); }
+.strip-needs-you { color: var(--strip-needs-you); font-weight: 700; }
 .strip-version  { color: var(--strip-dim); }
 
 /* The command to type, on the right */

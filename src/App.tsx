@@ -1549,7 +1549,7 @@ const App: React.FC = () => {
       />
       </div>
       </div>
-      <StatusStrip office={officeRef} />
+      <StatusStrip office={officeRef} sessions={sessions} />
     </div>
   )
 }
