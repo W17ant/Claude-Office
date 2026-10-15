@@ -140,11 +140,32 @@ def session_fields(payload):
 
 SESSION = session_fields(d)
 
+def sign_post(body):
+    # The POST /event signature, computed HERE so the common path spends no
+    # extra process on signing: HMAC-SHA256(token, POST\npath\nts\nbody) with
+    # the token from the environment (never argv). '' when there is no token
+    # (the wrapper then POSTs unsigned and the server answers 401). The GET
+    # long-poll of the permission path re-signs per poll in the wrapper.
+    token = os.environ.get('OFFICE_TOKEN', '')
+    if not token:
+        return ''
+    import time, hmac, hashlib
+    from urllib.parse import urlsplit
+    split = urlsplit(os.environ.get('OFFICE_POST_URL', ''))
+    path = (split.path or '/') + (('?' + split.query) if split.query else '')
+    ts = str(int(time.time() * 1000))
+    msg = ('POST\n' + path + '\n' + ts + '\n').encode() + body.encode()
+    return ts + '\x1f' + hmac.new(token.encode(), msg, hashlib.sha256).hexdigest()
+
 def emit(event):
     # Every event the office receives says which session it belongs to
     for key, value in SESSION.items():
         event.setdefault(key, value)
-    print(json.dumps(event))
+    body = json.dumps(event)
+    # Line 1: the event (the POST body). Line 2: its POST signature (or empty).
+    # A later `wait` line (emit_session) becomes line 3.
+    print(body)
+    print(sign_post(body))
 
 # ── Session lifecycle ───────────────────────────────────────────────────────
 # Captured 2.1.300 payloads (besides session_id/transcript_path/cwd):
@@ -1400,17 +1421,24 @@ PYEOF
 )
 
 # -I: ignore PYTHON* env vars and the user site, and keep the cwd (the
-# project Claude is working in) off sys.path. The first line is the event;
-# a second line saying `wait` (PermissionRequest the office may answer) makes
-# the POST a foreground one that waits for the answer.
-PY_OUT=$(printf '%s' "$PAYLOAD" | python3 -I -c "$PY")
+# project Claude is working in) off sys.path. The token and the event URL go
+# in through the environment (never argv) so the Python can sign the POST in
+# this one process — the common path spends no extra process on signing.
+# Line 1 is the event, line 2 its POST signature ("ts<US>sig", or empty), and
+# line 3 is `wait` for a PermissionRequest the office may answer.
+PY_OUT=$(printf '%s' "$PAYLOAD" | OFFICE_TOKEN="$TOKEN" OFFICE_POST_URL="$SERVER_URL" python3 -I -c "$PY")
 EVENT_JSON=$(printf '%s\n' "$PY_OUT" | sed -n 1p)
-WAIT_FLAG=$(printf '%s\n' "$PY_OUT" | sed -n 2p)
+POST_SIG_LINE=$(printf '%s\n' "$PY_OUT" | sed -n 2p)
+WAIT_FLAG=$(printf '%s\n' "$PY_OUT" | sed -n 3p)
 
 # If Python produced no output, nothing to send
 if [ -z "$EVENT_JSON" ]; then
     exit 0
 fi
+# Split the precomputed POST signature (empty when there is no token)
+IFS=$'\x1f' read -r POST_TS POST_SIG <<EOF
+$POST_SIG_LINE
+EOF
 
 # ── Request signing ─────────────────────────────────────────────────────────
 # The hook authenticates by signing each request rather than sending the
@@ -1527,10 +1555,10 @@ try:
 except Exception:
     d = {}
 print("\x1f".join([str(d.get("nonce") or ""), json.dumps(d.get("suggestions") or [])]))')
-    IFS=$'\x1f' read -r ts sig < <(printf '%s' "$EVENT_JSON" | sign_headers POST "$SERVER_URL")
+    # The POST signature was computed in the main Python pass (POST_TS/POST_SIG)
     reply=$(printf '%s' "$EVENT_JSON" | curl -sf -X POST "$SERVER_URL" \
         -H "Content-Type: application/json" \
-        -H "X-Office-Timestamp: $ts" -H "X-Office-Signature: $sig" \
+        -H "X-Office-Timestamp: $POST_TS" -H "X-Office-Signature: $POST_SIG" \
         --data-binary @- --max-time 2 2>/dev/null) || return 0
     IFS=$'\x1f' read -r id poll_ms deadline < <(printf '%s' "$reply" | python3 -I -c "$PY_REPLY" created)
     [ -n "$id" ] || return 0
@@ -1569,12 +1597,9 @@ if [ "$WAIT_FLAG" = "wait" ]; then
 fi
 
 # Send the event, signed (the body on stdin so neither the token nor the
-# event text is ever on curl's argv). No token: it goes out unsigned and the
+# event text is ever on curl's argv). The signature was computed in the main
+# Python pass (POST_TS/POST_SIG). No token: it goes out unsigned and the
 # server answers 401, which this backgrounded, output-discarding call ignores.
-POST_TS_SIG=$(printf '%s' "$EVENT_JSON" | sign_headers POST "$SERVER_URL")
-IFS=$'\x1f' read -r POST_TS POST_SIG <<EOF
-$POST_TS_SIG
-EOF
 if [ -n "$POST_SIG" ]; then
     printf '%s' "$EVENT_JSON" | curl -sf -X POST "$SERVER_URL" \
         -H "Content-Type: application/json" \

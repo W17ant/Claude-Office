@@ -29,14 +29,21 @@ if (!PYTHON.includes('hook_event_name')) throw new Error('could not extract the 
 const NO_MARKER_HOME = mkdtempSync(join(tmpdir(), 'agent-office-hook-home-'))
 afterAll(() => rmSync(NO_MARKER_HOME, { recursive: true, force: true }))
 
-/** The hook's Python against a payload (on stdin, as the wrapper does): its stdout lines. */
+/**
+ * The hook's Python against a payload (on stdin, as the wrapper does): its
+ * stdout content lines. The Python prints the event, then its POST signature
+ * (empty here — these runs set no OFFICE_TOKEN), then `wait` for an answerable
+ * PermissionRequest; the empty signature line is dropped so the tests speak to
+ * the event-and-wait contract. The live wrapper reads the lines positionally
+ * (sed -n), so the empty line there is harmless.
+ */
 function runHookLines(payload: unknown, env: Record<string, string> = {}): string[] {
   const out = execFileSync('python3', ['-I', '-c', PYTHON], {
     input: typeof payload === 'string' ? payload : JSON.stringify(payload),
     encoding: 'utf8',
     env: { ...process.env, AGENT_OFFICE_HOME: NO_MARKER_HOME, ...env },
   }).trim()
-  return out ? out.split('\n') : []
+  return out ? out.split('\n').filter(line => line !== '') : []
 }
 
 /** Run the hook's Python against a payload; null when it printed nothing. */
