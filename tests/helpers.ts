@@ -41,7 +41,12 @@ export async function loadOffice(opts: LoadOptions = {}): Promise<Office> {
   // ~/.claude/sessions when started; a test office reads a (normally absent)
   // directory under its runtime dir instead, so the sessions of whoever runs
   // the suite never turn up in it. A test that wants a registry passes its own.
-  const extra = Object.entries({ AGENT_OFFICE_REGISTRY_DIR: join(dir, 'registry'), ...(opts.env ?? {}) })
+  // The same for the task board (server/tasks.js): never ~/.claude/tasks.
+  const extra = Object.entries({
+    AGENT_OFFICE_REGISTRY_DIR: join(dir, 'registry'),
+    AGENT_OFFICE_TASKS_DIR: join(dir, 'tasks'),
+    ...(opts.env ?? {}),
+  })
   for (const [key, value] of extra) process.env[key] = value
   try {
     vi.resetModules()

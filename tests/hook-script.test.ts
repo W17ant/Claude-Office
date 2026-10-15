@@ -902,9 +902,32 @@ describe('agent-tracker.sh: the main thread (session_* events)', () => {
       ...captured('7d77f597-b547-42f9-823a-50fc2ecdbf3b'), hook_event_name: 'InstructionsLoaded',
       file_path: `${HOOKCAP}/CLAUDE.md`, memory_type: 'Project', load_reason: 'session_start',
     })).toBeNull()
-    for (const hook_event_name of ['MessageDisplay', 'ConfigChange', 'UserPromptExpansion', 'PreModelSwitch', 'PermissionDenied', 'TeammateIdle', 'TaskCreated', 'TaskCompleted', 'Elicitation', 'ElicitationResult', 'WorktreeCreate', 'WorktreeRemove', 'FileChanged', 'DirectoryAdded']) {
+    for (const hook_event_name of ['MessageDisplay', 'ConfigChange', 'UserPromptExpansion', 'PreModelSwitch', 'PermissionDenied', 'TeammateIdle', 'Elicitation', 'ElicitationResult', 'WorktreeCreate', 'WorktreeRemove', 'FileChanged', 'DirectoryAdded']) {
       expect(runHook({ ...captured(C), prompt_id: 'p', hook_event_name }), hook_event_name).toBeNull()
     }
+  })
+
+  it('TaskCreated / TaskCompleted -> task_created / task_completed {taskId, subject} (the docs\' shape; never fired locally), the description left behind', () => {
+    // The hooks reference's own example payloads, team fields and all
+    const example = { task_id: 'task-001', task_subject: 'Implement user authentication', task_description: 'Add login and signup endpoints', teammate_name: 'implementer', team_name: 'session-a1b2c3d4' }
+    expect(runHook({ ...captured(C), hook_event_name: 'TaskCreated', ...example }))
+      .toEqual({ type: 'task_created', taskId: 'task-001', subject: 'Implement user authentication', ...forwarded(C) })
+    expect(runHook({ ...captured(C), permission_mode: 'default', hook_event_name: 'TaskCompleted', ...example }))
+      .toEqual({ type: 'task_completed', taskId: 'task-001', subject: 'Implement user authentication', ...forwarded(C) })
+    // The ids Claude Code writes on disk are small integers as strings; a prompt id rides along like on every turn event
+    expect(runHook({ ...captured(C), prompt_id: 'p', hook_event_name: 'TaskCreated', task_id: '3', task_subject: 'Fix the parser' }))
+      .toEqual({ type: 'task_created', taskId: '3', subject: 'Fix the parser', promptId: 'p', ...forwarded(C) })
+  })
+
+  it('TaskCreated / TaskCompleted clamp the subject to one 120-char line, take a numeric id, and need a task id and a session', () => {
+    const long = runHook({ ...captured(C), hook_event_name: 'TaskCreated', task_id: 7, task_subject: `Fix\n  the   parser ${'x'.repeat(300)}` })
+    expect(long).toMatchObject({ type: 'task_created', taskId: '7' })
+    expect(long!.subject).toHaveLength(120)
+    expect(long!.subject.startsWith('Fix the parser x')).toBe(true)
+    expect(runHook({ ...captured(C), hook_event_name: 'TaskCompleted', task_id: '1' })).toEqual({ type: 'task_completed', taskId: '1', subject: '', ...forwarded(C) })
+    expect(runHook({ ...captured(C), hook_event_name: 'TaskCreated', task_subject: 'no id' })).toBeNull()
+    expect(runHook({ ...captured(C), hook_event_name: 'TaskCompleted', task_id: '', task_subject: 'empty id' })).toBeNull()
+    expect(runHook({ hook_event_name: 'TaskCreated', task_id: '1', task_subject: 'no session' })).toBeNull()
   })
 
   it('every main-thread event without a session id prints nothing', () => {
@@ -994,6 +1017,17 @@ describe('agent-tracker.sh: the bash wrapper', () => {
     expect(run.stderr).toBe('')
     expect(run.body).toMatchObject({ type: 'agent_completed', agentId: 'agent-toolu_BIG', sessionId: 's-wrap' })
     expect(run.body.result).toHaveLength(120)
+  })
+
+  it('TaskCreated: nothing on stdout (which could veto the task), exit 0, the task_created goes to curl in the background', async () => {
+    const run = await runScript({ ...session, hook_event_name: 'TaskCreated', task_id: '4', task_subject: 'Write the board', task_description: 'Post-its on the whiteboard' })
+    expect(run.status).toBe(0)
+    expect(run.stdout).toBe('')
+    expect(run.stderr).toBe('')
+    expect(run.calls).toHaveLength(1)
+    expect(run.args).toContain('--max-time')
+    expect(run.body).toEqual({ type: 'task_created', taskId: '4', subject: 'Write the board', sessionId: 's-wrap', project: 'proj', cwd: '/home/me/proj', transcriptPath: '/t/s-wrap.jsonl' })
+    expect(JSON.stringify(run.body)).not.toContain('Post-its on the whiteboard')
   })
 
   it('sends the bearer token from $AGENT_OFFICE_HOME/auth-token when there is one; an ignored event never calls curl', async () => {

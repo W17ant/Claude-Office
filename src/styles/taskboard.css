@@ -1,0 +1,205 @@
+/* ===== TASK BOARD =====
+   The session's task list on the kanban whiteboard (src/components/TaskBoard.tsx).
+   .task-board is laid over the board's writing surface in the room art and
+   skewed along the wall; inside it everything is sized in cqw (1 % of the
+   board's width), so the post-its scale with the room. It sits above the
+   'kanban-board' hotspot (z 10) and below furniture and people (z ~ their y). */
+
+.task-board {
+  position: absolute;
+  transform-origin: 0 0;
+  z-index: 11;
+  container-type: inline-size;
+  cursor: pointer;
+  outline: none;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  /* Per-theme: the colour the night art multiplies the board by (sampled from the room PNGs) */
+  --tb-surface: #eef0f0;
+  --tb-ink: #34466c;
+  --tb-rule: #aab2c0;
+  --tb-night: #e2e3ea;
+}
+.task-board.theme-office {
+  --tb-surface: #ecebe7;
+  --tb-night: #b8a5b6;
+}
+.task-board:focus-visible .task-board-surface {
+  box-shadow: inset 0 0 0 0.8cqw #59b7f2;
+}
+
+/* Covers the art's decorative post-its; a faint edge so it meets the frame */
+.task-board-surface {
+  position: absolute;
+  inset: 0;
+  background: var(--tb-surface);
+  background-image: linear-gradient(170deg, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0) 45%, rgba(0, 0, 30, 0.04));
+  box-shadow: inset 0 0 0 0.35cqw rgba(60, 70, 90, 0.12);
+}
+
+.task-board-columns {
+  position: absolute;
+  inset: 0 0 6cqw 0;
+  display: flex;
+}
+
+.task-col {
+  position: relative;
+  height: 100%;
+  min-width: 0;
+}
+.task-col + .task-col {
+  border-left: 0.5cqw solid var(--tb-rule);
+}
+
+.task-col-title {
+  height: 12cqw;
+  padding: 3cqw 0 0 2.2cqw;
+  border-bottom: 0.5cqw solid var(--tb-rule);
+  color: var(--tb-ink);
+  font-size: 4.6cqw;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.1cqw;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.task-col-notes {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 2.6cqw 2.4cqw;
+  padding: 3.4cqw 2cqw 0 2.4cqw;
+}
+
+/* A post-it: a coloured square with two scribbled lines, a hard pixel shadow */
+.task-note {
+  position: relative;
+  flex: 0 0 auto;
+  width: 10cqw;
+  height: 9cqw;
+  border-radius: 0.4cqw;
+  box-shadow: 0 0.6cqw 0 rgba(30, 40, 60, 0.22);
+  transform-origin: 50% 50%;
+}
+.task-note::after {
+  content: '';
+  position: absolute;
+  inset: 2.4cqw 1.8cqw 1.8cqw 1.8cqw;
+  background-image: repeating-linear-gradient(to bottom,
+    rgba(40, 50, 80, 0.38) 0 0.6cqw, transparent 0.6cqw 2cqw);
+}
+.task-note.pending     { background: #ffd84d; }
+.task-note.in_progress { background: #59b7f2; }
+.task-note.completed   { background: #7ed36b; }
+.task-note:hover {
+  outline: 0.5cqw solid rgba(52, 70, 108, 0.75);
+  z-index: 1;
+}
+
+/* Waiting on an open task: a red pin at the top */
+.task-note.blocked::before {
+  content: '';
+  position: absolute;
+  top: -1.4cqw;
+  left: 50%;
+  width: 3.2cqw;
+  height: 3.2cqw;
+  margin-left: -1.6cqw;
+  border-radius: 50%;
+  background: #e53935;
+  box-shadow: 0 0.4cqw 0 rgba(90, 0, 0, 0.45), inset -0.5cqw -0.5cqw 0 rgba(0, 0, 0, 0.2);
+  z-index: 1;
+}
+
+/* "+N": the column has more than it shows */
+.task-more {
+  flex: 0 0 auto;
+  min-width: 10cqw;
+  height: 9cqw;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--tb-ink);
+  font-size: 4cqw;
+  font-weight: 700;
+  line-height: 1;
+  border: 0.4cqw dashed rgba(52, 70, 108, 0.45);
+  border-radius: 0.4cqw;
+}
+
+.task-board-label {
+  position: absolute;
+  right: 2.2cqw;
+  bottom: 1.2cqw;
+  max-width: 70%;
+  color: rgba(52, 70, 108, 0.8);
+  font-size: 3.4cqw;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.task-board-night {
+  position: absolute;
+  inset: 0;
+  background: var(--tb-night);
+  mix-blend-mode: multiply;
+  pointer-events: none;
+  transition: opacity 0.5s ease;
+}
+
+/* What just happened: going in progress flashes, a finished one slides over to Done, a new one pops on */
+.task-note.fx-started {
+  animation: taskNoteFlash 1.6s ease-out;
+}
+@keyframes taskNoteFlash {
+  0%   { transform: scale(1.6); box-shadow: 0 0 0 2cqw rgba(89, 183, 242, 0.75), 0 0.6cqw 0 rgba(30, 40, 60, 0.22); }
+  30%  { transform: scale(1.25); box-shadow: 0 0 0 1.6cqw rgba(255, 255, 255, 0.9), 0 0.6cqw 0 rgba(30, 40, 60, 0.22); }
+  100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(89, 183, 242, 0), 0 0.6cqw 0 rgba(30, 40, 60, 0.22); }
+}
+.task-note.fx-done {
+  animation: taskNoteSlide 0.8s cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+@keyframes taskNoteSlide {
+  from { transform: translateX(-30cqw) rotate(-10deg); opacity: 0.5; }
+  70%  { transform: translateX(1cqw) rotate(2deg); opacity: 1; }
+  to   { transform: none; }
+}
+.task-note.fx-added {
+  animation: taskNoteAdd 0.5s ease-out;
+}
+@keyframes taskNoteAdd {
+  from { transform: scale(0) rotate(-12deg); }
+  to   { transform: none; }
+}
+
+/* Hover caption: above the board, upright, readable */
+.task-board-caption {
+  position: absolute;
+  transform: translateY(-100%);
+  z-index: 150;
+  max-width: 24%;
+  padding: 3px 7px;
+  border-radius: 4px;
+  background: rgba(16, 20, 30, 0.92);
+  border-left: 3px solid #ffd84d;
+  color: #f2f4f8;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 10px;
+  line-height: 1.35;
+  pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+}
+.task-board-caption.in_progress { border-left-color: #59b7f2; }
+.task-board-caption.completed   { border-left-color: #7ed36b; }
+
+@media (prefers-reduced-motion: reduce) {
+  .task-note.fx-started,
+  .task-note.fx-done,
+  .task-note.fx-added {
+    animation: none;
+  }
+  .task-board-night { transition: none; }
+}
