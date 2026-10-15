@@ -26,7 +26,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "install-hooks": "bash hooks/install-hooks.sh",
-    "uninstall-hooks": "bash hooks/install-hooks.sh --uninstall"
+    "uninstall-hooks": "bash hooks/install-hooks.sh --uninstall",
+    "doctor": "node scripts/doctor.mjs"
   },
   "dependencies": {
     "better-sqlite3": "^12.8.0",
