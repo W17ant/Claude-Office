@@ -38,21 +38,39 @@ interface ThemeState {
   angelaCat: string | null
 }
 
+// Why: declared before `state` — loadInitial() runs at module load and reads them
+const THEME_KEY = 'agent-office-theme'
+const CAST_KEY = 'agent-office-cast'
+
 let state: ThemeState = loadInitial()
 const listeners = new Set<() => void>()
 
 function loadInitial(): ThemeState {
+  const base: ThemeState = { name: 'default', castByRole: {}, angelaRole: null, angelaCat: null }
   try {
-    const saved = localStorage.getItem('agent-office-theme')
-    if (saved === 'office') {
-      return { name: 'office', castByRole: {}, angelaRole: null, angelaCat: null }
+    const saved = localStorage.getItem(THEME_KEY)
+    if (saved === 'office') base.name = 'office'
+    // Why: the cast is restored with the theme so a reload (or /the-office
+    // off → on) keeps every role's character instead of re-dealing (C47)
+    const cast = JSON.parse(localStorage.getItem(CAST_KEY) ?? 'null')
+    if (cast && typeof cast === 'object' && cast.castByRole && typeof cast.castByRole === 'object') {
+      const castByRole: Record<string, string> = {}
+      for (const [role, slug] of Object.entries(cast.castByRole)) {
+        if (typeof slug === 'string' && (OFFICE_CHARACTERS as readonly string[]).includes(slug)) castByRole[role] = slug
+      }
+      base.castByRole = castByRole
+      base.angelaRole = typeof cast.angelaRole === 'string' && castByRole[cast.angelaRole] === 'angela-martin' ? cast.angelaRole : null
+      base.angelaCat = base.angelaRole && typeof cast.angelaCat === 'string' && OFFICE_CATS.includes(cast.angelaCat) ? cast.angelaCat : null
     }
   } catch {}
-  return { name: 'default', castByRole: {}, angelaRole: null, angelaCat: null }
+  return base
 }
 
 function persist() {
-  try { localStorage.setItem('agent-office-theme', state.name) } catch {}
+  try {
+    localStorage.setItem(THEME_KEY, state.name)
+    localStorage.setItem(CAST_KEY, JSON.stringify({ castByRole: state.castByRole, angelaRole: state.angelaRole, angelaCat: state.angelaCat }))
+  } catch {}
 }
 
 function emit() { listeners.forEach(l => l()) }
@@ -71,7 +89,9 @@ export function getTheme(): ThemeName { return state.name }
 
 export function setTheme(name: ThemeName) {
   if (state.name === name) return
-  state = { name, castByRole: {}, angelaRole: null, angelaCat: null }
+  // Why: the cast survives a toggle, so turning the Office theme off and on
+  // again brings the same characters back
+  state = { ...state, name }
   persist()
   emit()
 }
@@ -126,6 +146,7 @@ export function getCharacterBaseForRole(role: string, defaultBase: string): stri
     state.angelaRole = role
     state.angelaCat = pick(OFFICE_CATS)
   }
+  persist()
   return chosen
 }
 
@@ -293,6 +314,7 @@ export function assignCharacterToRole(role: string, slug: string) {
     state.angelaRole = role
     state.angelaCat = pick(OFFICE_CATS)
   }
+  persist()
   emit()
 }
 
@@ -305,6 +327,7 @@ export function releaseRole(role: string) {
     state.angelaRole = null
     state.angelaCat = null
   }
+  persist()
   emit()
 }
 
