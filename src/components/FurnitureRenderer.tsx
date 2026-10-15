@@ -99,4 +99,5 @@ const FurnitureRenderer: React.FC<FurnitureRendererProps> = ({ items, onItemClic
   )
 }
 
-export default FurnitureRenderer
+// Why: items only change when a furniture state flips, not on every walking frame
+export default React.memo(FurnitureRenderer)

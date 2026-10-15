@@ -403,7 +403,10 @@
 .character-wrapper {
   position: absolute;
   z-index: 10;
-  transition: left 1.2s cubic-bezier(0.4, 0, 0.2, 1), top 1.2s cubic-bezier(0.4, 0, 0.2, 1);
+  /* No left/top transition: the animation tick already moves sprites every
+     frame, and a transition restarted each frame only lets the painted sprite
+     lag seconds behind the state machine (it then slid to the desk in the
+     working pose after the office already said it had arrived). */
   pointer-events: none;
 }
 
@@ -467,6 +470,23 @@
   max-width: 90px;
   overflow: hidden;
   text-overflow: ellipsis;
+  pointer-events: none;
+}
+
+/* Lobby tag — an agent standing by the door until a desk frees up */
+.char-waiting {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translate(-50%, -2px);
+  z-index: 12;
+  padding: 0 4px;
+  border-radius: 2px;
+  background: rgba(10, 8, 6, 0.75);
+  color: #ffd166;
+  font: 7px/11px 'JetBrains Mono', monospace;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
   pointer-events: none;
 }
 

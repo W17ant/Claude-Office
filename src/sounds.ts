@@ -128,15 +128,21 @@ export function playAmbientHum() {
 /** Stop the ambient hum. */
 export function stopAmbient() {
   if (!ambientRunning) return
+  // Why: the fade-out owns the nodes it was called for. The module refs are
+  // released now, so a hum restarted within the 300 ms fade (StrictMode's
+  // mount/unmount/mount, a quick unmute) gets fresh nodes and is not stopped
+  // by this timer.
+  const osc = ambientOscNode
+  const gain = ambientGainNode
+  ambientOscNode = null
+  ambientGainNode = null
+  ambientRunning = false
   try {
-    ambientGainNode?.gain.setTargetAtTime(0, getCtx().currentTime, 0.1)
+    gain?.gain.setTargetAtTime(0, getCtx().currentTime, 0.1)
     setTimeout(() => {
-      try { ambientOscNode?.stop() } catch (_) { /* already stopped */ }
-      ambientOscNode = null
-      ambientGainNode = null
+      try { osc?.stop() } catch (_) { /* already stopped */ }
     }, 300)
   } catch (_) { /* ignore */ }
-  ambientRunning = false
 }
 
 /** Update ambient gain when master volume changes (called internally). */

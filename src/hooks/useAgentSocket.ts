@@ -14,7 +14,7 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { OfficeEvent, SessionInfo } from '../types'
+import { OfficeEvent, SessionInfo, SnapshotAgent } from '../types'
 import type { SessionStatus, MeterTotals } from '../meters'
 
 // ---------------------------------------------------------------------------
@@ -49,16 +49,7 @@ export interface AgentSocketResult {
 
 interface SnapshotMessage {
   type: 'snapshot'
-  activeAgents: Array<{
-    id: string
-    name: string
-    role: string
-    task?: string
-    state: string
-    unread?: number
-    sessionId?: string
-    project?: string
-  }>
+  activeAgents: SnapshotAgent[]
   sessions?: Array<SessionInfo & { agentIds?: string[]; agentCount?: number }>
   /** Payroll / electricity / memory: the server's status store (server/status.js) */
   statuses?: { sessions: SessionStatus[]; totals: MeterTotals }
@@ -78,6 +69,11 @@ const MAX_EVENTS     = 50
 const BACKOFF_INITIAL = 500   // ms
 const BACKOFF_MAX    = 30_000 // ms
 const BACKOFF_FACTOR = 2
+// A connection counts as healthy (back-off resets) once it has delivered the
+// server's snapshot, or has simply stayed open this long. A server that
+// completes the handshake and closes straight away (origin rejected, 1008)
+// therefore keeps backing off instead of being hammered every 500 ms.
+const STABLE_OPEN_MS = 5_000
 // An ended session's pill lingers this long before it is dropped
 const ENDED_SESSION_LINGER_MS = 10_000
 
@@ -121,8 +117,16 @@ export function useAgentSocket(options: AgentSocketOptions = {}): AgentSocketRes
   const wsRef          = useRef<WebSocket | null>(null)
   const retryCountRef  = useRef(0)
   const retryTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const stableTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const mountedRef     = useRef(true)
   const onEventRef     = useRef(onEvent)
+
+  const clearStableTimer = () => {
+    if (stableTimerRef.current) {
+      clearTimeout(stableTimerRef.current)
+      stableTimerRef.current = null
+    }
+  }
 
   useEffect(() => { onEventRef.current = onEvent }, [onEvent])
 
@@ -174,10 +178,10 @@ export function useAgentSocket(options: AgentSocketOptions = {}): AgentSocketRes
     if (!id) return
     switch (msg.type) {
       case 'session_started':
-        upsertSession(id, { ...msg, state: 'active', reason: undefined })
+        upsertSession(id, { ...msg, id, state: 'active', reason: undefined })
         return
       case 'session_ended':
-        upsertSession(id, { ...msg, state: 'ended' })
+        upsertSession(id, { ...msg, id, state: 'ended' })
         dropSessionLater(id)
         return
       case 'agent_working':
@@ -202,6 +206,9 @@ export function useAgentSocket(options: AgentSocketOptions = {}): AgentSocketRes
 
     if (msg.type === 'snapshot') {
       const snap = msg as SnapshotMessage
+      // The session is healthy: the next drop starts the back-off from scratch
+      retryCountRef.current = 0
+      clearStableTimer()
       if (snap.mcpServers?.length) {
         setMcpServers(snap.mcpServers)
       }
@@ -213,24 +220,10 @@ export function useAgentSocket(options: AgentSocketOptions = {}): AgentSocketRes
       if (snap.statuses) {
         pushEvent({ type: 'session_status', statuses: snap.statuses.sessions ?? [], totals: snap.statuses.totals })
       }
-      // Emit synthetic spawn events for agents that were already active
-      for (const agent of snap.activeAgents ?? []) {
-        const event: OfficeEvent = {
-          type: 'agent_spawned',
-          agent: {
-            id:   agent.id,
-            name: agent.name,
-            role: agent.role,
-            task: agent.task,
-            sessionId: agent.sessionId,
-            project: agent.project,
-          },
-        }
-        pushEvent(event)
-        if (agent.unread) {
-          pushEvent({ type: 'inbox_update', agentId: agent.id, unread: agent.unread })
-        }
-      }
+      // The whole roster goes to the office as one event, so it can reconcile:
+      // agents that completed or timed out while we were disconnected leave,
+      // agents still here are refreshed in place, new ones walk in (C35)
+      pushEvent({ type: 'snapshot', activeAgents: snap.activeAgents ?? [], timestamp: snap.timestamp })
       return
     }
 
@@ -268,7 +261,12 @@ export function useAgentSocket(options: AgentSocketOptions = {}): AgentSocketRes
 
     ws.onopen = () => {
       if (!mountedRef.current) return
-      retryCountRef.current = 0
+      // Not a reset yet: an accept-then-close server must keep backing off (C33)
+      clearStableTimer()
+      stableTimerRef.current = setTimeout(() => {
+        stableTimerRef.current = null
+        if (mountedRef.current && wsRef.current === ws) retryCountRef.current = 0
+      }, STABLE_OPEN_MS)
       setConnected(true)
       setOffline(false)
       fetchRoster()
@@ -281,6 +279,7 @@ export function useAgentSocket(options: AgentSocketOptions = {}): AgentSocketRes
 
     ws.onclose = () => {
       if (!mountedRef.current) return
+      clearStableTimer()
       setConnected(false)
       scheduleReconnect()
     }
@@ -331,6 +330,7 @@ export function useAgentSocket(options: AgentSocketOptions = {}): AgentSocketRes
         clearTimeout(retryTimerRef.current)
         retryTimerRef.current = null
       }
+      clearStableTimer()
 
       if (wsRef.current) {
         wsRef.current.onopen    = null

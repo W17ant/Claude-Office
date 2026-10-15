@@ -6,10 +6,10 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/W17ANT/agent-office.git"
+    "url": "https://github.com/W17ant/Claude-Office.git"
   },
-  "homepage": "https://github.com/W17ANT/agent-office",
-  "bugs": "https://github.com/W17ANT/agent-office/issues",
+  "homepage": "https://github.com/W17ant/Claude-Office",
+  "bugs": "https://github.com/W17ant/Claude-Office/issues",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {

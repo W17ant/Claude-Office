@@ -11,6 +11,7 @@ export type AgentState =
   | 'completed'
   | 'new-hire'
   | 'changing-room'
+  | 'waiting'               // in the lobby by the door until a desk frees up
 
 export interface Position {
   x: number
@@ -62,12 +63,42 @@ export interface SessionInfo {
   lastStatusAt?: number
 }
 
+/**
+ * One entry of the server's `snapshot` message (its activeAgents record).
+ * MCP calls are tracked as transient records with a `server` field; they are
+ * not office workers.
+ */
+export interface SnapshotAgent {
+  id: string
+  name?: string
+  role?: string
+  task?: string
+  state?: string
+  status?: string
+  unread?: number
+  sessionId?: string
+  project?: string
+  server?: string
+}
+
 export interface OfficeEvent {
-  type: 'agent_spawned' | 'agent_working' | 'agent_completed' | 'mcp_call' | 'mcp_done' | 'new_hire' | 'chat_message' | 'chat_typing' | 'chat_reaction' | 'chat_seen' | 'inbox_update' | 'variant_change' | 'session_started' | 'session_ended' | 'session_status' | 'agent_status'
+  type: 'agent_spawned' | 'agent_working' | 'agent_completed' | 'mcp_call' | 'mcp_done' | 'new_hire' | 'chat_message' | 'chat_typing' | 'chat_reaction' | 'chat_seen' | 'inbox_update' | 'variant_change' | 'session_started' | 'session_ended' | 'session_status' | 'agent_status' | 'snapshot'
   agent?: Partial<Agent>
   agentId?: string
   status?: string
   result?: string
+  // snapshot: every agent the server knows about (sent on each (re)connect)
+  activeAgents?: SnapshotAgent[]
+  // chat_message: the server's row id (chat_reaction / chat_seen refer to it)
+  id?: number
+  isSystem?: boolean
+  role?: string
+  // chat_reaction / chat_seen
+  messageId?: number
+  reactions?: string[]
+  // mcp_call
+  server?: string
+  tool?: string
   // The Claude Code session the event came from (every hook event carries it)
   sessionId?: string
   project?: string
