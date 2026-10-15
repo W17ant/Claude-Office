@@ -3,9 +3,10 @@ import { Agent, AgentState } from '../types'
 import SpeechBubble from './SpeechBubble'
 import EffectBubble from './EffectBubble'
 import { getEffect } from '../agentManager'
-import { ROLE_TO_CHAR } from '../config'
+import { ROLE_TO_CHAR, BOSS_ROLE } from '../config'
 import { getSpritePath, useTheme } from '../theme'
 import { useVariant } from '../incident'
+import { isMainAgent, isHardNeedsYou, needsYouBadge, needsYouShort } from '../mainState'
 
 export { ROLE_TO_CHAR }
 
@@ -74,7 +75,7 @@ const Character: React.FC<CharacterProps> = ({ agent, idleDurationMs = 0, zIndex
   const directionRef = useRef<SpriteDirection>(agent.spriteFacing ?? 'front-right')
   const [turnedAround, setTurnedAround] = useState(false)
 
-  const isMoving = agent.state === 'new-hire' || agent.state === 'walking-to-desk' ||
+  const isMoving = agent.state === 'new-hire' || agent.state === 'walking-to-desk' || agent.state === 'walking-to-manager' ||
     agent.state === 'coffee-break' || agent.state === 'completed' || agent.state === 'changing-room'
 
   // Calculate movement direction when walking
@@ -132,26 +133,52 @@ const Character: React.FC<CharacterProps> = ({ agent, idleDurationMs = 0, zIndex
   const variant = useVariant() // Why: re-render when incident mode flips so the failure bubble shows/hides
   void variant
 
-  const effectSrc = isTyping
-    ? '/sprites/effects/typing.png'
-    : getEffect(agent.state, idleDurationMs, agent.statusText, agent.id, agent.task, agent.role, agent.lastFailed)
+  // A session's Claude wears its main-thread state: a hand up while it waits on
+  // you, a warning on an API error, a broom during a memory wipe, a glass of
+  // water while its background workers are still out, the typing bubble while
+  // a turn runs, and sleeping.png once it has been idle for 30 s (getEffect).
+  const main = isMainAgent(agent)
+  const mainState = main ? agent.mainState : undefined
+  const needsYou = mainState === 'needs-you' ? agent.needsYou : undefined
+  const hardNeedsYou = isHardNeedsYou(needsYou)
+  let effectSrc: string | null = null
+  let badge: { text: string; cls: string } | null = null
+  if (isTyping) effectSrc = '/sprites/effects/typing.png'
+  else if (needsYou) badge = { text: needsYouBadge(needsYou.kind), cls: hardNeedsYou ? 'needs-you' : 'soft' }
+  else if (mainState === 'error') badge = { text: '⚠', cls: 'error' }
+  else if (mainState === 'compacting') effectSrc = null
+  else if (mainState === 'waiting') effectSrc = '/sprites/effects/glass-water.png'
+  else if (mainState === 'working' && agent.state === 'working') effectSrc = '/sprites/effects/typing.png'
+  else effectSrc = getEffect(agent.state, idleDurationMs, agent.statusText, agent.id, agent.task, agent.role, agent.lastFailed)
 
   const projectTag = showProject && agent.project ? agent.project : null
+  // The state label under the sprite replaces the project tag (which it then carries)
+  const stateLabel = needsYou
+    ? `${needsYouShort(needsYou.kind)}${projectTag ? ` · ${projectTag}` : ''}`
+    : mainState === 'error' ? `⚠ API error${projectTag ? ` · ${projectTag}` : ''}` : null
+  const tooltip = [agent.name, projectTag, main && agent.statusText ? `— ${agent.statusText}` : null].filter(Boolean).join(' ')
 
   return (
     <div
-      className={`character-wrapper state-${animState}`}
+      className={`character-wrapper state-${animState}${mainState ? ` main-${mainState}` : ''}`}
       style={{
         left: `${agent.position.x}%`,
         top: `${agent.position.y}%`,
         transform: 'translate(-50%, -100%)',
         zIndex: zIndex ?? Math.round(agent.position.y),
       }}
-      title={projectTag ? `${agent.name} · ${projectTag}` : undefined}
+      title={projectTag || main ? tooltip : undefined}
+      data-main-state={mainState}
     >
       {effectSrc && <EffectBubble src={effectSrc} alt={agent.state} />}
+      {badge && <div className={`effect-bubble effect-emoji ${badge.cls}`} role="img" aria-label={agent.statusText}>{badge.text}</div>}
+      {mainState === 'compacting' && (
+        <div className="char-wipe" aria-label="memory wipe"><span className="char-wipe-broom">🧹</span></div>
+      )}
 
-      {projectTag && (
+      {stateLabel ? (
+        <div className={mainState === 'error' ? 'char-error' : `char-needs-you ${hardNeedsYou ? 'hard' : 'soft'}`}>{stateLabel}</div>
+      ) : projectTag && (
         <div className="char-project">{projectTag}</div>
       )}
 
@@ -166,7 +193,8 @@ const Character: React.FC<CharacterProps> = ({ agent, idleDurationMs = 0, zIndex
       )}
 
       {shouldShowBubble(agent.state) && agent.statusText && (
-        <SpeechBubble key={agent.statusText} text={agent.statusText} />
+        // The boss handing a prompt over at Claude's desk (purple bubble); any other visitor keeps the plain one
+        <SpeechBubble key={agent.statusText} text={agent.statusText} isManager={agent.role === BOSS_ROLE} duration={3200} />
       )}
 
       <div className="char-body-group">

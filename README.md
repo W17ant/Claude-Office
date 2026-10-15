@@ -58,12 +58,11 @@ Works on macOS and Linux, and on Windows through WSL or Git Bash with `python3` 
 - AI On/Off toggle to control token usage
 
 **Sessions**
-- One pill per Claude Code session in the title bar: the project (folder the terminal was opened in), how many agents work for it, and a dot — green while an agent is working or Claude itself just used a tool, dim when idle, red once the session ends
+- One pill per Claude Code session in the title bar: the session's title (after `/rename`) or project (folder the terminal was opened in), a model badge, how many workers it has, and a dot for what its Claude is doing — green while a turn runs, blue with the count while it waits on background workers, amber when it needs you, red on an API error or once the session ends, dim when idle
 - Multiple terminals = multiple pills; each session's agents stay its own, and when several sessions share the office every character wears its project name
-- Claude's own tool calls (no subagent) are shown on that session's pill when none of its agents is at a desk, never on another terminal's worker
-- `GET /sessions` lists them (project, cwd, model, agent counts, last main-thread status); sessions survive a server restart and are forgotten a minute after they end
-- Each session's own Claude is tracked through its turn (`main` on the session): the boss's prompt arrives, Claude works, waits when its turn ends with background workers still running, replies, goes idle; compaction, a `cd` and a model switch are visible — see [Claude's turn and needs-you](#connect-claude-code)
-- Needs-you: a permission wait, an idle prompt, a quota pause or an API error becomes a session state instead of looking like work; how much prompt text the office keeps is yours to set (`logPrompts`)
+- Each session has its own Claude at a desk (the first one next to the boss) that acts out the turn: the boss walks over and hands your prompt across in a speech bubble, Claude types while the turn runs and its own tool calls are its status line (never a random worker's), its reply lands in the chat, then it goes idle — asleep after 30 s — or holds a glass of water while background workers are still out; compaction is a 🧹 memory wipe at its desk, a `cd` moves its project tag, a model switch updates the badge, and it clocks out shortly after the session ends — see [Claude's turn and needs-you](#connect-claude-code)
+- Needs-you: a permission wait raises Claude's hand (✋) with a chime, turns the session's pill amber and prefixes the window title with ✋ until you answer; an idle prompt (💤), a quota pause (⏳) and an API error (⚠, red) are shown as what they are instead of looking like work; how much prompt text the office keeps is yours to set (`logPrompts`, shown in the chat header)
+- `GET /sessions` lists them (project, cwd, model, agent counts, the `main` record); sessions survive a server restart and are forgotten a minute after they end
 
 **Meters**
 - Payroll (cost so far and $/min), electricity (tokens per minute) and memory (context-window fill) per session, straight from Claude Code's status line; claude.ai subscribers also get the five-hour rate-limit pill — see [Payroll, electricity and memory](#payroll-electricity-and-memory)
@@ -250,6 +249,8 @@ Now spawn agents in Claude Code and watch them appear in the office.
 **Sessions.** Every hook payload names the Claude Code session it fired in (`session_id`, `cwd`, `transcript_path`), and the tracker forwards that on every event, so the office knows which terminal each agent works for. `SessionStart` adds a pill to the title bar (`SessionEnd` removes it and walks that session's agents out); a session the server first hears of mid-way — hooks installed while Claude was already running, or a server restart — is picked up from its next event. Sessions that go quiet for `AGENT_OFFICE_STALE_MINUTES` end the same way.
 
 **Claude's turn and needs-you.** The other ten events describe the session's own Claude, kept as `main` on each session (`GET /sessions`, the WebSocket snapshot, every `session_*` broadcast): `UserPromptSubmit` is the boss's prompt (`session_prompt` — or, when a background worker reports back, a wake-up that names the worker and carries only its summary line), every main-thread tool call is Claude *working*, `Stop` is the reply (`session_turn_end`: *waiting* when background tasks are still running, else *idle*), `PermissionRequest` and `Notification` (`permission_prompt`, `idle_prompt`, `quota_auto_resume_*`, `agent_needs_input`) make the session *needs-you* with what it waits on, `StopFailure` is an API *error* (rate limit, overloaded, ...), `PreCompact`/`PostCompact` show *compacting*, `CwdChanged` moves the project tag after a `cd`, and `PostModelSwitch` updates the model. A permission wait is shown only once it has lasted 300 ms (a headless `-p` session auto-denies and moves on faster than that), the tool's own completion or the end of the batch (`PostToolBatch`) lowers the hand, and a hand nobody answers comes down after ten minutes. The hook prints nothing on `UserPromptSubmit` and always exits 0, so nothing is injected into Claude's context and no prompt is ever blocked; the compaction summary and a worker's result are never forwarded. What the office keeps of the conversation is a setting — see `logPrompts` under [Security](#security).
+
+In the office that record is one Claude per terminal (`main-<session id>`, created by the session's first event or the snapshot, seated by the boss when that desk is free): the boss gets up and hands each prompt over at its desk, it types through the turn with its tool calls as its status line, its reply is a chat row (prompt and reply rows are tagged, under the boss and that session's Claude — never fetched from `GET /chat`), it dozes off 30 s after an idle turn end, holds a glass of water while background workers are still out, sweeps its desk during a compaction, wears a red ⚠ badge after an API error, and raises a hand while it waits on you — a chime, an amber *needs you* pill and a ✋ in front of the window title, all of which go when the server's record moves on (the granted tool, the batch end, the ten-minute timeout, your next prompt). An idle prompt and a quota pause are soft: no chime, no title prefix. Hand-overs, visits and timers are reducer effects (`src/officeReducer.ts`), so every one of these is unit-tested with synthetic events.
 
 **Uninstall.** `npm run uninstall-hooks` (or `bash hooks/install-hooks.sh --uninstall`) takes the office back out of `~/.claude/settings.json`: it backs the file up (`settings.json.backup.<timestamp>`), removes every hook entry whose command runs `hooks/agent-tracker.sh` — under all 17 events, whatever checkout the path points at, duplicates included — and puts `statusLine` / `subagentStatusLine` back: a status line the installer chained is restored from `~/.agent-office/statusline-prev` (and `subagent-statusline-prev`), which are then deleted; one the installer added is removed. Hooks and settings that are not the office's are not touched, and a file with nothing of ours in it is left as it is (exit 0). `--uninstall --no-status-line` removes the hooks only. The plugin install is removed with `/plugin uninstall agent-office` (see below).
 
@@ -547,7 +548,9 @@ token, and the rest stay open:
   to 2000, `off` keeps nothing — state transitions only, no text stored or
   broadcast. Change it with
   `curl -X POST http://127.0.0.1:3334/settings -H "Authorization: Bearer $(cat ~/.agent-office/auth-token)" -H 'Content-Type: application/json' -d '{"logPrompts":"off"}'`
-  (it persists in `~/.agent-office/settings.json`; `GET /settings` shows it).
+  (it persists in `~/.agent-office/settings.json`; `GET /settings` shows it, and
+  the chat header shows the current level — `prompts: summary` — with that
+  command in its tooltip; the page itself has no token, so it only reads it).
   The hook itself never forwards more than 2000 characters, nor a compaction
   summary or a worker's result. Rows already stored are removed with `/clear`
   in the chat (token required).
@@ -606,7 +609,7 @@ Claude-Office/
 
 Open and planned work lives in [GitHub issues](https://github.com/W17ant/Claude-Office/issues). Next up, roughly in order:
 
-- **Claude acts out the turn** and **Needs-you states** — the hook and server side is in (the `main` record per session, the `session_*` events, `logPrompts`); the office visuals are next: the session's Claude types when you prompt, sleeps when the turn ends, shows a memory wipe on compaction, and a hand goes up (with a chime) while Claude waits on a permission from you
+- **Answer from the office** — the hand is up and the pill is amber, but granting the permission still happens in the terminal; a UI token is needed before the office can answer it, and an OS notification outside macOS
 - **Plugin install** — `claude plugin marketplace add` + `/plugin install` instead of the hook installer, with a matching uninstall
 - **`npx` one-liner** to start the office without a checkout
 - **Tray badge** for the desktop app (count of working agents), plus remembered window bounds

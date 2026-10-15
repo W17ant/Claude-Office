@@ -66,6 +66,14 @@ export function playBell() {
   setTimeout(() => beep(1400, 0.1, 'sine', 0.04), 350)
 }
 
+/** Needs-you chime: three soft rising notes — Claude is waiting on you */
+export function playNeedsYou() {
+  if (masterVolume === 0) return
+  beep(660, 0.12, 'sine', 0.07)
+  setTimeout(() => beep(880, 0.12, 'sine', 0.07), 140)
+  setTimeout(() => beep(1320, 0.22, 'sine', 0.08), 280)
+}
+
 export function playDoorOpen() {
   beep(200, 0.15, 'triangle', 0.04)
   setTimeout(() => beep(300, 0.1, 'triangle', 0.04), 100)
