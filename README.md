@@ -606,25 +606,33 @@ Everything is optional; the defaults are the office as described above. Set thes
 
 ## Security
 
-The server listens on loopback only (`127.0.0.1` unless `AGENT_OFFICE_HOST`
-names another loopback form), so it is never on the network. The threat it
-defends against is therefore what else runs on the same machine: a malicious
-npm dependency, or another local user on a shared host. Loopback is not
-user-isolated — any local process can reach the port, open the WebSocket and
-send any `Origin` header it likes (`Origin` only binds browsers). Two
-separate defences follow from that:
+The server always binds `127.0.0.1` (IPv4 loopback): `AGENT_OFFICE_HOST` may
+spell it `127.0.0.1` or `localhost`, both of which bind `127.0.0.1`, and `::1`
+and anything else are refused with the reason and `127.0.0.1` bound. So it is
+never on the network. The threat it defends against is therefore what else
+runs on the same machine: a malicious npm dependency, or another local user on
+a shared host. Loopback is not user-isolated — any local process can reach the
+port, open the WebSocket and send any `Origin` or `Host` header it likes
+(`Origin` only binds browsers). Three separate defences follow from that:
 
 - **Browsers on other origins** are kept out by the origin allowlist, which
   refuses every origin but the loopback UI (the Vite port, 3333, and the
   server's own port, 3334 or `AGENT_OFFICE_PORT`) with a 403 or a 1008 close,
-  and by the JSON content type, which makes a cross-site POST preflight. A
-  malicious site or a DNS-rebinding page never gets in.
+  and by the JSON content type, which makes a cross-site POST preflight.
+- **DNS-rebinding pages** — which reach `127.0.0.1` on a GET that carries no
+  `Origin` — are kept out by a **Host-header guard**: the first middleware (and
+  the WebSocket handler) serve a request only when its `Host` names a loopback
+  host (`localhost`, `127.0.0.1` or `[::1]`, any port); anything else is `421`
+  / a `1008` close. A rebinding page's `Host` is still its own domain, so it
+  can no longer read the pending command lines, cwds, titles or agent tasks on
+  the open GETs.
 - **Other local processes and users** are kept out of the conversation and of
   every route that acts by the **office token**: the contents of
-  `~/.agent-office/auth-token`, a `0600` file only you can read. The hook, the
-  status line and the office scripts read the file; the office page gets the
-  token through a link only you see (below). Without it, a connection still
-  sees the office — read-only.
+  `~/.agent-office/auth-token`, a `0600` file only you can read. The hook and
+  the status line never send the token — they **sign** each request with it
+  (below); the office scripts and A2A clients send it as a bearer token from
+  their own memory; the office page gets it through a link only you see
+  (below). Without it, a connection still sees the office — read-only.
 
 A non-loopback bind is refused on purpose, not merely unsupported: the
 read-only view and every open `GET` would hand every agent's task and status
@@ -693,23 +701,36 @@ requires the token, conversation text requires it, and the rest stay open:
 
 | | Routes | Why |
 |---|---|---|
-| **Token required** | `POST /event`, `POST /status`, `/chat/reply`, `/a2a`, `/chat/inbox/read`, `/chat/seen`, `/chat/react`, `/chat/video-mode`, `GET /permission/:id` (the hook's long-poll for a decision), and `POST /chat` for a destructive slash command (`/clear`) | Speaks for an agent, writes another agent's inbox, feeds the meters, learns how a permission was decided, or wipes history |
+| **Token required** (bearer **or** a valid request signature) | `POST /event`, `POST /status`, `/chat/reply`, `/a2a`, `/chat/inbox/read`, `/chat/seen`, `/chat/react`, `/chat/video-mode`, `GET /permission/:id` (the hook's long-poll for a decision), and `POST /chat` for a destructive slash command (`/clear`) | Speaks for an agent, writes another agent's inbox, feeds the meters, learns how a permission was decided, or wipes history. The hook and status line authenticate here by **signing** (below); the scripts send the bearer token |
 | **UI token or token** | `POST /permission/:id` (answer a permission dialog), `POST /settings` | The two things the office page itself may change. The server mints a second secret per process, the UI token, and hands it out in one place only: the WebSocket snapshot of a connection that presented the office token. Nobody without the token file can obtain it. It lives in memory, changes on every restart and is compared in constant time |
 | **Open** | every other `GET`, `POST /chat` (a plain line a person typed, and the read-only `/status` · `/agents` · `/help` · `/incident` · `/all-clear` commands), `POST /chat/typing`, `POST /chat/cron-state` | The worst these do is read what the read-only office shows or post a chat line |
 | **Open, but the conversation needs the token** | `GET /chat`, `GET /sessions`, `GET /permissions`, `GET /signals`, the WebSocket | Without the token: no chat rows with `msg_type` `prompt` / `reply`, no `main.lastPrompt` / `main.lastReply`, no permission `detail` / `suggestions`, no signal `command` / `error` / `detail`, and the WebSocket is read-only as above. With it (the office page, the office scripts), they are included |
 | **Open, but the descriptions need the token** | `GET /tasks` (the task boards) | Anyone on loopback gets each session's task subjects, *activeForm*s, states, blockers and owners — as open as an agent's task on `GET /agents`. A task's description is longer text written from the conversation: only a token holder gets it. The `task_board` broadcasts and the snapshot's `taskBoards` never carry it, so a read-only WebSocket gets them unchanged |
 | **Open, but the transcript needs the UI token or the token** | `GET /agents/:id` (the inspector card) | Anyone on loopback gets the card's history, tool counts and stats — tool names and status lines, what `GET /agents` and `GET /sessions` already show. The transcript tail (what the agent said, the commands it ran) and a session Claude's last prompt and reply go only to the office page, which sends the UI token, or a token holder; anyone else gets `transcriptAvailable: false` with the reason `needs the office token`. A wrong token counts as none. With a token the tail still follows `logPrompts` |
 
-- The token is 32 random bytes. Send it as `Authorization: Bearer <token>`;
-  the hook, the status line and the office scripts (`chat-reply.py`,
-  `agent-message.py`, the chat watchers) read the file and do this for you.
-  Every token check is constant-time. The link the server prints carries the
-  token, so if you redirect the server's output to a file, keep that file
-  private.
+- The token is 32 random bytes, checked in constant time. **Request signing:**
+  the hook and the status line never put the token on a command line, where
+  every local user can read it in `ps` / `/proc` (and it is stable across
+  restarts, so a leak would stay valid). They **sign** each request instead —
+  `HMAC-SHA256(token, method + path + timestamp + body)` — and send the
+  timestamp and signature as `X-Office-Timestamp` / `X-Office-Signature`
+  headers; the token stays in the file and the process's own memory. The server
+  verifies the signature over the raw body, in constant time, for a timestamp
+  within ±60 s, so a signature a reader scrapes from `ps` is useless beyond
+  replaying that one request inside the window (the victim's own event). The
+  office scripts (`chat-post.py`, `chat-reply.py`, `agent-message.py`, the chat
+  watchers) and A2A clients instead send `Authorization: Bearer <token>` from
+  their own memory (never argv), and the server accepts either. The link the
+  server prints carries the token, so if you redirect the server's output to a
+  file, keep that file private.
 - Everything the server writes under `~/.agent-office` (the token, `agents.json`,
-  the A2A inbox files, `last-chat`, the chat-monitor state, the redirect page)
-  is mode `0600` and the dir is `0700`, so another local user can't read
-  directed messages or the latest chat.
+  `chat.db` and its `-wal` / `-shm` siblings, the A2A inbox files, `last-chat`,
+  the chat-monitor state, the redirect page) is mode `0600` and the dir is
+  `0700`, so another local user can't read directed messages, the stored
+  prompts or the latest chat. SQLite would otherwise create `chat.db` under the
+  process umask (often `0644`), and a dir the installer or `start-office.sh`
+  made first stays `0755`, so the server tightens both — and any already-loose
+  `chat.db*` — on every start, repairing an older install.
 - **Your prompts and Claude's replies are stored locally**, in `~/.agent-office/chat.db`
   (mode `0600`) and in `agents.json`, at the level `logPrompts` sets:
   `summary` (the default) keeps the first 200 characters of each, `full` keeps up
@@ -723,19 +744,29 @@ requires the token, conversation text requires it, and the rest stay open:
   `agents.json` — so `off` stops an earlier prompt riding on later broadcasts.
   The hook itself never forwards more than 2000 characters, nor a compaction
   summary or a worker's result. Rows already stored in `chat.db` are removed
-  with `/clear` in the chat (token required), which blanks each session's last
-  prompt and reply as well.
+  with `/clear` (token required) — e.g. `python3 scripts/chat-post.py /clear`,
+  which sends the token from its own memory — and that blanks each session's
+  last prompt and reply as well.
 - **Answering a permission dialog** is the one action the office page takes
-  on a Claude Code session, so its path is narrow: the loopback bind is
-  unchanged; a dialog can be answered only with the UI token — which only a
-  page holding the office token receives — or with the office token itself;
-  nothing is ever auto-allowed and the server never invents a decision — the
-  hook prints exactly the server's `hookOutput`, which is one of the three
-  dialog options and never an `updatedInput`; when the server is down,
-  unreachable mid-wait, or says the dialog was answered elsewhere, the hook
-  prints nothing and the terminal dialog is in charge. The whole path is off
-  when `answerPermissions` is false (the `~/.agent-office/answer-permissions`
-  marker is removed and the hook behaves as before).
+  on a Claude Code session, so its path is narrow. A dialog can be answered
+  only with the UI token — which only a page holding the office token
+  receives — or with the office token itself; nothing is ever auto-allowed.
+  The hook does not trust the answer on the port's say-so: it **builds the hook
+  output itself** from a single decision word (`allow` | `allow-remember` |
+  `deny`) and never prints server-supplied JSON, so a process squatting the
+  port while the office is down cannot slip in an `updatedInput` or a rule the
+  dialog never offered; `allow-remember` echoes only the dialog's own
+  `permission_suggestions`. And it prints nothing until the office **proves it
+  holds the token**: the hook sends a random nonce on the POST and the server
+  returns `HMAC(token, nonce + permissionId + decision)`, which the hook
+  verifies in constant time. A squatter has never seen the token and cannot
+  forge that proof, so its answers print nothing and the terminal dialog stays
+  in charge — as it also does when the server is down, unreachable mid-wait, or
+  says the dialog was answered elsewhere. The whole path is off when
+  `answerPermissions` is false (the `~/.agent-office/answer-permissions` marker
+  is removed and the hook behaves as before); the server also removes that
+  marker when it stops (SIGINT / SIGTERM / exit), so a stopped office never
+  leaves the hook waiting on whatever now holds the port.
 - Errors are returned as `{ "error": ... }` with no stack trace or absolute
   path; message ids are validated and a message's reactions are capped.
 - `GET /roster`, `GET /agents` and the inspector's `GET /agents/:id` do expose
