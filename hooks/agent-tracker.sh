@@ -143,6 +143,22 @@ def session_fields(payload):
 
 SESSION = session_fields(d)
 
+def _hmac_sha256_hex(key, msg):
+    # HMAC-SHA256 per RFC 2104 on hashlib, which this pass already loads:
+    # importing the hmac module costs ~5 ms on every hook run
+    if len(key) > 64:
+        key = hashlib.sha256(key).digest()
+    key = key.ljust(64, b'\0')
+    inner = hashlib.sha256(bytes(b ^ 0x36 for b in key) + msg).digest()
+    return hashlib.sha256(bytes(b ^ 0x5c for b in key) + inner).hexdigest()
+
+def _url_path(url):
+    # The request path and query of a URL (what urlsplit gives, without
+    # importing urllib.parse): http://127.0.0.1:3334/event?x -> /event?x
+    rest = url.split('://', 1)[-1].split('#', 1)[0]
+    i = rest.find('/')
+    return rest[i:] if i >= 0 else '/'
+
 def sign_post(body):
     # The POST /event signature, computed HERE so the common path spends no
     # extra process on signing: HMAC-SHA256(token, POST\npath\nts\nbody) with
@@ -152,13 +168,11 @@ def sign_post(body):
     token = os.environ.get('OFFICE_TOKEN', '')
     if not token:
         return ''
-    import time, hmac, hashlib
-    from urllib.parse import urlsplit
-    split = urlsplit(os.environ.get('OFFICE_POST_URL', ''))
-    path = (split.path or '/') + (('?' + split.query) if split.query else '')
+    import time
+    path = _url_path(os.environ.get('OFFICE_POST_URL', ''))
     ts = str(int(time.time() * 1000))
     msg = ('POST\n' + path + '\n' + ts + '\n').encode() + body.encode()
-    return ts + '\x1f' + hmac.new(token.encode(), msg, hashlib.sha256).hexdigest()
+    return ts + '\x1f' + _hmac_sha256_hex(token.encode(), msg)
 
 def emit(event):
     # Every event the office receives says which session it belongs to
@@ -1484,18 +1498,32 @@ EOF
 # never appears. No token (no file): nothing is printed and the request goes
 # out unsigned (the server answers 401, which the caller ignores).
 PY_SIGN=$(cat <<'PYSIGN'
-import os, sys, time, hmac, hashlib
-from urllib.parse import urlsplit
+import os, sys, time, hashlib
 token = os.environ.get('OFFICE_TOKEN', '')
 if not token:
     sys.exit(0)
+def _hmac_sha256_hex(key, msg):
+    # HMAC-SHA256 per RFC 2104 on hashlib, far cheaper to load than hmac:
+    # importing the hmac module costs ~5 ms on every hook run
+    if len(key) > 64:
+        key = hashlib.sha256(key).digest()
+    key = key.ljust(64, b'\0')
+    inner = hashlib.sha256(bytes(b ^ 0x36 for b in key) + msg).digest()
+    return hashlib.sha256(bytes(b ^ 0x5c for b in key) + inner).hexdigest()
+
+def _url_path(url):
+    # The request path and query of a URL (what urlsplit gives, without
+    # importing urllib.parse): http://127.0.0.1:3334/event?x -> /event?x
+    rest = url.split('://', 1)[-1].split('#', 1)[0]
+    i = rest.find('/')
+    return rest[i:] if i >= 0 else '/'
+
 method = os.environ.get('OFFICE_METHOD', '')
-split = urlsplit(os.environ.get('OFFICE_URL', ''))
-path = (split.path or '/') + (('?' + split.query) if split.query else '')
+path = _url_path(os.environ.get('OFFICE_URL', ''))
 body = sys.stdin.buffer.read()
 ts = str(int(time.time() * 1000))
 msg = (method + '\n' + path + '\n' + ts + '\n').encode() + body
-sig = hmac.new(token.encode(), msg, hashlib.sha256).hexdigest()
+sig = _hmac_sha256_hex(token.encode(), msg)
 sys.stdout.write(ts + '\x1f' + sig)
 PYSIGN
 )

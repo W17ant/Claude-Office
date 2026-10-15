@@ -73,18 +73,28 @@ fi
 # Nothing is printed when there is no token (the POST then goes out unsigned
 # and the server answers 401, which the backgrounded call ignores).
 PY_SIGN='
-import os, sys, time, hmac, hashlib
-from urllib.parse import urlsplit
+import os, sys, time, hashlib
 token = os.environ.get("OFFICE_TOKEN", "")
 if not token:
     sys.exit(0)
+def _hmac_sha256_hex(key, msg):
+    # HMAC-SHA256 per RFC 2104 on hashlib: the hmac module costs ~5 ms to import
+    if len(key) > 64:
+        key = hashlib.sha256(key).digest()
+    key = key.ljust(64, b"\0")
+    inner = hashlib.sha256(bytes(b ^ 0x36 for b in key) + msg).digest()
+    return hashlib.sha256(bytes(b ^ 0x5c for b in key) + inner).hexdigest()
+def _url_path(url):
+    # Path and query of the URL, as urlsplit gives them, without importing urllib.parse
+    rest = url.split("://", 1)[-1].split("#", 1)[0]
+    i = rest.find("/")
+    return rest[i:] if i >= 0 else "/"
 method = os.environ.get("OFFICE_METHOD", "")
-split = urlsplit(os.environ.get("OFFICE_URL", ""))
-path = (split.path or "/") + (("?" + split.query) if split.query else "")
+path = _url_path(os.environ.get("OFFICE_URL", ""))
 body = sys.stdin.buffer.read()
 ts = str(int(time.time() * 1000))
 msg = (method + "\n" + path + "\n" + ts + "\n").encode() + body
-sig = hmac.new(token.encode(), msg, hashlib.sha256).hexdigest()
+sig = _hmac_sha256_hex(token.encode(), msg)
 sys.stdout.write(ts + "\x1f" + sig)
 '
 # Prints "<timestamp><US><signature>" for a request. $1 method, $2 URL; body on stdin.
