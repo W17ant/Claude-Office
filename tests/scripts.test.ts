@@ -24,12 +24,20 @@ const NOTIFY = join(SCRIPTS, 'notify.sh')
 
 const LOG_ARGS = `python3 -c 'import json,sys; print(json.dumps(sys.argv[1:]))' "$@"`
 
-// Fake `claude`: logs every call (one JSON array per line), answers from
-// $FAKE_CLAUDE_DIR/mode — "ok" prints a reply, "empty" fails like a CLI that is
-// not logged in.
+// Fake `claude`: logs every call (one JSON array per line) and its pid,
+// thinks for $FAKE_CLAUDE_DIR/delay seconds when that file exists (writing
+// the pid of its `sleep` too), then answers from $FAKE_CLAUDE_DIR/mode — "ok"
+// prints a reply, "empty" fails like a CLI that is not logged in.
 const FAKE_CLAUDE = `
 dir="\${FAKE_CLAUDE_DIR:?}"
 ${LOG_ARGS} >> "$dir/calls.jsonl"
+echo $$ >> "$dir/claude.pids"
+delay=$(cat "$dir/delay" 2>/dev/null || echo 0)
+if [ "$delay" != 0 ]; then
+  sleep "$delay" &
+  echo $! >> "$dir/sleep.pids"
+  wait $!
+fi
 mode=$(cat "$dir/mode" 2>/dev/null || echo ok)
 case "$mode" in
   empty) echo "Not logged in · Please run /login" >&2; exit 1 ;;
@@ -109,8 +117,12 @@ interface WatcherWorld {
   watcher: Proc
 }
 
-/** Real server on a free port + the watcher polling it every 200 ms with a fake `claude`. */
-async function startWatcher(opts: { maxPerMinute?: number; staleLock?: boolean } = {}): Promise<WatcherWorld> {
+/**
+ * Real server on a free port + the watcher polling it every 200 ms with a
+ * fake `claude`. `lastTs` is written to chat-ai-last-ts before it starts;
+ * `delay` makes every `claude -p` take that many seconds.
+ */
+async function startWatcher(opts: { maxPerMinute?: number; staleLock?: boolean; lastTs?: string; delay?: number } = {}): Promise<WatcherWorld> {
   const office = await loadOffice()
   const port = await listen(office.server.httpServer)
   // What start() writes once the port is bound: the watcher reads it to post as an agent
@@ -121,7 +133,9 @@ async function startWatcher(opts: { maxPerMinute?: number; staleLock?: boolean }
   const claudeDir = join(home, 'fake-claude')
   mkdirSync(claudeDir)
   writeFileSync(join(claudeDir, 'mode'), 'ok')
+  if (opts.delay) writeFileSync(join(claudeDir, 'delay'), String(opts.delay))
   if (opts.staleLock) writeFileSync(join(office.dir, 'chat-ai.lock'), '')
+  if (opts.lastTs !== undefined) writeFileSync(join(office.dir, 'chat-ai-last-ts'), opts.lastTs)
 
   const watcher = run('bash', [WATCHER], {
     ...process.env,
@@ -146,6 +160,12 @@ function claudeCalls(w: WatcherWorld): string[][] {
 async function chat(w: WatcherWorld) {
   const res = await request(w.office.server.app).get('/chat')
   return res.body.messages as Array<Record<string, any>>
+}
+
+/** Pids the fake `claude` wrote: its own, or (`sleep`) those of the think it was doing. */
+function fakePids(w: WatcherWorld, which: 'claude' | 'sleep'): number[] {
+  const file = join(w.claudeDir, `${which}.pids`)
+  return existsSync(file) ? readFileSync(file, 'utf8').trim().split('\n').filter(Boolean).map(Number) : []
 }
 
 const say = (w: WatcherWorld, text: string, sender = 'Antony') =>
@@ -277,6 +297,75 @@ describe('chat-ai-watcher.sh lock', () => {
     await waitFor('the lock to be released', () => !existsSync(lock))
     expect(w.watcher.out).not.toContain('already generating a reply')
   }, 45_000)
+})
+
+describe('chat-ai-watcher.sh: a message typed while a reply is being generated', () => {
+  let w: WatcherWorld
+  beforeAll(async () => { w = await startWatcher({ delay: 1.5 }) })
+  afterAll(async () => { await w.watcher.stop(); removeOffice(w.office) })
+
+  it('is answered next, not skipped: the watermark is what was seen before generating, not the reply', async () => {
+    const waitFor = <T,>(what: string, fn: () => T | Promise<T>) => waitForWithin(what, fn, 20_000)
+    await say(w, 'hey there is a bug in login')
+    await waitFor('the first claude call', () => claudeCalls(w).length === 1)
+    // The fake is still thinking: this lands between the poll that found the
+    // first message and the reply's own row
+    await say(w, 'and can you review the PR after')
+    await waitFor('the second claude call', () => claudeCalls(w).length === 2)
+    expect(claudeCalls(w)[1][1]).toContain('Antony: and can you review the PR after')
+    await waitFor('two replies', async () => replies(await chat(w)).length === 2)
+    expect((await chat(w)).filter(m => m.text === FAKE_REPLY).map(m => m.sender)).toEqual(['Debugger', 'Reviewer'])
+
+    // Neither reply is answered, and nothing is answered twice
+    await sleep(2500)
+    expect(claudeCalls(w)).toHaveLength(2)
+    const lastTs = Number(readFileSync(join(w.office.dir, 'chat-ai-last-ts'), 'utf8'))
+    expect(lastTs).toBeGreaterThanOrEqual(Math.max(...(await chat(w)).map(m => m.timestamp)))
+  }, 45_000)
+})
+
+describe('chat-ai-watcher.sh: a chat-ai-last-ts that is not a timestamp', () => {
+  for (const [label, content] of [['empty', ''], ['garbage', 'garbage\n'], ['in the future', `${Date.now() + 10 * 86_400_000}\n`]] as const) {
+    it(`(${label}) starts from now: a message is answered once, and the file holds a timestamp again`, async () => {
+      const w = await startWatcher({ lastTs: content })
+      try {
+        await say(w, 'there is a bug in the parser')
+        await waitFor('the reply', async () => replies(await chat(w)).length === 1)
+        await sleep(1500)                                    // several more polls
+        expect(claudeCalls(w)).toHaveLength(1)
+        expect(replies(await chat(w))).toHaveLength(1)
+        const saved = readFileSync(join(w.office.dir, 'chat-ai-last-ts'), 'utf8').trim()
+        expect(saved).toMatch(/^\d{13}$/)
+        expect(Number(saved)).toBeLessThanOrEqual(Date.now())
+        expect(w.watcher.out).not.toContain('integer expression expected')
+      } finally {
+        await w.watcher.stop()
+        removeOffice(w.office)
+      }
+    }, 30_000)
+  }
+})
+
+describe('chat-ai-watcher.sh stopped mid-reply', () => {
+  it('stop-office.sh takes the in-flight `claude -p` down with the watcher (GNU timeout keeps it in the group)', async () => {
+    const w = await startWatcher({ delay: 30 })
+    try {
+      await say(w, 'there is a bug in checkout')
+      await waitFor('the fake claude to start thinking', () => fakePids(w, 'sleep').length === 1)
+      const [claude] = fakePids(w, 'claude')
+      const [think] = fakePids(w, 'sleep')
+      expect(alive(claude)).toBe(true)
+
+      const { code, out } = await runStop(w.office.dir)
+      expect(code).toBe(0)
+      expect(out).toContain(`Chat watcher stopped (pid ${w.watcher.pid})`)
+      await waitFor('the in-flight claude -p to be gone', () => !alive(claude) && !alive(think), 5000)
+      expect(existsSync(join(w.office.dir, 'chat-ai-claude.err'))).toBe(false)
+    } finally {
+      await w.watcher.stop()
+      removeOffice(w.office)
+    }
+  }, 30_000)
 })
 
 // ---------------------------------------------------------------------------
