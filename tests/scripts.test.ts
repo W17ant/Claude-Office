@@ -462,4 +462,40 @@ describe('start-office.sh', () => {
     await waitFor('the watcher to exit', () => !alive(watcherPid))
     expect(existsSync(pidFile)).toBe(false)
   })
+
+  it('opens the office with its token through a redirect page (never the tokened link on a command line)', async () => {
+    const home = tempDir('agent-office-start-token-')
+    const officeDir = join(home, 'office')
+    const bin = join(home, 'bin')
+    // A real office answers /health (open-office.mjs asks it); Vite "already running"
+    const office = await loadOffice({ dir: officeDir })
+    const port = await listen(office.server.httpServer)
+    writeFileSync(join(officeDir, 'auth-token'), office.server.AUTH_TOKEN, { mode: 0o600 })
+    fakeBin(bin, 'curl', 'exit 0')
+    fakeBin(bin, 'uname', 'echo Linux')
+    fakeBin(bin, 'xdg-open', `${LOG_ARGS} >> "$OPEN_LOG"; exit 0`)
+    const openLog = join(home, 'open.jsonl')
+    try {
+      const proc = run('bash', [START], {
+        ...process.env,
+        HOME: home,
+        AGENT_OFFICE_HOME: officeDir,
+        AGENT_OFFICE_PORT: String(port),
+        AGENT_OFFICE_UI_PORT: '3998',
+        PATH: `${bin}:${process.env.PATH}`,
+        OPEN_LOG: openLog,
+        CHAT_AI_POLL_INTERVAL: '0.2',
+      }, false)
+      await waitFor('the running banner', () => proc.out.includes('Agent Office is running!'), 15_000)
+      const page = join(officeDir, 'open-office.html')
+      expect(proc.out).toContain(`Agent Office: http://localhost:3998/#token=${office.server.AUTH_TOKEN}`)
+      expect(readFileSync(openLog, 'utf8').trim().split('\n').map(l => JSON.parse(l))).toEqual([[`file://${page}`]])
+      expect(readFileSync(page, 'utf8')).toContain(`http://localhost:3998/#token=${office.server.AUTH_TOKEN}`)
+      proc.child.kill('SIGINT')
+      expect(await proc.exited).toBe(130)
+    } finally {
+      await new Promise<void>(res => office.server.wss.close(() => res()))
+      await new Promise<void>(res => office.server.httpServer.close(() => res()))
+    }
+  })
 })

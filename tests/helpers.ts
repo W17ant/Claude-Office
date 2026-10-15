@@ -74,6 +74,16 @@ export function postEvent(server: OfficeServer, body: unknown, token: string = s
   return postAuthed(server, '/event', body, token)
 }
 
+/**
+ * The WebSocket subprotocols the office page offers when it has the office
+ * token (src/officeToken.ts): `new WebSocket(url, officeProtocols(server))`
+ * is a trusted connection — prompt / reply text and the UI token included.
+ * A client that offers none is read-only (server/index.js, "The WebSocket").
+ */
+export function officeProtocols(server: OfficeServer, token: string = server.AUTH_TOKEN): string[] {
+  return [server.WS_PROTOCOL, `${server.WS_TOKEN_PROTOCOL_PREFIX}${token}`]
+}
+
 /** Bind an http.Server to an ephemeral localhost port and return the port. */
 export function listen(httpServer: Server): Promise<number> {
   return new Promise((resolve, reject) => {

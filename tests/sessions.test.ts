@@ -483,7 +483,8 @@ describe('WebSocket snapshot', () => {
     const port = await listen(office.server.httpServer)
     const snapshot = await new Promise<any>((resolve, reject) => {
       ws = new WebSocket(`ws://127.0.0.1:${port}/ws`)
-      ws.once('message', raw => resolve(JSON.parse(raw.toString())))
+      // The first message says whether the connection is trusted; the snapshot follows
+      ws.on('message', raw => { const m = JSON.parse(raw.toString()); if (m.type === 'snapshot') resolve(m) })
       ws.once('error', reject)
     })
     expect(snapshot.type).toBe('snapshot')

@@ -688,7 +688,11 @@ const App: React.FC = () => {
   // WebSocket connection
   // ---------------------------------------------------------------------------
 
-  const { sessions } = useAgentSocket({ onEvent: handleEvent, url: officeWsUrl(), disabled: isSimMode })
+  const { sessions, trusted } = useAgentSocket({ onEvent: handleEvent, url: officeWsUrl(), disabled: isSimMode })
+  // The server showed this page the office read-only: no office token, or a
+  // stale one (src/officeToken.ts). The cards and the chat stop offering
+  // answers the server would refuse, and the status strip says how to fix it.
+  const readOnly = !isSimMode && trusted === false
   const activeSessionCount = sessions.filter(s => s.state === 'active').length
 
   // ---------------------------------------------------------------------------
@@ -1549,7 +1553,7 @@ const App: React.FC = () => {
 
       <AgentCard agentId={inspectedId} agent={agents.find(a => a.id === inspectedId)} sessions={sessions} onClose={() => setInspectedId(null)} />
       <div className="chat-column">
-      {!isSimMode && <PermissionCards cards={permissionCards} dispatch={dispatchPermissions} />}
+      {!isSimMode && <PermissionCards cards={permissionCards} dispatch={dispatchPermissions} readOnly={readOnly} />}
       <Meters onNotice={text => addMsg('system', 'default', '#8b8d91', text, true)} />
       <SlackChat
         messages={messages}
@@ -1563,10 +1567,11 @@ const App: React.FC = () => {
         typingUser={chatTypingUser}
         lastSeenId={lastSeenId}
         onReaction={handleReaction}
+        readOnly={readOnly}
       />
       </div>
       </div>
-      <StatusStrip office={officeRef} sessions={sessions} />
+      <StatusStrip office={officeRef} sessions={sessions} readOnly={readOnly} />
     </div>
   )
 }

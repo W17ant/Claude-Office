@@ -16,6 +16,10 @@
  *  - Reports its own open/close to onEvent as `connection` actions, and the
  *    snapshot's `health` as a `health` event, so the office reducer (not this
  *    hook) owns the connection state the status strip shows
+ *  - Presents the office token (src/officeToken.ts) as a subprotocol on every
+ *    (re)connect, read afresh each time, and exposes the server's verdict as
+ *    `trusted`: without the token the server sends the office read-only (no
+ *    conversation text, no UI token), and the page says so
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react'
@@ -23,6 +27,7 @@ import { OfficeEvent, PendingPermission, ServerHealth, SessionInfo, SessionRegis
 import type { SessionStatus, MeterTotals } from '../meters'
 import { projectFromCwd } from '../mainState'
 import { officeHttpBase, officeWsUrl } from '../serverUrl'
+import { officeWsProtocols } from '../officeToken'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -48,6 +53,12 @@ export interface AgentSocketResult {
   offline: boolean
   /** Claude Code sessions the server knows about (ended ones linger briefly) */
   sessions: SessionInfo[]
+  /**
+   * The server's `auth` message: true when this page's token was accepted,
+   * false when the office is shown read-only, null until a server says
+   * (an older server never does)
+   */
+  trusted: boolean | null
 }
 
 // ---------------------------------------------------------------------------
@@ -62,6 +73,7 @@ interface SnapshotMessage {
   statuses?: { sessions: SessionStatus[]; totals: MeterTotals }
   /** Permission dialogs waiting on the office, and the token that answers them (server/permissions.js) */
   pendingPermissions?: PendingPermission[]
+  /** Only on a trusted connection (one that presented the office token) */
   uiToken?: string
   /** Pipeline health: hooks seen, version, uptime (server/health.js) */
   health?: ServerHealth
@@ -69,7 +81,13 @@ interface SnapshotMessage {
   timestamp: number
 }
 
-type ServerMessage = OfficeEvent | SnapshotMessage
+/** First message on every connection: what this connection may see (server/index.js). */
+interface AuthMessage {
+  type: 'auth'
+  trusted: boolean
+}
+
+type ServerMessage = OfficeEvent | SnapshotMessage | AuthMessage
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -137,6 +155,7 @@ export function useAgentSocket(options: AgentSocketOptions = {}): AgentSocketRes
   const [events, setEvents]         = useState<OfficeEvent[]>([])
   const [offline, setOffline]       = useState(false)
   const [sessions, setSessions]     = useState<SessionInfo[]>([])
+  const [trusted, setTrusted]       = useState<boolean | null>(null)
 
   // Refs so reconnect logic can read latest values without re-creating effects
   const wsRef          = useRef<WebSocket | null>(null)
@@ -253,6 +272,11 @@ export function useAgentSocket(options: AgentSocketOptions = {}): AgentSocketRes
       return
     }
 
+    if (msg.type === 'auth') {
+      setTrusted((msg as AuthMessage).trusted === true)
+      return
+    }
+
     if (msg.type === 'snapshot') {
       const snap = msg as SnapshotMessage
       // The session is healthy: the next drop starts the back-off from scratch
@@ -283,7 +307,8 @@ export function useAgentSocket(options: AgentSocketOptions = {}): AgentSocketRes
         activeAgents: snap.activeAgents ?? [],
         sessions: snapSessions.map(s => toSessionInfo(s.id, s)),
         // The pending permission dialogs and the UI token ride along for
-        // src/permissions.ts (left undefined by a server without them)
+        // src/permissions.ts (the token is left undefined on a read-only
+        // connection, and both by a server without them)
         pendingPermissions: snap.pendingPermissions,
         uiToken: snap.uiToken,
         timestamp: snap.timestamp,
@@ -314,7 +339,9 @@ export function useAgentSocket(options: AgentSocketOptions = {}): AgentSocketRes
 
     let ws: WebSocket
     try {
-      ws = new WebSocket(url)
+      // The token is read at each attempt: one captured in another tab since
+      // the last try (a new link after a rotation) is used at once
+      ws = new WebSocket(url, officeWsProtocols())
     } catch {
       // WebSocket constructor itself threw — schedule retry
       scheduleReconnect()
@@ -411,5 +438,5 @@ export function useAgentSocket(options: AgentSocketOptions = {}): AgentSocketRes
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [disabled])
 
-  return { connected, mcpServers, events, offline, sessions }
+  return { connected, mcpServers, events, offline, sessions, trusted }
 }

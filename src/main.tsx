@@ -2,6 +2,12 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
 import { loadRuntimeConfig } from './config'
+import { captureOfficeToken } from './officeToken'
+
+// The office link carries the token in its fragment (#token=...): keep it and
+// take it out of the address bar before the first render and the WebSocket
+// that presents it (src/officeToken.ts)
+captureOfficeToken()
 
 function render() {
   ReactDOM.createRoot(document.getElementById('root')!).render(

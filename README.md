@@ -117,14 +117,17 @@ cd Claude-Office
 npm install
 
 # Option A — one port, the same page the desktop app shows
-npm run build && npm run server          # open http://127.0.0.1:3334
+npm run build && npm run server          # then, in another terminal:
+npm run open                             # opens http://127.0.0.1:3334 with the office token
 
 # Option B — development: server + Vite + the chat AI watcher, opens the browser
-bash scripts/start-office.sh             # open http://localhost:3333
+bash scripts/start-office.sh             # opens http://localhost:3333 with the office token
 bash scripts/stop-office.sh              # stop everything it started
 ```
 
 `npm run dev:all` is option B without the chat watcher (server + Vite in one terminal); `npm run dev` is Vite alone and expects `npm run server` in another terminal. `office.config.json` is optional — copy `office.config.example.json` to it to name your boss character (see [Customise your character](#customise-your-character)); the server reads it at runtime, so a rename needs a page reload, not a rebuild. To run the office on another port, export `AGENT_OFFICE_PORT` before starting it and before Claude Code (see [Configuration](#configuration)).
+
+The office page needs the **office token** to show prompts, replies and command lines and to answer permission dialogs: the server prints a link carrying it when it starts (`Agent Office: http://127.0.0.1:3334/#token=…`), and `npm run open`, `start-office.sh` and the desktop app open that link for you. A browser remembers it, and the token survives restarts, so this is once per browser; a bare `http://127.0.0.1:3334/` shows the office read-only. See [Security](#security).
 
 Then [connect Claude Code](#connect-claude-code) so agents show up.
 
@@ -291,7 +294,7 @@ Two things to know. Plugin hooks merge with the ones in your settings, so pick o
 
 "Nothing appears" is almost always one of three things: the server is not running, the hooks are not installed (or point at a checkout that has since moved), or Claude Code simply has not run a tool yet. Two places tell you which:
 
-- **The status strip** along the bottom of the office (hidden under `?sim` / `?video`, which get a `SIM` badge instead) shows `ONLINE` / `RECONNECTING…` / `OFFLINE` for the WebSocket to the office server (the page's own origin when the server serves it, `127.0.0.1:$AGENT_OFFICE_PORT` under Vite), then `hooks: last seen 12 s ago` once a hook event has reached the server — or, after a minute online with nothing heard (and the server up that long), `no hook events yet — run npm run install-hooks` — then the sessions, as in `3 sessions · 1 not hooked · 2 need you` (a session Claude Code runs without the hooks reporting it, and one waiting on a permission dialog or a question; each part is left out at zero), and the server version. Hover it for the details and the command to type, including which sessions are not hooked and what each waiting one waits on; while the server is down the strip says so and shows `npm run server`.
+- **The status strip** along the bottom of the office (hidden under `?sim` / `?video`, which get a `SIM` badge instead) shows `ONLINE` / `RECONNECTING…` / `OFFLINE` for the WebSocket to the office server (the page's own origin when the server serves it, `127.0.0.1:$AGENT_OFFICE_PORT` under Vite), then `hooks: last seen 12 s ago` once a hook event has reached the server — or, after a minute online with nothing heard (and the server up that long), `no hook events yet — run npm run install-hooks` — then the sessions, as in `3 sessions · 1 not hooked · 2 need you` (a session Claude Code runs without the hooks reporting it, and one waiting on a permission dialog or a question; each part is left out at zero), and the server version. Hover it for the details and the command to type, including which sessions are not hooked and what each waiting one waits on; while the server is down the strip says so and shows `npm run server`. A page without the office token (opened from a bare address rather than the link) says *read-only: open the link from `npm run open`* in amber — see [Security](#security).
 - **The session strip** in the title bar lists every running Claude Code process within two seconds, hooks or no hooks, straight from Claude Code's own registry (`~/.claude/sessions`, see **Sessions without hooks** above). A grey, dashed *not hooked* pill means the session is running and only the hooks are missing; no pill at all means Claude Code is not running (or writes its registry somewhere else — `GET /registry` shows the directory the server reads).
 - **`npm run doctor`** prints a `PASS` / `WARN` / `FAIL` line per link in the chain: the Node version; the hook entries in `~/.claude/settings.json` (or `$CLAUDE_CONFIG_DIR/settings.json`) running an `agent-tracker.sh` that exists — the installer's own rule — or the `agent-office` plugin being installed; the status line; `python3` / `bash` / `curl` on the PATH; the server answering `GET /health` on `AGENT_OFFICE_PORT` and whether hooks have reached it since it started; the auth token (present, mode `0600`); `dist/` built. It ends with the install, uninstall and start commands and exits 1 on any `FAIL`, so it works in a script too (`--json` for machine-readable output).
 
@@ -522,7 +525,7 @@ python3 scripts/extract-boss-sprite.py your-character.png MyChar-1
 
 ## Desktop app (Electron)
 
-The desktop app is self-contained: it bundles the office server, the built UI and `node_modules`, runs the server on the Node that ships inside Electron (nothing needs to be installed, and no `node` on the PATH), and loads the office from `http://127.0.0.1:3334/` — one port for the page, its assets and the WebSocket. Launched with `AGENT_OFFICE_PORT` in its environment (from a terminal, say), the app starts its server, loads the page and points the tray at that port instead.
+The desktop app is self-contained: it bundles the office server, the built UI and `node_modules`, runs the server on the Node that ships inside Electron (nothing needs to be installed, and no `node` on the PATH), and loads the office from `http://127.0.0.1:3334/` — one port for the page, its assets and the WebSocket — with the office token from `~/.agent-office/auth-token` in the URL fragment, read once the server answers (see [Security](#security)). Launched with `AGENT_OFFICE_PORT` in its environment (from a terminal, say), the app starts its server, loads the page and points the tray at that port instead.
 
 **Download.** Every tagged release carries installers built by the [release workflow](.github/workflows/release.yml); the [releases page](https://github.com/W17ant/Claude-Office/releases) has them, named `Agent-Office-<version>-<os>-<arch>`:
 
@@ -542,7 +545,7 @@ npm run build:electron  # Installer for this OS (.dmg, .exe or .AppImage) in rel
 
 **Compact widget** — `Office → Compact widget`, `Cmd/Ctrl+Shift+C`, the tray menu, or `--compact` on the command line — turns the window into a small always-on-top widget showing just the room. The layout is scaled to 60 % and shifted so the chat panel sits off the right edge: the agents keep moving in a 452×409 corner of the screen (top-right the first time) that follows you across virtual desktops and full-screen apps. It resizes (the room scales with it), has its own remembered size and spot, and the title bar is still the drag handle. Toggle it off and the full office comes back where it was. **Always on top** (`Cmd/Ctrl+Shift+T`) is a separate toggle for the full window; the widget is always on top by nature.
 
-**Tray / menu bar.** The app puts a pixel-art desk in the tray (the menu bar on macOS) and reads `GET /agents` and `GET /sessions` every 5 s: the tooltip says `Agent Office — 2 working, 1 needs you` (or `the office is empty`, `server not reachable`), the window title carries the same line, and on macOS the number of working agents — plus `1!` when a session waits on you — sits beside the icon. Its menu, also on right-click in the window: the status line, **Show/Hide office**, **Compact widget**, **Always on top**, **Open in browser** (the same office at `http://127.0.0.1:3334/`, or the `AGENT_OFFICE_PORT` it runs on), **Quit**. On macOS and Windows closing the window keeps the app in the tray (the Dock icon, the tray or opening the app again brings the window back); on Linux, where not every desktop shows a tray, closing the window quits.
+**Tray / menu bar.** The app puts a pixel-art desk in the tray (the menu bar on macOS) and reads `GET /agents` and `GET /sessions` every 5 s: the tooltip says `Agent Office — 2 working, 1 needs you` (or `the office is empty`, `server not reachable`), the window title carries the same line, and on macOS the number of working agents — plus `1!` when a session waits on you — sits beside the icon. Its menu, also on right-click in the window: the status line, **Show/Hide office**, **Compact widget**, **Always on top**, **Open in browser** (the same office at `http://127.0.0.1:3334/`, or the `AGENT_OFFICE_PORT` it runs on, opened with the office token through the redirect page `npm run open` uses), **Quit**. On macOS and Windows closing the window keeps the app in the tray (the Dock icon, the tray or opening the app again brings the window back); on Linux, where not every desktop shows a tray, closing the window quits.
 
 **Icons.** `scripts/generate-icons.mjs` draws the tray glyph and the app icon as pixel maps and writes the PNGs with no image tooling: `electron/assets/` holds the tray icons and the Linux window icon, `build/icon.png` (512×512) is what electron-builder turns into the `.icns`, `.ico` and Linux icon set. The macOS tray icon is a monochrome template image (`trayTemplate.png` and `@2x`), tinted by the menu bar for light and dark mode. Re-run the script after editing the maps; a test fails when the committed files are stale.
 
@@ -555,7 +558,7 @@ How a build is put together (the `build` section of `package.json`):
 - `mac.target` is one `dmg` per architecture (`arm64` and `x64`) rather than a universal app: `after-pack.cjs` fetches one `better-sqlite3` prebuilt per architecture and refuses `universal`, and a single-architecture download is half the size. `win.target` is an NSIS installer that asks where to install (and no `.blockmap` next to it: there is no auto-updater to use one), `linux.target` an AppImage. `artifactName` fixes the file names to `Agent-Office-<version>-<os>-<arch>.<ext>`, and `publish` names the GitHub draft release the release workflow uploads to — a local `npm run build:electron` never publishes; electron-builder only does that on CI or when asked with `--publish`.
 - Debugging a build headlessly: `AGENT_OFFICE_SCREENSHOT=/tmp/office.png` makes the app save a screenshot of its window a few seconds after the page loads, then quit (works under `xvfb-run`); add `--compact` to capture the widget.
 
-The same single-port mode works without Electron: `npm run build && npm run server`, then open `http://localhost:3334`. The Linux bundle was built, launched and screenshotted (full window and compact widget) under xvfb; the tray icon was created there but a headless X server has no panel to show it in, and the macOS and Windows packages come out of the release workflow but have not been launched by hand since the bundle became self-contained — see [Platform support](#platform-support).
+The same single-port mode works without Electron: `npm run build && npm run server`, then `npm run open` (or the link the server printed). The Linux bundle was built, launched and screenshotted (full window and compact widget) under xvfb; the tray icon was created there but a headless X server has no panel to show it in, and the macOS and Windows packages come out of the release workflow but have not been launched by hand since the bundle became self-contained — see [Platform support](#platform-support).
 
 **Cutting a release** (maintainers). `npm version minor` (or `patch` / `major`) bumps `package.json` and `package-lock.json` and — through the `version` script, `scripts/sync-plugin-version.mjs` — `.claude-plugin/plugin.json`, then commits and tags `vX.Y.Z`; `git push --follow-tags` pushes the commit and the tag. The tag starts [`release.yml`](.github/workflows/release.yml): it checks that the tag matches `package.json`, creates a **draft** release for it, then builds on macOS, Windows and Linux runners and uploads the installers (and electron-builder's `latest*.yml` update metadata) to that draft. Nothing is public until you open the draft on the releases page, edit the notes and publish it. A failed leg can be re-run from the Actions tab, and **Run workflow** on the tag rebuilds everything; both upload to the same draft. A tag whose release is already published is left alone. Nothing in the pipeline signs — there is no Apple or Windows certificate — hence the first-launch steps under Download.
 
@@ -581,42 +584,107 @@ Everything is optional; the defaults are the office as described above. Set thes
 
 The server listens on loopback only (`127.0.0.1` unless `AGENT_OFFICE_HOST`
 names another loopback form), so it is never on the network. The threat it
-defends against is therefore other processes on the same machine (a
-malicious npm dependency, another local user on a shared host): loopback is not
-user-isolated, and nothing stops a local process from reaching the port.
-Browsers are kept out separately — the origin allowlist refuses every origin
-but the loopback UI (the Vite port, 3333, and the server's own port, 3334 or
-`AGENT_OFFICE_PORT`), and the JSON content type makes a cross-site POST
-preflight.
+defends against is therefore what else runs on the same machine: a malicious
+npm dependency, or another local user on a shared host. Loopback is not
+user-isolated — any local process can reach the port, open the WebSocket and
+send any `Origin` header it likes (`Origin` only binds browsers). Two
+separate defences follow from that:
 
-A non-loopback bind is refused on purpose, not merely unsupported: every
-`GET`, `POST /chat` and the WebSocket below are open on loopback by design,
-so on a LAN address they would hand your prompts, Claude's replies and every
-agent's task to the network. The UI token covers only the two routes the page
-changes; it would have to cover every route first. `AGENT_OFFICE_HOST=0.0.0.0`
-therefore logs that reason and binds `127.0.0.1`.
+- **Browsers on other origins** are kept out by the origin allowlist, which
+  refuses every origin but the loopback UI (the Vite port, 3333, and the
+  server's own port, 3334 or `AGENT_OFFICE_PORT`) with a 403 or a 1008 close,
+  and by the JSON content type, which makes a cross-site POST preflight. A
+  malicious site or a DNS-rebinding page never gets in.
+- **Other local processes and users** are kept out of the conversation and of
+  every route that acts by the **office token**: the contents of
+  `~/.agent-office/auth-token`, a `0600` file only you can read. The hook, the
+  status line and the office scripts read the file; the office page gets the
+  token through a link only you see (below). Without it, a connection still
+  sees the office — read-only.
 
-So every route that **acts as an agent or destroys state** requires a bearer
-token, and the rest stay open:
+A non-loopback bind is refused on purpose, not merely unsupported: the
+read-only view and every open `GET` would hand every agent's task and status
+line to the network, and the token travels in clear HTTP.
+`AGENT_OFFICE_HOST=0.0.0.0` therefore logs that reason and binds `127.0.0.1`.
+
+**The office link.** When the server starts it prints, to its own output only,
+
+```
+  Agent Office: http://127.0.0.1:3334/#token=<the office token>
+```
+
+Open that link once per browser and the office is fully yours: the page takes
+the token out of the URL fragment — which a browser never sends to a server, so
+it is in no request and no server log — keeps it in that browser profile's
+`localStorage` (per browser profile, so per OS user in practice; `sessionStorage`
+or memory when storage is blocked), strips it from the address bar, and
+presents it each time its WebSocket connects. Browsers cannot set headers on a
+WebSocket, so it travels as a subprotocol value
+(`Sec-WebSocket-Protocol: agent-office, agent-office.token.<token>`), never as
+part of a URL; the server answers with plain `agent-office`. You rarely type it:
+
+- **`npm run open`** prints the link and opens it (`open` / `xdg-open` /
+  `explorer`; it just prints it when there is no opener). The browser is handed
+  a small redirect page, `~/.agent-office/open-office.html` (`0600`), rather
+  than the link itself, because an opener's command line — and that of a
+  browser it starts — is readable by every local user in `ps` while it runs.
+  (A Snap-confined browser cannot read hidden folders in your home; paste the
+  printed link there.) `--dev` opens the Vite dev server's page instead,
+  `--print` only prints.
+- **`bash scripts/start-office.sh`** does the same for the page it starts.
+- **The desktop app** reads the token file once its server answers `/health`
+  and loads the window with the link; *Open in browser* in its menu goes
+  through the same redirect page.
+
+The token is **stable across restarts**: a start reuses the file when it is
+still safe to trust — a regular file (a symlink is not followed), owned by
+you, mode `0600` with no group or other bits, holding a well-formed token — so
+a browser that opened the link keeps working after the office restarts.
+Anything else (missing, malformed, readable by others, owned by someone else)
+is replaced by a new token, written only once the port is bound, so starting a
+second server while one is running never clobbers the live token. To
+**rotate** it, stop the office and run `npm run rotate-token` (it deletes the
+file; it refuses while the office is running, `--force` overrides) or delete
+`~/.agent-office/auth-token` yourself; the next start writes a new one, and
+pages that kept the old one drop to read-only until they get the new link.
+
+**Without the token** — a bare `http://127.0.0.1:3334/` bookmark, another
+browser, another local user — the WebSocket still serves the office,
+read-only, and the page says so in the status strip (*read-only: open the link
+from `npm run open`*): agents, tasks, states, status lines, sessions, counts,
+meters and signals — what `GET /agents` and `GET /sessions` show — and no
+conversation. In detail, a read-only connection gets no UI token, no
+`main.lastPrompt` / `main.lastReply` on any session or event, no `text` on
+`session_prompt` / `session_turn_end` (and no chat row with `msg_type`
+`prompt` / `reply`), no `detail` (the command line, path or tool input) or
+`suggestions` on a permission dialog, and no `error` / `detail` (the
+command's output) on a signal. What stays is the office's one-line labels:
+a status line such as `running: npm test` and a dialog's tool and summary show
+the start of a command, as `GET /agents` always has. Permission cards on a
+read-only page show which tool waits but offer no buttons, and the chat's
+*Answer here* toggle is hidden: the server would refuse both.
+
+So every route that **acts as an agent, answers for you or destroys state**
+requires the token, conversation text requires it, and the rest stay open:
 
 | | Routes | Why |
 |---|---|---|
-| **Token required** | `POST /event`, `POST /status`, `/chat/reply`, `/a2a`, `/chat/inbox/read`, `/chat/seen`, `/chat/react`, `/chat/video-mode`, `GET /permission/:id` (the hook's long-poll for a decision), and `POST /chat` for a destructive slash command (`/clear`) | Speaks for an agent, writes another agent's inbox, feeds the meters, learns how a permission was decided, or wipes history — a local process must not be able to do these |
-| **UI token or token** | `POST /permission/:id` (answer a permission dialog), `POST /settings` | The two things the office page itself may change. The page cannot read the token file, so the server mints a second secret per process, the UI token, and hands it out in one place only: the WebSocket snapshot, which is origin-gated — browsers always send `Origin`, and only the loopback UI ports pass — so no web page on another origin (a malicious site, a DNS-rebinding page) can open that socket or learn the token. A local process that could connect without an `Origin` could read the token file anyway. The UI token lives in memory, changes on every restart and is compared in constant time |
-| **Open** | every other `GET` (`GET /permissions` lists the pending dialogs, like `GET /sessions` shows the hand), `POST /chat` (a plain line a person typed, and the read-only `/status` · `/agents` · `/help` · `/incident` · `/all-clear` commands), `POST /chat/typing`, `POST /chat/cron-state` | The office UI has no token; the worst these do is read what the office already shows or post a chat line |
-| **Open, but the transcript needs the token** | `GET /chat`, `GET /sessions` | Without the token the boss's prompts and Claude's replies are left out: the chat rows with `msg_type` `prompt` / `reply`, and `main.lastPrompt` / `main.lastReply` on each session. With it (the office scripts), they are included. The office UI reads them from the origin-gated WebSocket snapshot instead |
+| **Token required** | `POST /event`, `POST /status`, `/chat/reply`, `/a2a`, `/chat/inbox/read`, `/chat/seen`, `/chat/react`, `/chat/video-mode`, `GET /permission/:id` (the hook's long-poll for a decision), and `POST /chat` for a destructive slash command (`/clear`) | Speaks for an agent, writes another agent's inbox, feeds the meters, learns how a permission was decided, or wipes history |
+| **UI token or token** | `POST /permission/:id` (answer a permission dialog), `POST /settings` | The two things the office page itself may change. The server mints a second secret per process, the UI token, and hands it out in one place only: the WebSocket snapshot of a connection that presented the office token. Nobody without the token file can obtain it. It lives in memory, changes on every restart and is compared in constant time |
+| **Open** | every other `GET`, `POST /chat` (a plain line a person typed, and the read-only `/status` · `/agents` · `/help` · `/incident` · `/all-clear` commands), `POST /chat/typing`, `POST /chat/cron-state` | The worst these do is read what the read-only office shows or post a chat line |
+| **Open, but the conversation needs the token** | `GET /chat`, `GET /sessions`, `GET /permissions`, `GET /signals`, the WebSocket | Without the token: no chat rows with `msg_type` `prompt` / `reply`, no `main.lastPrompt` / `main.lastReply`, no permission `detail` / `suggestions`, no signal `command` / `error` / `detail`, and the WebSocket is read-only as above. With it (the office page, the office scripts), they are included |
 | **Open, but the transcript needs the UI token or the token** | `GET /agents/:id` (the inspector card) | Anyone on loopback gets the card's history, tool counts and stats — tool names and status lines, what `GET /agents` and `GET /sessions` already show. The transcript tail (what the agent said, the commands it ran) and a session Claude's last prompt and reply go only to the office page, which sends the UI token, or a token holder; anyone else gets `transcriptAvailable: false` with the reason `needs the office token`. A wrong token counts as none. With a token the tail still follows `logPrompts` |
 
-- The token is 32 random bytes generated at startup and written to
-  `~/.agent-office/auth-token` (mode `0600`) **only once the port is bound**, so
-  starting a second server while one is running no longer clobbers the live
-  token. Send it as `Authorization: Bearer <token>`; the hook, the status line
-  and the office scripts (`chat-reply.py`, `agent-message.py`, the chat
-  watchers) read the file and do this for you. The token check is constant-time.
+- The token is 32 random bytes. Send it as `Authorization: Bearer <token>`;
+  the hook, the status line and the office scripts (`chat-reply.py`,
+  `agent-message.py`, the chat watchers) read the file and do this for you.
+  Every token check is constant-time. The link the server prints carries the
+  token, so if you redirect the server's output to a file, keep that file
+  private.
 - Everything the server writes under `~/.agent-office` (the token, `agents.json`,
-  the A2A inbox files, `last-chat`, the chat-monitor state) is mode `0600` and
-  the dir is `0700`, so another local user can't read directed messages or the
-  latest chat.
+  the A2A inbox files, `last-chat`, the chat-monitor state, the redirect page)
+  is mode `0600` and the dir is `0700`, so another local user can't read
+  directed messages or the latest chat.
 - **Your prompts and Claude's replies are stored locally**, in `~/.agent-office/chat.db`
   (mode `0600`) and in `agents.json`, at the level `logPrompts` sets:
   `summary` (the default) keeps the first 200 characters of each, `full` keeps up
@@ -625,17 +693,16 @@ token, and the rest stay open:
   `curl -X POST http://127.0.0.1:3334/settings -H "Authorization: Bearer $(cat ~/.agent-office/auth-token)" -H 'Content-Type: application/json' -d '{"logPrompts":"off"}'`
   (it persists in `~/.agent-office/settings.json`; `GET /settings` shows it, and
   the chat header shows the current level — `prompts: summary` — with that
-  command in its tooltip; the page itself has no token, so it only reads it).
-  The hook itself never forwards more than 2000 characters, nor a compaction
-  summary or a worker's result. Rows already stored are removed with `/clear`
-  in the chat (token required).
+  command in its tooltip). The hook itself never forwards more than 2000
+  characters, nor a compaction summary or a worker's result. Rows already
+  stored are removed with `/clear` in the chat (token required).
 - **Answering a permission dialog** is the one action the office page takes
   on a Claude Code session, so its path is narrow: the loopback bind is
-  unchanged; a dialog can be answered only by the office page (UI token from
-  the origin-gated socket) or by a process that can read the `0600` token
-  file; nothing is ever auto-allowed and the server never invents a decision
-  — the hook prints exactly the server's `hookOutput`, which is one of the
-  three dialog options and never an `updatedInput`; when the server is down,
+  unchanged; a dialog can be answered only with the UI token — which only a
+  page holding the office token receives — or with the office token itself;
+  nothing is ever auto-allowed and the server never invents a decision — the
+  hook prints exactly the server's `hookOutput`, which is one of the three
+  dialog options and never an `updatedInput`; when the server is down,
   unreachable mid-wait, or says the dialog was answered elsewhere, the hook
   prints nothing and the terminal dialog is in charge. The whole path is off
   when `answerPermissions` is false (the `~/.agent-office/answer-permissions`
@@ -644,14 +711,15 @@ token, and the rest stay open:
   path; message ids are validated and a message's reactions are capped.
 - `GET /roster`, `GET /agents` and the inspector's `GET /agents/:id` do expose
   each agent's task text (the first 80 characters of the subagent's
-  description), its tool calls and the names of the configured MCP servers.
-  `GET /agents/:id` also serves the **transcript tail** — the last few things
-  the agent itself said and the tools it called, read from the end of its own
-  Claude Code transcript — but only to the office page (UI token) or a token
-  holder, as in the table above, and it follows `logPrompts` exactly like the
-  prompts: `off` serves none of it, `summary` 200 characters per entry, `full`
-  2000. The rest is the office's purpose, it is localhost only, and anything
-  on the machine can already read `~/.claude/settings.json`.
+  description), its tool calls and status lines, and the names of the
+  configured MCP servers. `GET /agents/:id` also serves the **transcript
+  tail** — the last few things the agent itself said and the tools it called,
+  read from the end of its own Claude Code transcript — but only to the office
+  page (UI token) or a token holder, as in the table above, and it follows
+  `logPrompts` exactly like the prompts: `off` serves none of it, `summary`
+  200 characters per entry, `full` 2000. The rest is the office's purpose, it
+  is localhost only, and anything on the machine can already read
+  `~/.claude/settings.json`.
 
 ## Tech stack
 
@@ -669,11 +737,12 @@ token, and the rest stay open:
 Claude-Office/
 ├── src/                    # React frontend
 │   ├── components/         # Character, SlackChat, SessionStrip, StatusStrip, IncidentLayer, FurnitureRenderer
-│   ├── hooks/              # useAgentSocket (WebSocket + reconnect)
+│   ├── hooks/              # useAgentSocket (WebSocket + reconnect, presents the office token)
 │   ├── styles/             # office.css, rooms.css, meters.css, incident.css, strip.css
 │   ├── officeReducer.ts    # Pure office state machine (arrival gate, lobby, snapshot reconcile)
 │   ├── incident.ts         # Incident mode state machine
 │   ├── signals.ts          # Reading the deploy / build / test / push signals
+│   ├── officeToken.ts      # The office token from the link (#token=), kept and offered to the WebSocket
 │   ├── theme.ts            # Dunder Mifflin skin (cast, props, chatter)
 │   └── App.tsx             # Main app (agent lifecycle, events, chat)
 ├── server/                 # Express + WebSocket server
@@ -685,6 +754,8 @@ Claude-Office/
 │   ├── start-office.sh     # Start everything (writes pid files)
 │   ├── stop-office.sh      # Stop everything (by pid file; --force for ports)
 │   ├── doctor.mjs          # npm run doctor: PASS/WARN/FAIL for node, hooks, server, token, build
+│   ├── open-office.mjs     # npm run open: the office link with its token, opened via a redirect page
+│   ├── rotate-token.mjs    # npm run rotate-token: retire the office token (the next start writes a new one)
 │   ├── chat-ai-watcher.sh  # Polls chat, generates Claude replies
 │   ├── agent-message.py    # Agent-to-agent messages from the shell
 │   ├── notify.sh           # Desktop notification (osascript / notify-send)
@@ -701,7 +772,7 @@ Claude-Office/
 ├── electron/               # Optional Electron wrapper (self-contained bundle)
 │   ├── main.cjs            # Window, compact widget, menus, the server child process
 │   ├── tray.cjs            # Tray icon: status polling and menu
-│   ├── helpers.cjs         # Pure helpers (bounds, zoom-to-fit, window-state.json, status text)
+│   ├── helpers.cjs         # Pure helpers (bounds, zoom-to-fit, window-state.json, status text, the office link)
 │   └── assets/             # Tray icons and the Linux window icon (generated)
 ├── build/                  # electron-builder resources: icon.png (generated)
 └── .github/                # CI and release workflows, issue templates

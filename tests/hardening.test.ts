@@ -246,22 +246,26 @@ describe('start() and the token file (C09)', () => {
   })
 
   it('leaves the running instance\'s token alone when a second instance loses the port race (C09)', async () => {
-    // Instance A: a real office that binds an ephemeral port and writes its token
+    // Instance B: a second `node server/index.js` against the same runtime
+    // dir, imported before A has written a token — so it mints its own
+    // (a later start would reuse A's, tests/ws-auth.test.ts)
     const a = await loadOffice()
     offices.push(a)
+    const tokenFile = join(a.dir, 'auth-token')
+    const b = await loadOffice({ dir: a.dir })
+    expect(existsSync(tokenFile)).toBe(false)
+
+    // Instance A: a real office that binds an ephemeral port and writes its token
     vi.spyOn(console, 'log').mockImplementation(() => {})
     const aListening = new Promise<void>(res => a.server.httpServer.once('listening', res))
     a.server.start({ port: 0 })
     await aListening
     const port = (a.server.httpServer.address() as import('node:net').AddressInfo).port
-    const tokenFile = join(a.dir, 'auth-token')
     const aToken = readFileSync(tokenFile, 'utf8')
     expect(aToken).toBe(a.server.AUTH_TOKEN)
 
     try {
-      // Instance B: a second `node server/index.js` against the same runtime
-      // dir, started while A holds the port
-      const b = await loadOffice({ dir: a.dir })
+      // B starts while A holds the port
       expect(b.server.AUTH_TOKEN).not.toBe(aToken)
       const exit = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never)
       const error = vi.spyOn(console, 'error').mockImplementation(() => {})

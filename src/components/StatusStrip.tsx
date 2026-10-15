@@ -13,6 +13,10 @@
  * records the title-bar pills draw, not from the throttled health report.
  * Under ?sim / ?video there is no server: only a SIM badge.
  *
+ * When the server showed the page the office read-only (no office token, or
+ * a stale one: src/officeToken.ts) an amber item says so and how to get the
+ * link that fixes it.
+ *
  * VITE_HOOK_WARN_MS (build-time, ms) lowers the 60 s "no hook events yet"
  * threshold, for screenshots and demos.
  */
@@ -34,6 +38,13 @@ const START_CMD   = 'npm run server'
 const START_ALT   = 'bash scripts/start-office.sh'
 const INSTALL_CMD = 'npm run install-hooks'
 const DOCTOR_CMD  = 'npm run doctor'
+const OPEN_CMD    = 'npm run open'
+const READ_ONLY_HINT = [
+  'Read-only: this page has no office token (or an old one), so the server shows the office',
+  'without prompts, replies or command lines, and permission dialogs are answered in the terminal.',
+  `Open the link the server printed when it started, or run ${OPEN_CMD} in the checkout:`,
+  'it opens the office with the token, which this browser then remembers.',
+].join('\n')
 
 const CONNECTION_LABEL: Record<ConnectionPhase, string> = {
   connecting:   'connecting…',
@@ -47,6 +58,8 @@ interface StatusStripProps {
   office: { readonly current: OfficeState | null }
   /** The sessions App.tsx holds (useAgentSocket): counted, not-hooked and needs-you */
   sessions?: SessionInfo[]
+  /** The server sent the office read-only (useAgentSocket's `trusted` is false) */
+  readOnly?: boolean
 }
 
 /** "just now", "12 s ago", "3 min ago", "2 h ago" */
@@ -121,7 +134,7 @@ function describe(h: HealthState, v: HookVerdict, now: number, c: StripCounts): 
   return lines.filter(Boolean).join('\n')
 }
 
-const StatusStrip: React.FC<StatusStripProps> = ({ office, sessions = [] }) => {
+const StatusStrip: React.FC<StatusStripProps> = ({ office, sessions = [], readOnly = false }) => {
   // Sample the reducer's health once a second (also ticks the "ago" labels)
   const [view, setView] = useState(() => ({ health: office.current?.health ?? null, now: Date.now() }))
   useEffect(() => {
@@ -159,6 +172,14 @@ const StatusStrip: React.FC<StatusStripProps> = ({ office, sessions = [] }) => {
         <span className="strip-dot" />
         {CONNECTION_LABEL[h.connection]}
       </span>
+      {readOnly && (
+        <>
+          <span className="strip-sep" />
+          <span className="strip-item strip-readonly" title={READ_ONLY_HINT} data-testid="strip-read-only">
+            read-only: open the link from <code>{OPEN_CMD}</code>
+          </span>
+        </>
+      )}
       <span className="strip-sep" />
       <span className={`strip-item strip-hooks ${pill.tone}`}>{pill.text}</span>
       {s && (

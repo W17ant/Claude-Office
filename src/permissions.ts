@@ -94,10 +94,10 @@ export function reducePermissions(state: PermissionCardState[], action: Permissi
 // ---------------------------------------------------------------------------
 // The UI token and the two POSTs made with it
 //
-// The token arrives on the WS snapshot (origin-gated on the server, so only
-// the office page ever sees it) and is kept here, not in React state: the
-// chat header's toggle and the cards both need it at click time, and nothing
-// re-renders because of it.
+// The token arrives on the WS snapshot — only on a connection that presented
+// the office token (src/officeToken.ts), so a read-only page never has one —
+// and is kept here, not in React state: the chat header's toggle and the
+// cards both need it at click time, and nothing re-renders because of it.
 // ---------------------------------------------------------------------------
 
 let uiToken: string | null = null

@@ -12,7 +12,7 @@ import { join } from 'node:path'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import request from 'supertest'
 import WebSocket from 'ws'
-import { listen, loadOffice, postAuthed, postEvent, removeOffice, type Office, type OfficeServer } from './helpers'
+import { listen, loadOffice, officeProtocols, postAuthed, postEvent, removeOffice, type Office, type OfficeServer } from './helpers'
 import {
   DENY_MESSAGE, PERMISSION_WAIT_MAX_MS, PERMISSION_WAIT_MS, createPermissionStore, hookOutputFor, sanitiseSuggestions,
 } from '../server/permissions.js'
@@ -141,14 +141,22 @@ describe('POST /event creates a pending permission', () => {
   beforeAll(async () => { office = await loadOffice() })
   afterAll(() => removeOffice(office))
 
-  it('an answerable session_needs_you answers with permissionId + wait; GET /permissions (open) lists it; the hand is still raised after the debounce', async () => {
+  it('an answerable session_needs_you answers with permissionId + wait; GET /permissions lists it (the command line only with a token); the hand is still raised after the debounce', async () => {
     office.server.processEvent({ type: 'session_started', ...ALPHA, source: 'startup', title: 'login fix' })
     const res = await postEvent(office.server, permissionRequest())
     expect(res.status).toBe(200)
     expect(res.body).toEqual({ ok: true, permissionId: expect.stringMatching(/^[0-9a-f]{16}$/), wait: { pollMs: 20_000, deadline: expect.any(Number) } })
     const id = res.body.permissionId as string
 
-    const list = await request(office.server.app).get('/permissions')
+    // Open: what the hand shows on GET /sessions, not the command line or the suggestions
+    const open = await request(office.server.app).get('/permissions')
+    expect(open.status).toBe(200)
+    expect(open.body.permissions).toEqual([{
+      id, sessionId: ALPHA.sessionId, project: 'alpha', cwd: '/home/me/alpha', sessionTitle: 'login fix',
+      toolName: 'Write', summary: 'probe.txt', permissionMode: 'default',
+      promptId: 'p-1', createdAt: expect.any(Number), deadline: res.body.wait.deadline, status: 'pending', interactive: false,
+    }])
+    const list = await request(office.server.app).get('/permissions').set('Authorization', `Bearer ${office.server.AUTH_TOKEN}`)
     expect(list.status).toBe(200)
     expect(list.body.permissions).toEqual([{
       id, sessionId: ALPHA.sessionId, project: 'alpha', cwd: '/home/me/alpha', sessionTitle: 'login fix',
@@ -346,7 +354,8 @@ describe('the WebSocket: snapshot and broadcasts', () => {
 
   function connect(): Promise<{ ws: WebSocket; next: (pred: (m: any) => boolean) => Promise<any> }> {
     return new Promise((resolve, reject) => {
-      const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`, { headers: { Origin: 'http://localhost:3333' } })
+      // The office page: the dev-server origin and the office token (tests/ws-auth.test.ts has the read-only side)
+      const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`, officeProtocols(office.server), { headers: { Origin: 'http://localhost:3333' } })
       const queue: any[] = []
       const waiters: Array<{ pred: (m: any) => boolean; resolve: (m: any) => void }> = []
       ws.on('message', raw => {

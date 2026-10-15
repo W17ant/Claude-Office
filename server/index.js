@@ -18,7 +18,7 @@
 import express from 'express'
 import { createServer } from 'http'
 import { WebSocketServer, WebSocket } from 'ws'
-import { readFileSync, existsSync, writeFileSync, mkdirSync, realpathSync, chmodSync, unlinkSync } from 'fs'
+import { readFileSync, existsSync, writeFileSync, mkdirSync, realpathSync, chmodSync, unlinkSync, openSync, fstatSync, closeSync, constants as fsConstants } from 'fs'
 import { homedir } from 'os'
 import { join, basename } from 'path'
 import { randomBytes, timingSafeEqual } from 'crypto'
@@ -29,7 +29,7 @@ import { addMessage, getMessages, markSeen, addReaction, markInboxRead } from '.
 import db from './chat-db.js'
 import { mountStatus } from './status.js'
 import { mountRegistry } from './sessions.js'
-import { mountPermissions, sanitiseSuggestions } from './permissions.js'
+import { mountPermissions, sanitiseSuggestions, redactPermission } from './permissions.js'
 import { mountHealth, readVersion } from './health.js'
 import { readPort, readUiPort, readHost, loadOfficeConfig, bossFromConfig } from './config.js'
 import { agentTranscriptPath, readTranscript, isTranscriptPath, clampLine } from './transcript.js'
@@ -55,24 +55,29 @@ const UI_DEV_PORT = readUiPort()
 //
 // Everything the server writes (auth token, agents.json, chat.db, inbox/...)
 // lives in ~/.agent-office, or AGENT_OFFICE_HOME when set (tests point it at
-// a temp dir). The token is generated here but only written to disk by
-// start(), once the port is bound, so importing this module has no side
+// a temp dir). The token is read or generated here but only written to disk
+// by start(), once the port is bound, so importing this module has no side
 // effects outside RUNTIME_DIR and a second instance that loses the port race
 // never clobbers the running instance's token.
 //
 // Threat model. The server only listens on loopback (AGENT_OFFICE_HOST may
 // spell it 127.0.0.1, localhost or ::1; anything else is refused by
-// readHost, with the reason, and loopback is bound). Browsers are kept out
-// by the origin allowlist below (every other origin gets 403 / a 1008 close)
-// and by the JSON content type, which makes cross-site POSTs preflight. What
-// is left is any other process on this machine, which can reach the port
-// freely. So: everything that acts *as an agent* or destroys state needs the
-// bearer token in ~/.agent-office/auth-token — the file only this user can
-// read, which the hook, the office scripts and A2A clients send as
-// `Authorization: Bearer <token>`. Reads (GET routes), a person's plain chat
+// readHost, with the reason, and loopback is bound). Browsers on other
+// origins are kept out by the origin allowlist below (every other origin
+// gets 403 / a 1008 close) and by the JSON content type, which makes
+// cross-site POSTs preflight. What is left is any other process on this
+// machine — another local user's included — which can reach the port freely
+// and send any Origin it likes (Origin only binds browsers). So the one
+// secret that separates this user from the rest is the bearer token in
+// ~/.agent-office/auth-token, the 0600 file only this user can read: the
+// hook, the office scripts and A2A clients send it as
+// `Authorization: Bearer <token>`, and the office page gets it through the
+// link the server prints at start (see "The office link" below) and
+// presents it when it opens the WebSocket. Everything that acts *as an
+// agent*, answers for the person or destroys state needs it, and so does
+// conversation text; reads of what the office shows, a person's plain chat
 // line (POST /chat), the typing indicator and the chat-monitor pause toggle
-// stay open: the office UI has no token, and the worst a local process can
-// do with them is read what the office already shows and post a chat line.
+// stay open.
 //
 //   token required   POST /event, /chat/reply, /a2a, /chat/inbox/read,
 //                    /chat/seen, /chat/react, /chat/video-mode,
@@ -83,17 +88,57 @@ const UI_DEV_PORT = readUiPort()
 //                    may change; see UI_TOKEN below
 //   open             every GET, POST /chat (plain lines + read-only /status,
 //                    /agents, /help and the incident toggles), /chat/typing,
-//                    POST /chat/cron-state (the UI's pause button)
+//                    POST /chat/cron-state (the UI's pause button); the
+//                    WebSocket without the token (read-only, see below)
 //
 // GET /roster and GET /agents do show each agent's task text and the names of
 // the configured MCP servers; that is the office's purpose, and anything on
-// this machine can already read ~/.claude/settings.json.
+// this machine can already read ~/.claude/settings.json. Prompts, replies,
+// transcript tails and a permission dialog's command line are conversation:
+// they go only to a caller with the token (GET /chat, GET /sessions,
+// GET /agents/:id, GET /permissions, the WebSocket).
+//
+// The token is stable across restarts: a start reuses the one in the file
+// when the file is still safe to trust (readTokenFile), so a page that
+// remembered it keeps working after the office restarts. `npm run
+// rotate-token` deletes the file, and the next start writes a new one.
 // ---------------------------------------------------------------------------
 
-const AUTH_TOKEN = randomBytes(32).toString('hex')
 const RUNTIME_DIR = process.env.AGENT_OFFICE_HOME || join(homedir(), '.agent-office')
 try { mkdirSync(RUNTIME_DIR, { recursive: true, mode: 0o700 }) } catch {}
 const TOKEN_FILE = join(RUNTIME_DIR, 'auth-token')
+
+// What the server writes: 32 random bytes as 64 lowercase hex digits
+const TOKEN_PATTERN = /^[0-9a-f]{64}$/
+
+/**
+ * The token a previous start left in `file`, if it is still safe to keep
+ * using: a regular file (a symlink is not followed), owned by this user,
+ * with no group or other permission bits, holding a well-formed token.
+ * Anything else — missing, malformed, readable by others, someone else's —
+ * is null, and the server mints a new token instead. The file is opened
+ * once and checked through that descriptor, so it cannot be swapped between
+ * the check and the read. Windows has no uid or mode bits to check.
+ */
+function readTokenFile(file = TOKEN_FILE) {
+  let fd
+  try {
+    fd = openSync(file, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0))
+    const st = fstatSync(fd)
+    if (!st.isFile()) return null
+    if (typeof process.getuid === 'function' && st.uid !== process.getuid()) return null
+    if (process.platform !== 'win32' && (st.mode & 0o077) !== 0) return null
+    const token = readFileSync(fd, 'utf8').trim()
+    return TOKEN_PATTERN.test(token) ? token : null
+  } catch {
+    return null
+  } finally {
+    if (fd !== undefined) try { closeSync(fd) } catch {}
+  }
+}
+
+const REUSED_TOKEN = readTokenFile()
+const AUTH_TOKEN = REUSED_TOKEN ?? randomBytes(32).toString('hex')
 
 /**
  * Write a file only this user can read. The mode applies when the file is
@@ -104,9 +149,18 @@ function writePrivate(path, data) {
   try { chmodSync(path, 0o600) } catch {}
 }
 
+/**
+ * Put AUTH_TOKEN in the token file (after listen). A reused token is already
+ * there. A new one replaces whatever the file was — unlinked first and then
+ * created exclusively, so a symlink or a file owned by someone else is
+ * replaced rather than written through.
+ */
 function writeTokenFile() {
+  if (readTokenFile() === AUTH_TOKEN) return
   try {
-    writePrivate(TOKEN_FILE, AUTH_TOKEN)
+    try { unlinkSync(TOKEN_FILE) } catch (err) { if (err.code !== 'ENOENT') throw err }
+    writeFileSync(TOKEN_FILE, AUTH_TOKEN, { mode: 0o600, flag: 'wx' })
+    try { chmodSync(TOKEN_FILE, 0o600) } catch {}
   } catch (err) {
     console.warn('[auth] Could not write token file:', err.message)
   }
@@ -171,21 +225,20 @@ function isAllowedOrigin(origin) {
 // ---------------------------------------------------------------------------
 // The UI token — how the office page gets to answer a permission dialog
 //
-// The page has no way to read the 0600 token file, yet answering "Do you want
-// to run this command?" for a Claude Code session must not be open to any
-// local process the way POST /chat is. So the server mints a second secret
-// per process, UI_TOKEN, and hands it out in exactly one place: the WebSocket
-// snapshot. That socket is origin-gated (isAllowedOrigin above: a browser
-// always sends Origin, and only the loopback UI ports pass), so a web page on
-// another origin — a malicious site, a DNS-rebinding page whose Origin is its
-// own hostname — can never open it and never learns the token, while a local
-// process that could connect without an Origin header could just as well
-// read the token file. The token lives in memory only, changes on every
-// restart, is compared in constant time, and opens only the two routes the
-// page needs: POST /permission/:id and POST /settings. The hook's long-poll
-// that *learns* a decision stays behind the file token, the loopback bind is
-// unchanged, nothing is ever auto-allowed, and when the server is down the
-// hook prints nothing and the terminal dialog is in charge.
+// Answering "Do you want to run this command?" for a Claude Code session
+// must not be open to any local process the way POST /chat is. The server
+// mints a second secret per process, UI_TOKEN, and hands it out in exactly
+// one place: the WebSocket snapshot of a *trusted* connection — one that
+// presented the file token at the handshake (see "The WebSocket" below).
+// The Origin check alone cannot do this: it keeps web pages on other origins
+// out, but a local process sends whatever Origin it likes. So nobody without
+// the file token can obtain the UI token. It lives in memory only, changes
+// on every restart, is compared in constant time, and opens only the
+// routes the page needs: POST /permission/:id, POST /settings and the
+// transcript on GET /agents/:id. The hook's long-poll that *learns* a
+// decision stays behind the file token, the loopback bind is unchanged,
+// nothing is ever auto-allowed, and when the server is down the hook prints
+// nothing and the terminal dialog is in charge.
 // ---------------------------------------------------------------------------
 
 const UI_TOKEN = randomBytes(24).toString('hex')
@@ -613,8 +666,8 @@ function sessionToRecord(session) {
 
 /**
  * Session record -> API/WS shape: the record plus live agent counts. Without
- * `withText` the prompt and reply text is left out of `main` (the open
- * GET /sessions; the origin-gated WS snapshot and broadcasts carry it).
+ * `withText` the prompt and reply text is left out of `main` (GET /sessions
+ * and the WebSocket without the office token; with it, they carry it).
  */
 function sessionToJSON(session, { withText = true } = {}) {
   const live = Array.from(activeAgents.values())
@@ -1135,9 +1188,21 @@ function pushRing(ring, record) {
   if (ring.length > SIGNAL_RING_SIZE) ring.splice(0, ring.length - SIGNAL_RING_SIZE)
 }
 
-/** A ring record as the office and an untokened caller see it: everything but the command. */
+/** A ring record as the office page sees it: everything but the command. */
 function publicSignal(record) {
   const { command, ...rest } = record
+  return rest
+}
+
+/**
+ * A ring record for a caller without the office token (GET /signals, a
+ * read-only WebSocket): also without `error` (a line of the command's
+ * output) and `detail` (what the tracker read from it). The kind, target
+ * (a project or path name, as GET /sessions shows project and cwd), branch
+ * and exit code stay: they are what the office draws.
+ */
+function readOnlySignal(record) {
+  const { command, error, detail, ...rest } = record
   return rest
 }
 
@@ -1246,8 +1311,15 @@ function onOfficeDecision(permission) {
 // Answer a permission dialog from the office: GET /permissions, the hook's
 // long-poll GET /permission/:id (token) and the page's POST /permission/:id
 // (UI token). Pending records are created in POST /event below and released
-// by the session's later activity in processEvent.
-const permissions = mountPermissions(app, { requireToken, requireUi, broadcast, onDecided: onOfficeDecision })
+// by the session's later activity in processEvent. GET /permissions shows a
+// dialog's command line and suggestions only to a token holder.
+const permissions = mountPermissions(app, {
+  requireToken,
+  requireUi,
+  broadcast,
+  onDecided: onOfficeDecision,
+  canSeeDetail: req => { const supplied = bearerToken(req); return tokenMatches(supplied) || uiTokenMatches(supplied) },
+})
 
 /**
  * The session showed activity after a PermissionRequest: whatever permission
@@ -1946,14 +2018,15 @@ app.get('/sessions', (req, res) => {
  * GET /signals?since=<ms>&sessionId=<id> — the last signals (see Signals),
  * oldest first: those after `since` (a timestamp, exclusive), from one
  * session's ring when sessionId names one. Open like GET /sessions; the
- * command each came from only for a caller with the office token.
+ * command each came from, and the output it printed (`error`, `detail`),
+ * only for a caller with the office token (readOnlySignal).
  */
 app.get('/signals', (req, res) => {
   const since = Number(req.query.since)
   const sessionId = typeof req.query.sessionId === 'string' ? req.query.sessionId : undefined
   const ring = sessionId ? (sessionSignals.get(sessionId) ?? []) : signalRing
   const withCommand = tokenMatches(bearerToken(req))
-  const signals = ring.filter(s => !Number.isFinite(since) || s.at > since).map(s => (withCommand ? { ...s } : publicSignal(s)))
+  const signals = ring.filter(s => !Number.isFinite(since) || s.at > since).map(s => (withCommand ? { ...s } : readOnlySignal(s)))
   res.json({ signals, now: Date.now() })
 })
 
@@ -2912,9 +2985,114 @@ app.use(jsonErrorHandler)
 // WebSocket server
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// The WebSocket — trusted with the file token, read-only without it
+//
+// The Origin check keeps web pages on other origins out, but it cannot tell
+// the office page from another local process: anything on this machine can
+// open ws://127.0.0.1:<port>/ws and send any Origin. So each connection is
+// authenticated at the handshake with the file token. Browsers cannot set
+// headers on a WebSocket, so the page sends it as a subprotocol value:
+//
+//   Sec-WebSocket-Protocol: agent-office, agent-office.token.<token>
+//
+// (a header, never part of a URL, so it stays out of history and access
+// logs). The server answers with plain `agent-office`, so the token is not
+// echoed back. src/officeToken.ts builds the same list.
+//
+// A connection that presents the token is trusted: the full snapshot, the
+// UI token, every broadcast as is. Any other connection — no token, a wrong
+// one — is not refused: the office stays viewable read-only (a bare
+// bookmark, a second browser), with no UI token and no conversation text.
+// redactForReadOnly says what that view leaves out. Each connection is told
+// which it is, first thing: { type: 'auth', trusted }.
+// ---------------------------------------------------------------------------
+
+const WS_PROTOCOL = 'agent-office'
+const WS_TOKEN_PROTOCOL_PREFIX = 'agent-office.token.'
+
+/** The token a WebSocket handshake offered as a subprotocol, or ''. */
+function wsTokenFrom(req) {
+  const header = req.headers['sec-websocket-protocol']
+  if (typeof header !== 'string') return ''
+  for (const part of header.split(',')) {
+    const value = part.trim()
+    if (value.startsWith(WS_TOKEN_PROTOCOL_PREFIX)) return value.slice(WS_TOKEN_PROTOCOL_PREFIX.length)
+  }
+  return ''
+}
+
+/** The subprotocol the server agrees to: `agent-office` when offered, never the token. */
+function handleProtocols(protocols) {
+  return protocols.has(WS_PROTOCOL) ? WS_PROTOCOL : false
+}
+
+// The chat rows that are the conversation itself (see chat-db.js)
+const TRANSCRIPT_MSG_TYPES = new Set(['prompt', 'reply'])
+
+/** A copy of `obj` without `keys`. */
+function omit(obj, keys) {
+  const out = { ...obj }
+  for (const key of keys) delete out[key]
+  return out
+}
+
+/** An event's `main` without the last prompt and reply text (what GET /sessions shows without the token). */
+function withoutMainText(event) {
+  const main = event.main
+  if (!main || typeof main !== 'object' || !('lastPrompt' in main || 'lastReply' in main)) return event
+  return { ...event, main: omit(event.main, ['lastPrompt', 'lastReply']) }
+}
+
+/**
+ * What a read-only connection gets of a broadcast: the payload itself when
+ * it carries no conversation text, a copy without the text, or null when
+ * the whole event is conversation. The rule: what GET /agents and
+ * GET /sessions show without the token stays; conversation text and command
+ * lines go.
+ *
+ *   session_prompt, session_turn_end   `text` (the prompt, the reply) and the
+ *                                      `messageId` of its chat row
+ *   every event with `main`            main.lastPrompt / main.lastReply
+ *                                      (session_started, _ended, _registry,
+ *                                      _cwd, _model, _needs_you, _error,
+ *                                      _compact, _main)
+ *   chat_message with msg_type prompt / reply   withheld (none is broadcast
+ *                                      today; the page builds those rows
+ *                                      from the two events above)
+ *   permission_request                 permission.detail (the command, path
+ *                                      or tool input) and .suggestions
+ *   signal                             error and detail (command output;
+ *                                      the command never travels), see
+ *                                      readOnlySignal
+ *
+ * Kept: agent records and their status lines, the completion line of
+ * agent_completed (it is the office's open `done:` chat line too), a
+ * needs-you's tool name, one-line summary and notification message, an API
+ * error line, permission_extended / _resolved, meters, health, chat lines.
+ */
+function redactForReadOnly(payload) {
+  switch (payload.type) {
+    case 'session_prompt':
+    case 'session_turn_end':
+      return withoutMainText(omit(payload, ['text', 'messageId']))
+    case 'chat_message':
+      return TRANSCRIPT_MSG_TYPES.has(payload.msg_type) ? null : payload
+    case 'permission_request':
+      return payload.permission ? { ...payload, permission: redactPermission(payload.permission) } : payload
+    case 'signal':
+      return readOnlySignal(payload)
+    default:
+      return withoutMainText(payload)
+  }
+}
+
+/** Connections that presented the file token (membership dies with the socket). */
+const trustedClients = new WeakSet()
+
 const httpServer = createServer(app)
 
-const wss = new WebSocketServer({ server: httpServer, path: '/ws' })
+const wss = new WebSocketServer({ server: httpServer, path: '/ws', handleProtocols })
 
 wss.on('connection', (ws, req) => {
   // Origin validation — loopback origins only (see isAllowedOrigin)
@@ -2925,25 +3103,32 @@ wss.on('connection', (ws, req) => {
     return
   }
 
+  const trusted = tokenMatches(wsTokenFrom(req))
+  if (trusted) trustedClients.add(ws)
   const ip = req.socket.remoteAddress ?? 'unknown'
-  console.log(`[ws] Client connected from ${ip} (total: ${wss.clients.size})`)
+  console.log(`[ws] Client connected from ${ip}, ${trusted ? 'trusted' : 'read-only (no office token)'} (total: ${wss.clients.size})`)
 
-  // Send current state snapshot immediately on connect: the agents to draw
-  // (not MCP transients, not agents in their completed grace window — a
-  // client seats every entry, and nothing would ever walk those out)
+  // First: what this connection may see, so the page can say so
+  ws.send(JSON.stringify({ type: 'auth', trusted }))
+
+  // Then the current state: the agents to draw (not MCP transients, not
+  // agents in their completed grace window — a client seats every entry, and
+  // nothing would ever walk those out). A read-only connection gets the same
+  // office without the conversation (redactForReadOnly) and no UI token.
+  const pending = permissions.pending()
   const snapshot = {
     type: 'snapshot',
     activeAgents: liveAgents(),
-    sessions: Array.from(sessions.values()).map(sessionToJSON),
+    sessions: Array.from(sessions.values()).map(s => sessionToJSON(s, { withText: trusted })),
     statuses: status.summary(),
     health: health.snapshot(),
     mcpServers: discoverMcpServers(),
     // Permission dialogs waiting on the office, and the token that answers
-    // them — handed out here and nowhere else (see UI_TOKEN)
-    pendingPermissions: permissions.pending(),
-    uiToken: UI_TOKEN,
+    // them — handed out here, to a trusted connection, and nowhere else (see UI_TOKEN)
+    pendingPermissions: trusted ? pending : pending.map(redactPermission),
+    ...(trusted ? { uiToken: UI_TOKEN } : {}),
     // The last few signals (see Signals), oldest first, as their broadcasts carried them
-    signals: signalRing.slice(-SNAPSHOT_SIGNALS).map(publicSignal),
+    signals: signalRing.slice(-SNAPSHOT_SIGNALS).map(trusted ? publicSignal : readOnlySignal),
     timestamp: Date.now(),
   }
   ws.send(JSON.stringify(snapshot))
@@ -2958,18 +3143,30 @@ wss.on('connection', (ws, req) => {
 })
 
 /**
- * Broadcast a JSON message to all connected WebSocket clients. A null payload
- * (processEvent had nothing to say) is skipped rather than sent as "null".
+ * Broadcast a JSON message to all connected WebSocket clients: trusted ones
+ * get the payload as is, read-only ones what redactForReadOnly leaves of it.
+ * Each variant is serialised once, the read-only one only when a read-only
+ * client is connected. A null payload (processEvent had nothing to say) is
+ * skipped rather than sent as "null".
  */
 function broadcast(payload) {
   if (!payload) return
-  const msg = JSON.stringify(payload)
+  const full = JSON.stringify(payload)
+  let readOnly  // undefined: not built yet; null: withheld from read-only clients
   let sent = 0
   for (const client of wss.clients) {
-    if (client.readyState === WebSocket.OPEN) {
-      client.send(msg)
-      sent++
+    if (client.readyState !== WebSocket.OPEN) continue
+    let msg = full
+    if (!trustedClients.has(client)) {
+      if (readOnly === undefined) {
+        const redacted = redactForReadOnly(payload)
+        readOnly = redacted === payload ? full : redacted ? JSON.stringify(redacted) : null
+      }
+      msg = readOnly
     }
+    if (!msg) continue
+    client.send(msg)
+    sent++
   }
   if (sent > 0) {
     console.log(`[broadcast] ${payload.type} -> ${sent} client(s)`)
@@ -3034,7 +3231,7 @@ export function start({ port = PORT, host = readHost() } = {}) {
 ║  POST  http://localhost:${bound}/a2a          ║
 ╚═══════════════════════════════════════════╝`)
 
-    console.log(`  Auth token written to: ${TOKEN_FILE}`)
+    console.log(`  Auth token ${REUSED_TOKEN ? 'reused from' : 'written to'}: ${TOKEN_FILE}`)
     console.log(`  Session registry read from: ${REGISTRY_DIR}`)
     if (UI_AVAILABLE) {
       console.log(`  Office UI served from: ${UI_DIR}`)
@@ -3048,7 +3245,21 @@ export function start({ port = PORT, host = readHost() } = {}) {
       console.log('  No MCP servers found in ~/.claude/settings.json')
     }
     console.log()
+    // The office link. Only whoever started the server sees this output;
+    // the page reads the token from the fragment, which a browser never
+    // sends to a server, keeps it and strips it from the address bar.
+    const address = httpServer.address()
+    const linkHost = address && typeof address === 'object' && address.family === 'IPv6' ? `[${address.address}]` : '127.0.0.1'
+    const base = UI_AVAILABLE ? `http://${linkHost}:${bound}` : `http://localhost:${UI_DEV_PORT}`
+    console.log(`  Agent Office: ${officeLink(base)}${UI_AVAILABLE ? '' : '  (the Vite dev server)'}`)
+    console.log('  Open that link once per browser (or run `npm run open`); a bare address shows the office read-only.')
+    console.log()
   })
+}
+
+/** The page URL with the office token in its fragment, the one way the page learns it. */
+function officeLink(base) {
+  return `${base.replace(/\/+$/, '')}/#token=${AUTH_TOKEN}`
 }
 
 // Only bind the port when run directly (`node server/index.js`, `npm run
@@ -3069,9 +3280,16 @@ export {
   httpServer,
   wss,
   AUTH_TOKEN,
+  REUSED_TOKEN,
   UI_TOKEN,
   RUNTIME_DIR,
   TOKEN_FILE,
+  TOKEN_PATTERN,
+  readTokenFile,
+  WS_PROTOCOL,
+  WS_TOKEN_PROTOCOL_PREFIX,
+  redactForReadOnly,
+  officeLink,
   ANSWER_MARKER_FILE,
   PORT,
   UI_DEV_PORT,

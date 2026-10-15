@@ -96,6 +96,18 @@
 .strip-needs-you { color: var(--strip-needs-you); font-weight: 700; }
 .strip-version  { color: var(--strip-dim); }
 
+/* No office token: the office is shown read-only (StatusStrip readOnly) */
+.strip-readonly { color: var(--strip-warn); }
+.strip-readonly code {
+  font-family: inherit;
+  font-size: inherit;
+  color: var(--strip-warn);
+  background: var(--strip-code-bg);
+  border-radius: 3px;
+  padding: 1px 4px;
+  user-select: text;
+}
+
 /* The command to type, on the right */
 .strip-hint { color: var(--strip-dim); }
 .strip-hint code {
