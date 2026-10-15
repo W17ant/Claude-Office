@@ -1,0 +1,154 @@
+/* ===== PERMISSION CARDS — answer a Claude Code dialog from the office =====
+   A fixed stack beside the chat column (src/components/PermissionCard.tsx),
+   independent of the room and of where any character stands. Hidden while
+   nothing is pending. Colours follow the meters' variables where they exist
+   (--meter-*) so a theme can restyle both at once. */
+
+:root {
+  --perm-accent: #f0b429;
+  --perm-allow: #2bac76;
+  --perm-deny: #ff5f57;
+  --perm-remember: #4fa3ff;
+}
+
+.perm-stack {
+  position: fixed;
+  right: 316px;            /* the 300px chat column plus a gutter */
+  bottom: 16px;
+  width: 340px;
+  max-width: calc(100vw - 332px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 2000;
+  pointer-events: none;    /* the gaps let clicks through to the office */
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+}
+
+.perm-card {
+  pointer-events: auto;
+  background: var(--meter-bg, #15171a);
+  border: 1px solid var(--perm-accent);
+  border-left-width: 4px;
+  border-radius: 8px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(0, 0, 0, 0.4);
+  padding: 10px 12px 9px;
+  color: var(--meter-fg, #e6e6e6);
+  animation: perm-in 0.18s ease-out;
+  -webkit-app-region: no-drag;
+}
+.perm-card.resolved {
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 1.2s ease 0.3s, transform 1.2s ease 0.3s;
+}
+
+@keyframes perm-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.perm-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.perm-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.perm-where {
+  flex-shrink: 0;
+  font-size: 10px;
+  color: var(--meter-sub, #8b8d91);
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The command / path: monospace, wraps, scrolls past ~6 lines */
+.perm-detail {
+  margin: 0 0 7px;
+  padding: 6px 8px;
+  background: #0f1113;
+  border: 1px solid var(--meter-border, #2b2e33);
+  border-radius: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #d7dde3;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: calc(6 * 1.4 * 11px + 12px);
+  overflow: auto;
+}
+
+/* Time left before the server hands the dialog back to the terminal */
+.perm-timebar {
+  height: 3px;
+  background: var(--meter-track, #2c2f35);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+.perm-timebar-fill {
+  height: 100%;
+  background: var(--perm-accent);
+  transition: width 0.25s linear;
+}
+.perm-timebar-fill.low {
+  background: var(--perm-deny);
+}
+
+.perm-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.perm-btn {
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 5px 10px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  color: #0f1113;
+  background: #c9ccd1;
+}
+.perm-btn.allow    { background: var(--perm-allow); }
+.perm-btn.remember { background: transparent; color: var(--perm-remember); border-color: var(--perm-remember); }
+.perm-btn.deny     { background: transparent; color: var(--perm-deny); border-color: var(--perm-deny); margin-left: auto; }
+.perm-btn:hover:not(:disabled) { filter: brightness(1.15); }
+.perm-btn:disabled { opacity: 0.45; cursor: default; }
+.perm-sending, .perm-outcome {
+  font-size: 10px;
+  color: var(--meter-sub, #8b8d91);
+}
+.perm-outcome {
+  font-style: italic;
+}
+
+/* The chat-header toggle: may the office answer at all (settings.answerPermissions) */
+.slack-answer-toggle {
+  font-size: 8px;
+  letter-spacing: 0.5px;
+  padding: 0 5px;
+  border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  cursor: pointer;
+  white-space: nowrap;
+  color: #8b8d91;
+  -webkit-app-region: no-drag;
+  user-select: none;
+}
+.slack-answer-toggle.on  { color: var(--perm-accent); border-color: rgba(240, 180, 41, 0.45); }
+.slack-answer-toggle.off { color: #6a6c70; }

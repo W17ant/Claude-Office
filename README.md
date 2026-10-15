@@ -62,6 +62,7 @@ Works on macOS and Linux, and on Windows through WSL or Git Bash with `python3` 
 - Multiple terminals = multiple pills; each session's agents stay its own, and when several sessions share the office every character wears its project name
 - Each session has its own Claude at a desk (the first one next to the boss) that acts out the turn: the boss walks over and hands your prompt across in a speech bubble, Claude types while the turn runs and its own tool calls are its status line (never a random worker's), its reply lands in the chat, then it goes idle — asleep after 30 s — or holds a glass of water while background workers are still out; compaction is a 🧹 memory wipe at its desk, a `cd` moves its project tag, a model switch updates the badge, and it clocks out shortly after the session ends — see [Claude's turn and needs-you](#connect-claude-code)
 - Needs-you: a permission wait raises Claude's hand (✋) with a chime, turns the session's pill amber and prefixes the window title with ✋ until you answer; an idle prompt (💤), a quota pause (⏳) and an API error (⚠, red) are shown as what they are instead of looking like work; how much prompt text the office keeps is yours to set (`logPrompts`, shown in the chat header)
+- Answer it from the office: while Claude waits on a permission a card shows what it wants to run or write, with **Allow**, **Allow & remember** and **Deny** (or `y` / `n`); a click answers the real dialog in that terminal — see [Answer permissions from the office](#connect-claude-code)
 - `GET /sessions` lists them (project, cwd, model, agent counts, the `main` record); sessions survive a server restart and are forgotten a minute after they end
 
 **Meters**
@@ -74,9 +75,9 @@ Works on macOS and Linux, and on Windows through WSL or Git Bash with `python3` 
 
 | Platform | Office in the browser | Claude Code hooks + status line | Desktop app (Electron) |
 |---|---|---|---|
-| **macOS** | Yes — `start-office.sh` opens the browser with `open`; notifications via `osascript` | Yes — the hooks are bash scripts that call `python3` and `curl`; macOS ships `bash` and `curl`, `python3` comes with the Xcode command-line tools | `npm run build:electron` produces a `.dmg`; the packaged build was not re-verified this week |
-| **Linux** | Yes (verified) — `xdg-open` opens the browser; notifications via `notify-send` when present | Yes | Yes — the self-contained bundle (`npm run pack`) was built, launched and screenshotted on Linux this week |
-| **Windows** | Node runs the server natively: `npm run build && npm run server`, then open `http://127.0.0.1:3334` yourself | Through **WSL** or **Git Bash**, with `python3` and `curl` on the PATH: the installer and the hooks are bash scripts. A native Node hook is on the [roadmap](#roadmap) | Untested |
+| **macOS** | Yes — `start-office.sh` opens the browser with `open`; notifications via `osascript` | Yes — the hooks are bash scripts that call `python3` and `curl`; macOS ships `bash` and `curl`, `python3` comes with the Xcode command-line tools | Unsigned `.dmg` for Apple silicon and Intel on the [releases page](https://github.com/W17ant/Claude-Office/releases), built by the release workflow (first launch: see [Download](#desktop-app-electron)); not launched by hand this week |
+| **Linux** | Yes (verified) — `xdg-open` opens the browser; notifications via `notify-send` when present | Yes | Yes — `.AppImage` on the releases page; the self-contained bundle was built, launched and screenshotted on Linux this week |
+| **Windows** | Node runs the server natively: `npm run build && npm run server`, then open `http://127.0.0.1:3334` yourself | Through **WSL** or **Git Bash**, with `python3` and `curl` on the PATH: the installer and the hooks are bash scripts. A native Node hook is on the [roadmap](#roadmap) | NSIS `.exe` installer on the releases page, built by the release workflow; not launched by hand yet |
 
 Requirements everywhere: Node 22 (what CI runs; `better-sqlite3` is a native module), `bash`, `python3` and `curl` for the hooks and the installer, and the Claude Code CLI (`claude`) for the chat AI watcher.
 
@@ -130,7 +131,7 @@ The chat AI watcher (`scripts/chat-ai-watcher.sh`, log in `~/.agent-office/chat-
 
 ### Running tests
 
-`npm test` runs the Vitest suite in `tests/` (server API, WebSocket, sessions, status/meters, incident commands, the office reducer, hook script, status line, installer, shell scripts — 289 tests) against a temp `AGENT_OFFICE_HOME`, so your real `~/.agent-office` is never touched; `npm run test:watch` keeps it running. CI (`.github/workflows/ci.yml`) runs `tsc --noEmit`, `npm test`, `vite build` and `npm run check-assets` on every push to `main` and every pull request.
+`npm test` runs the Vitest suite in `tests/` (server API, WebSocket, sessions, status/meters, health, incident commands, the office reducer, hook script, status line, installer, doctor, shell scripts — 516 tests) against a temp `AGENT_OFFICE_HOME`, so your real `~/.agent-office` is never touched; `npm run test:watch` keeps it running. CI (`.github/workflows/ci.yml`) runs `tsc --noEmit`, `npm test`, `vite build` and `npm run check-assets` on every push to `main` and every pull request.
 
 `npm run check-assets` guards `public/`: every sprite and room the code can ask for must exist (a missing one fails), files nothing references are listed, and `public/` must stay under a size budget. To add a sprite, drop the PNG under `public/sprites/` and reference it from the code — a literal path or one of the dynamic patterns documented at the top of `scripts/check-assets.mjs` — so the check sees it; rooms are exported at twice the 754 px they are drawn at.
 
@@ -254,6 +255,8 @@ Now spawn agents in Claude Code and watch them appear in the office.
 
 In the office that record is one Claude per terminal (`main-<session id>`, created by the session's first event or the snapshot, seated by the boss when that desk is free): the boss gets up and hands each prompt over at its desk, it types through the turn with its tool calls as its status line, its reply is a chat row (prompt and reply rows are tagged, under the boss and that session's Claude — never fetched from `GET /chat`), it dozes off 30 s after an idle turn end, holds a glass of water while background workers are still out, sweeps its desk during a compaction, wears a red ⚠ badge after an API error, and raises a hand while it waits on you — a chime, an amber *needs you* pill and a ✋ in front of the window title, all of which go when the server's record moves on (the granted tool, the batch end, the ten-minute timeout, your next prompt). An idle prompt and a quota pause are soft: no chime, no title prefix. Hand-overs, visits and timers are reducer effects (`src/officeReducer.ts`), so every one of these is unit-tested with synthetic events.
 
+**Answer permissions from the office.** What a `PermissionRequest` hook prints decides the dialog, so the office can answer it for you. While a session waits on "Do you want to run this command?" a card appears beside the chat column — *Claude wants to run Bash* / *write probe.txt*, the project and session, the command or path in a monospace box, a thin bar for the time left — with **Allow** (dialog option 1), **Allow & remember** (option 2: the dialog's own suggestion, say *switch this session to accept-edits*, shown in the tooltip; only offered when the dialog made one) and **Deny** (option 3, which tells Claude "Denied from Claude Office" and lets it carry on); with one card up, `y` and `n` work too. The tracker POSTs that one event in the foreground and long-polls `GET /permission/<id>` until the server has an answer, then prints the exact hook output; every other event is still a backgrounded curl. The terminal always wins: Claude Code never cancels the hook when you answer the dialog yourself, so any later activity of the session — the tool running, the batch ending, your next prompt, a new permission request, the session ending — releases the wait and the card fades with *answered in the terminal*. A headless `claude -p` session fires no `Notification` and auto-denies the call the moment the hook returns, so a pending permission expires after **15 s** unless the session is known to be interactive — a `Notification` (`permission_prompt` fires about 6 s in, whenever you are not looking at the terminal) has been seen for it, now or earlier — in which case it may wait **10 minutes**, inside the hook's default 600 s timeout; the card's bar stretches when that happens. The whole thing is a setting, `answerPermissions` (default on, `GET`/`POST /settings`, the **Answer here** toggle in the chat header): the server mirrors it as the marker file `~/.agent-office/answer-permissions`, which the hook checks before deciding to wait, so turning it off costs no round trip and leaves the hook exactly as it was. The hook never answers when the server is down or says nothing, nothing is ever auto-allowed, and who may click is covered under [Security](#security).
+
 **Uninstall.** `npm run uninstall-hooks` (or `bash hooks/install-hooks.sh --uninstall`) takes the office back out of `~/.claude/settings.json`: it backs the file up (`settings.json.backup.<timestamp>`), removes every hook entry whose command runs `hooks/agent-tracker.sh` — under all 17 events, whatever checkout the path points at, duplicates included — and puts `statusLine` / `subagentStatusLine` back: a status line the installer chained is restored from `~/.agent-office/statusline-prev` (and `subagent-statusline-prev`), which are then deleted; one the installer added is removed. Hooks and settings that are not the office's are not touched, and a file with nothing of ours in it is left as it is (exit 0). `--uninstall --no-status-line` removes the hooks only. The plugin install is removed with `/plugin uninstall agent-office` (see below).
 
 ### Install as a Claude Code plugin
@@ -274,6 +277,15 @@ claude plugin install agent-office@agent-office
 `hooks/hooks.json` registers `hooks/agent-tracker.sh` from the installed copy (`${CLAUDE_PLUGIN_ROOT}`) for the same 17 events as the installer, with no matchers (the tracker acts on every tool call, and exits silently on anything it does not act on). `/agent-office:office` checks `http://127.0.0.1:3334/health` and prints how to start the server, which still runs from a clone or from the installed plugin directory (`npm install && npm run build && npm run server`). To remove it: `claude plugin uninstall agent-office@agent-office` (and `claude plugin marketplace remove agent-office` to drop the marketplace too).
 
 Two things to know. Plugin hooks merge with the ones in your settings, so pick one path: if you ran `npm run install-hooks` earlier, remove its entries as described under **Uninstall**, or every agent arrives twice. And a plugin can set [`subagentStatusLine` but not `statusLine`](https://code.claude.com/docs/en/plugins/components#default-settings), so the payroll / electricity / memory meters below still come from `npm run install-hooks`; run it from the clone when you want them. `claude plugin validate . --strict` runs in CI, and plugins do not load in cloud sessions.
+
+### Troubleshooting
+
+"Nothing appears" is almost always one of three things: the server is not running, the hooks are not installed (or point at a checkout that has since moved), or Claude Code simply has not run a tool yet. Two places tell you which:
+
+- **The status strip** along the bottom of the office (hidden under `?sim` / `?video`, which get a `SIM` badge instead) shows `ONLINE` / `RECONNECTING…` / `OFFLINE` for the WebSocket to `127.0.0.1:3334`, then `hooks: last seen 12 s ago` once a hook event has reached the server — or, after a minute online with nothing heard (and the server up that long), `no hook events yet — run npm run install-hooks` — then the session count and the server version. Hover it for the details and the command to type; while the server is down the strip says so and shows `npm run server`.
+- **`npm run doctor`** prints a `PASS` / `WARN` / `FAIL` line per link in the chain: the Node version; the hook entries in `~/.claude/settings.json` (or `$CLAUDE_CONFIG_DIR/settings.json`) running an `agent-tracker.sh` that exists — the installer's own rule — or the `agent-office` plugin being installed; the status line; `python3` / `bash` / `curl` on the PATH; the server answering `GET /health` on `AGENT_OFFICE_PORT` and whether hooks have reached it since it started; the auth token (present, mode `0600`); `dist/` built. It ends with the install, uninstall and start commands and exits 1 on any `FAIL`, so it works in a script too (`--json` for machine-readable output).
+
+`GET /health` returns `{ status, agents, clients, sessions, lastHookAt, hooksSeen, uiAvailable, version, uptimeMs }`; the server also sends it in the WebSocket snapshot and as a `health` event, at most one every 5 s while hooks arrive.
 
 ## Payroll, electricity and memory
 
@@ -500,10 +512,18 @@ python3 scripts/extract-boss-sprite.py your-character.png MyChar-1
 
 The desktop app is self-contained: it bundles the office server, the built UI and `node_modules`, runs the server on the Node that ships inside Electron (nothing needs to be installed, and no `node` on the PATH), and loads the office from `http://127.0.0.1:3334/` — one port for the page, its assets and the WebSocket.
 
+**Download.** Every tagged release carries installers built by the [release workflow](.github/workflows/release.yml); the [releases page](https://github.com/W17ant/Claude-Office/releases) has them, named `Agent-Office-<version>-<os>-<arch>`:
+
+- **macOS** — `…-mac-arm64.dmg` (Apple silicon) or `…-mac-x64.dmg` (Intel); drag the app into Applications. The app is not signed or notarised, so macOS refuses it on first launch: right-click (Control-click) the app and choose **Open**; if it says the app is damaged, clear the quarantine flag with `xattr -dr com.apple.quarantine "/Applications/Agent Office.app"` and open it again.
+- **Windows** — `…-win-x64.exe`, an ordinary installer that asks where to install. SmartScreen warns about an unknown publisher: **More info → Run anyway**.
+- **Linux** — `…-linux-x86_64.AppImage`: `chmod +x` it and run it. Like any AppImage it needs FUSE 2 (`libfuse2` on Debian and Ubuntu); without it, `./Agent-Office-*.AppImage --appimage-extract-and-run` works.
+
+The app is the office, not the hooks: agents only show up once the hooks are installed from a checkout with `npm run install-hooks` (see [Connect Claude Code](#connect-claude-code)).
+
 ```bash
 npm run dev:electron    # Development: Vite on 3333 + an Electron window; the server runs on your Node
 npm run pack            # Unpacked build in release/<platform>-unpacked (quick smoke test)
-npm run build:electron  # Installer (.dmg on macOS) in release/
+npm run build:electron  # Installer for this OS (.dmg, .exe or .AppImage) in release/
 ```
 
 **The window.** The office is a fixed 1056×682 layout, so the window opens at exactly that size, centred on the screen, and scales the office to fit whatever size you drag it to — the layout never reflows, it is zoomed and letterboxed, down to half size. The window remembers its size and position in `window-state.json` under the app's user-data directory (`~/Library/Application Support/Agent Office`, `%APPDATA%\Agent Office` or `~/.config/Agent Office`) and restores them clamped to the display's work area, so it cannot come back off-screen after a monitor is unplugged or a resolution changes. The office draws its own title bar: drag it to move the window, right-click anywhere else for the menu described under the tray below. `Office → Reset window size` puts the window back to its default size and spot.
@@ -520,9 +540,12 @@ How a build is put together (the `build` section of `package.json`):
 - `asar` is off: the server is a plain Node child process that reads `dist/`, `server/` and `node_modules` with ordinary `fs` calls.
 - `npmRebuild` is off, so the checkout's `node_modules` stay built for your system Node and `npm test` / `node server/index.js` keep working after a pack. `electron/after-pack.cjs` fetches the Electron build of `better-sqlite3` (through its own `prebuild-install`) into the packaged copy only.
 - `build/icon.png` is the app icon (see Icons above); electron-builder reads it from `build/`, its `buildResources` directory, and the tray icons ship with `electron/**`.
+- `mac.target` is one `dmg` per architecture (`arm64` and `x64`) rather than a universal app: `after-pack.cjs` fetches one `better-sqlite3` prebuilt per architecture and refuses `universal`, and a single-architecture download is half the size. `win.target` is an NSIS installer that asks where to install (and no `.blockmap` next to it: there is no auto-updater to use one), `linux.target` an AppImage. `artifactName` fixes the file names to `Agent-Office-<version>-<os>-<arch>.<ext>`, and `publish` names the GitHub draft release the release workflow uploads to — a local `npm run build:electron` never publishes; electron-builder only does that on CI or when asked with `--publish`.
 - Debugging a build headlessly: `AGENT_OFFICE_SCREENSHOT=/tmp/office.png` makes the app save a screenshot of its window a few seconds after the page loads, then quit (works under `xvfb-run`); add `--compact` to capture the widget.
 
-The same single-port mode works without Electron: `npm run build && npm run server`, then open `http://localhost:3334`. The Linux bundle was built, launched and screenshotted (full window and compact widget) under xvfb; the tray icon was created there but a headless X server has no panel to show it in, and the macOS and Windows packages have not been re-verified since the bundle became self-contained — see [Platform support](#platform-support).
+The same single-port mode works without Electron: `npm run build && npm run server`, then open `http://localhost:3334`. The Linux bundle was built, launched and screenshotted (full window and compact widget) under xvfb; the tray icon was created there but a headless X server has no panel to show it in, and the macOS and Windows packages come out of the release workflow but have not been launched by hand since the bundle became self-contained — see [Platform support](#platform-support).
+
+**Cutting a release** (maintainers). `npm version minor` (or `patch` / `major`) bumps `package.json` and `package-lock.json` and — through the `version` script, `scripts/sync-plugin-version.mjs` — `.claude-plugin/plugin.json`, then commits and tags `vX.Y.Z`; `git push --follow-tags` pushes the commit and the tag. The tag starts [`release.yml`](.github/workflows/release.yml): it checks that the tag matches `package.json`, creates a **draft** release for it, then builds on macOS, Windows and Linux runners and uploads the installers (and electron-builder's `latest*.yml` update metadata) to that draft. Nothing is public until you open the draft on the releases page, edit the notes and publish it. A failed leg can be re-run from the Actions tab, and **Run workflow** on the tag rebuilds everything; both upload to the same draft. A tag whose release is already published is left alone. Nothing in the pipeline signs — there is no Apple or Windows certificate — hence the first-launch steps under Download.
 
 ## Security
 
@@ -539,8 +562,9 @@ token, and the rest stay open:
 
 | | Routes | Why |
 |---|---|---|
-| **Token required** | `POST /event`, `POST /status`, `POST /settings`, `/chat/reply`, `/a2a`, `/chat/inbox/read`, `/chat/seen`, `/chat/react`, `/chat/video-mode`, and `POST /chat` for a destructive slash command (`/clear`) | Speaks for an agent, writes another agent's inbox, feeds the meters, changes what is kept of the conversation, or wipes history — a local process must not be able to do these |
-| **Open** | every `GET`, `POST /chat` (a plain line a person typed, and the read-only `/status` · `/agents` · `/help` · `/incident` · `/all-clear` commands), `POST /chat/typing`, `POST /chat/cron-state` | The office UI has no token; the worst these do is read what the office already shows or post a chat line |
+| **Token required** | `POST /event`, `POST /status`, `/chat/reply`, `/a2a`, `/chat/inbox/read`, `/chat/seen`, `/chat/react`, `/chat/video-mode`, `GET /permission/:id` (the hook's long-poll for a decision), and `POST /chat` for a destructive slash command (`/clear`) | Speaks for an agent, writes another agent's inbox, feeds the meters, learns how a permission was decided, or wipes history — a local process must not be able to do these |
+| **UI token or token** | `POST /permission/:id` (answer a permission dialog), `POST /settings` | The two things the office page itself may change. The page cannot read the token file, so the server mints a second secret per process, the UI token, and hands it out in one place only: the WebSocket snapshot, which is origin-gated — browsers always send `Origin`, and only the loopback UI ports pass — so no web page on another origin (a malicious site, a DNS-rebinding page) can open that socket or learn the token. A local process that could connect without an `Origin` could read the token file anyway. The UI token lives in memory, changes on every restart and is compared in constant time |
+| **Open** | every other `GET` (`GET /permissions` lists the pending dialogs, like `GET /sessions` shows the hand), `POST /chat` (a plain line a person typed, and the read-only `/status` · `/agents` · `/help` · `/incident` · `/all-clear` commands), `POST /chat/typing`, `POST /chat/cron-state` | The office UI has no token; the worst these do is read what the office already shows or post a chat line |
 | **Open, but the transcript needs the token** | `GET /chat`, `GET /sessions` | Without the token the boss's prompts and Claude's replies are left out: the chat rows with `msg_type` `prompt` / `reply`, and `main.lastPrompt` / `main.lastReply` on each session. With it (the office scripts), they are included. The office UI reads them from the origin-gated WebSocket snapshot instead |
 
 - The token is 32 random bytes generated at startup and written to
@@ -565,6 +589,17 @@ token, and the rest stay open:
   The hook itself never forwards more than 2000 characters, nor a compaction
   summary or a worker's result. Rows already stored are removed with `/clear`
   in the chat (token required).
+- **Answering a permission dialog** is the one action the office page takes
+  on a Claude Code session, so its path is narrow: the loopback bind is
+  unchanged; a dialog can be answered only by the office page (UI token from
+  the origin-gated socket) or by a process that can read the `0600` token
+  file; nothing is ever auto-allowed and the server never invents a decision
+  — the hook prints exactly the server's `hookOutput`, which is one of the
+  three dialog options and never an `updatedInput`; when the server is down,
+  unreachable mid-wait, or says the dialog was answered elsewhere, the hook
+  prints nothing and the terminal dialog is in charge. The whole path is off
+  when `answerPermissions` is false (the `~/.agent-office/answer-permissions`
+  marker is removed and the hook behaves as before).
 - Errors are returned as `{ "error": ... }` with no stack trace or absolute
   path; message ids are validated and a message's reactions are capped.
 - `GET /roster` and `GET /agents` do expose each agent's task text (the first
@@ -587,9 +622,9 @@ token, and the rest stay open:
 ```
 Claude-Office/
 ├── src/                    # React frontend
-│   ├── components/         # Character, SlackChat, SessionStrip, IncidentLayer, FurnitureRenderer
+│   ├── components/         # Character, SlackChat, SessionStrip, StatusStrip, IncidentLayer, FurnitureRenderer
 │   ├── hooks/              # useAgentSocket (WebSocket + reconnect)
-│   ├── styles/             # office.css, rooms.css
+│   ├── styles/             # office.css, rooms.css, meters.css, incident.css, strip.css
 │   ├── officeReducer.ts    # Pure office state machine (arrival gate, lobby, snapshot reconcile)
 │   ├── incident.ts         # Incident mode state machine
 │   ├── theme.ts            # Dunder Mifflin skin (cast, props, chatter)
@@ -597,14 +632,17 @@ Claude-Office/
 ├── server/                 # Express + WebSocket server
 │   ├── index.js            # HTTP endpoints + WS broadcast
 │   ├── status.js           # /status: payroll / electricity / memory feed
+│   ├── health.js           # /health: hooks seen, sessions, version — the status strip's feed
 │   └── chat-db.js          # SQLite wrapper
 ├── scripts/                # Shell + Python scripts
 │   ├── start-office.sh     # Start everything (writes pid files)
 │   ├── stop-office.sh      # Stop everything (by pid file; --force for ports)
+│   ├── doctor.mjs          # npm run doctor: PASS/WARN/FAIL for node, hooks, server, token, build
 │   ├── chat-ai-watcher.sh  # Polls chat, generates Claude replies
 │   ├── agent-message.py    # Agent-to-agent messages from the shell
 │   ├── notify.sh           # Desktop notification (osascript / notify-send)
 │   ├── generate-icons.mjs  # Draws the tray and app icons as PNGs (no dependencies)
+│   ├── sync-plugin-version.mjs  # npm version: copies the version into .claude-plugin/plugin.json
 │   └── gather-context.sh   # Git/agent context for prompts
 ├── hooks/                  # Claude Code hooks
 │   ├── install-hooks.sh    # Registers the hooks + status line in ~/.claude/settings.json
@@ -619,14 +657,14 @@ Claude-Office/
 │   ├── helpers.cjs         # Pure helpers (bounds, zoom-to-fit, window-state.json, status text)
 │   └── assets/             # Tray icons and the Linux window icon (generated)
 ├── build/                  # electron-builder resources: icon.png (generated)
-└── .github/                # CI workflow, issue templates
+└── .github/                # CI and release workflows, issue templates
 ```
 
 ## Roadmap
 
 Open and planned work lives in [GitHub issues](https://github.com/W17ant/Claude-Office/issues). Next up, roughly in order:
 
-- **Answer from the office** — the hand is up and the pill is amber, but granting the permission still happens in the terminal; a UI token is needed before the office can answer it, and an OS notification outside macOS
+- **OS notification** for a permission wait outside macOS (`notify.sh` is macOS-only), now that the office can answer the dialog itself
 - **Plugin install** — `claude plugin marketplace add` + `/plugin install` instead of the hook installer, with a matching uninstall
 - **`npx` one-liner** to start the office without a checkout
 - **Tray badge** for the desktop app (count of working agents), plus remembered window bounds
