@@ -41,7 +41,21 @@
  * 5-minute window. $/min is the cost delta across the window; tokens/min
  * counts the tokens every API round-trip in the window processed (the status
  * line's total_input_tokens + total_output_tokens of each new response —
- * context re-reads included, which is what you pay for).
+ * context re-reads included, which is what you pay for). The rate depends on
+ * the clock as much as on the reports: an idle session sends nothing (the
+ * status line re-runs only on a state change), so its burn has to fall to
+ * zero without one. The sweep timer therefore re-reads every burn and, when
+ * one differs from what the clients were last sent (or the totals do, at
+ * midnight say), broadcasts the whole store in the snapshot form
+ * { type: 'session_status', statuses, totals } that the meters reducer
+ * already takes (refresh()).
+ *
+ * costToday: the sessions reported today plus `retired`, the cost of the ones
+ * the sweep forgot today. A forgotten session can come back (a long lunch, a
+ * `claude --resume`) with total_cost_usd still cumulative, so its retired
+ * cost is taken back out of `retired` and kept on the record as `carried`:
+ * the session counts max(cost, carried) — its own total once, and never less
+ * than what was already booked today.
  */
 
 import { createMeterEstimator, estimateMemory, ESTIMATE_THROTTLE_MS } from './meterEstimate.js'
@@ -136,18 +150,28 @@ function sanitiseAgents(raw) {
 export function createStatusStore({ staleMs = 120 * 60_000, sessions = null, now = () => Date.now() } = {}) {
   /** @type {Map<string, object>} sessionId -> status record (+ history) */
   const statuses = new Map()
-  // Cost of sessions that expired today, so costToday survives their removal
-  let retired = { day: '', cost: 0 }
+  // Cost of sessions that expired today, so costToday survives their removal;
+  // bySession says whose, so a session that comes back is not counted twice
+  let retired = { day: '', cost: 0, bySession: new Map() }
+  // The totals the clients were last sent (any event that carries them); an
+  // empty store's to begin with, which is what a snapshot of it shows
+  let shownTotals = { costToday: 0, tokensPerMin: 0, dollarsPerMin: 0 }
 
-  function retire(cost, t) {
+  function retire(id, cost, t) {
     const day = dayKey(t)
-    if (retired.day !== day) retired = { day, cost: 0 }
+    if (retired.day !== day) retired = { day, cost: 0, bySession: new Map() }
     retired.cost += cost
+    retired.bySession.set(id, (retired.bySession.get(id) ?? 0) + cost)
   }
 
-  /** Public shape of a record: no history, burn computed for `t`. */
+  /** What a record adds to costToday: its own cumulative cost, at least what it had booked before it was forgotten. */
+  function costOf(rec) {
+    return rec.carried === undefined ? rec.cost : Math.max(rec.cost, rec.carried)
+  }
+
+  /** Public shape of a record: no history or bookkeeping, burn computed for `t`. */
   function toJSON(rec, t = now()) {
-    const { history, lastSample, ...pub } = rec
+    const { history, lastSample, shownBurn, carried, ...pub } = rec
     return { ...pub, burn: computeBurn(history, t) }
   }
 
@@ -157,12 +181,33 @@ export function createStatusStore({ staleMs = 120 * 60_000, sessions = null, now
     let tokensPerMin = 0
     let dollarsPerMin = 0
     for (const rec of statuses.values()) {
-      if (dayKey(rec.updatedAt) === day) costToday += rec.cost
+      if (dayKey(rec.updatedAt) === day) costToday += costOf(rec)
       const burn = computeBurn(rec.history, t)
       tokensPerMin += burn.tokensPerMin
       dollarsPerMin += burn.dollarsPerMin
     }
     return { costToday: round(costToday, 6), tokensPerMin, dollarsPerMin: round(dollarsPerMin, 6) }
+  }
+
+  /** totals(t), remembered as what the clients now show. */
+  function shown(t) {
+    shownTotals = totals(t)
+    return shownTotals
+  }
+
+  /**
+   * A new record. A session the sweep forgot earlier today takes its booked
+   * cost back from `retired` as `carried` (see costOf and the module header).
+   */
+  function create(id, t) {
+    const rec = stub(id, t)
+    if (retired.day === dayKey(t) && retired.bySession.has(id)) {
+      rec.carried = retired.bySession.get(id)
+      retired.cost -= rec.carried
+      retired.bySession.delete(id)
+    }
+    statuses.set(id, rec)
+    return rec
   }
 
   function stub(id, t) {
@@ -191,11 +236,7 @@ export function createStatusStore({ staleMs = 120 * 60_000, sessions = null, now
 
   function ingestSession(body, t) {
     const id = clampString(body.sessionId)
-    let rec = statuses.get(id)
-    if (!rec) {
-      rec = stub(id, t)
-      statuses.set(id, rec)
-    }
+    const rec = statuses.get(id) ?? create(id, t)
     const ctx = body.context && typeof body.context === 'object' ? body.context : {}
     const input = clampNumber(ctx.input) ?? 0
     const output = clampNumber(ctx.output) ?? 0
@@ -239,6 +280,7 @@ export function createStatusStore({ staleMs = 120 * 60_000, sessions = null, now
     }
 
     const session = toJSON(rec, t)
+    rec.shownBurn = session.burn
     const used = session.context.used
     console.log(
       `[status] ${session.project ?? id} · ${session.model ?? '?'} · $${cost.toFixed(4)}` +
@@ -246,16 +288,12 @@ export function createStatusStore({ staleMs = 120 * 60_000, sessions = null, now
       ` · ${session.burn.tokensPerMin} tok/min · $${session.burn.dollarsPerMin.toFixed(4)}/min` +
       (session.rateLimits?.fiveHour !== undefined ? ` · 5h ${session.rateLimits.fiveHour}%` : ''),
     )
-    return { type: 'session_status', sessionId: id, session, totals: totals(t), timestamp: t }
+    return { type: 'session_status', sessionId: id, session, totals: shown(t), timestamp: t }
   }
 
   function ingestAgents(body, t) {
     const id = clampString(body.sessionId)
-    let rec = statuses.get(id)
-    if (!rec) {
-      rec = stub(id, t)
-      statuses.set(id, rec)
-    }
+    const rec = statuses.get(id) ?? create(id, t)
     rec.agents = sanitiseAgents(body.agents)
     rec.agentsUpdatedAt = t
     rec.updatedAt = t
@@ -290,10 +328,7 @@ export function createStatusStore({ staleMs = 120 * 60_000, sessions = null, now
     if (!est) return null
     const first = rec?.source !== 'transcript'
     const same = !first && JSON.stringify([rec.context, rec.estimate, rec.model]) === JSON.stringify([est.context, est.estimate, est.model])
-    if (!rec) {
-      rec = stub(id, t)
-      statuses.set(id, rec)
-    }
+    if (!rec) rec = create(id, t)
     rec.source = 'transcript'
     rec.project = rec.project || sessions?.get(id)?.project
     rec.model = est.model ?? rec.model
@@ -308,7 +343,9 @@ export function createStatusStore({ staleMs = 120 * 60_000, sessions = null, now
       ` (${est.estimate.tokens ?? '?'}/${size}${est.estimate.approximate ? ', approximate' : ''})` +
       ` · estimated from the transcript${first ? ' (no status line)' : ''}`,
     )
-    return { type: 'session_status', sessionId: id, session: toJSON(rec, t), totals: totals(t), timestamp: t }
+    const session = toJSON(rec, t)
+    rec.shownBurn = session.burn
+    return { type: 'session_status', sessionId: id, session, totals: shown(t), timestamp: t }
   }
 
   /** Drop sessions quiet for staleMs; returns the removal events to broadcast. */
@@ -317,11 +354,31 @@ export function createStatusStore({ staleMs = 120 * 60_000, sessions = null, now
     for (const [id, rec] of statuses) {
       if (rec.updatedAt >= t - staleMs) continue
       statuses.delete(id)
-      retire(rec.cost, t)
+      retire(id, costOf(rec), t)
       console.log(`[status] forgot ${rec.project ?? id}: quiet for ${Math.round(staleMs / 60_000)} min`)
-      events.push({ type: 'session_status', sessionId: id, removed: true, totals: totals(t), timestamp: t })
+      events.push({ type: 'session_status', sessionId: id, removed: true, totals: shown(t), timestamp: t })
     }
     return events
+  }
+
+  /**
+   * The clock moved on: when a session's burn (it decays as its last reports
+   * leave the window) or the totals differ from what the clients were last
+   * sent, the whole store in the snapshot form, else null. The sweep timer
+   * broadcasts it (see the module header).
+   */
+  function refresh(t = now()) {
+    const sameBurn = (a, b) => !!a && !!b && a.tokensPerMin === b.tokensPerMin && a.dollarsPerMin === b.dollarsPerMin
+    const totalsNow = totals(t)
+    let changed = JSON.stringify(totalsNow) !== JSON.stringify(shownTotals)
+    for (const rec of statuses.values()) {
+      if (!sameBurn(computeBurn(rec.history, t), rec.shownBurn)) changed = true
+    }
+    if (!changed) return null
+    const list = summary(t).sessions
+    for (const s of list) statuses.get(s.sessionId).shownBurn = s.burn
+    shownTotals = totalsNow
+    return { type: 'session_status', statuses: list, totals: totalsNow, timestamp: t }
   }
 
   function summary(t = now()) {
@@ -336,6 +393,7 @@ export function createStatusStore({ staleMs = 120 * 60_000, sessions = null, now
     applyEstimate,
     reportsStatusLine,
     expireStale,
+    refresh,
     summary,
     totals,
     get: id => statuses.get(id),
@@ -354,11 +412,13 @@ export function createStatusStore({ staleMs = 120 * 60_000, sessions = null, now
  * from the transcript the event (or the session in `sessions`) names —
  * throttled per session and read after /event has answered (see
  * server/meterEstimate.js). The stale sweep runs every `sweepMs` on an
- * unref'd timer, so importing the server never keeps a process alive.
+ * unref'd timer, so importing the server never keeps a process alive; it
+ * also broadcasts the burn rates the clock has moved (store.refresh). `now`
+ * is the store's clock, injectable for tests.
  */
-export function mountStatus(app, { requireToken, broadcast, staleMs, sessions, sweepMs = 60_000, estimateThrottleMs = ESTIMATE_THROTTLE_MS } = {}) {
+export function mountStatus(app, { requireToken, broadcast, staleMs, sessions, sweepMs = 60_000, estimateThrottleMs = ESTIMATE_THROTTLE_MS, now = () => Date.now() } = {}) {
   if (typeof requireToken !== 'function') throw new TypeError('mountStatus needs the requireToken middleware')
-  const store = createStatusStore({ staleMs, sessions })
+  const store = createStatusStore({ staleMs, sessions, now })
   const estimator = createMeterEstimator({
     skip: id => store.reportsStatusLine(id),
     apply: (id, reading) => {
@@ -391,7 +451,10 @@ export function mountStatus(app, { requireToken, broadcast, staleMs, sessions, s
 
   const timer = setInterval(() => {
     for (const event of store.expireStale()) broadcast(event)
-    estimator.prune(Date.now() - (staleMs ?? 120 * 60_000))
+    // An idle session sends nothing, so its burn only decays here
+    const refreshed = store.refresh()
+    if (refreshed) broadcast(refreshed)
+    estimator.prune(now() - (staleMs ?? 120 * 60_000))
   }, sweepMs)
   timer.unref?.()
 

@@ -241,6 +241,61 @@ describe('logPrompts: what of the conversation is kept (GET/POST /settings)', ()
     expect((await chatRows(office)).at(-1)!.text).toHaveLength(2000)
   })
 
+  it('switching to off drops the text already held (memory, agents.json, GET /agents, every later broadcast) and says so with a session_main; full -> summary trims to 200', async () => {
+    const office = await loadOffice()
+    offices.push(office)
+    office.server.processEvent({ type: 'session_prompt', ...ALPHA, promptId: 'p-1', text: 'the secret plan: acquire ACME for $4M' })
+    office.server.processEvent({ type: 'session_turn_end', ...ALPHA, promptId: 'p-1', text: 'Understood, ACME at $4M.', backgroundTasks: [], crons: 0 })
+
+    // The office page's socket (trusted: it would get the text if any were left)
+    const port = await listen(office.server.httpServer)
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`, officeProtocols(office.server))
+    const announced: any[] = []
+    ws.on('message', raw => announced.push(JSON.parse(raw.toString())))
+    await new Promise<void>((res, rej) => { ws.once('open', () => res()); ws.once('error', rej) })
+    try {
+      await new Promise(r => setTimeout(r, 50))
+      announced.length = 0
+      expect((await postAuthed(office.server, '/settings', { logPrompts: 'off' })).status).toBe(200)
+      await new Promise(r => setTimeout(r, 50))
+    } finally {
+      ws.terminate()
+      await new Promise<void>(res => office.server.wss.close(() => res()))
+      await new Promise<void>(res => office.server.httpServer.close(() => res()))
+    }
+    expect(main(office, ALPHA.sessionId)).toMatchObject({ lastPrompt: '', lastReply: '' })
+    expect(readFileSync(join(office.dir, 'agents.json'), 'utf8')).not.toMatch(/ACME/)
+    const card = await request(office.server.app).get(`/agents/main-${ALPHA.sessionId}`).set('Authorization', `Bearer ${office.server.AUTH_TOKEN}`)
+    expect(card.body.main).toMatchObject({ lastPrompt: '', lastReply: '' })
+    expect(announced.filter(m => m.type === 'session_main')).toEqual([expect.objectContaining({ sessionId: ALPHA.sessionId, main: expect.objectContaining({ lastPrompt: '', lastReply: '' }) })])
+    expect(JSON.stringify(announced)).not.toMatch(/ACME/)
+    const later = office.server.processEvent({ type: 'session_compact', ...ALPHA, phase: 'pre', trigger: 'auto' })
+    expect(JSON.stringify(later)).not.toMatch(/ACME/)
+
+    // Lowering full to summary trims to the summary length
+    await postAuthed(office.server, '/settings', { logPrompts: 'full' })
+    office.server.processEvent({ type: 'session_prompt', ...ALPHA, promptId: 'p-2', text: 'x'.repeat(1500) })
+    await postAuthed(office.server, '/settings', { logPrompts: 'summary' })
+    expect(main(office, ALPHA.sessionId).lastPrompt).toHaveLength(200)
+  })
+
+  it('/clear also blanks the last prompt and reply each session holds; a restart under off drops what agents.json still had', async () => {
+    const office = await loadOffice()
+    offices.push(office)
+    office.server.processEvent({ type: 'session_prompt', ...ALPHA, promptId: 'p-1', text: 'the secret plan' })
+    office.server.processEvent({ type: 'session_turn_end', ...ALPHA, promptId: 'p-1', text: 'the secret answer', backgroundTasks: [], crons: 0 })
+    expect((await postAuthed(office.server, '/chat', { sender: 'Antony', text: '/clear' })).status).toBe(200)
+    expect(main(office, ALPHA.sessionId)).toMatchObject({ lastPrompt: '', lastReply: '' })
+    expect((await chatRows(office)).some(m => /secret/.test(m.text))).toBe(false)
+
+    office.server.processEvent({ type: 'session_prompt', ...ALPHA, promptId: 'p-2', text: 'another secret' })
+    writeFileSync(join(office.dir, 'settings.json'), JSON.stringify({ logPrompts: 'off', answerPermissions: true }))
+    const again = await loadOffice({ dir: office.dir })
+    offices.push(again)
+    expect(main(again, ALPHA.sessionId).lastPrompt).toBe('')
+    expect(readFileSync(join(office.dir, 'agents.json'), 'utf8')).not.toMatch(/another secret/)
+  })
+
   it('a settings.json with junk in it is ignored', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'agent-office-test-'))
     writeFileSync(join(dir, 'settings.json'), JSON.stringify({ logPrompts: 'everything' }))
@@ -551,6 +606,133 @@ describe('session_tool_done (main-thread PostToolUse / PostToolBatch)', () => {
     expect(main(office, ALPHA.sessionId).state).toBe('needs-you')
 
     expect(office.server.processEvent({ type: 'session_tool_done', toolName: 'Write' })).toBeNull()
+  })
+})
+
+describe('a permission hand comes down for the call that raised it, not another call of the same tool', () => {
+  let office: Office
+  const PUSH = '1111aaaa2222bbbb'    // the hook's callKey of `git push origin main`
+  const STATUS = '3333cccc4444dddd'  // ...and of `git status`, allow-listed, running beside it
+  beforeAll(async () => {
+    office = await loadOffice()
+    office.server.processEvent({ type: 'session_started', ...ALPHA, source: 'startup' })
+    office.server.processEvent({ type: 'session_prompt', ...ALPHA, promptId: 'p-1', text: 'push it' })
+  })
+  afterAll(() => {
+    vi.useRealTimers()
+    removeOffice(office)
+  })
+
+  it('the sibling\'s PostToolUse leaves the hand up (inside the debounce, and long after it); the asking call\'s own lowers it', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    office.server.processEvent({ type: 'session_needs_you', ...ALPHA, kind: 'permission', promptId: 'p-1', toolName: 'Bash', summary: 'git push origin main', callKey: PUSH })
+    vi.advanceTimersByTime(100)
+    expect(office.server.processEvent({ type: 'session_tool_done', ...ALPHA, promptId: 'p-1', toolName: 'Bash', callKey: STATUS })).toBeNull()
+    expect(office.server.pendingNeedsYou.has(ALPHA.sessionId)).toBe(true)
+    vi.advanceTimersByTime(DEBOUNCE_MS)
+    expect(main(office, ALPHA.sessionId)).toMatchObject({ state: 'needs-you', needsYou: { toolName: 'Bash', summary: 'git push origin main' } })
+    // The matching key stays on the server: the hand that travels has none
+    expect(main(office, ALPHA.sessionId).needsYou).not.toHaveProperty('callKey')
+
+    vi.advanceTimersByTime(30_000)
+    expect(office.server.processEvent({ type: 'session_tool_done', ...ALPHA, promptId: 'p-1', toolName: 'Bash', callKey: STATUS })).toBeNull()
+    expect(main(office, ALPHA.sessionId).state).toBe('needs-you')
+
+    let ev: any
+    const lines = mainLog(() => { ev = office.server.processEvent({ type: 'session_tool_done', ...ALPHA, promptId: 'p-1', toolName: 'Bash', callKey: PUSH }) })
+    expect(lines).toEqual(['[main] alpha: needs-you -> working (Bash ran)'])
+    expect(ev).toMatchObject({ type: 'session_main', reason: 'permission answered', main: { state: 'working' } })
+    vi.useRealTimers()
+  })
+
+  it('a second PermissionRequest of the same tool for another call is a new wait, not the first one repeated', () => {
+    raise(office, { ...ALPHA, kind: 'permission', promptId: 'p-1', toolName: 'Bash', summary: 'git push origin main', callKey: PUSH })
+    raise(office, { ...ALPHA, kind: 'permission', promptId: 'p-1', toolName: 'Bash', summary: 'git push --tags', callKey: STATUS })
+    expect(main(office, ALPHA.sessionId).needsYou).toMatchObject({ summary: 'git push --tags' })
+    expect(office.server.processEvent({ type: 'session_tool_done', ...ALPHA, toolName: 'Bash', callKey: PUSH })).toBeNull()
+    expect(office.server.processEvent({ type: 'session_tool_done', ...ALPHA, toolName: 'Bash', callKey: STATUS })).toMatchObject({ main: { state: 'working' } })
+  })
+
+  it('without a callKey on either side (an older hook) the tool name alone decides, as before; the batch ending still settles any', () => {
+    raise(office, { ...ALPHA, kind: 'permission', promptId: 'p-1', toolName: 'Bash', summary: 'git push origin main' })
+    expect(office.server.processEvent({ type: 'session_tool_done', ...ALPHA, toolName: 'Bash', callKey: STATUS })).toMatchObject({ main: { state: 'working' } })
+    raise(office, { ...ALPHA, kind: 'permission', promptId: 'p-1', toolName: 'Bash', summary: 'git push origin main', callKey: PUSH })
+    expect(office.server.processEvent({ type: 'session_tool_done', ...ALPHA, toolName: 'Bash' })).toMatchObject({ main: { state: 'working' } })
+    raise(office, { ...ALPHA, kind: 'permission', promptId: 'p-1', toolName: 'Bash', summary: 'git push origin main', callKey: PUSH })
+    expect(office.server.processEvent({ type: 'session_tool_done', ...ALPHA, batch: true, count: 2 })).toMatchObject({ main: { state: 'working' } })
+  })
+
+  it('an MCP tool\'s permission comes down with that call\'s mcp_done (its PostToolUse), not another MCP tool\'s', () => {
+    raise(office, { ...ALPHA, kind: 'permission', promptId: 'p-1', toolName: 'mcp__github__create_issue', summary: 'mcp__github__create_issue', callKey: PUSH })
+    office.server.processEvent({ type: 'mcp_call', ...ALPHA, server: 'github', tool: 'get_me' })
+    office.server.processEvent({ type: 'mcp_done', ...ALPHA, server: 'github', tool: 'get_me', callKey: STATUS })
+    expect(main(office, ALPHA.sessionId).state).toBe('needs-you')
+    const lines = mainLog(() => office.server.processEvent({ type: 'mcp_done', ...ALPHA, server: 'github', tool: 'create_issue', callKey: PUSH }))
+    expect(lines).toEqual(['[main] alpha: needs-you -> working (mcp__github__create_issue ran)'])
+    expect(main(office, ALPHA.sessionId)).not.toHaveProperty('needsYou')
+  })
+})
+
+describe('a permission a worker asked for (PermissionRequest inside a subagent)', () => {
+  let office: Office
+  const SUB = 'a027f376ae8cdcbd0'     // the foreground Explore worker that asked
+  const OTHER = 'ac5ff55b850b4fecf'   // another worker of the session
+  const RM = '5555eeee6666ffff'
+  beforeAll(async () => {
+    office = await loadOffice()
+    office.server.processEvent({ type: 'session_started', ...ALPHA, source: 'startup' })
+    office.server.processEvent({ type: 'session_prompt', ...ALPHA, promptId: 'p-1', text: 'explore' })
+    office.server.processEvent({ type: 'agent_spawned', ...ALPHA, agent: { id: 'agent-fg', name: 'Explorer', role: 'Explore', task: 'look around', agentType: 'Explore' } })
+    office.server.processEvent({ type: 'agent_linked', ...ALPHA, agentId: 'agent-fg', subagentId: SUB })
+    office.server.processEvent({ type: 'agent_spawned', ...ALPHA, agent: gp('agent-bg', 'count things') })
+    office.server.processEvent({ type: 'agent_linked', ...ALPHA, agentId: 'agent-bg', subagentId: OTHER })
+  })
+  afterAll(() => {
+    vi.useRealTimers()
+    removeOffice(office)
+  })
+  const ask = () => raise(office, { ...ALPHA, kind: 'permission', promptId: 'p-1', toolName: 'Bash', summary: 'rm x', agentId: SUB, callKey: RM })
+
+  it('its own PostToolUse lowers it at once; the same tool finishing on another worker or on the main thread does not', () => {
+    ask()
+    expect(main(office, ALPHA.sessionId)).toMatchObject({ state: 'needs-you', needsYou: { toolName: 'Bash' } })
+    expect(office.server.processEvent({ type: 'session_tool_done', ...ALPHA, toolName: 'Bash', callKey: RM, agentId: OTHER })).toBeNull()
+    expect(office.server.processEvent({ type: 'session_tool_done', ...ALPHA, toolName: 'Bash', callKey: RM })).toBeNull()
+    expect(main(office, ALPHA.sessionId).state).toBe('needs-you')
+    expect(office.server.processEvent({ type: 'session_tool_done', ...ALPHA, toolName: 'Bash', callKey: RM, agentId: SUB }))
+      .toMatchObject({ type: 'session_main', main: { state: 'working' } })
+  })
+
+  it('its next tool call past the race window lowers it (answered in the terminal); within the window, another worker\'s or the main thread\'s tool calls leave it up', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    office.server.processEvent({ type: 'session_needs_you', ...ALPHA, kind: 'permission', promptId: 'p-1', toolName: 'Bash', summary: 'rm x', agentId: SUB, callKey: RM })
+    vi.advanceTimersByTime(DEBOUNCE_MS)
+    // The asking call's own PreToolUse, late
+    office.server.processEvent({ type: 'agent_working', ...ALPHA, agentId: SUB, agentType: 'Explore', status: 'running: rm x', tool: 'Bash' })
+    expect(main(office, ALPHA.sessionId).state).toBe('needs-you')
+    vi.advanceTimersByTime(2_000)
+    office.server.processEvent({ type: 'agent_working', ...ALPHA, agentId: OTHER, agentType: 'general-purpose', status: 'reading a', tool: 'Read' })
+    office.server.processEvent({ type: 'agent_working', ...ALPHA, status: 'reading b', tool: 'Read' })
+    office.server.processEvent({ type: 'session_tool_done', ...ALPHA, batch: true, count: 1 })
+    expect(main(office, ALPHA.sessionId).state).toBe('needs-you')
+    const lines = mainLog(() => office.server.processEvent({ type: 'agent_working', ...ALPHA, agentId: SUB, agentType: 'Explore', status: 'searching for \'x\'', tool: 'Grep' }))
+    expect(lines).toEqual(["[main] alpha: needs-you -> working (Explorer: searching for 'x')"])
+    vi.useRealTimers()
+  })
+
+  it('its batch ending lowers it; the worker finishing does too, and a hand raised after the main turn ended goes back to waiting', () => {
+    ask()
+    expect(office.server.processEvent({ type: 'session_tool_done', ...ALPHA, batch: true, count: 1, agentId: OTHER })).toBeNull()
+    expect(office.server.processEvent({ type: 'session_tool_done', ...ALPHA, batch: true, count: 1, agentId: SUB })).toMatchObject({ main: { state: 'working' } })
+
+    // A background worker asks while Claude itself is waiting on it
+    office.server.processEvent({ type: 'session_turn_end', ...ALPHA, promptId: 'p-1', text: 'Counting.', backgroundTasks: [{ id: OTHER, type: 'subagent', status: 'running', description: 'count' }], crons: 0 })
+    expect(main(office, ALPHA.sessionId).state).toBe('waiting')
+    raise(office, { ...ALPHA, kind: 'permission', promptId: 'p-1', toolName: 'Bash', summary: 'wc -l', agentId: OTHER, callKey: RM })
+    expect(main(office, ALPHA.sessionId).state).toBe('needs-you')
+    const lines = mainLog(() => office.server.processEvent({ type: 'agent_completed', ...ALPHA, agentId: OTHER, result: 'counted' }))
+    expect(lines).toEqual(['[main] alpha: needs-you -> waiting (Agent finished)'])
+    expect(main(office, ALPHA.sessionId)).not.toHaveProperty('needsYou')
   })
 })
 
