@@ -10,6 +10,7 @@
  */
 
 import { execFileSync, spawn, spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -36,6 +37,20 @@ function runHookLines(payload: unknown, env: Record<string, string> = {}): strin
     env: { ...process.env, AGENT_OFFICE_HOME: NO_MARKER_HOME, ...env },
   }).trim()
   return out ? out.split('\n') : []
+}
+
+/** Canonical JSON as the hook's call_key writes it: keys sorted, no spaces. */
+function canonical(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value).sort().map(k => `${JSON.stringify(k)}:${canonical((value as Record<string, unknown>)[k])}`).join(',')}}`
+  }
+  return JSON.stringify(value ?? null)
+}
+
+/** The callKey the hook sends for a call: 16 hex of sha256(tool name, NUL, the input). */
+function callKeyOf(toolName: string, input: unknown): string {
+  return createHash('sha256').update(`${toolName}\0${canonical(input)}`).digest('hex').slice(0, 16)
 }
 
 /** Run the hook's Python against a payload; null when it printed nothing. */
@@ -418,7 +433,7 @@ describe('agent-tracker.sh: captured 2.1.300 payloads', () => {
     expect(runHook({
       hook_event_name: 'PostToolUseFailure', tool_name: 'mcp__github__get_me', tool_input: {}, tool_use_id: 'toolu_mcp',
       error: 'MCP error -32603: boom', is_interrupt: false, duration_ms: 20,
-    })).toEqual({ type: 'mcp_done', server: 'github' })
+    })).toEqual({ type: 'mcp_done', server: 'github', tool: 'get_me', callKey: callKeyOf('mcp__github__get_me', {}) })
 
     expect(runHook({
       hook_event_name: 'PostToolUseFailure', tool_name: 'Agent', tool_use_id: 'toolu_01X',
@@ -567,9 +582,12 @@ describe('agent-tracker.sh: MCP tools', () => {
       .toEqual({ type: 'mcp_call', server: 'github', tool: 'get_me' })
   })
 
-  it('PostToolUse mcp__github__get_me -> mcp_done', () => {
+  it('PostToolUse mcp__github__get_me -> mcp_done with the tool and the callKey (the server lowers the hand that call raised); inside a worker with its agentId', () => {
     expect(runHook({ hook_event_name: 'PostToolUse', tool_name: 'mcp__github__get_me', tool_input: {}, tool_response: { login: 'w17ant' } }))
-      .toEqual({ type: 'mcp_done', server: 'github' })
+      .toEqual({ type: 'mcp_done', server: 'github', tool: 'get_me', callKey: callKeyOf('mcp__github__get_me', {}) })
+    const input = { owner: 'W17ant', repo: 'Claude-Office', title: 'x' }
+    expect(runHook({ hook_event_name: 'PostToolUse', tool_name: 'mcp__github__create_issue', agent_id: 'a027f376ae8cdcbd0', agent_type: 'Explore', tool_input: input, tool_response: {} }))
+      .toEqual({ type: 'mcp_done', server: 'github', tool: 'create_issue', callKey: callKeyOf('mcp__github__create_issue', input), agentId: 'a027f376ae8cdcbd0' })
   })
 
   it('splits server and tool on the first "__" only', () => {
@@ -589,15 +607,30 @@ describe('agent-tracker.sh: every tool call is activity', () => {
     expect(runHook({ hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input: null })).toEqual({ type: 'agent_working', status: 'reading ', tool: 'Read' })
   })
 
-  it('PostToolUse of an ordinary tool on the main thread -> session_tool_done {toolName} (lowers a permission hand on the server); inside a worker, or without a session, nothing', () => {
+  it('PostToolUse of an ordinary tool -> session_tool_done {toolName, callKey} (lowers the permission hand that very call raised); inside a worker with its agentId; without a session, nothing', () => {
     const session = { session_id: 's1', cwd: '/x/proj', transcript_path: '/t.jsonl', prompt_id: 'p' }
     expect(runHook({ ...session, hook_event_name: 'PostToolUse', tool_name: 'Bash', tool_input: { command: 'ls' }, tool_response: 'ok' }))
-      .toEqual({ type: 'session_tool_done', toolName: 'Bash', promptId: 'p', sessionId: 's1', project: 'proj', cwd: '/x/proj', transcriptPath: '/t.jsonl' })
+      .toEqual({ type: 'session_tool_done', toolName: 'Bash', callKey: callKeyOf('Bash', { command: 'ls' }), promptId: 'p', sessionId: 's1', project: 'proj', cwd: '/x/proj', transcriptPath: '/t.jsonl' })
     expect(runHook({ ...session, hook_event_name: 'PostToolUse', tool_name: 'Write', tool_input: { file_path: '/x/probe.txt', content: 'hello' }, tool_response: { filePath: '/x/probe.txt', success: true } }))
       .toMatchObject({ type: 'session_tool_done', toolName: 'Write' })
-    expect(runHook({ ...session, hook_event_name: 'PostToolUse', tool_name: 'Bash', agent_id: 'a1921bf97b0af9fd1', agent_type: 'general-purpose', tool_input: { command: 'ls' }, tool_response: 'ok' })).toBeNull()
+    // A worker's call: its dialog (agent_id on the PermissionRequest) is answered by its own finish
+    expect(runHook({ ...session, hook_event_name: 'PostToolUse', tool_name: 'Bash', agent_id: 'a1921bf97b0af9fd1', agent_type: 'general-purpose', tool_input: { command: 'ls' }, tool_response: 'ok' }))
+      .toEqual({ type: 'session_tool_done', toolName: 'Bash', callKey: callKeyOf('Bash', { command: 'ls' }), agentId: 'a1921bf97b0af9fd1', promptId: 'p', sessionId: 's1', project: 'proj', cwd: '/x/proj', transcriptPath: '/t.jsonl' })
     expect(runHook({ hook_event_name: 'PostToolUse', tool_name: 'Bash', tool_input: { command: 'ls' }, tool_response: 'ok' })).toBeNull()
     expect(runHook({ hook_event_name: 'PostToolUse', tool_name: 'WebFetch', tool_input: {}, tool_response: 'page' })).toBeNull()
+  })
+
+  it('callKey: the PermissionRequest and the PostToolUse of one call carry the same key; another call of that tool (git status beside git push) another one', () => {
+    const session = { session_id: 's1', cwd: '/x/proj', transcript_path: '/t.jsonl', prompt_id: 'p', permission_mode: 'default' }
+    const push = { command: 'git push origin main', description: 'Push' }
+    const asked = runHook({ ...session, hook_event_name: 'PermissionRequest', tool_name: 'Bash', tool_input: push })
+    const ran = runHook({ ...session, hook_event_name: 'PostToolUse', tool_name: 'Bash', tool_input: { description: 'Push', command: 'git push origin main' }, tool_response: { stdout: '', stderr: '' } })
+    const sibling = runHook({ ...session, hook_event_name: 'PostToolUse', tool_name: 'Bash', tool_input: { command: 'git status', description: 'Status' }, tool_response: { stdout: '', stderr: '' } })
+    expect(asked?.callKey).toMatch(/^[0-9a-f]{16}$/)
+    expect(ran?.callKey).toBe(asked?.callKey)                     // key order in the input does not matter
+    expect(sibling?.callKey).not.toBe(asked?.callKey)
+    // The tool name is part of it: the same input to another tool is another call
+    expect(runHook({ ...session, hook_event_name: 'PermissionRequest', tool_name: 'Write', tool_input: push })?.callKey).not.toBe(asked?.callKey)
   })
 
   it('PostToolUse Agent (foreground, captured) -> agent_completed with what the agent cost: tokens, durationMs, toolUses, model', () => {
@@ -763,7 +796,7 @@ describe('agent-tracker.sh: the main thread (session_* events)', () => {
     expect(runHook({ ...captured(C), hook_event_name: 'Stop', last_assistant_message: 'r'.repeat(5000) })?.text).toHaveLength(2000)
   })
 
-  it('PermissionRequest Write -> session_needs_you {kind: permission, toolName, summary: the file name}', () => {
+  it('PermissionRequest Write -> session_needs_you {kind: permission, toolName, summary: the file name, callKey}', () => {
     expect(runHook({
       ...captured('4a9dd43b-f941-406a-809a-01149a62b597'),
       prompt_id: '273fe3a9-5b8d-4724-bb83-0c5e06bca880',
@@ -775,6 +808,7 @@ describe('agent-tracker.sh: the main thread (session_* events)', () => {
       permission_suggestions: [{ type: 'setMode', mode: 'acceptEdits', destination: 'session' }],
     })).toEqual({
       type: 'session_needs_you', kind: 'permission', toolName: 'Write', summary: 'probe.txt',
+      callKey: callKeyOf('Write', { file_path: `${HOOKCAP}/probe.txt`, content: 'hello' }),
       promptId: '273fe3a9-5b8d-4724-bb83-0c5e06bca880', ...forwarded('4a9dd43b-f941-406a-809a-01149a62b597'),
     })
   })
@@ -849,7 +883,7 @@ describe('agent-tracker.sh: the main thread (session_* events)', () => {
     expect(runHook({ ...captured(C), hook_event_name: 'PreCompact', trigger: 'auto', custom_instructions: null })).toMatchObject({ phase: 'pre', trigger: 'auto' })
   })
 
-  it('PostToolBatch on the main thread -> session_tool_done {batch, count}; inside a worker -> nothing', () => {
+  it('PostToolBatch on the main thread -> session_tool_done {batch, count}; inside a worker -> the same with its agentId (it answers only that worker\'s dialog)', () => {
     // Captured: the batch that launched the background and the foreground agent (session c25c5511)
     expect(runHook({
       ...captured(C), prompt_id: '60d87662-ef42-4452-a6bd-cd9718825c5b', permission_mode: 'bypassPermissions', effort: { level: 'medium' },
@@ -870,7 +904,7 @@ describe('agent-tracker.sh: the main thread (session_* events)', () => {
       ...captured(C), prompt_id: 'p', permission_mode: 'bypassPermissions', agent_id: 'a027f376ae8cdcbd0', agent_type: 'Explore', effort: { level: 'medium' },
       hook_event_name: 'PostToolBatch',
       tool_calls: [{ tool_name: 'Read', tool_input: { file_path: '/etc/hostname' }, tool_use_id: 'toolu_01XaBQyUGgXLSCM8GdEpBHFk', tool_response: '1\tvm\n2\t' }],
-    })).toBeNull()
+    })).toEqual({ type: 'session_tool_done', batch: true, count: 1, agentId: 'a027f376ae8cdcbd0', promptId: 'p', ...forwarded(C) })
     expect(runHook({ ...captured(C), hook_event_name: 'PostToolBatch' })).toMatchObject({ type: 'session_tool_done', batch: true, count: 0 })
   })
 
@@ -1089,8 +1123,9 @@ describe('agent-tracker.sh: answering a permission from the office', () => {
   it('the Python: with the marker the event gains answerable, permissionMode, suggestions and detail, and a `wait` line follows; without it, the event is as before on one line', () => {
     const lines = runHookLines(write, { AGENT_OFFICE_HOME: home })
     expect(lines).toHaveLength(2)
+    const callKey = callKeyOf('Write', write.tool_input)
     expect(JSON.parse(lines[0])).toEqual({
-      type: 'session_needs_you', kind: 'permission', toolName: 'Write', summary: 'probe.txt',
+      type: 'session_needs_you', kind: 'permission', toolName: 'Write', summary: 'probe.txt', callKey,
       answerable: true, permissionMode: 'default', suggestions: SUGGESTIONS, detail: '/home/me/proj/probe.txt',
       promptId: 'p1', sessionId: 's-perm', project: 'proj', cwd: '/home/me/proj', transcriptPath: '/t/s-perm.jsonl',
     })
@@ -1099,7 +1134,7 @@ describe('agent-tracker.sh: answering a permission from the office', () => {
     const plain = runHookLines(write)
     expect(plain).toHaveLength(1)
     expect(JSON.parse(plain[0])).toEqual({
-      type: 'session_needs_you', kind: 'permission', toolName: 'Write', summary: 'probe.txt',
+      type: 'session_needs_you', kind: 'permission', toolName: 'Write', summary: 'probe.txt', callKey,
       promptId: 'p1', sessionId: 's-perm', project: 'proj', cwd: '/home/me/proj', transcriptPath: '/t/s-perm.jsonl',
     })
     // No session id: nothing at all, marker or not
@@ -1468,7 +1503,7 @@ describe('agent-tracker.sh: signals', () => {
       tool_response: { stdout: 'Production: https://api-7f3k.vercel.app [42s]', stderr: '', interrupted: false, isImage: false, noOutputExpected: false },
       duration_ms: 42_113,
     }))).toEqual({
-      type: 'session_tool_done', toolName: 'Bash', promptId: base.prompt_id,
+      type: 'session_tool_done', toolName: 'Bash', callKey: callKeyOf('Bash', { command: 'vercel deploy --prod', description: 'x' }), promptId: base.prompt_id,
       signals: [{ kind: 'deploy_success', target: 'api', command: 'vercel deploy --prod' }],
       ...session,
     })
@@ -1548,27 +1583,33 @@ describe('agent-tracker.sh: signals', () => {
     expect(runHook(bash('npm test || true', { hook_event_name: 'PostToolUse', tool_response: { stdout: 'nothing to see', stderr: '' } }))?.signals).toBeUndefined()
   })
 
-  it('where the call sends nothing of its own (a worker, no session id) the signals go out alone as a `signal` event', () => {
+  it('a worker\'s PostToolUse carries them on its session_tool_done (with its agentId); where the call sends nothing of its own (no session id) they go out alone as a `signal` event', () => {
     expect(runHook(bash('npm test', {
       hook_event_name: 'PostToolUse', agent_id: 'a29964dc791f62039', agent_type: 'general-purpose',
       tool_response: { stdout: 'Tests  4 passed (4)', stderr: '' },
     }))).toEqual({
-      type: 'signal',
+      type: 'session_tool_done', toolName: 'Bash', callKey: callKeyOf('Bash', { command: 'npm test', description: 'x' }),
       signals: [{ kind: 'test_ok', target: 'api', command: 'npm test' }],
-      agentId: 'a29964dc791f62039', agentType: 'general-purpose', role: 'general-purpose', name: 'Agent',
+      agentId: 'a29964dc791f62039', promptId: base.prompt_id,
       ...session,
     })
     expect(runHook({ hook_event_name: 'PostToolUse', tool_name: 'Bash', cwd: '/home/me/api', tool_input: { command: 'npm test' }, tool_response: { stdout: '', stderr: '' } }))
       .toEqual({ type: 'signal', signals: [{ kind: 'test_ok', target: 'api', command: 'npm test' }], project: 'api', cwd: '/home/me/api' })
-    // An ordinary Bash call in a worker still sends nothing
-    expect(runHook(bash('ls', { hook_event_name: 'PostToolUse', agent_id: 'a29964dc791f62039', agent_type: 'general-purpose', tool_response: { stdout: '', stderr: '' } }))).toBeNull()
+    expect(runHook({ hook_event_name: 'PostToolUse', tool_name: 'Bash', agent_id: 'a29964dc791f62039', agent_type: 'general-purpose', cwd: '/home/me/api', tool_input: { command: 'npm test' }, tool_response: { stdout: '', stderr: '' } }))
+      .toEqual({
+        type: 'signal', signals: [{ kind: 'test_ok', target: 'api', command: 'npm test' }],
+        agentId: 'a29964dc791f62039', agentType: 'general-purpose', role: 'general-purpose', name: 'Agent', project: 'api', cwd: '/home/me/api',
+      })
+    // An ordinary Bash call in a worker carries no signals
+    expect(runHook(bash('ls', { hook_event_name: 'PostToolUse', agent_id: 'a29964dc791f62039', agent_type: 'general-purpose', tool_response: { stdout: '', stderr: '' } })))
+      .not.toHaveProperty('signals')
   })
 
   it('a backgrounded run has no outcome on PostToolUse; an Esc is a failure marked interrupted', () => {
     expect(runHook(bash('vercel deploy --prod', {
       hook_event_name: 'PostToolUse', tool_input: { command: 'vercel deploy --prod', run_in_background: true },
       tool_response: { stdout: 'Command running in background with ID: bash_1', stderr: '' },
-    }))).toEqual({ type: 'session_tool_done', toolName: 'Bash', promptId: base.prompt_id, ...session })
+    }))).toEqual({ type: 'session_tool_done', toolName: 'Bash', callKey: callKeyOf('Bash', { command: 'vercel deploy --prod', run_in_background: true }), promptId: base.prompt_id, ...session })
     expect(runHook(bash('npm test', { hook_event_name: 'PostToolUseFailure', error: 'Interrupted by user', is_interrupt: true }))?.signals)
       .toEqual([{ kind: 'test_failed', target: 'api', command: 'npm test', interrupted: true, error: 'Interrupted by user' }])
   })

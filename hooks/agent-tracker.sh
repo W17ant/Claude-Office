@@ -9,7 +9,9 @@
 #
 # Hook events handled:
 #   PreToolUse         — detect Agent tool calls, MCP tool calls, tool activity
-#   PostToolUse        — detect Agent/MCP completion
+#   PostToolUse        — detect Agent/MCP completion; any other call's finish
+#                        (main thread or worker) lowers the permission hand
+#                        that very call raised
 #   PostToolUseFailure — a tool call errored (a non-zero Bash exit lands here
 #                        and gets NO PostToolUse); shown as a failed status
 #   SubagentStart      — a subagent exists; ties the office agent to its agent_id
@@ -23,8 +25,9 @@
 #   StopFailure        — the turn ended on an API error
 #   PreCompact /
 #   PostCompact        — context compaction started / finished
-#   PostToolBatch      — a batch of main-thread tool calls finished (lowers a
-#                        permission hand the batch answered)
+#   PostToolBatch      — a batch of tool calls finished, on the main thread or
+#                        inside a worker (lowers a permission hand that thread
+#                        raised)
 #   CwdChanged         — the session cd'd somewhere else (project tag follows)
 #   PostModelSwitch    — the session runs another model now
 #   TaskCreated /
@@ -105,7 +108,7 @@ fi
 # single-argument limit and would fail the exec with E2BIG. No shell
 # variables are interpolated into the Python source.
 PY=$(cat <<'PYEOF'
-import json, sys, os, re
+import json, sys, os, re, hashlib
 
 try:
     d = json.loads(sys.stdin.read() or '{}')
@@ -293,6 +296,13 @@ if hook_event == 'Stop':
 # subagent would carry agent_id (schema-only, not captured); it is forwarded
 # when present.
 #
+# Which call asked: with no tool_use_id, the only thing a PermissionRequest
+# shares with its own call's PostToolUse is the tool input (captured: the
+# PreToolUse, the PermissionRequest and the batch entry of one call carry the
+# same tool_input). call_key hashes the tool name and that input; the
+# PermissionRequest and every PostToolUse send it, so the server lowers a hand
+# only on the finish of the call that raised it, not on another call of the
+# same tool running beside it (`git status` next to the `git push` that asked).
 # When the office may answer (ANSWER_MARKER exists, kept by the server in step
 # with its answerPermissions setting) the event also carries what the card
 # needs — answerable, permissionMode, the dialog's own permission_suggestions
@@ -310,6 +320,14 @@ def permission_summary(name, inp):
     if name == 'Bash':
         return one_line(inp.get('command') or inp.get('description'), 80) or name
     return name
+
+def call_key(name, inp):
+    # 16 hex characters of sha256(tool name, NUL, the input as canonical JSON)
+    try:
+        blob = json.dumps(inp, sort_keys=True, separators=(',', ':'), ensure_ascii=False, default=str)
+    except Exception:
+        return ''
+    return hashlib.sha256((str(name) + '\0' + blob).encode('utf-8', 'replace')).hexdigest()[:16]
 
 def permission_detail(name, inp):
     inp = inp if isinstance(inp, dict) else {}
@@ -347,6 +365,7 @@ if hook_event == 'PermissionRequest':
         'kind':     'permission',
         'toolName': name[:80],
         'summary':  permission_summary(name, d.get('tool_input'))[:120],
+        'callKey':  call_key(name, d.get('tool_input')),
     }
     if d.get('agent_id'):
         event['agentId'] = str(d['agent_id'])
@@ -407,14 +426,17 @@ if hook_event in ('PreCompact', 'PostCompact'):
 
 # PostToolBatch {tool_calls: [{tool_name, tool_input, tool_use_id, tool_response}]}
 # — one per model turn, once every tool call of that turn has an answer
-# (a denied one included). Only the main thread's batches matter here: the
-# server uses them to lower a permission hand the batch has answered, so a
-# headless auto-deny (PermissionRequest, then this ~60 ms later) never shows.
+# (a denied one included). The server uses it to lower a permission hand the
+# batch has answered, so a headless auto-deny (PermissionRequest, then this
+# ~60 ms later) never shows. Inside a subagent (agent_id, captured) the batch
+# is that worker's: it answers only a dialog the worker raised, and the
+# worker's id travels so the server can tell.
 if hook_event == 'PostToolBatch':
-    if d.get('agent_id'):
-        sys.exit(0)
     calls = d.get('tool_calls')
-    emit_session({'type': 'session_tool_done', 'batch': True, 'count': len(calls) if isinstance(calls, list) else 0})
+    event = {'type': 'session_tool_done', 'batch': True, 'count': len(calls) if isinstance(calls, list) else 0}
+    if d.get('agent_id'):
+        event['agentId'] = str(d['agent_id'])
+    emit_session(event)
 
 # CwdChanged {old_cwd, new_cwd} — after a persistent `cd` in Bash. The
 # session's cwd and project tag follow (the payload's own cwd is still the
@@ -479,11 +501,18 @@ if tool_name.startswith('mcp__'):
         })
     elif hook_event in ('PostToolUse', 'PostToolUseFailure'):
         # A failed MCP call gets PostToolUseFailure instead of PostToolUse;
-        # either way the transient worker leaves
-        emit({
-            'type':   'mcp_done',
-            'server': mcp_server,
-        })
+        # either way the transient worker leaves. The tool, the call_key and
+        # the worker it ran in (if any) let the server lower the permission
+        # hand this call raised, as session_tool_done does for other tools
+        done = {
+            'type':    'mcp_done',
+            'server':  mcp_server,
+            'tool':    mcp_tool,
+            'callKey': call_key(tool_name, d.get('tool_input')),
+        }
+        if d.get('agent_id'):
+            done['agentId'] = str(d['agent_id'])
+        emit(done)
     sys.exit(0)
 
 # Role mapping: normalise subagent_type to office role keys
@@ -661,9 +690,9 @@ def error_summary(err, limit=60):
 # Where they travel. The hook sends ONE JSON per invocation, so the signals
 # ride on the event this call sends anyway: `signals: [...]` on the
 # agent_working of PreToolUse and of PostToolUseFailure, and on the
-# session_tool_done of a main-thread PostToolUse. A worker's PostToolUse (or
-# one without a session id) sends nothing of its own, so there they go out
-# alone as {type: 'signal', signals: [...]}, tagged with the subagent like
+# session_tool_done of a PostToolUse (a worker's carries its agentId). A
+# PostToolUse without a session id sends nothing of its own, so there they go
+# out alone as {type: 'signal', signals: [...]}, tagged with the subagent like
 # any of its events. Each signal: kind, target, command (160), and on a
 # failure error (the first meaningful line, 200), exitCode, detail ("3
 # failing", "2 errors") and interrupted. Classification never changes the
@@ -1344,15 +1373,18 @@ if hook_event == 'PostToolUseFailure':
     })))
     sys.exit(0)
 
-# ── A main-thread tool call finished — PostToolUse of anything but the Agent
-# and MCP tools handled above. Nothing to draw, but a permission hand raised
-# for this tool comes down on the server: the call ran, so it was granted.
-# (A worker's PostToolUse says nothing; its agent is already shown working.)
+# ── A tool call finished — PostToolUse of anything but the Agent and MCP
+# tools handled above, on the main thread or inside a worker (agentId).
+# Nothing to draw, but the permission hand this very call raised (call_key)
+# comes down on the server: the call ran, so it was granted. A worker's
+# dialog is the worker's: its own finish is what answers it.
 # A Bash call's signals ride on the session_tool_done; where nothing would be
-# sent (a worker, no session id) they go out alone as a `signal` event.
+# sent (no session id) they go out alone as a `signal` event.
 if hook_event == 'PostToolUse':
-    done = with_signals({'type': 'session_tool_done', 'toolName': str(tool_name)[:80]})
-    if not sub_agent_id and SESSION.get('sessionId'):
+    done = with_signals({'type': 'session_tool_done', 'toolName': str(tool_name)[:80], 'callKey': call_key(tool_name, d.get('tool_input'))})
+    if sub_agent_id:
+        done['agentId'] = str(sub_agent_id)
+    if SESSION.get('sessionId'):
         emit_session(done)
     if done.get('signals'):
         emit(tag_subagent({'type': 'signal', 'signals': done['signals']}))

@@ -20,7 +20,7 @@ import { listen, loadOffice, officeProtocols, postEvent, removeOffice, type Offi
 import {
   BOT_SESSION_NAME, DEFAULT_POLL_MS, REGISTRY_STATES, REGISTRY_WAIT_SUMMARY,
   isBotSession, mainFromRegistry, mountRegistry, parseRegistryEntry, pidAlive,
-  readRegistry, registryInfo, registryToSession,
+  processStart, readRegistry, registryInfo, registryToSession, sameProcess,
 } from '../server/sessions.js'
 
 // ---------------------------------------------------------------------------
@@ -37,7 +37,9 @@ function entry(over: Record<string, unknown> = {}) {
     sessionId: SID,
     cwd: '/home/me/claude-office',
     startedAt: 1792021300048,
-    procStart: '365',
+    // What Claude Code records: the pid's own start time (where the platform
+    // says; a dead pid or Windows keeps the captured value, which nothing reads)
+    procStart: processStart(pid)?.procStart ?? '365',
     version: '2.1.300',
     peerProtocol: 1,
     peerFeatures: ['notify_idle', 'reply_across_default_dirs', 'artifact_yield'],
@@ -133,6 +135,7 @@ describe('readRegistry', () => {
       startedAt: live.startedAt,
       updatedAt: live.updatedAt,
       statusUpdatedAt: live.statusUpdatedAt,
+      procStart: live.procStart,
     }])
     // The stale file of a crashed session is still on disk; only the pid check tells
     expect(existsSync(join(dir, `${dead.pid}.json`))).toBe(true)
@@ -167,6 +170,80 @@ describe('readRegistry', () => {
     expect(readRegistry(dir, { cache, alive: probe })).toHaveLength(1)
     alive = false
     expect(readRegistry(dir, { cache, alive: probe })).toEqual([])
+  })
+
+  it('a leftover file whose pid another process now holds is skipped: its procStart is not the live one (the injected reading stands in for /proc or ps)', () => {
+    const own = mkdtempSync(join(tmpdir(), 'claude-sessions-reuse-'))
+    try {
+      const startOf = () => ({ procStart: '425', startMs: 1_792_000_000_000 })
+      const write = (over: Record<string, unknown>) => writeFileSync(join(own, '1.json'), JSON.stringify({ ...entry({ pid: 1, sessionId: 'ghost', status: 'waiting' }), ...over }))
+      write({ procStart: '99999999' })
+      expect(readRegistry(own, { alive: () => true, startOf })).toEqual([])
+      write({ procStart: '425' })
+      expect(readRegistry(own, { alive: () => true, startOf }).map(e => e.sessionId)).toEqual(['ghost'])
+      // Claude Code's Windows field is read first, as it reads it
+      write({ procStart: '99999999', procStartFt: '425' })
+      expect(readRegistry(own, { alive: () => true, startOf })).toHaveLength(1)
+      // An older Claude Code writes no procStart: the process cannot have started after the file says its session began
+      write({ procStart: undefined, startedAt: 1_792_000_000_000 - 60_000 })
+      expect(readRegistry(own, { alive: () => true, startOf })).toEqual([])
+      write({ procStart: undefined, startedAt: 1_792_000_000_000 + 1_000 })
+      expect(readRegistry(own, { alive: () => true, startOf })).toHaveLength(1)
+      // The platform does not say (Windows, ps missing): the pid check alone, as before
+      write({ procStart: '99999999' })
+      expect(readRegistry(own, { alive: () => true, startOf: () => null })).toHaveLength(1)
+    } finally {
+      rmSync(own, { recursive: true, force: true })
+    }
+  })
+
+  it('sameProcess: procStart compared as written (lstart padding aside), else startedAt with a few seconds of slack; nothing to compare is a yes', () => {
+    expect(sameProcess({ procStart: 'Wed Oct  5 06:00:00 2026' }, { procStart: 'Wed Oct 5 06:00:00 2026', startMs: 0 })).toBe(true)
+    expect(sameProcess({ procStart: '365' }, { procStart: '366', startMs: 0 })).toBe(false)
+    expect(sameProcess({ startedAt: 10_000 }, { startMs: 14_000 })).toBe(true)
+    expect(sameProcess({ startedAt: 10_000 }, { startMs: 16_000 })).toBe(false)
+    expect(sameProcess({ startedAt: 10_000 }, { procStart: '1', startMs: null })).toBe(true)
+    expect(sameProcess({}, { procStart: '1', startMs: 5 })).toBe(true)
+    expect(sameProcess({ procStart: '1' }, null)).toBe(true)
+  })
+
+  it('a live pid\'s start time is read once per file while it stays alive (on macOS each reading forks ps), and afresh once the pid was seen dead', () => {
+    const own = mkdtempSync(join(tmpdir(), 'claude-sessions-reuse-'))
+    try {
+      writeFileSync(join(own, '1.json'), JSON.stringify(entry({ pid: 1, sessionId: 's', procStart: '425' })))
+      const cache = new Map()
+      let reads = 0
+      let start = '425'
+      let alive = true
+      const opts = { cache, alive: () => alive, startOf: () => { reads++; return { procStart: start, startMs: 0 } } }
+      expect(readRegistry(own, opts)).toHaveLength(1)
+      expect(readRegistry(own, opts)).toHaveLength(1)
+      expect(reads).toBe(1)
+      // The process dies (the file stays, a crash) and the pid goes to somebody else
+      alive = false
+      expect(readRegistry(own, opts)).toEqual([])
+      alive = true
+      start = '9001'
+      expect(readRegistry(own, opts)).toEqual([])
+      expect(reads).toBe(2)
+    } finally {
+      rmSync(own, { recursive: true, force: true })
+    }
+  })
+
+  it.skipIf(!processStart(process.pid))('the real reading: this process\'s own start time passes, a made-up one is a reused pid', () => {
+    const own = mkdtempSync(join(tmpdir(), 'claude-sessions-reuse-'))
+    try {
+      writeFileSync(join(own, `${process.pid}.json`), JSON.stringify(entry({ sessionId: 'mine' })))
+      expect(readRegistry(own).map(e => e.sessionId)).toEqual(['mine'])
+      writeFileSync(join(own, `${process.pid}.json`), JSON.stringify(entry({ sessionId: 'ghost', procStart: '99999999' })))
+      expect(readRegistry(own)).toEqual([])
+      // Linux: field 22 of /proc/<pid>/stat and the boot time put the start before now
+      const start = processStart(process.pid)!
+      if (start.startMs !== null) expect(start.startMs).toBeLessThanOrEqual(Date.now())
+    } finally {
+      rmSync(own, { recursive: true, force: true })
+    }
   })
 
   it('two live files naming the same session keep the newer start; the list is oldest first', () => {
@@ -568,5 +645,100 @@ describe('the registry roster in the office', () => {
     reg().start()
     reg().stop()
     expect(DEFAULT_POLL_MS).toBe(2000)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// What the registry tells a hooked session the hooks cannot: the dialog closed
+// ---------------------------------------------------------------------------
+
+describe('a permission dialog answered or dismissed in the terminal (the registry leaves "waiting")', () => {
+  let office: Office
+  let regDir: string
+  const S = '77777777-9999-4999-8999-999999999999'
+  const SESSION = { sessionId: S, project: 'alpha', cwd: '/home/me/alpha' }
+
+  /** The hook's PermissionRequest POST with the office allowed to answer. */
+  const ask = async (over: Record<string, unknown> = {}) => (await postEvent(office.server, {
+    type: 'session_needs_you', kind: 'permission', ...SESSION, promptId: 'p-1',
+    toolName: 'Write', summary: 'probe3.txt', detail: '/home/me/alpha/probe3.txt', callKey: 'aaaaaaaaaaaaaaaa',
+    answerable: true, permissionMode: 'default', suggestions: [],
+    ...over,
+  })).body.permissionId as string
+  /** Claude Code rewriting <pid>.json with a new status, then the next poll of the roster. */
+  const registryStatus = async (status: string, statusUpdatedAt = Date.now()) => {
+    await sleep(5)
+    writeEntry(regDir, { pid: process.pid, sessionId: S, cwd: '/home/me/alpha', name: 'alpha-3a', status, statusUpdatedAt })
+    office.server.registry.scan()
+  }
+  const decide = (id: string, decision: string) =>
+    request(office.server.app).post(`/permission/${id}`).set('Authorization', `Bearer ${office.server.UI_TOKEN}`).send({ decision })
+  const poll = (id: string) => request(office.server.app).get(`/permission/${id}?wait=0`).set('Authorization', `Bearer ${office.server.AUTH_TOKEN}`)
+  const main = () => office.server.sessions.get(S).main
+
+  beforeAll(async () => {
+    regDir = mkdtempSync(join(tmpdir(), 'claude-sessions-dialog-'))
+    office = await loadOffice({ env: { AGENT_OFFICE_REGISTRY_DIR: regDir } })
+    await postEvent(office.server, { type: 'session_started', ...SESSION, source: 'startup' })
+    await postEvent(office.server, { type: 'session_prompt', ...SESSION, promptId: 'p-1', text: 'write probe3.txt' })
+    await registryStatus('busy')
+  })
+  afterAll(() => {
+    removeOffice(office)
+    try { rmSync(regDir, { recursive: true, force: true }) } catch {}
+  })
+
+  it('Esc at the dialog (no hook fires; the registry goes waiting -> idle): the card is released as answered in the terminal, a late office click is a 409, and the hand comes down', async () => {
+    const id = await ask()
+    await postEvent(office.server, { type: 'session_needs_you', kind: 'permission', ...SESSION, promptId: 'p-1', notificationType: 'permission_prompt', message: 'Claude needs your permission' })
+    await sleep(350)
+    expect(main()).toMatchObject({ state: 'needs-you', needsYou: { kind: 'permission', toolName: 'Write' } })
+    await registryStatus('waiting')
+    expect(office.server.permissions.get(id)?.status).toBe('pending')
+
+    await registryStatus('idle')
+    expect(office.server.permissions.get(id)).toMatchObject({ status: 'resolved_elsewhere', decidedBy: 'terminal' })
+    expect((await request(office.server.app).get('/permissions')).body.permissions).toEqual([])
+    expect((await poll(id)).body).toMatchObject({ status: 'resolved_elsewhere' })
+    const late = await decide(id, 'allow')
+    expect(late.status).toBe(409)
+    expect(late.body).toMatchObject({ status: 'resolved_elsewhere' })
+    expect(main().state).toBe('idle')
+    expect(main()).not.toHaveProperty('needsYou')
+  })
+
+  it('Yes on a long-running command (waiting -> busy, its PostToolUse minutes away): released at once, the hand comes down to working', async () => {
+    await postEvent(office.server, { type: 'session_prompt', ...SESSION, promptId: 'p-2', text: 'run the tests' })
+    const id = await ask({ promptId: 'p-2', toolName: 'Bash', summary: 'npm test', detail: 'npm test', callKey: 'bbbbbbbbbbbbbbbb' })
+    await sleep(350)
+    await registryStatus('waiting')
+    await registryStatus('busy')
+    expect(office.server.permissions.get(id)).toMatchObject({ status: 'resolved_elsewhere', decidedBy: 'terminal' })
+    expect((await decide(id, 'deny')).status).toBe(409)
+    expect(main().state).toBe('working')
+  })
+
+  it('a request that came in after the dialog closed (the next one) stays pending; a status change that is not leaving "waiting" releases nothing', async () => {
+    await registryStatus('waiting')
+    const closedAt = Date.now()
+    await sleep(5)
+    const next = await ask({ promptId: 'p-3', callKey: 'cccccccccccccccc' })
+    await registryStatus('busy', closedAt)
+    expect(office.server.permissions.get(next)?.status).toBe('pending')
+    await registryStatus('idle')
+    expect(office.server.permissions.get(next)?.status).toBe('pending')
+    office.server.permissions.resolveSession(S, '')
+  })
+
+  it('a leftover file whose pid now belongs to another process is not a session (the reused pid check, in the office)', async () => {
+    const ghost = '66666666-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+    writeFileSync(join(regDir, '1.json'), JSON.stringify(entry({ pid: 1, sessionId: ghost, status: 'waiting', procStart: '99999999' })))
+    office.server.registry.scan()
+    // Where the platform cannot say when pid 1 started, the pid check stands alone
+    const tells = processStart(1) !== null
+    expect(office.server.sessions.has(ghost)).toBe(!tells)
+    expect((await request(office.server.app).get('/registry')).body.entries.map((e: any) => e.sessionId).includes(ghost)).toBe(!tells)
+    unlinkSync(join(regDir, '1.json'))
+    office.server.registry.scan()
   })
 })

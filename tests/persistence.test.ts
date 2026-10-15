@@ -94,6 +94,31 @@ describe('agent persistence', () => {
     expect(Array.from(office.server.activeAgents.keys())).toEqual(['fresh'])
   })
 
+  it('a needs-you hand restored after a restart keeps its ten-minute timeout, counted from when it went up: already past, it comes down on load; else when the rest runs out', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agent-office-test-'))
+    const now = Date.now()
+    const minutes = 60_000
+    const hand = (id: string, since: number) => ({
+      id, project: id, state: 'active', startedAt: now - 30 * minutes, lastActivityAt: since, agentIds: [],
+      main: { state: 'needs-you', since, waitingOn: 0, needsYou: { kind: 'permission', toolName: 'Bash', summary: 'kubectl apply -f prod.yaml', since } },
+    })
+    writeFileSync(join(dir, 'agents.json'), JSON.stringify({ agents: [], sessions: [hand('expired', now - 11 * minutes), hand('recent', now - 1 * minutes)] }))
+
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    const office = await loadOffice({ dir })
+    offices.push(office)
+    expect(office.server.sessions.get('expired').main.state).toBe('idle')
+    expect(office.server.sessions.get('expired').main).not.toHaveProperty('needsYou')
+    expect(office.server.sessions.get('recent').main.state).toBe('needs-you')
+
+    vi.advanceTimersByTime(9 * minutes - 1_000)
+    expect(office.server.sessions.get('recent').main.state).toBe('needs-you')
+    vi.advanceTimersByTime(2_000)
+    expect(office.server.sessions.get('recent').main.state).toBe('idle')
+    expect(office.server.sessions.get('recent').main).not.toHaveProperty('needsYou')
+    expect(JSON.parse(readFileSync(join(dir, 'agents.json'), 'utf8')).sessions.find((s: any) => s.id === 'recent').main.state).toBe('idle')
+  })
+
   it('ignores a corrupt agents.json', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'agent-office-test-'))
     writeFileSync(join(dir, 'agents.json'), '{not json')

@@ -302,7 +302,61 @@ describe('the hook long-poll and the office decision', () => {
     expect(office.server.permissions.get(fresh)?.status).toBe('pending')
   })
 
-  it('a PostToolUse of another tool, or a PreToolUse, inside the race window leaves it pending; past the window they release it', async () => {
+  it('a PostToolUse of another call of the same tool never releases it, however late (git status beside the git push that asked); the asking call\'s own does, and a late click is then a 409', async () => {
+    const PUSH = '1111aaaa2222bbbb'
+    const id = (await postEvent(office.server, permissionRequest({ toolName: 'Bash', summary: 'git push origin main', detail: 'git push origin main', callKey: PUSH }))).body.permissionId
+    // The read-only view never shows the key (a hash of the command would confirm a guess)
+    expect((await request(office.server.app).get('/permissions')).body.permissions[0]).not.toHaveProperty('callKey')
+    await postEvent(office.server, { type: 'session_tool_done', ...ALPHA, promptId: 'p-1', toolName: 'Bash', callKey: '3333cccc4444dddd' })
+    await new Promise(r => setTimeout(r, 1_050))
+    await postEvent(office.server, { type: 'session_tool_done', ...ALPHA, promptId: 'p-1', toolName: 'Bash', callKey: '3333cccc4444dddd' })
+    await postEvent(office.server, { type: 'session_tool_done', ...ALPHA, promptId: 'p-1', toolName: 'Read', callKey: '7777aaaa8888bbbb' })
+    expect(office.server.permissions.get(id)?.status).toBe('pending')
+    await postEvent(office.server, { type: 'session_tool_done', ...ALPHA, promptId: 'p-1', toolName: 'Bash', callKey: PUSH })
+    expect(office.server.permissions.get(id)).toMatchObject({ status: 'resolved_elsewhere', decidedBy: 'terminal' })
+    expect((await decide(office.server, id, 'deny')).status).toBe(409)
+  })
+
+  it('a worker\'s request (agentId) is released by that worker\'s own next tool call past the race window, or its finish; not within the window, not by another worker, not by the main thread', async () => {
+    const SUB = 'a027f376ae8cdcbd0'
+    office.server.processEvent({ type: 'agent_spawned', ...ALPHA, agent: { id: 'agent-fg', name: 'Explorer', role: 'Explore', task: 'look', agentType: 'Explore' } })
+    office.server.processEvent({ type: 'agent_linked', ...ALPHA, agentId: 'agent-fg', subagentId: SUB })
+    office.server.processEvent({ type: 'agent_spawned', ...ALPHA, agent: { id: 'agent-other', name: 'Agent', role: 'general-purpose', task: 'other', agentType: 'general-purpose' } })
+    office.server.processEvent({ type: 'agent_linked', ...ALPHA, agentId: 'agent-other', subagentId: 'ac5ff55b850b4fecf' })
+    const worker = (agentId: string, status: string) => postEvent(office.server, { type: 'agent_working', ...ALPHA, agentId, agentType: 'Explore', status, tool: 'Read' })
+
+    const id = (await postEvent(office.server, permissionRequest({ toolName: 'Bash', summary: 'rm x', detail: 'rm x', agentId: SUB, callKey: '5555eeee6666ffff' }))).body.permissionId
+    await worker(SUB, 'running: rm x')                               // the asking call's own PreToolUse, late
+    await new Promise(r => setTimeout(r, 1_050))
+    await worker('ac5ff55b850b4fecf', 'reading a')                     // another worker
+    await postEvent(office.server, { type: 'agent_working', ...ALPHA, status: 'reading b' })   // the main thread
+    await postEvent(office.server, { type: 'session_tool_done', ...ALPHA, batch: true, count: 1 })
+    expect(office.server.permissions.get(id)?.status).toBe('pending')
+    await worker(SUB, 'reading c')
+    expect(office.server.permissions.get(id)).toMatchObject({ status: 'resolved_elsewhere', decidedBy: 'terminal' })
+    expect((await decide(office.server, id, 'deny')).status).toBe(409)
+
+    // Its own PostToolUse or batch end, at once; its finish, whatever it was doing
+    const own = (await postEvent(office.server, permissionRequest({ promptId: 'p-5', toolName: 'Bash', summary: 'rm y', agentId: SUB, callKey: '9999aaaa0000bbbb' }))).body.permissionId
+    await postEvent(office.server, { type: 'session_tool_done', ...ALPHA, toolName: 'Bash', callKey: '9999aaaa0000bbbb', agentId: SUB })
+    expect(office.server.permissions.get(own)?.status).toBe('resolved_elsewhere')
+    const batch = (await postEvent(office.server, permissionRequest({ promptId: 'p-6', toolName: 'Bash', summary: 'rm z', agentId: SUB }))).body.permissionId
+    await postEvent(office.server, { type: 'session_tool_done', ...ALPHA, batch: true, count: 2, agentId: SUB })
+    expect(office.server.permissions.get(batch)?.status).toBe('resolved_elsewhere')
+    const last = (await postEvent(office.server, permissionRequest({ promptId: 'p-7', toolName: 'Bash', summary: 'rm w', agentId: SUB }))).body.permissionId
+    await postEvent(office.server, { type: 'agent_completed', ...ALPHA, agentId: SUB, result: 'done' })
+    expect(office.server.permissions.get(last)?.status).toBe('resolved_elsewhere')
+  })
+
+  it('an MCP tool\'s request is released by that call\'s mcp_done', async () => {
+    const id = (await postEvent(office.server, permissionRequest({ toolName: 'mcp__github__create_issue', summary: 'mcp__github__create_issue', detail: '{}', callKey: '1234123412341234' }))).body.permissionId
+    await postEvent(office.server, { type: 'mcp_done', ...ALPHA, server: 'github', tool: 'get_me', callKey: 'ffffffffffffffff' })
+    expect(office.server.permissions.get(id)?.status).toBe('pending')
+    await postEvent(office.server, { type: 'mcp_done', ...ALPHA, server: 'github', tool: 'create_issue', callKey: '1234123412341234' })
+    expect(office.server.permissions.get(id)).toMatchObject({ status: 'resolved_elsewhere', decidedBy: 'terminal' })
+  })
+
+  it('a PostToolUse of another tool, or a PreToolUse, inside the race window leaves it pending; past the window a PreToolUse releases it', async () => {
     const id = (await postEvent(office.server, permissionRequest())).body.permissionId
     // The Read that ran beside the Write in the same batch, and the Write's own late PreToolUse
     await postEvent(office.server, { type: 'session_tool_done', ...ALPHA, promptId: 'p-1', toolName: 'Read' })

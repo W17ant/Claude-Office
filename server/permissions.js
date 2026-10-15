@@ -14,11 +14,16 @@
  * event, waits for the answer: the /event response carries a permissionId and
  * the hook long-polls GET /permission/:id until the server says it is over.
  * A click in the office POSTs /permission/:id and the hook prints the
- * matching hookOutput. Everything else the session does afterwards —
- * PreToolUse, PostToolUse, PostToolBatch, Stop, UserPromptSubmit, a new
- * PermissionRequest, SessionEnd — means the dialog was answered elsewhere, and
- * the pending record is released as `resolved_elsewhere` so the hook exits
- * without printing. The terminal always wins.
+ * matching hookOutput. What the session does afterwards may mean the dialog
+ * was answered elsewhere, and then the pending record is released as
+ * `resolved_elsewhere` so the hook exits without printing and a late click
+ * here gets a 409: the asking call's own PostToolUse (matched by tool name
+ * and the hook's callKey, never another call of the same tool), the end of
+ * the asking thread's batch, that thread's next tool call, the asking worker
+ * finishing, Stop, UserPromptSubmit, a new PermissionRequest, SessionEnd —
+ * and Claude Code's session registry leaving "waiting" (the dialog closed,
+ * an Esc included, which fires no hook). server/index.js decides which
+ * (releasePermissions). The terminal always wins.
  *
  * Expiry. A headless `claude -p` session auto-denies the call the moment all
  * PermissionRequest hooks finish and never fires a Notification, so a long
@@ -118,13 +123,14 @@ function toJSON(rec) {
  * A record as a caller without the office token sees it: what the session's
  * hand already shows on GET /sessions (the tool, its one-line summary, the
  * project, the deadline) but not `detail` — the full command, path or tool
- * input — nor the suggestions (rules that may quote the command) or a
- * decided record's hookOutput. Used for GET /permissions and the WebSocket's
+ * input — nor the suggestions (rules that may quote the command), a decided
+ * record's hookOutput, or the callKey (a hash of the tool input, which would
+ * confirm a guessed command). Used for GET /permissions and the WebSocket's
  * read-only connections (server/index.js).
  */
 export function redactPermission(rec) {
   if (!rec || typeof rec !== 'object') return rec
-  const { detail, suggestions, hookOutput, ...rest } = rec
+  const { detail, suggestions, hookOutput, callKey, ...rest } = rec
   return rest
 }
 
@@ -173,6 +179,9 @@ export function createPermissionStore({ broadcast = () => {}, now = Date.now } =
       permissionMode: String(fields.permissionMode || 'default'),
       ...(fields.promptId ? { promptId: String(fields.promptId) } : {}),
       ...(fields.agentId ? { agentId: String(fields.agentId) } : {}),
+      // Which call asked (the hook's hash of its input): what tells this
+      // dialog's own PostToolUse from another call of the same tool
+      ...(fields.callKey ? { callKey: String(fields.callKey) } : {}),
       createdAt: t,
       deadline: t + (isInteractive ? PERMISSION_WAIT_MAX_MS : PERMISSION_WAIT_MS),
       status: 'pending',

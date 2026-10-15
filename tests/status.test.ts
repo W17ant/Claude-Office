@@ -7,7 +7,8 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import request from 'supertest'
 import WebSocket from 'ws'
 import { listen, loadOffice, removeOffice, type Office, type OfficeServer } from './helpers'
-import { BURN_WINDOW_MS, HISTORY_POINTS, computeBurn, createStatusStore, validateStatus } from '../server/status.js'
+import express from 'express'
+import { BURN_WINDOW_MS, HISTORY_POINTS, computeBurn, createStatusStore, mountStatus, validateStatus } from '../server/status.js'
 
 // Pass-through mock so the test can see the server reach for timingSafeEqual
 vi.mock('crypto', async (importOriginal) => {
@@ -247,6 +248,50 @@ describe('burn rate', () => {
     expect(totals.costToday).toBe(0.22)
   })
 
+  it('an idle session\'s burn falls to zero without a report: refresh() hands the sweep the whole store when a burn or the totals moved since the clients were told, once, and nothing otherwise', () => {
+    let clock = now
+    const s = createStatusStore({ now: () => clock })
+    for (let i = 1; i <= 6; i++) {
+      clock += 30_000
+      s.ingest(status({ cost: i * 0.5, context: { used: 30, size: 200000, input: 50_000 + i * 1000, output: 500 } }))
+    }
+    // The last report told the clients everything there is
+    expect(s.refresh()).toBeNull()
+    expect(s.summary().totals.tokensPerMin).toBeGreaterThan(100_000)
+
+    // The user walks away: nothing more is reported, the window empties
+    clock += 6 * 60_000
+    expect(s.refresh()).toEqual({
+      type: 'session_status',
+      statuses: [expect.objectContaining({ sessionId: SID, cost: 3, burn: { dollarsPerMin: 0, tokensPerMin: 0 } })],
+      totals: { costToday: 3, tokensPerMin: 0, dollarsPerMin: 0 },
+      timestamp: clock,
+    })
+    expect(s.refresh()).toBeNull()
+    // An empty store has nothing to tell
+    expect(createStatusStore({ now: () => clock }).refresh()).toBeNull()
+  })
+
+  it('the mounted sweep broadcasts that refresh, in the statuses form the meters reducer takes as the whole store', () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    try {
+      let clock = now
+      const events: any[] = []
+      const mounted = mountStatus(express(), { requireToken: (_req: unknown, _res: unknown, next: () => void) => next(), broadcast: (e: any) => events.push(e), sweepMs: 1_000, now: () => clock })
+      for (let i = 1; i <= 3; i++) {
+        clock += 30_000
+        mounted.ingest(status({ cost: i * 0.5, context: { used: 30, size: 200000, input: 50_000 + i * 1000, output: 500 } }))
+      }
+      vi.advanceTimersByTime(1_000)
+      expect(events).toEqual([])                  // nothing moved yet
+      clock += 6 * 60_000
+      vi.advanceTimersByTime(2_000)
+      expect(events).toEqual([expect.objectContaining({ type: 'session_status', statuses: [expect.objectContaining({ burn: { dollarsPerMin: 0, tokensPerMin: 0 } })], totals: { costToday: 1.5, tokensPerMin: 0, dollarsPerMin: 0 } })])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('keeps a ring of HISTORY_POINTS points', () => {
     let clock = now
     const s = createStatusStore({ now: () => clock })
@@ -283,6 +328,31 @@ describe('expiry', () => {
     expect(s.has(SID)).toBe(false)
     expect(s.summary().sessions.map((x: any) => x.sessionId)).toEqual(['fresh'])
     expect(s.summary().totals.costToday).toBe(0.8)
+  })
+
+  it('a session the sweep forgot that reports again the same day (a long lunch, claude --resume) counts its cumulative cost once; another forgotten session keeps its own', () => {
+    let clock = new Date(2026, 9, 15, 11, 0).getTime()
+    const s = createStatusStore({ staleMs: 120 * 60_000, now: () => clock })
+    s.ingest(status({ cost: 4.5 }))
+    s.ingest(status({ sessionId: 'gone', cost: 1.25 }))
+    clock += 130 * 60_000
+    expect(s.expireStale()).toHaveLength(2)
+    expect(s.totals().costToday).toBe(5.75)
+
+    // Back: a stub first (agent_status, or a transcript estimate, cost 0) must not lose what was booked...
+    s.ingest({ type: 'agent_status', sessionId: SID, agents: [] })
+    expect(s.totals().costToday).toBe(5.75)
+    // ...and the status line's total, which includes it, must not add it again
+    s.ingest(status({ cost: 5.0 }))
+    expect(s.totals().costToday).toBe(6.25)
+    expect(s.summary().sessions.find((x: any) => x.sessionId === SID)).not.toHaveProperty('carried')
+
+    // Forgotten and back once more: still once
+    clock += 130 * 60_000
+    s.expireStale()
+    expect(s.totals().costToday).toBe(6.25)
+    s.ingest(status({ cost: 5.5 }))
+    expect(s.totals().costToday).toBe(6.75)
   })
 
   it('the mounted store uses AGENT_OFFICE_STALE_MINUTES', async () => {

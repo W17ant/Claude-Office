@@ -515,6 +515,20 @@ const NEEDS_YOU_KINDS = new Set(['permission', 'idle', 'quota', 'agent-input'])
 //   the hook's POSTs are backgrounded, so the two can arrive in either order:
 //   a working event does not lower a hand raised less than PERMISSION_RACE_MS ago
 // - a hand nobody answers comes down by itself after NEEDS_YOU_TIMEOUT_MS
+//   (re-armed for what is left of it when a hand is restored from agents.json)
+//
+// Which call a permission wait belongs to. A PermissionRequest carries no
+// tool_use_id, so the hook sends a `callKey` instead — a hash of the call's
+// tool name and tool input, which its PostToolUse carries too — and the
+// subagent's agent_id when a worker asked. A wait is answered only by its own
+// thread (the worker that asked, or the main thread) and, for a single call,
+// only by that call: tool name and callKey alike. Another call of the same
+// tool finishing beside it (`git status` next to the `git push` that asked,
+// a parallel read) says nothing about the dialog. A batch ending answers
+// every wait of its thread; a worker's next tool call past the race window,
+// or its completion, answers the ones it raised; main-thread activity never
+// answers a worker's. A turn boundary (Stop, a prompt, an API error, the
+// session ending) still answers everything.
 const NEEDS_YOU_DEBOUNCE_MS = 300
 const NEEDS_YOU_DEDUPE_MS = 10_000
 const PERMISSION_RACE_MS = 1_000
@@ -526,6 +540,34 @@ const TASK_IN_FLIGHT = /^(running|pending)$/i
 const pendingNeedsYou = new Map()
 /** @type {Map<string, ReturnType<typeof setTimeout>>} sessionId -> timer that lowers a hand nobody answered */
 const needsYouTimers = new Map()
+/**
+ * A wait (parked, or main.needsYou) -> the call behind it: { agentId?, callKey?,
+ * before? } — the raw subagent id that asked, the hook's callKey, and the main
+ * state the hand went up from. Kept off the wait itself, which is broadcast and
+ * persisted; a hand restored from agents.json has none and is matched by tool
+ * name alone, as before.
+ * @type {WeakMap<object, {agentId?: string, callKey?: string, before?: string}>}
+ */
+const waitCalls = new WeakMap()
+
+const callOf = wait => (wait && waitCalls.get(wait)) || {}
+
+/**
+ * Whether two raw thread ids name the same thread: both absent is the main
+ * thread; a subagent id and an office id match through the alias map.
+ */
+function sameThread(a, b) {
+  if (!a && !b) return true
+  if (!a || !b) return false
+  if (a === b) return true
+  const id = lookupAgentId(a)
+  return !!id && id === lookupAgentId(b)
+}
+
+/** The same call by callKey, when both sides have one (an older hook sends none). */
+function sameCallKey(a, b) {
+  return !a || !b || a === b
+}
 
 function cancelPendingNeedsYou(sessionId) {
   const pending = pendingNeedsYou.get(sessionId)
@@ -589,8 +631,8 @@ function mainEvent(session, reason, now = Date.now()) {
   return { type: 'session_main', sessionId: session.id, project: session.project, reason, main: { ...session.main }, timestamp: now }
 }
 
-/** Lower a hand nobody answered within NEEDS_YOU_TIMEOUT_MS. */
-function armNeedsYouTimeout(session) {
+/** Lower a hand nobody answered within NEEDS_YOU_TIMEOUT_MS (`delayMs`: what is left of it, for a restored hand). */
+function armNeedsYouTimeout(session, delayMs = NEEDS_YOU_TIMEOUT_MS) {
   clearNeedsYouTimer(session.id)
   const since = session.main.needsYou?.since
   const timer = setTimeout(() => {
@@ -601,7 +643,7 @@ function armNeedsYouTimeout(session) {
     setMainState(current, 'idle', `needs-you unanswered for ${NEEDS_YOU_TIMEOUT_MS / 60_000} min`)
     saveAgents()
     broadcast(mainEvent(current, 'needs-you timed out'))
-  }, NEEDS_YOU_TIMEOUT_MS)
+  }, Math.max(0, delayMs))
   timer.unref?.()
   needsYouTimers.set(session.id, timer)
 }
@@ -617,7 +659,10 @@ function applyNeedsYou(sessionId) {
   const now = Date.now()
   const main = mainOf(session, now)
   const wait = pending.wait
+  // The state to go back to when the worker that asked moves on (a hand raised over a hand keeps the first one's)
+  const before = main.state === 'needs-you' ? callOf(main.needsYou).before : main.state
   main.needsYou = { ...wait }
+  waitCalls.set(main.needsYou, { ...callOf(wait), before })
   if (wait.promptId) main.promptId = wait.promptId
   delete main.error
   delete main.beforeCompact
@@ -644,14 +689,79 @@ function applyNeedsYou(sessionId) {
   })
 }
 
-/** A tool call on the main thread: Claude is working (unless a hand just went up, see PERMISSION_RACE_MS). */
+/**
+ * A tool call on the main thread: Claude is working — unless a permission hand
+ * just went up (see PERMISSION_RACE_MS), or a worker raised it (that worker's
+ * own activity lowers it, see threadMovedOn).
+ */
 function mainWorking(session, status, now = Date.now()) {
   const main = mainOf(session, now)
-  if (main.state === 'needs-you' && main.needsYou?.kind === 'permission' && now - main.needsYou.since < PERMISSION_RACE_MS) return false
+  if (main.state === 'needs-you' && main.needsYou?.kind === 'permission') {
+    if (now - main.needsYou.since < PERMISSION_RACE_MS || callOf(main.needsYou).agentId) return false
+  }
   delete main.needsYou
   delete main.error
   delete main.beforeCompact
   return setMainState(session, 'working', status ? `tool call: ${status}` : 'tool call', now)
+}
+
+/**
+ * Lower the permission hand `answers(wait, call)` accepts, and withdraw a
+ * parked one it accepts, logging `what` as the reason. The hand goes to `to`,
+ * or, without one, back to the state it went up from (a worker's dialog
+ * answered while Claude itself waits on that worker is waiting again).
+ * Returns the session_main broadcast when the raised hand came down, else null.
+ */
+function lowerPermissionHand(session, answers, what, to) {
+  const pending = pendingNeedsYou.get(session.id)
+  if (pending && pending.wait.kind === 'permission' && answers(pending.wait, callOf(pending.wait))) {
+    cancelPendingNeedsYou(session.id)
+    console.log(`[main] ${sessionName(session)}: needs-you withdrawn before it was shown (${needsYouLabel(pending.wait)}; ${what} ${Date.now() - pending.wait.since} ms later)`)
+  }
+  const main = mainOf(session)
+  if (main.state !== 'needs-you' || main.needsYou?.kind !== 'permission') return null
+  const call = callOf(main.needsYou)
+  if (!answers(main.needsYou, call)) return null
+  const back = to ?? (['working', 'waiting', 'idle'].includes(call.before) ? call.before : 'working')
+  delete main.needsYou
+  setMainState(session, back, what)
+  saveAgents()
+  return mainEvent(session, 'permission answered')
+}
+
+/**
+ * One tool call of a thread finished (PostToolUse; an MCP call's mcp_done) or
+ * a whole batch of its calls did (PostToolBatch): the permission waits it
+ * answers come down — the pending office card, a parked wait, the hand (see
+ * "Which call a permission wait belongs to" above). `done` is { toolName?,
+ * callKey?, agentId?, batch?, count? }. Returns the session_main broadcast
+ * when the hand came down, else null.
+ */
+function toolDone(session, done) {
+  const answers = (toolName, agentId, callKey) => sameThread(agentId, done.agentId)
+    && (done.batch === true || (!!done.toolName && toolName === done.toolName && sameCallKey(callKey, done.callKey)))
+  const what = done.batch === true ? `tool batch of ${done.count ?? '?'} done` : `${done.toolName ?? 'tool'} ran`
+  releasePermissions(session.id, what, p => answers(p.toolName, p.agentId, p.callKey))
+  // The main thread goes back to work; a worker's hand returns to where it was raised from
+  return lowerPermissionHand(session, (w, call) => answers(w.toolName, call.agentId, call.callKey), what, done.agentId ? undefined : 'working')
+}
+
+/**
+ * A worker made a tool call (PreToolUse, PostToolUseFailure) or finished: a
+ * permission it asked for was answered in the terminal. A tool call counts
+ * past PERMISSION_RACE_MS only, like the main thread's (it may be the late
+ * PreToolUse of the very call that asked); a completion (`finished`) always.
+ * `agentId` is the raw id the event carried. Returns the session_main
+ * broadcast when the hand came down, else null.
+ */
+function threadMovedOn(session, agentId, what, { finished = false, now = Date.now() } = {}) {
+  const settled = since => finished || now - since >= PERMISSION_RACE_MS
+  releasePermissions(session.id, what, p => !!p.agentId && sameThread(p.agentId, agentId) && settled(p.createdAt))
+  const main = mainOf(session, now)
+  if (main.state !== 'needs-you' || main.needsYou?.kind !== 'permission') return null
+  const call = callOf(main.needsYou)
+  if (!call.agentId || !sameThread(call.agentId, agentId) || !settled(main.needsYou.since)) return null
+  return lowerPermissionHand(session, w => w === main.needsYou, what)
 }
 
 /** One line of text for a log line. */
@@ -1012,6 +1122,23 @@ function loadAgents() {
       if (agent.sessionId) sessions.get(agent.sessionId)?.agentIds.add(agent.id)
     }
     if (sessions.size > 0) console.log(`[sessions] Restored ${sessions.size} session(s) from ${AGENTS_FILE}`)
+
+    // A hand that was up when the server stopped gets what is left of its ten
+    // minutes, counted from when it went up: the dialog may well have been
+    // answered while nothing was listening, and nothing else would lower it
+    const now = Date.now()
+    for (const session of sessions.values()) {
+      const main = session.main
+      if (main?.state !== 'needs-you') continue
+      const since = main.needsYou?.since ?? main.since ?? now
+      const left = NEEDS_YOU_TIMEOUT_MS - (now - since)
+      if (left > 0) {
+        armNeedsYouTimeout(session, left)
+        continue
+      }
+      delete main.needsYou
+      setMainState(session, 'idle', `needs-you unanswered for ${NEEDS_YOU_TIMEOUT_MS / 60_000} min, across a restart`, now)
+    }
   } catch (err) {
     console.warn('[agents] Could not restore agent state:', err.message)
   }
@@ -1124,8 +1251,46 @@ function transcriptText(text) {
   return max ? String(text ?? '').slice(0, max) : ''
 }
 
+/**
+ * Bring the text the sessions already hold (main.lastPrompt / lastReply, in
+ * memory and in agents.json) down to the current logPrompts level — or to
+ * nothing (`clear`, the /clear command). Lowering the level is a promise about
+ * what the office keeps from now on and about what it holds now: without this
+ * an earlier prompt would ride on every later session_* broadcast. Returns
+ * the sessions it changed; the caller saves and announces them.
+ */
+function retrimTranscripts({ clear = false } = {}) {
+  const changed = []
+  for (const session of sessions.values()) {
+    const main = session.main
+    if (!main) continue
+    let touched = false
+    for (const key of ['lastPrompt', 'lastReply']) {
+      if (typeof main[key] !== 'string') continue
+      const kept = clear ? '' : transcriptText(main[key])
+      if (kept === main[key]) continue
+      main[key] = kept
+      touched = true
+    }
+    if (touched) changed.push(session)
+  }
+  return changed
+}
+
+/** retrimTranscripts, saved and broadcast (each changed session's main, as session_main). */
+function retrimAndAnnounce(reason, opts) {
+  const changed = retrimTranscripts(opts)
+  if (!changed.length) return 0
+  saveAgents()
+  for (const session of changed) broadcast(mainEvent(session, reason))
+  console.log(`[settings] ${reason}: text trimmed on ${changed.length} session(s)`)
+  return changed.length
+}
+
 loadSettings()
 syncAnswerMarker()
+// agents.json was written under whatever level was set then; settings.json may say less now
+if (retrimTranscripts().length) saveAgents()
 
 /** Stop.background_tasks as forwarded by the tracker: at most 10, four clamped strings each. */
 function sanitiseTasks(list) {
@@ -1358,7 +1523,27 @@ const registry = mountRegistry(app, {
   toEvent: sessionEvent,
   endSession,
   forgetSession,
+  onStatusChange: registryStatusChanged,
 })
+
+/**
+ * A hooked session's registry entry left "waiting": the permission dialog
+ * that was on screen is gone — answered Yes (busy), rejected with Esc (idle;
+ * no hook fires for that at all), or the process exited. Whatever office card
+ * was pending for it is released as answered in the terminal, so a late click
+ * is a 409 and the hook's poll ends silently, and a permission hand comes
+ * down with it — only cards and hands from before the dialog closed (the
+ * entry's statusUpdatedAt), so the next dialog's request, already in, stays.
+ * The one time the registry touches a hooked session's main state.
+ */
+function registryStatusChanged(session, before, after, entry, t) {
+  if (before !== 'waiting' || after === 'waiting' || session.hooked === false || session.state !== 'active') return
+  const closedAt = entry?.statusUpdatedAt ?? t
+  const what = `the dialog closed in the terminal (registry: waiting -> ${after ?? 'gone'})`
+  releasePermissions(session.id, what, p => p.createdAt <= closedAt)
+  const lowered = lowerPermissionHand(session, w => w.since <= closedAt, what, after === 'busy' || after === 'shell' ? 'working' : 'idle')
+  if (lowered) broadcast({ ...lowered, reason: 'answered in the terminal' })
+}
 
 // The task board (server/tasks.js): each known session's task list, read from
 // ~/.claude/tasks/<session id>/ and broadcast as `task_board` when it changes.
@@ -1420,18 +1605,19 @@ app.get('/roster', (_req, res) => {
  * subagent id (from the hook payload's agent_id). agent.parentSubagentId on a
  * spawn is the subagent that made the Agent call (a nested spawn).
  *   { type: "mcp_call",        server, tool, agentId? }
- *   { type: "mcp_done",        server, agentId? }
+ *   { type: "mcp_done",        server, tool?, callKey?, agentId? }
  *   { type: "session_started", sessionId, project, cwd, source, model?, title? }   (SessionStart)
  *   { type: "session_ended",   sessionId, reason }                                 (SessionEnd)
  *
  * The session's own Claude (its `main` record; all carry sessionId, promptId?):
  *   { type: "session_prompt",    text, isWakeup, wakeupAgentId?, wakeupStatus? }  (UserPromptSubmit)
  *   { type: "session_turn_end",  text, backgroundTasks[], crons, stopHookActive } (Stop)
- *   { type: "session_needs_you", kind, toolName?, summary?, message?, notificationType?, agentId? }
+ *   { type: "session_needs_you", kind, toolName?, summary?, message?, notificationType?, agentId?, callKey? }
  *                                                           (PermissionRequest, Notification)
  *   { type: "session_error",     error, detail }                                   (StopFailure)
  *   { type: "session_compact",   phase: "pre" | "post", trigger }                  (Pre/PostCompact)
- *   { type: "session_tool_done", toolName? | batch: true, count }  (main-thread PostToolUse / PostToolBatch)
+ *   { type: "session_tool_done", toolName?, callKey? | batch: true, count; agentId? }
+ *                                                           (PostToolUse / PostToolBatch; agentId inside a worker)
  *   { type: "session_cwd",       cwd, project, oldCwd? }                           (CwdChanged)
  *   { type: "session_model",     model, fromModel?, switchSource? }                (PostModelSwitch)
  *   { type: "task_created" | "task_completed", taskId, subject }        (TaskCreated, TaskCompleted)
@@ -1498,6 +1684,8 @@ app.post('/event', requireToken, (req, res) => {
     wakeupStatus:     clampString(body.wakeupStatus, 40),
     kind:             NEEDS_YOU_KINDS.has(body.kind) ? body.kind : undefined,
     toolName:         clampString(body.toolName, 80),
+    // Which call a PermissionRequest / PostToolUse is (a hash of its input, see needs-you timing)
+    callKey:          clampString(body.callKey, 64),
     summary:          clampString(body.summary),
     message:          clampString(body.message),
     notificationType: clampString(body.notificationType, 40),
@@ -1563,6 +1751,7 @@ app.post('/event', requireToken, (req, res) => {
       permissionMode: sanitised.permissionMode,
       promptId: sanitised.promptId,
       agentId: sanitised.agentId,
+      callKey: sanitised.callKey,
     })
     return res.json({ ok: true, permissionId: permission.id, wait })
   }
@@ -1589,6 +1778,8 @@ function handleSlashCommand(cmd) {
     }
     case '/clear': {
       db.prepare('DELETE FROM messages').run()
+      // The last prompt and reply on each session are the same conversation
+      retrimAndAnnounce('chat cleared', { clear: true })
       return '🧹 Chat cleared'
     }
     // Incident mode ("Prod Is Down"): relayed to every connected office as a
@@ -2085,6 +2276,8 @@ app.post('/settings', requireUi, (req, res) => {
   saveSettings()
   syncAnswerMarker()
   console.log(`[settings] logPrompts = ${settings.logPrompts}, answerPermissions = ${settings.answerPermissions}`)
+  // A lower level applies to the text already held too (rows in chat.db stay until /clear)
+  if (logPrompts !== undefined) retrimAndAnnounce(`logPrompts ${settings.logPrompts}`)
   res.json({ ok: true, ...settings })
 })
 
@@ -2481,7 +2674,12 @@ function processEvent(body) {
         recordActivity(id, { kind: body.failed ? 'failed' : 'tool', tool: body.tool ?? toolFromStatus(body.status), text: body.status }, agent.lastActivityAt)
         // An agent spawned before the hook knew its session learns it here
         if (session && !agent.sessionId) attachAgentToSession(agent, session)
+        // The worker moved on: a dialog it raised has been answered in the
+        // terminal (past the race window, as on the main thread below)
+        const home = session ?? (agent.sessionId ? sessions.get(agent.sessionId) : null)
+        const lowered = home ? threadMovedOn(home, body.agentId, `${agent.name ?? id}: ${logText(body.status)}`, { now: agent.lastActivityAt }) : null
         saveAgents()
+        if (lowered) broadcast(lowered)
         return {
           type: 'agent_working',
           agentId: id,
@@ -2501,10 +2699,11 @@ function processEvent(body) {
         session.lastStatusAt = now
         mainWorking(session, body.status, now)
         recordActivity(mainActivityId(session.id), { kind: body.failed ? 'failed' : 'tool', tool: body.tool ?? toolFromStatus(body.status), text: body.status }, now)
-        // PreToolUse / PostToolUseFailure on the main thread: a dialog that
-        // was up has been answered — unless this is the PreToolUse of the very
-        // call that raised it, which can arrive after it (PERMISSION_RACE_MS)
-        releasePermissions(session.id, `tool call: ${logText(body.status)}`, p => now - p.createdAt >= PERMISSION_RACE_MS)
+        // PreToolUse / PostToolUseFailure on the main thread: a dialog the
+        // main thread raised has been answered — unless this is the PreToolUse
+        // of the very call that raised it, which can arrive after it
+        // (PERMISSION_RACE_MS). A worker's dialog is not the main thread's to settle.
+        releasePermissions(session.id, `tool call: ${logText(body.status)}`, p => !p.agentId && now - p.createdAt >= PERMISSION_RACE_MS)
         saveAgents()
       }
       return {
@@ -2518,7 +2717,7 @@ function processEvent(body) {
     }
 
     case 'agent_completed': {
-      touchSession(body)
+      const touched = touchSession(body)
       const id = lookupAgentId(body.agentId)
       if (id && activeAgents.get(id).state === 'completed') {
         // Already announced and walking out — a foreground agent's SubagentStop
@@ -2557,6 +2756,12 @@ function processEvent(body) {
       }
       console.log(`[-] Agent completed: ${id ?? body.agentId}${stats.tokens !== undefined ? ` (${stats.tokens} tokens${stats.durationMs !== undefined ? `, ${stats.durationMs} ms` : ''})` : ''}`)
       const sessionId = id ? activeAgents.get(id).sessionId : undefined
+      // The worker is done: whatever it was waiting on in the terminal is over
+      const home = (sessionId ? sessions.get(sessionId) : null) ?? touched
+      if (home && body.agentId) {
+        const lowered = threadMovedOn(home, body.agentId, `${id ? activeAgents.get(id).name ?? id : body.agentId} finished`, { finished: true })
+        if (lowered) broadcast(lowered)
+      }
       return {
         type: 'agent_completed',
         agentId: id ?? body.agentId,
@@ -2610,6 +2815,12 @@ function processEvent(body) {
         if (agent.server !== body.server || agent.state !== 'working') continue
         if (session && agent.sessionId && agent.sessionId !== session.id) continue
         activeAgents.delete(id)
+      }
+      // The MCP call's own PostToolUse: the permission it asked for (as
+      // mcp__<server>__<tool>) was granted, exactly as for any other tool
+      if (session && body.tool) {
+        const lowered = toolDone(session, { toolName: `mcp__${body.server}__${body.tool}`, callKey: body.callKey, agentId: body.agentId })
+        if (lowered) broadcast(lowered)
       }
       return { type: 'mcp_done', server: body.server, ...(session ? { sessionId: session.id } : {}), timestamp: Date.now() }
     }
@@ -2766,9 +2977,12 @@ function processEvent(body) {
       // before the dedupe below, which only concerns the hand.
       if (body.notificationType) permissions.markInteractive(session.id)
       else if (body.kind === 'permission') releasePermissions(session.id, 'a new permission request')
+      // A Notification names no tool: it is the dialog already waited on. A
+      // PermissionRequest is the same wait only from the same thread for the
+      // same call (another call of that tool is another dialog)
       const sameWait = w => w && w.kind === body.kind
         && (w.promptId ?? null) === (body.promptId ?? null)
-        && (!body.toolName || w.toolName === body.toolName)
+        && (!body.toolName || (w.toolName === body.toolName && sameThread(callOf(w).agentId, body.agentId) && sameCallKey(callOf(w).callKey, body.callKey)))
       // One wait, several hooks (PermissionRequest, then Notification
       // {permission_prompt} ~6 s later): a repeat for the same prompt within
       // NEEDS_YOU_DEDUPE_MS changes nothing
@@ -2789,6 +3003,8 @@ function processEvent(body) {
         ...(body.message ? { message: body.message } : {}),
         ...(body.notificationType ? { notificationType: body.notificationType } : {}),
       }
+      // Which call asked (see "Which call a permission wait belongs to")
+      if (body.agentId || body.callKey) waitCalls.set(wait, { ...(body.agentId ? { agentId: body.agentId } : {}), ...(body.callKey ? { callKey: body.callKey } : {}) })
       console.log(`[main] ${sessionName(session)}: needs-you requested (${needsYouLabel(wait)})`)
       const timer = setTimeout(() => applyNeedsYou(session.id), NEEDS_YOU_DEBOUNCE_MS)
       timer.unref?.()
@@ -2797,29 +3013,17 @@ function processEvent(body) {
     }
 
     case 'session_tool_done': {
-      // A main-thread tool call ran (PostToolUse) or a whole batch of them
-      // was answered (PostToolBatch): a permission hand raised for that tool
-      // — or any hand, for a batch — comes down, since the call went ahead
+      // A tool call ran (PostToolUse) or a whole batch of them was answered
+      // (PostToolBatch), on the main thread or inside the worker agentId
+      // names: the permission it answers — that call's own, or every one of
+      // the thread's for a batch — was granted or settled in the terminal
+      // (toolDone). Another call of the same tool says nothing about it.
       const session = touchSession(body)
       if (!session) return null
-      const answers = w => w && w.kind === 'permission' && (body.batch === true || (body.toolName && w.toolName === body.toolName))
-      const what = body.batch === true ? `tool batch of ${body.count ?? '?'} done` : `${body.toolName ?? 'tool'} ran`
-      // A pending permission of the session was answered in the terminal: the
-      // batch end settles everything; a single PostToolUse settles the tool it
-      // names, or any record older than the parallel-batch race window (a Read
-      // that ran beside the Write still waiting on its dialog)
-      releasePermissions(session.id, what, p => body.batch === true || p.toolName === body.toolName || Date.now() - p.createdAt >= PERMISSION_RACE_MS)
-      const pending = pendingNeedsYou.get(session.id)
-      if (pending && answers(pending.wait)) {
-        cancelPendingNeedsYou(session.id)
-        console.log(`[main] ${sessionName(session)}: needs-you withdrawn before it was shown (${needsYouLabel(pending.wait)}; ${what} ${Date.now() - pending.wait.since} ms later)`)
-      }
-      const main = mainOf(session)
-      if (main.state !== 'needs-you' || !answers(main.needsYou)) return null
-      delete main.needsYou
-      setMainState(session, 'working', what)
-      saveAgents()
-      return mainEvent(session, 'permission answered')
+      // A worker's call is activity of that worker too
+      const workerId = lookupAgentId(body.agentId)
+      if (workerId && activeAgents.get(workerId).state !== 'completed') activeAgents.get(workerId).lastActivityAt = Date.now()
+      return toolDone(session, { toolName: body.toolName, callKey: body.callKey, agentId: body.agentId, batch: body.batch, count: body.count })
     }
 
     case 'session_cwd': {

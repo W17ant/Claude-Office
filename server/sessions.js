@@ -17,8 +17,20 @@
  * runs register too (kind "interactive", status "busy" for the whole run, idle
  * for a moment before the file goes). A crash leaves the files behind, so an
  * entry only counts while its pid answers process.kill(pid, 0) (EPERM = alive
- * but not ours, which is alive). `claude agents --json` prints the same
- * registry but takes about a second per call; the directory is read instead.
+ * but not ours, which is alive) AND that pid is still the process that wrote
+ * the file: after a reboot or a pid wrap a leftover <pid>.json can name a pid
+ * some other program now holds, and Claude Code itself never cleans such a
+ * file up (it deletes leftovers only when the pid is dead). So, the way
+ * Claude Code checks its own entries, the process's start time is compared
+ * with the one the file recorded (processStart below): `procStart` is field
+ * 22 of /proc/<pid>/stat on Linux (clock ticks since boot) and the output of
+ * `LC_ALL=C TZ=UTC ps -o lstart= -p <pid>` on macOS, compared as written; a
+ * file without one (an older Claude Code) is checked by `startedAt` instead —
+ * the process cannot have started after the file says its session began (the
+ * start in epoch ms is the boot time plus the ticks, or the parsed lstart). On
+ * a platform where neither can be read (Windows) the pid check stands alone.
+ * `claude agents --json` prints the same registry but takes about a second
+ * per call; the directory is read instead.
  *
  * The module watches that directory — fs.watch where it works, plus a poll
  * (fs.watch is unreliable on macOS for some writers) with mtime/size change
@@ -34,10 +46,17 @@
  *   - a live entry for a HOOKED session is attached as `registry` ({ pid,
  *     name, nameSource, status, kind, version, startedAt, statusUpdatedAt })
  *     and announced with session_registry, nothing more: the hooks are the
- *     truth for its main state and the registry never overwrites it; losing
- *     the entry just drops `registry`
+ *     truth for its main state and the registry never overwrites it (save the
+ *     closed dialog below); losing the entry just drops `registry`
  *   - the first hook event from an unhooked session flips it to hooked with
  *     the same id (server/index.js, touchSession / session_started)
+ *   - a status change of an attached entry is also reported to
+ *     `onStatusChange(session, before, after, entry, t)` (after and entry are
+ *     undefined when the entry went). server/index.js uses the one transition
+ *     the hooks cannot see: "waiting" -> anything else means the permission
+ *     dialog on screen was answered or dismissed in the terminal (an Esc fires
+ *     no hook at all), so the office card for it is released and the hand
+ *     comes down — the only thing the registry ever changes on a hooked session
  *
  * Presence and status only, by design: what a session is doing stays
  * hook-only (no transcript tailing). Registry status -> main.state is
@@ -65,6 +84,7 @@
  *                       pid, name, status, kind, hooked }] }  (open, like GET /sessions)
  */
 
+import { execFileSync } from 'child_process'
 import { readdirSync, readFileSync, statSync, watch } from 'fs'
 import { basename, join } from 'path'
 
@@ -96,6 +116,83 @@ export function pidAlive(pid) {
   } catch (err) {
     return err?.code === 'EPERM'
   }
+}
+
+// Clock ticks per second of /proc/<pid>/stat's start time. Claude Code
+// assumes 100 (USER_HZ on every mainstream Linux) when it does the same sum.
+const CLOCK_TICKS_PER_S = 100
+// A start time read back may sit up to a second before the real one (btime
+// and lstart are whole seconds); a file's startedAt is written after the
+// process started. Past this margin the process started after its file: the
+// pid was reused.
+const START_SLACK_MS = 5_000
+// How long one reading of a pid's start time is trusted (see readRegistry)
+const START_CACHE_MS = 30_000
+
+let bootTimeS
+/** The boot time from /proc/stat (constant for as long as this process lives), or null. */
+function linuxBootTime() {
+  if (bootTimeS === undefined) {
+    try {
+      const m = /^btime (\d+)$/m.exec(readFileSync('/proc/stat', 'utf8'))
+      bootTimeS = m ? Number(m[1]) : null
+    } catch {
+      bootTimeS = null
+    }
+  }
+  return bootTimeS
+}
+
+/**
+ * When a process started, the way Claude Code records it in its registry
+ * file (see the module header): `procStart`, the raw value it writes, and
+ * `startMs`, the same instant in epoch ms. null when the platform does not say
+ * (Windows, a pid that is gone, /proc or ps unavailable).
+ */
+export function processStart(pid, { platform = process.platform } = {}) {
+  try {
+    if (platform === 'linux') {
+      const stat = readFileSync(`/proc/${pid}/stat`, 'utf8')
+      // The command name in field 2 may hold spaces and parentheses: count from the last ')'
+      const ticks = stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19]
+      if (!/^\d+$/.test(ticks ?? '')) return null
+      const boot = linuxBootTime()
+      return { procStart: ticks, startMs: boot === null ? null : boot * 1000 + (Number(ticks) / CLOCK_TICKS_PER_S) * 1000 }
+    }
+    if (platform === 'darwin') {
+      const lstart = execFileSync('ps', ['-o', 'lstart=', '-p', String(pid)], {
+        encoding: 'utf8',
+        timeout: 1000,
+        stdio: ['ignore', 'pipe', 'ignore'],
+        env: { ...process.env, LC_ALL: 'C', TZ: 'UTC' },
+      }).trim()
+      if (!lstart) return null
+      const startMs = Date.parse(`${lstart} UTC`)
+      return { procStart: lstart, startMs: Number.isFinite(startMs) ? startMs : null }
+    }
+  } catch {
+    // Gone between the liveness check and here, or nothing to read
+  }
+  return null
+}
+
+/** Whitespace-insensitive form of a procStart (lstart pads one-digit days). */
+const startKey = value => String(value).trim().split(/\s+/).join(' ')
+
+/**
+ * Whether the live process `start` (processStart's reading, or null) is the
+ * one that wrote `entry`: its procStart when the file has one, else its
+ * startedAt (see the module header). Can't tell is yes.
+ */
+export function sameProcess(entry, start) {
+  if (!start) return true
+  if (entry.procStart !== undefined && start.procStart !== undefined && start.procStart !== null) {
+    return startKey(entry.procStart) === startKey(start.procStart)
+  }
+  if (typeof entry.startedAt === 'number' && typeof start.startMs === 'number') {
+    return start.startMs <= entry.startedAt + START_SLACK_MS
+  }
+  return true
 }
 
 /** The chat watcher's own `claude -p` call (see the module header). */
@@ -131,18 +228,27 @@ export function parseRegistryEntry(text) {
     const val = num(raw[key])
     if (val !== undefined) entry[key] = val
   }
+  // What the liveness check compares (sameProcess); procStartFt is the form
+  // Claude Code writes on Windows, and it reads that one first as well
+  const procStart = str(raw.procStartFt, 64) ?? str(raw.procStart, 64)
+  if (procStart) entry.procStart = procStart
   return entry
 }
 
 /**
  * The live entries of a registry directory, oldest first, one per session id
  * (two live files naming the same session keep the newer start). Missing
- * directory (Claude Code has never run), .key files, non-JSON, non-entries
- * and dead pids are skipped. `cache` (a Map the caller keeps between scans)
- * avoids re-reading files whose mtime and size have not changed; liveness is
- * re-checked every scan regardless, a crash leaves the file as it was.
+ * directory (Claude Code has never run), .key files, non-JSON, non-entries,
+ * dead pids and pids now held by another process (`startOf`, processStart by
+ * default, and sameProcess) are skipped. `cache` (a Map the caller keeps
+ * between scans) avoids re-reading files whose mtime and size have not
+ * changed; liveness is re-checked every scan regardless, a crash leaves the
+ * file as it was. The start time of a live pid is read again at most every
+ * START_CACHE_MS per file (on macOS each reading forks `ps`), and at once
+ * after the pid was seen dead or the file changed.
  */
-export function readRegistry(dir, { alive = pidAlive, cache = null } = {}) {
+export function readRegistry(dir, { alive = pidAlive, cache = null, startOf = processStart } = {}) {
+  const t = Date.now()
   let names
   try {
     names = readdirSync(dir)
@@ -163,7 +269,7 @@ export function readRegistry(dir, { alive = pidAlive, cache = null } = {}) {
     }
     if (!st.isFile() || st.size > MAX_FILE_BYTES) continue
     let entry
-    const cached = cache?.get(name)
+    let cached = cache?.get(name)
     if (cached && cached.mtimeMs === st.mtimeMs && cached.ctimeMs === st.ctimeMs && cached.size === st.size) {
       entry = cached.entry
     } else {
@@ -174,9 +280,21 @@ export function readRegistry(dir, { alive = pidAlive, cache = null } = {}) {
         continue
       }
       entry = parseRegistryEntry(text)
-      cache?.set(name, { mtimeMs: st.mtimeMs, ctimeMs: st.ctimeMs, size: st.size, entry })
+      cached = { mtimeMs: st.mtimeMs, ctimeMs: st.ctimeMs, size: st.size, entry }
+      cache?.set(name, cached)
     }
-    if (!entry || !alive(entry.pid)) continue
+    if (!entry) continue
+    if (!alive(entry.pid)) {
+      // A dead pid's next owner is a different process: read its start afresh
+      if (cached) delete cached.start
+      continue
+    }
+    let start = cached?.start
+    if (!start || t - start.at >= START_CACHE_MS) {
+      start = { at: t, value: startOf(entry.pid) }
+      if (cached) cached.start = start
+    }
+    if (!sameProcess(entry, start.value)) continue
     const prev = bySession.get(entry.sessionId)
     if (!prev || (entry.startedAt ?? 0) > (prev.startedAt ?? 0)) bySession.set(entry.sessionId, entry)
   }
@@ -234,9 +352,11 @@ export function registryToSession(entry, now = Date.now()) {
  * it. Handed in from index.js: `broadcast`, `toEvent(session, type)` (its
  * sessionEvent), `endSession(session, reason, now)` and `forgetSession(id)`,
  * so an unhooked session ends, lingers and is forgotten exactly like a hooked
- * one. `isOwnSession(entry)` skips the office's own bot. `alive` and `now`
- * are injectable for tests. Returns { start, stop, scan, stats, dir }, also
- * reachable as app.locals.registry; nothing runs until start().
+ * one. `isOwnSession(entry)` skips the office's own bot. `onStatusChange`
+ * hears every status change of an entry attached to an active session (see
+ * the module header). `alive`, `startOf` and `now` are injectable for tests.
+ * Returns { start, stop, scan, stats, dir }, also reachable as
+ * app.locals.registry; nothing runs until start().
  */
 export function mountRegistry(app, {
   sessions,
@@ -247,7 +367,9 @@ export function mountRegistry(app, {
   toEvent,
   endSession,
   forgetSession,
+  onStatusChange = () => {},
   alive = pidAlive,
+  startOf = processStart,
   now = () => Date.now(),
   log = (...args) => console.log(...args),
 } = {}) {
@@ -283,7 +405,7 @@ export function mountRegistry(app, {
    */
   function scan(t = now()) {
     lastScanAt = t
-    const entries = readRegistry(registryDir, { alive, cache })
+    const entries = readRegistry(registryDir, { alive, cache, startOf })
     const seen = new Set()
 
     for (const entry of entries) {
@@ -324,6 +446,7 @@ export function mountRegistry(app, {
         log(`[registry] ${label(entry)}: ${before ? `${before} -> ${entry.status ?? '?'}` : 'attached to the hooked session'}`)
       }
       broadcast(toEvent(session, 'session_registry'))
+      if (before && before !== entry.status) onStatusChange(session, before, entry.status, entry, t)
     }
 
     for (const [id, prev] of Array.from(known)) {
@@ -338,9 +461,13 @@ export function mountRegistry(app, {
         broadcast(toEvent(session, 'session_ended'))
       } else if (session.registry) {
         // The hooks keep reporting this session; it just lost its registry entry
+        const before = session.registry.status
         delete session.registry
         log(`[registry] - ${label(prev)}: gone (hooked session stays)`)
-        if (session.state === 'active') broadcast(toEvent(session, 'session_registry'))
+        if (session.state === 'active') {
+          broadcast(toEvent(session, 'session_registry'))
+          if (before) onStatusChange(session, before, undefined, undefined, t)
+        }
       }
     }
   }
