@@ -328,11 +328,12 @@ export interface OfficeEvent {
   socket?: 'open' | 'closed'
 }
 
-import { BOSS_NAME, BOSS_COLOR, BOSS_EMOJI } from './config'
+import { BOSS_CONFIG } from './config'
 
 export const AGENT_CONFIGS: Record<string, { color: string; emoji: string; title: string }> = {
-  // The boss — configured via office.config.json
-  'boss':                  { color: BOSS_COLOR, emoji: BOSS_EMOJI, title: BOSS_NAME },
+  // The boss — configured via office.config.json. The object itself, not a
+  // copy: loadRuntimeConfig (src/config.ts) updates it in place.
+  'boss':                  BOSS_CONFIG,
   // Subagents
   'debugger':              { color: '#e74c3c', emoji: '🔍', title: 'Debugger' },
   'code-reviewer':         { color: '#3498db', emoji: '📋', title: 'Reviewer' },

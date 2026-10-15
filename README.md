@@ -119,7 +119,7 @@ bash scripts/start-office.sh             # open http://localhost:3333
 bash scripts/stop-office.sh              # stop everything it started
 ```
 
-`npm run dev:all` is option B without the chat watcher (server + Vite in one terminal); `npm run dev` is Vite alone and expects `npm run server` in another terminal. `office.config.json` is optional — copy `office.config.example.json` to it to name your boss character (see [Customise your character](#customise-your-character)).
+`npm run dev:all` is option B without the chat watcher (server + Vite in one terminal); `npm run dev` is Vite alone and expects `npm run server` in another terminal. `office.config.json` is optional — copy `office.config.example.json` to it to name your boss character (see [Customise your character](#customise-your-character)); the server reads it at runtime, so a rename needs a page reload, not a rebuild. To run the office on another port, export `AGENT_OFFICE_PORT` before starting it and before Claude Code (see [Configuration](#configuration)).
 
 Then [connect Claude Code](#connect-claude-code) so agents show up.
 
@@ -127,11 +127,11 @@ Then [connect Claude Code](#connect-claude-code) so agents show up.
 
 `start-office.sh` starts the server, Vite and the chat AI watcher, each in its own process group, and records their pids in `~/.agent-office/server.pid`, `vite.pid` and `chat-watcher.pid`. `stop-office.sh` stops exactly those processes — a browser holding a WebSocket to `:3334`, the Electron app or an unrelated Vite on `:3333` are never touched. If you started the server some other way, `bash scripts/stop-office.sh --force` additionally kills whatever is *listening* on the office ports. Ctrl+C in `start-office.sh` stops everything it started; on a box without `open`/`xdg-open` it prints the URL instead of aborting.
 
-The chat AI watcher (`scripts/chat-ai-watcher.sh`, log in `~/.agent-office/chat-ai.log`) only answers messages a person typed in the office chat — its own replies, the agents' `starting:`/`done:` announcements, agent-to-agent messages and `/commands` are never answered — and runs `claude -p` with `--max-turns 1 --model claude-haiku-5-5 --safe-mode --strict-mcp-config --tools "" --no-session-persistence` under a timeout, so a reply never fires the office's own hooks or loads your project's MCP servers. Knobs (all optional): `CHAT_AI_MODEL`, `CHAT_AI_TIMEOUT` (seconds, default 60), `CHAT_AI_MAX_REPLIES_PER_MIN` (default 5), `CHAT_AI_POLL_INTERVAL` (default 8). Every script honours `AGENT_OFFICE_HOME` (state dir); `start-office.sh`/`stop-office.sh` also take `AGENT_OFFICE_PORT` (default 3334) and `AGENT_OFFICE_UI_PORT` (default 3333) — note that the server itself, the hook and the UI are fixed at 3334 today, so changing the port end to end is a [roadmap](#roadmap) item.
+The chat AI watcher (`scripts/chat-ai-watcher.sh`, log in `~/.agent-office/chat-ai.log`) only answers messages a person typed in the office chat — its own replies, the agents' `starting:`/`done:` announcements, agent-to-agent messages and `/commands` are never answered — and runs `claude -p` with `--max-turns 1 --model claude-haiku-5-5 --safe-mode --strict-mcp-config --tools "" --no-session-persistence` under a timeout, so a reply never fires the office's own hooks or loads your project's MCP servers. Knobs (all optional): `CHAT_AI_MODEL`, `CHAT_AI_TIMEOUT` (seconds, default 60), `CHAT_AI_MAX_REPLIES_PER_MIN` (default 5), `CHAT_AI_POLL_INTERVAL` (default 8). Every script honours `AGENT_OFFICE_HOME` (state dir) and `AGENT_OFFICE_PORT` (default 3334); `start-office.sh`/`stop-office.sh` also take `AGENT_OFFICE_UI_PORT` (default 3333). The server, the hook, the status line, the page and the desktop app read the same `AGENT_OFFICE_PORT`, so one export moves the whole office — see [Configuration](#configuration).
 
 ### Running tests
 
-`npm test` runs the Vitest suite in `tests/` (server API, WebSocket, sessions, status/meters, health, incident commands, the office reducer, hook script, status line, installer, doctor, shell scripts — 516 tests) against a temp `AGENT_OFFICE_HOME`, so your real `~/.agent-office` is never touched; `npm run test:watch` keeps it running. CI (`.github/workflows/ci.yml`) runs `tsc --noEmit`, `npm test`, `vite build` and `npm run check-assets` on every push to `main` and every pull request.
+`npm test` runs the Vitest suite in `tests/` (server API, WebSocket, sessions, status/meters, health, incident commands, the office reducer, hook script, status line, installer, doctor, shell scripts, runtime config — 642 tests) against a temp `AGENT_OFFICE_HOME`, so your real `~/.agent-office` is never touched; `npm run test:watch` keeps it running. CI (`.github/workflows/ci.yml`) runs `tsc --noEmit`, `npm test`, `vite build` and `npm run check-assets` on every push to `main` and every pull request.
 
 `npm run check-assets` guards `public/`: every sprite and room the code can ask for must exist (a missing one fails), files nothing references are listed, and `public/` must stay under a size budget. To add a sprite, drop the PNG under `public/sprites/` and reference it from the code — a literal path or one of the dynamic patterns documented at the top of `scripts/check-assets.mjs` — so the check sees it; rooms are exported at twice the 754 px they are drawn at.
 
@@ -284,7 +284,7 @@ Two things to know. Plugin hooks merge with the ones in your settings, so pick o
 
 "Nothing appears" is almost always one of three things: the server is not running, the hooks are not installed (or point at a checkout that has since moved), or Claude Code simply has not run a tool yet. Two places tell you which:
 
-- **The status strip** along the bottom of the office (hidden under `?sim` / `?video`, which get a `SIM` badge instead) shows `ONLINE` / `RECONNECTING…` / `OFFLINE` for the WebSocket to `127.0.0.1:3334`, then `hooks: last seen 12 s ago` once a hook event has reached the server — or, after a minute online with nothing heard (and the server up that long), `no hook events yet — run npm run install-hooks` — then the session count and the server version. Hover it for the details and the command to type; while the server is down the strip says so and shows `npm run server`.
+- **The status strip** along the bottom of the office (hidden under `?sim` / `?video`, which get a `SIM` badge instead) shows `ONLINE` / `RECONNECTING…` / `OFFLINE` for the WebSocket to the office server (the page's own origin when the server serves it, `127.0.0.1:$AGENT_OFFICE_PORT` under Vite), then `hooks: last seen 12 s ago` once a hook event has reached the server — or, after a minute online with nothing heard (and the server up that long), `no hook events yet — run npm run install-hooks` — then the session count and the server version. Hover it for the details and the command to type; while the server is down the strip says so and shows `npm run server`.
 - **The session strip** in the title bar lists every running Claude Code process within two seconds, hooks or no hooks, straight from Claude Code's own registry (`~/.claude/sessions`, see **Sessions without hooks** above). A grey, dashed *not hooked* pill means the session is running and only the hooks are missing; no pill at all means Claude Code is not running (or writes its registry somewhere else — `GET /registry` shows the directory the server reads).
 - **`npm run doctor`** prints a `PASS` / `WARN` / `FAIL` line per link in the chain: the Node version; the hook entries in `~/.claude/settings.json` (or `$CLAUDE_CONFIG_DIR/settings.json`) running an `agent-tracker.sh` that exists — the installer's own rule — or the `agent-office` plugin being installed; the status line; `python3` / `bash` / `curl` on the PATH; the server answering `GET /health` on `AGENT_OFFICE_PORT` and whether hooks have reached it since it started; the auth token (present, mode `0600`); `dist/` built. It ends with the install, uninstall and start commands and exits 1 on any `FAIL`, so it works in a script too (`--json` for machine-readable output).
 
@@ -396,7 +396,7 @@ The recipient goes in `metadata.to` (name, role or office id); replies thread th
 | `localhost:3333?video` | Video — scripted recording mode |
 | `localhost:3333?helper` | Placement helper — dev tool for positioning furniture |
 | `localhost:3333?variant=incident` | Incident — pins "Prod Is Down" mode on (for screenshots) |
-| `localhost:3334` | Built — the office server serving `dist/` after `npm run build`; what the desktop app loads. The `?` flags above work here too |
+| `localhost:3334` | Built — the office server serving `dist/` after `npm run build`; what the desktop app loads (on `AGENT_OFFICE_PORT` when set). The `?` flags above work here too |
 
 ## Skins
 
@@ -488,6 +488,8 @@ The boss character (you) is configurable via `office.config.json`:
 }
 ```
 
+The file sits next to `package.json`, and the server reads it on every page load (`GET /config`): rename the boss, reload the page, done — no rebuild, no restart. The page applies it before its first render and falls back to the copy bundled at build time when the server does not answer (`?sim`, `?video`, or Vite without a server). For the desktop app the file is the one next to the server it starts, `resources/app/office.config.json` inside the installed app (`Agent Office.app/Contents/Resources/app/` on macOS, `resources\app\` in the install directory on Windows); release builds ship without one, so they show the default boss until you add it there or point `AGENT_OFFICE_CONFIG_DIR` at a directory that holds one (the only way for the read-only Linux AppImage).
+
 ### Creating a custom sprite
 
 Use the Helper sprite sheet as a reference for the 4-direction layout — here's an example of mine next to it:
@@ -513,7 +515,7 @@ python3 scripts/extract-boss-sprite.py your-character.png MyChar-1
 
 ## Desktop app (Electron)
 
-The desktop app is self-contained: it bundles the office server, the built UI and `node_modules`, runs the server on the Node that ships inside Electron (nothing needs to be installed, and no `node` on the PATH), and loads the office from `http://127.0.0.1:3334/` — one port for the page, its assets and the WebSocket.
+The desktop app is self-contained: it bundles the office server, the built UI and `node_modules`, runs the server on the Node that ships inside Electron (nothing needs to be installed, and no `node` on the PATH), and loads the office from `http://127.0.0.1:3334/` — one port for the page, its assets and the WebSocket. Launched with `AGENT_OFFICE_PORT` in its environment (from a terminal, say), the app starts its server, loads the page and points the tray at that port instead.
 
 **Download.** Every tagged release carries installers built by the [release workflow](.github/workflows/release.yml); the [releases page](https://github.com/W17ant/Claude-Office/releases) has them, named `Agent-Office-<version>-<os>-<arch>`:
 
@@ -533,7 +535,7 @@ npm run build:electron  # Installer for this OS (.dmg, .exe or .AppImage) in rel
 
 **Compact widget** — `Office → Compact widget`, `Cmd/Ctrl+Shift+C`, the tray menu, or `--compact` on the command line — turns the window into a small always-on-top widget showing just the room. The layout is scaled to 60 % and shifted so the chat panel sits off the right edge: the agents keep moving in a 452×409 corner of the screen (top-right the first time) that follows you across virtual desktops and full-screen apps. It resizes (the room scales with it), has its own remembered size and spot, and the title bar is still the drag handle. Toggle it off and the full office comes back where it was. **Always on top** (`Cmd/Ctrl+Shift+T`) is a separate toggle for the full window; the widget is always on top by nature.
 
-**Tray / menu bar.** The app puts a pixel-art desk in the tray (the menu bar on macOS) and reads `GET /agents` and `GET /sessions` every 5 s: the tooltip says `Agent Office — 2 working, 1 needs you` (or `the office is empty`, `server not reachable`), the window title carries the same line, and on macOS the number of working agents — plus `1!` when a session waits on you — sits beside the icon. Its menu, also on right-click in the window: the status line, **Show/Hide office**, **Compact widget**, **Always on top**, **Open in browser** (the same office at `http://127.0.0.1:3334/`), **Quit**. On macOS and Windows closing the window keeps the app in the tray (the Dock icon, the tray or opening the app again brings the window back); on Linux, where not every desktop shows a tray, closing the window quits.
+**Tray / menu bar.** The app puts a pixel-art desk in the tray (the menu bar on macOS) and reads `GET /agents` and `GET /sessions` every 5 s: the tooltip says `Agent Office — 2 working, 1 needs you` (or `the office is empty`, `server not reachable`), the window title carries the same line, and on macOS the number of working agents — plus `1!` when a session waits on you — sits beside the icon. Its menu, also on right-click in the window: the status line, **Show/Hide office**, **Compact widget**, **Always on top**, **Open in browser** (the same office at `http://127.0.0.1:3334/`, or the `AGENT_OFFICE_PORT` it runs on), **Quit**. On macOS and Windows closing the window keeps the app in the tray (the Dock icon, the tray or opening the app again brings the window back); on Linux, where not every desktop shows a tray, closing the window quits.
 
 **Icons.** `scripts/generate-icons.mjs` draws the tray glyph and the app icon as pixel maps and writes the PNGs with no image tooling: `electron/assets/` holds the tray icons and the Linux window icon, `build/icon.png` (512×512) is what electron-builder turns into the `.icns`, `.ico` and Linux icon set. The macOS tray icon is a monochrome template image (`trayTemplate.png` and `@2x`), tinted by the menu bar for light and dark mode. Re-run the script after editing the maps; a test fails when the committed files are stale.
 
@@ -550,15 +552,42 @@ The same single-port mode works without Electron: `npm run build && npm run serv
 
 **Cutting a release** (maintainers). `npm version minor` (or `patch` / `major`) bumps `package.json` and `package-lock.json` and — through the `version` script, `scripts/sync-plugin-version.mjs` — `.claude-plugin/plugin.json`, then commits and tags `vX.Y.Z`; `git push --follow-tags` pushes the commit and the tag. The tag starts [`release.yml`](.github/workflows/release.yml): it checks that the tag matches `package.json`, creates a **draft** release for it, then builds on macOS, Windows and Linux runners and uploads the installers (and electron-builder's `latest*.yml` update metadata) to that draft. Nothing is public until you open the draft on the releases page, edit the notes and publish it. A failed leg can be re-run from the Actions tab, and **Run workflow** on the tag rebuilds everything; both upload to the same draft. A tag whose release is already published is left alone. Nothing in the pipeline signs — there is no Apple or Windows certificate — hence the first-launch steps under Download.
 
+## Configuration
+
+Everything is optional; the defaults are the office as described above. Set these in the shell that starts the office **and** in the one that starts Claude Code (the hook and the status line run inside Claude Code and read them there).
+
+| Variable | Default | Read by | What it does |
+|---|---|---|---|
+| `AGENT_OFFICE_PORT` | `3334` | server, hook, status line, office scripts, `npm run doctor`, Vite dev (proxy and page), desktop app and tray | The office server's port. Not a port (letters, `0`, `70000`)? The server warns and uses 3334, as do Vite and the desktop app; the shell hooks and scripts use the value as given, so fix it rather than rely on that. The page served by the server needs nothing: it talks to the origin it was loaded from |
+| `AGENT_OFFICE_HOST` | `127.0.0.1` | server | The bind address, **loopback only**: `127.0.0.1`, `localhost` or `::1`. Anything else (`0.0.0.0`, a LAN address) is refused with the reason logged and the server binds `127.0.0.1` — see [Security](#security) |
+| `AGENT_OFFICE_UI_PORT` | `3333` | `start-office.sh`, `stop-office.sh`, the server's origin allowlist | The Vite dev server's port (`start-office.sh` runs `vite --port`); `npm run dev` always uses 3333 |
+| `AGENT_OFFICE_HOME` | `~/.agent-office` | server, hook, status line, scripts | The runtime dir: auth token, `agents.json`, `chat.db`, inbox files, pid files |
+| `AGENT_OFFICE_EVENT_URL` | `http://localhost:$AGENT_OFFICE_PORT/event` | hook (`agent-tracker.sh`) | The full event URL; wins over `AGENT_OFFICE_PORT` |
+| `AGENT_OFFICE_STATUS_URL` | `http://localhost:$AGENT_OFFICE_PORT/status` | status line (`status-line.sh`) | The full status URL; wins over `AGENT_OFFICE_PORT` |
+| `AGENT_OFFICE_CONFIG_DIR` | the directory holding `package.json` | server | Where `office.config.json` is read from (see [Customise your character](#customise-your-character)) |
+| `AGENT_OFFICE_REGISTRY_DIR` | `$CLAUDE_CONFIG_DIR/sessions` | server | Claude Code's session registry, the source of the *not hooked* pills (see [Sessions without hooks](#connect-claude-code)) |
+| `CLAUDE_CONFIG_DIR` | `~/.claude` | server, `npm run doctor` | Claude Code's config dir: the server reads the session registry under it, the doctor reads `settings.json` there. The installer still writes `~/.claude/settings.json` |
+
+`office.config.json` (the boss's name, sprite, colour and emoji) is read by the server at runtime and applied by the page on load, so changing it needs a reload, not a rebuild; `GET /config` shows what the server read. Other knobs (`AGENT_OFFICE_STALE_MINUTES`, `AGENT_OFFICE_A2A_LIMIT`, the `CHAT_AI_*` settings) are described where they apply.
+
 ## Security
 
-The server listens on `127.0.0.1` only, so it is never on the network. The
-threat it defends against is therefore other processes on the same machine (a
+The server listens on loopback only (`127.0.0.1` unless `AGENT_OFFICE_HOST`
+names another loopback form), so it is never on the network. The threat it
+defends against is therefore other processes on the same machine (a
 malicious npm dependency, another local user on a shared host): loopback is not
 user-isolated, and nothing stops a local process from reaching the port.
 Browsers are kept out separately — the origin allowlist refuses every origin
-but the loopback UI (ports 3333/3334), and the JSON content type makes a
-cross-site POST preflight.
+but the loopback UI (the Vite port, 3333, and the server's own port, 3334 or
+`AGENT_OFFICE_PORT`), and the JSON content type makes a cross-site POST
+preflight.
+
+A non-loopback bind is refused on purpose, not merely unsupported: every
+`GET`, `POST /chat` and the WebSocket below are open on loopback by design,
+so on a LAN address they would hand your prompts, Claude's replies and every
+agent's task to the network. The UI token covers only the two routes the page
+changes; it would have to cover every route first. `AGENT_OFFICE_HOST=0.0.0.0`
+therefore logs that reason and binds `127.0.0.1`.
 
 So every route that **acts as an agent or destroys state** requires a bearer
 token, and the rest stay open:

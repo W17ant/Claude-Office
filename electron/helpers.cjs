@@ -13,6 +13,51 @@ const path = require('path')
 const APP_NAME = 'Agent Office'
 
 // ---------------------------------------------------------------------------
+// The server's port
+// ---------------------------------------------------------------------------
+
+const DEFAULT_SERVER_PORT = 3334
+const VITE_DEV_PORT = 3333
+
+/**
+ * The office server's port from AGENT_OFFICE_PORT: the same parse as
+ * server/config.js readPort (which this file cannot import: the server is
+ * ESM and the Electron main process is CommonJS), so the app, the server it
+ * spawns and the hooks always agree. Anything that is not a port is 3334.
+ */
+function serverPortFromEnv(env = process.env) {
+  const raw = env && env.AGENT_OFFICE_PORT
+  if (typeof raw !== 'string' || raw === '') return DEFAULT_SERVER_PORT
+  const text = raw.trim()
+  if (!/^\d{1,5}$/.test(text)) return DEFAULT_SERVER_PORT
+  const port = Number(text)
+  return port >= 1 && port <= 65535 ? port : DEFAULT_SERVER_PORT
+}
+
+/**
+ * Every URL the main process derives from the port: the server (what the
+ * packaged window loads and the tray polls), its health route, the Vite dev
+ * server (what `electron .` loads), and the origins the window may navigate
+ * to — both servers, by name or loopback IP.
+ */
+function serverUrls(port = DEFAULT_SERVER_PORT, uiPort = VITE_DEV_PORT) {
+  const serverUrl = `http://127.0.0.1:${port}`
+  const viteUrl = `http://localhost:${uiPort}`
+  return {
+    port,
+    serverUrl,
+    healthUrl: `${serverUrl}/health`,
+    viteUrl,
+    allowedOrigins: [
+      viteUrl,
+      `http://127.0.0.1:${uiPort}`,
+      `http://localhost:${port}`,
+      serverUrl,
+    ],
+  }
+}
+
+// ---------------------------------------------------------------------------
 // The office layout
 // ---------------------------------------------------------------------------
 
@@ -288,6 +333,10 @@ function trayMenuTemplate(state, actions) {
 
 module.exports = {
   APP_NAME,
+  DEFAULT_SERVER_PORT,
+  VITE_DEV_PORT,
+  serverPortFromEnv,
+  serverUrls,
   LAYOUT,
   ROOM_VIEWPORT,
   MIN_SIZE,
