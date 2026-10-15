@@ -1091,11 +1091,17 @@ def tokenize(segment):
             out.append(t)
     return out
 
-def classify_segments(command, cwd=None):
+def classify_segments(command, cwd=None, stats=None):
     # Every meaningful segment, with what the outcome logic needs:
-    # {kind, target?, branch?, toDefault?, masked, dir}
+    # {kind, target?, branch?, toDefault?, masked, dir, seg}. `stats`, when
+    # given, gets 'gates': how many segments of the WHOLE chain decide its
+    # exit status (unmasked), classified or not, so a failure is never
+    # pinned on a deploy when an unclassified `npm ci` before it could just
+    # as well have been the one that failed. A `cd` is not counted: it rarely
+    # fails, and `cd api && npm test` is the commonest chain there is.
     out, here, prev = [], cwd if isinstance(cwd, str) and cwd else None, None
-    for text, op in split_command(command):
+    gates = 0
+    for seg, (text, op) in enumerate(split_command(command)):
         masked = op in ('|', '||', ';', '&') or prev == '||'
         prev = op
         tokens = strip_wrappers(tokenize(text)) if text else []
@@ -1105,17 +1111,21 @@ def classify_segments(command, cwd=None):
         if prog in ('cd', 'pushd') and args and args[0] != '-':
             here = os.path.normpath(os.path.join(here or '', os.path.expanduser(args[0])))
             continue
+        if not masked:
+            gates += 1
+            if stats is not None:
+                stats['gates'] = gates
         if prog == 'git':
             sub = positionals(args, ('-C', '-c', '--git-dir', '--work-tree', '--namespace'))
             if sub[:1] == ['push']:
                 gdir = flag_value(args, ('-C',))
                 where = os.path.normpath(os.path.join(here or '', gdir)) if gdir else here
                 for entry in git_push(args[args.index('push') + 1:]):
-                    out.append(dict(entry, masked=masked, dir=where))
+                    out.append(dict(entry, masked=masked, dir=where, seg=seg))
             continue
         hit = classify_program(prog, args)
         if hit:
-            entry = {'kind': hit[0], 'masked': masked, 'dir': here}
+            entry = {'kind': hit[0], 'masked': masked, 'dir': here, 'seg': seg}
             if hit[1]:
                 entry['target'] = hit[1][:80]
             out.append(entry)
@@ -1221,7 +1231,8 @@ def bash_signals():
     command = inp.get('command')
     phase = ('PreToolUse', 'PostToolUse', 'PostToolUseFailure').index(hook_event)
     cwd = d.get('cwd') if isinstance(d.get('cwd'), str) else None
-    segs = classify_segments(command, cwd)
+    chain = {'gates': 0}
+    segs = classify_segments(command, cwd, chain)
     if not segs or (phase == 1 and inp.get('run_in_background')):
         return []  # a backgrounded command is still running: no outcome yet
     error = exit_code = None
@@ -1242,11 +1253,15 @@ def bash_signals():
         text = plain(err)
         error = first_meaningful(text) or (f'exit code {exit_code}' if exit_code is not None else '')
         # A lone segment that decides the exit status is the culprit; only a
-        # chain needs the output to say which of its segments failed
-        alone = len(segs) == 1 and not segs[0]['masked']
+        # chain needs the output to say which of its segments failed. With no
+        # pointer in the output, the first classified gate is blamed only
+        # when every gate of the chain is classified: `npm ci && vercel
+        # deploy` failing on npm says nothing about the deploy, which never ran
+        alone = len(segs) == 1 and not segs[0]['masked'] and chain['gates'] == 1
         pointed = [] if alone else [i for i, s in enumerate(segs) if prints(FAIL_PRINTS, s['kind'], text)]
         gates = [i for i, s in enumerate(segs) if not s['masked']]
-        blamed = (pointed or gates or [None])[0]
+        all_known = chain['gates'] == len({segs[i]['seg'] for i in gates})
+        blamed = (pointed or (gates if all_known else []) or [None])[0]
         outcomes = ['fail' if interrupted or i == blamed or (s['masked'] and i in pointed) else None for i, s in enumerate(segs)]
     out = []
     for s, outcome in zip(segs, outcomes):

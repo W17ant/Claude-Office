@@ -462,7 +462,7 @@ describe('the office link at startup', () => {
     const office = await loadOffice({ env: { AGENT_OFFICE_UI_DIR: join(freshDir(), 'nothing-here') } })
     offices.push(office)
     const lines = await started(office)
-    expect(lines.find(l => l.includes('Agent Office: '))).toBe(`  Agent Office: http://localhost:${office.server.UI_DEV_PORT}/#token=${office.server.AUTH_TOKEN}  (the Vite dev server)`)
+    expect(lines.find(l => l.includes('Agent Office: '))).toBe(`  Agent Office: http://127.0.0.1:${office.server.UI_DEV_PORT}/#token=${office.server.AUTH_TOKEN}  (the Vite dev server)`)
   })
 
   it('the fragment never reaches the server: a request for the link\'s page carries no token', async () => {

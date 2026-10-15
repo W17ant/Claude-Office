@@ -181,7 +181,7 @@ describe('status-line.sh: statusLine', () => {
     expect(req.body.type).toBe('session_status')
   })
 
-  it('posts to localhost:$AGENT_OFFICE_PORT/status when AGENT_OFFICE_STATUS_URL is unset', async () => {
+  it('posts to 127.0.0.1:$AGENT_OFFICE_PORT/status when AGENT_OFFICE_STATUS_URL is unset', async () => {
     const port = new URL(serverUrl).port
     const { out } = run(STATUS_JSON, officeHome(), { env: { AGENT_OFFICE_STATUS_URL: '', AGENT_OFFICE_PORT: port } })
     expect(out).toBe('Haiku 5.5 · ctx 4% · $0.01\n')
@@ -199,9 +199,9 @@ describe('status-line.sh: statusLine', () => {
     expect(req.body.type).toBe('session_status')
   })
 
-  it('defaults to localhost:3334/status', () => {
+  it('defaults to 127.0.0.1:3334/status (never `localhost`, which may resolve to [::1])', () => {
     const source = readFileSync(SCRIPT, 'utf8')
-    expect(source).toContain('SERVER_URL="${AGENT_OFFICE_STATUS_URL:-http://localhost:${AGENT_OFFICE_PORT:-3334}/status}"')
+    expect(source).toContain('SERVER_URL="${AGENT_OFFICE_STATUS_URL:-http://127.0.0.1:${AGENT_OFFICE_PORT:-3334}/status}"')
   })
 
   it('handles the early-session shape: null used_percentage, no rate_limits, no cost yet, no effort', async () => {

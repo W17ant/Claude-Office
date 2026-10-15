@@ -29,12 +29,15 @@ export default defineConfig({
   },
   server: {
     port: 3333,
+    // 127.0.0.1, not `localhost`: on a resolver that answers [::1] first, a
+    // listener there would serve the dev page and receive its office token
+    host: '127.0.0.1',
     // Fail instead of drifting to 3335 when 3333 is busy: the Electron dev
     // window, start-office.sh and the server's origin allowlist all expect 3333.
     strictPort: true,
     proxy: {
       '/ws': {
-        target: `ws://localhost:${SERVER_PORT}`,
+        target: `ws://127.0.0.1:${SERVER_PORT}`,
         ws: true,
       },
     },

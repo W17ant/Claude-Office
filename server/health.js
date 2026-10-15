@@ -148,8 +148,15 @@ export function mountHealth(app, opts = {}) {
   const health = createHealth(opts)
   app.locals.health = health
 
-  app.get('/health', (_req, res) => {
-    res.json(health.snapshot())
+  // GET /health?challenge=<hex> also answers `proof`: HMAC-SHA256 of the
+  // office token over 'office-health:' + the challenge (opts.prove). The
+  // openers (npm run open, start-office.sh, the desktop app) check it before
+  // they hand the token to whatever answers on the port: a process that
+  // squats the port while the office is down cannot produce it
+  app.get('/health', (req, res) => {
+    const challenge = typeof req.query.challenge === 'string' ? req.query.challenge : ''
+    const proof = opts.prove && /^[0-9a-f]{16,128}$/.test(challenge) ? opts.prove(challenge) : undefined
+    res.json(proof ? { ...health.snapshot(), proof } : health.snapshot())
   })
 
   return health

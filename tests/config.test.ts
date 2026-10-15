@@ -327,7 +327,7 @@ describe('GET /config and the port-derived surfaces (AGENT_OFFICE_PORT=4000)', (
   it('the A2A cards advertise the configured port', async () => {
     const card = await request(office.server.app).get('/.well-known/agent-card.json')
     expect(card.status).toBe(200)
-    expect(card.body.url).toBe('http://localhost:4000/a2a')
+    expect(card.body.url).toBe('http://127.0.0.1:4000/a2a')
   })
 })
 

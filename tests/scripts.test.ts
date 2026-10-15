@@ -597,9 +597,9 @@ describe('start-office.sh', () => {
     expect(proc.out).toContain('Server already running on port 3999')
     expect(proc.out).toContain('Vite already running on port 3998')
     expect(proc.out).toContain('Chat AI watcher ready')
-    expect(proc.out).toContain('Could not open a browser automatically — open http://localhost:3998 yourself')
+    expect(proc.out).toContain('Could not open a browser automatically — open http://127.0.0.1:3998 yourself')
     expect(proc.out).not.toContain('unbound variable')
-    expect(readFileSync(openLog, 'utf8').trim().split('\n').map(l => JSON.parse(l))).toEqual([['http://localhost:3998']])
+    expect(readFileSync(openLog, 'utf8').trim().split('\n').map(l => JSON.parse(l))).toEqual([['http://127.0.0.1:3998']])
 
     const pidFile = join(officeDir, 'chat-watcher.pid')
     const watcherPid = Number(readFileSync(pidFile, 'utf8'))
@@ -638,9 +638,9 @@ describe('start-office.sh', () => {
       }, false)
       await waitFor('the running banner', () => proc.out.includes('Agent Office is running!'), 15_000)
       const page = join(officeDir, 'open-office.html')
-      expect(proc.out).toContain(`Agent Office: http://localhost:3998/#token=${office.server.AUTH_TOKEN}`)
+      expect(proc.out).toContain(`Agent Office: http://127.0.0.1:3998/#token=${office.server.AUTH_TOKEN}`)
       expect(readFileSync(openLog, 'utf8').trim().split('\n').map(l => JSON.parse(l))).toEqual([[`file://${page}`]])
-      expect(readFileSync(page, 'utf8')).toContain(`http://localhost:3998/#token=${office.server.AUTH_TOKEN}`)
+      expect(readFileSync(page, 'utf8')).toContain(`http://127.0.0.1:3998/#token=${office.server.AUTH_TOKEN}`)
       proc.child.kill('SIGINT')
       expect(await proc.exited).toBe(130)
     } finally {

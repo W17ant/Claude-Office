@@ -130,10 +130,43 @@ describe('npm run open (scripts/open-office.mjs)', () => {
     expect(existsSync(join(home, REDIRECT_FILE_NAME))).toBe(false)
   })
 
+  it('GET /health answers a challenge with the proof only the token\'s holder can make; nothing else gets one', async () => {
+    const challenge = 'ab'.repeat(16)
+    const res = await fetch(`http://127.0.0.1:${port}/health?challenge=${challenge}`)
+    const body = await res.json() as { proof?: string }
+    expect(h.officeProofMatches(office.server.AUTH_TOKEN, challenge, body.proof)).toBe(true)
+    expect(h.officeProofMatches(TOKEN, challenge, body.proof)).toBe(false)
+    expect(h.officeProofMatches(office.server.AUTH_TOKEN, 'cd'.repeat(16), body.proof)).toBe(false)
+    expect((await (await fetch(`http://127.0.0.1:${port}/health`)).json() as { proof?: string }).proof).toBeUndefined()
+    expect((await (await fetch(`http://127.0.0.1:${port}/health?challenge=not-hex`)).json() as { proof?: string }).proof).toBeUndefined()
+  })
+
+  it('refuses a server that cannot prove it holds the token: no link printed, nothing opened, exit 1', async () => {
+    // A process that took the port while the office was down: answers /health like the office, without the proof
+    const { createServer } = await import('node:http')
+    const squatter = createServer((_req, res) => { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ status: 'ok', uiAvailable: true, proof: 'f'.repeat(64) })) })
+    const squatPort = await new Promise<number>(res => squatter.listen(0, '127.0.0.1', () => res((squatter.address() as { port: number }).port)))
+    try {
+      const bin = tempDir('agent-office-bin-')
+      const openLog = join(bin, 'open.log')
+      writeFileSync(join(bin, 'xdg-open'), `#!/bin/sh\necho "$@" >> "${openLog}"\n`, { mode: 0o755 })
+      const out = sink()
+      const err = sink()
+      const code = await openOffice({ env: envFor({ AGENT_OFFICE_PORT: String(squatPort), PATH: `${bin}:${process.env.PATH}` }), platform: 'linux', out, err })
+      expect(code).toBe(1)
+      expect(out.text).toBe('')
+      expect(err.text).toContain('it is not this office')
+      expect(err.text).not.toContain(office.server.AUTH_TOKEN)
+      expect(existsSync(openLog)).toBe(false)
+    } finally {
+      await new Promise<void>(res => squatter.close(() => res()))
+    }
+  })
+
   it('--dev points at the Vite dev server instead', async () => {
     const out = sink()
     expect(await openOffice({ env: envFor({ AGENT_OFFICE_UI_PORT: '3998' }), dev: true, print: true, out, err: sink() })).toBe(0)
-    expect(out.text).toBe(`Agent Office: http://localhost:3998/#token=${office.server.AUTH_TOKEN}\n`)
+    expect(out.text).toBe(`Agent Office: http://127.0.0.1:3998/#token=${office.server.AUTH_TOKEN}\n`)
   })
 
   it('opens a 0600 redirect page in the runtime dir, so the token is never on the opener\'s command line', async () => {

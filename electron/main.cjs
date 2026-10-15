@@ -35,6 +35,8 @@ const {
   readOfficeToken,
   officeLink,
   redactLink,
+  officeProofMatches,
+  healthChallenge,
   writeRedirectPage,
 } = require('./helpers.cjs')
 const { createTray } = require('./tray.cjs')
@@ -374,8 +376,29 @@ function toggleWindow() {
  * redirect page in the runtime dir, so the token is never on an opener's
  * command line (helpers.cjs). Without a token, the bare (read-only) page.
  */
-function openInBrowser() {
-  const token = readOfficeToken(TOKEN_FILE)
+/**
+ * Whether the server answering on SERVER_PORT holds `token`: it must answer
+ * a fresh /health challenge with the HMAC only the token's holder can make.
+ * A process that took the port while the office was down cannot, and must
+ * never be handed the token (in a page URL or the redirect page).
+ */
+async function serverHoldsToken(token) {
+  const challenge = healthChallenge()
+  const res = await httpGet(`${HEALTH_URL}?challenge=${challenge}`)
+  if (!res || res.statusCode !== 200) return false
+  try {
+    return officeProofMatches(token, challenge, JSON.parse(res.body).proof)
+  } catch {
+    return false
+  }
+}
+
+async function openInBrowser() {
+  let token = readOfficeToken(TOKEN_FILE)
+  if (token && !(await serverHoldsToken(token))) {
+    console.warn(`[main] The server on port ${SERVER_PORT} could not prove it holds the office token: opening the read-only page`)
+    token = null
+  }
   if (!token) {
     shell.openExternal(`${SERVER_URL}/`)
     return
@@ -595,8 +618,15 @@ async function createWindow() {
   // WebSocket, with an http:// origin the server's allowlist accepts. Either
   // way with the office token in the fragment, read now that the server has
   // answered /health (it writes the file before it answers anything).
-  const token = readOfficeToken(TOKEN_FILE)
+  // The token goes into the page only once the server on the port has
+  // proved it holds it (serverHoldsToken): otherwise read-only
+  let token = readOfficeToken(TOKEN_FILE)
   if (!token) console.warn(`[main] No office token in ${TOKEN_FILE}: the office is shown read-only`)
+  else if (!(await serverHoldsToken(token))) {
+    console.warn(`[main] The server on port ${SERVER_PORT} could not prove it holds the office token: the office is shown read-only`)
+    token = null
+  }
+  if (!win || win.isDestroyed()) return
   const url = officeLink(app.isPackaged ? SERVER_URL : VITE_URL, token)
   console.log(`[main] Loading ${redactLink(url)}`)
   win.loadURL(url)

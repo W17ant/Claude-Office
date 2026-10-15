@@ -1657,6 +1657,22 @@ describe('agent-tracker.sh: signals', () => {
     }])
   })
 
+  it('a failed chain is never pinned on a classified segment when an unclassified one could have failed it', () => {
+    const fail = (cmd: string, error: string) => runHook(bash(cmd, { hook_event_name: 'PostToolUseFailure', error, is_interrupt: false }))?.signals ?? []
+    // The deploy never ran: npm ci failed first
+    expect(fail('npm ci && vercel deploy --prod', 'Exit code 1\nnpm ERR! network request to https://registry.npmjs.org/react failed')).toEqual([])
+    // The deploy succeeded: the PR comment after it failed
+    expect(fail('vercel deploy --prod && gh pr comment 12 --body deployed', 'Exit code 1\nGraphQL: Could not resolve to a PullRequest')).toEqual([])
+    // The rebase conflicted before the push
+    expect(fail('git pull --rebase && git push origin main', 'Exit code 1\nCONFLICT (content): Merge conflict in a.ts')).toEqual([])
+    // The tests passed: the commit had nothing to commit
+    expect(fail('npm test && git commit -am x', 'Exit code 1\nnothing to commit, working tree clean')).toEqual([])
+    // Still blamed: output that points at the segment, a lone segment behind a cd, a chain of classified segments only
+    expect(fail('npm ci && npm test', 'Exit code 1\nTests: 3 failed, 10 passed').map(s => s.kind)).toEqual(['test_failed'])
+    expect(fail('cd web && npm test', 'Exit code 1\nsome output').map(s => s.kind)).toEqual(['test_failed'])
+    expect(fail('npm run build && vercel deploy --prod', 'Exit code 1\nanything').map(s => s.kind)).toEqual(['build_failed'])
+  })
+
   it('a masked exit status (`npm test | tail`) is judged by the output: a failure count, a pass line, or nothing', () => {
     const cmd = 'npm test 2>&1 | tail -5'
     const post = (stdout: string) => runHook(bash(cmd, { hook_event_name: 'PostToolUse', tool_response: { stdout, stderr: '' } }))?.signals

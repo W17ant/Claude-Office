@@ -45,7 +45,7 @@ function serverPortFromEnv(env = process.env) {
  */
 function serverUrls(port = DEFAULT_SERVER_PORT, uiPort = VITE_DEV_PORT) {
   const serverUrl = `http://127.0.0.1:${port}`
-  const viteUrl = `http://localhost:${uiPort}`
+  const viteUrl = `http://127.0.0.1:${uiPort}`
   return {
     port,
     serverUrl,
@@ -53,8 +53,6 @@ function serverUrls(port = DEFAULT_SERVER_PORT, uiPort = VITE_DEV_PORT) {
     viteUrl,
     allowedOrigins: [
       viteUrl,
-      `http://127.0.0.1:${uiPort}`,
-      `http://localhost:${port}`,
       serverUrl,
     ],
   }
@@ -237,6 +235,25 @@ function readOfficeToken(file) {
   } catch {
     return null
   }
+}
+
+/**
+ * Whether a /health answer proves it comes from the office holding `token`:
+ * `proof` must be HMAC-SHA256(token, 'office-health:' + challenge), the
+ * challenge being fresh random hex the caller sent (server/index.js
+ * officeProof). Compared in constant time. The desktop app and npm run open
+ * check it before they hand the token to whatever answers on the port.
+ */
+function officeProofMatches(token, challenge, proof) {
+  if (typeof token !== 'string' || !token || typeof proof !== 'string' || !/^[0-9a-f]{64}$/.test(proof)) return false
+  const { createHmac, timingSafeEqual } = require('crypto')
+  const expected = createHmac('sha256', token).update(`office-health:${challenge}`).digest()
+  return timingSafeEqual(expected, Buffer.from(proof, 'hex'))
+}
+
+/** A fresh /health challenge: 16 random bytes as hex. */
+function healthChallenge() {
+  return require('crypto').randomBytes(16).toString('hex')
 }
 
 /** The page URL with the token in its fragment (the bare page without a token). */
@@ -570,6 +587,8 @@ module.exports = {
   serverPortFromEnv,
   serverUrls,
   classifyHealth,
+  officeProofMatches,
+  healthChallenge,
   classifyIndex,
   serverPlan,
   serverConflictMessage,

@@ -280,11 +280,11 @@ describe('the server port (AGENT_OFFICE_PORT)', () => {
       port: 4000,
       serverUrl: 'http://127.0.0.1:4000',
       healthUrl: 'http://127.0.0.1:4000/health',
-      viteUrl: 'http://localhost:3333',
-      allowedOrigins: ['http://localhost:3333', 'http://127.0.0.1:3333', 'http://localhost:4000', 'http://127.0.0.1:4000'],
+      viteUrl: 'http://127.0.0.1:3333',
+      allowedOrigins: ['http://127.0.0.1:3333', 'http://127.0.0.1:4000'],
     })
     // The default is what main.cjs hard-coded before
-    expect(h.serverUrls().allowedOrigins).toEqual(['http://localhost:3333', 'http://127.0.0.1:3333', 'http://localhost:3334', 'http://127.0.0.1:3334'])
+    expect(h.serverUrls().allowedOrigins).toEqual(['http://127.0.0.1:3333', 'http://127.0.0.1:3334'])
     expect(h.serverUrls(h.serverPortFromEnv({})).serverUrl).toBe('http://127.0.0.1:3334')
   })
 

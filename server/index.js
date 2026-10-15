@@ -191,6 +191,16 @@ function writeTokenFile() {
   }
 }
 
+/**
+ * The server's answer to an opener's /health challenge: HMAC-SHA256 of the
+ * token over 'office-health:' + challenge. Only a holder of the token can
+ * make it, so an opener knows it is about to hand the token to this office
+ * and not to a process that took the port while the office was down.
+ */
+function officeProof(token, challenge) {
+  return createHmac('sha256', token).update(`office-health:${challenge}`).digest('hex')
+}
+
 /** Constant-time comparison of a supplied token with ours. */
 function tokenMatches(supplied) {
   if (typeof supplied !== 'string' || supplied.length === 0) return false
@@ -1528,8 +1538,12 @@ function relaySignals(body, signals) {
     }
     const what = [record.target, record.branch && `→ ${record.branch}`, record.detail, record.error && `— ${logText(record.error, 80)}`].filter(Boolean).join(' ')
     console.log(`[signal] ${project ?? body.sessionId ?? 'unknown session'}: ${record.kind}${what ? ` ${what}` : ''}${record.interrupted ? ' (interrupted)' : ''}${agentName ? ` [${agentName}]` : ''}`)
-    // The inspector card of whoever ran the command shows it in its history
-    recordActivity(agentId ?? (body.sessionId ? mainActivityId(body.sessionId) : null), { kind: 'status', text: `${record.kind}${what ? ` ${what}` : ''}` }, at)
+    // The inspector card of whoever ran the command shows it in its history.
+    // That history is served without a token (GET /agents/:id), so the line
+    // is built only from what readOnlySignal keeps: never the error line or
+    // the detail, which are command output and can carry credentials
+    const shown = [record.target, record.branch && `→ ${record.branch}`, Number.isInteger(record.exitCode) && `(exit ${record.exitCode})`].filter(Boolean).join(' ')
+    recordActivity(agentId ?? (body.sessionId ? mainActivityId(body.sessionId) : null), { kind: 'status', text: `${record.kind}${shown ? ` ${shown}` : ''}` }, at)
     broadcast({ type: 'signal', ...publicSignal(record), timestamp: at })
   }
 }
@@ -1646,7 +1660,7 @@ function releasePermissions(sessionId, reason, filter) {
 // POST /event stamps it, the WS snapshot carries it, the status strip and `npm run doctor` read it.
 // `sessions` counts every active session, registry-only ones included: "2 sessions, 0 hooks seen"
 // is exactly the picture the doctor needs when the hooks are not installed.
-const health = mountHealth(app, { broadcast, uiAvailable: UI_AVAILABLE, counts: () => ({ agents: activeAgents.size, clients: wss?.clients.size ?? 0, sessions: Array.from(sessions.values()).filter(s => s.state === 'active').length }) })
+const health = mountHealth(app, { broadcast, uiAvailable: UI_AVAILABLE, prove: challenge => officeProof(AUTH_TOKEN, challenge), counts: () => ({ agents: activeAgents.size, clients: wss?.clients.size ?? 0, sessions: Array.from(sessions.values()).filter(s => s.state === 'active').length }) })
 
 // The registry roster (server/sessions.js): Claude Code's own session registry
 // adds the sessions nothing has hooks for, and ends them when their process
@@ -2472,7 +2486,7 @@ app.post('/chat/inbox/read', requireToken, (req, res) => {
 // ---------------------------------------------------------------------------
 
 const A2A_PROTOCOL_VERSION = '0.3.0'
-const A2A_URL = `http://localhost:${PORT}/a2a`
+const A2A_URL = `http://127.0.0.1:${PORT}/a2a`
 const A2A_SECURITY = {
   securitySchemes: {
     bearer: { type: 'http', scheme: 'bearer', description: 'The office auth token — the contents of ~/.agent-office/auth-token' },
@@ -3643,13 +3657,13 @@ export function start({ port = PORT, host = readHost() } = {}) {
 ╔═══════════════════════════════════════════╗
 ║         Agent Office Server v1.0          ║
 ╠═══════════════════════════════════════════╣
-║  HTTP  http://localhost:${bound}              ║
-║  WS    ws://localhost:${bound}/ws             ║
-║  POST  http://localhost:${bound}/event        ║
-║  GET   http://localhost:${bound}/roster       ║
-║  GET   http://localhost:${bound}/agents       ║
-║  GET   http://localhost:${bound}/sessions     ║
-║  POST  http://localhost:${bound}/a2a          ║
+║  HTTP  http://127.0.0.1:${bound}              ║
+║  WS    ws://127.0.0.1:${bound}/ws             ║
+║  POST  http://127.0.0.1:${bound}/event        ║
+║  GET   http://127.0.0.1:${bound}/roster       ║
+║  GET   http://127.0.0.1:${bound}/agents       ║
+║  GET   http://127.0.0.1:${bound}/sessions     ║
+║  POST  http://127.0.0.1:${bound}/a2a          ║
 ╚═══════════════════════════════════════════╝`)
 
     console.log(`  Auth token ${REUSED_TOKEN ? 'reused from' : 'written to'}: ${TOKEN_FILE}`)
@@ -3672,7 +3686,7 @@ export function start({ port = PORT, host = readHost() } = {}) {
     // sends to a server, keeps it and strips it from the address bar.
     const address = httpServer.address()
     const linkHost = address && typeof address === 'object' && address.family === 'IPv6' ? `[${address.address}]` : '127.0.0.1'
-    const base = UI_AVAILABLE ? `http://${linkHost}:${bound}` : `http://localhost:${UI_DEV_PORT}`
+    const base = UI_AVAILABLE ? `http://${linkHost}:${bound}` : `http://127.0.0.1:${UI_DEV_PORT}`
     console.log(`  Agent Office: ${officeLink(base)}${UI_AVAILABLE ? '' : '  (the Vite dev server)'}`)
     console.log('  Open that link once per browser (or run `npm run open`); a bare address shows the office read-only.')
     console.log()

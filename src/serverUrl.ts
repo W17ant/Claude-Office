@@ -75,11 +75,14 @@ export function isDevServerPage(loc: PageLocation = pageLocation(), env: BuildEn
 /** The server's http(s) origin, no trailing slash: fetch(`${officeHttpBase()}/chat`). */
 export function officeHttpBase(loc: PageLocation = pageLocation(), env: BuildEnv = buildEnv()): string {
   if (!isDevServerPage(loc, env)) return loc.origin
-  return `http://${loc.hostname}:${configuredServerPort(env)}`
+  // 127.0.0.1, never the page's own host name: `localhost` can resolve to
+  // [::1] first (macOS does), where any local user could be listening while
+  // the office binds 127.0.0.1 only — and the page sends its token there
+  return `http://127.0.0.1:${configuredServerPort(env)}`
 }
 
 /** The WebSocket URL: wss when the page is https, ws otherwise. */
 export function officeWsUrl(loc: PageLocation = pageLocation(), env: BuildEnv = buildEnv()): string {
   if (!isDevServerPage(loc, env)) return `${loc.protocol === 'https:' ? 'wss' : 'ws'}://${loc.host}/ws`
-  return `ws://${loc.hostname}:${configuredServerPort(env)}/ws`
+  return `ws://127.0.0.1:${configuredServerPort(env)}/ws`
 }

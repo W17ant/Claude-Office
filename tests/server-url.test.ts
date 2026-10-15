@@ -56,16 +56,16 @@ describe('served by the office server', () => {
 })
 
 describe('served by the Vite dev server', () => {
-  it('on 3333: the configured server port on the page hostname', () => {
+  it('on 3333: the configured server port, always on 127.0.0.1 (never the page\'s `localhost`, which may resolve to [::1])', () => {
     const loc = at('http://localhost:3333/')
     expect(isDevServerPage(loc, dev('3334'))).toBe(true)
-    expect(officeHttpBase(loc, dev('3334'))).toBe('http://localhost:3334')
-    expect(officeWsUrl(loc, dev('3334'))).toBe('ws://localhost:3334/ws')
-    expect(officeHttpBase(loc, dev('4000'))).toBe('http://localhost:4000')
-    expect(officeWsUrl(loc, dev('4000'))).toBe('ws://localhost:4000/ws')
+    expect(officeHttpBase(loc, dev('3334'))).toBe('http://127.0.0.1:3334')
+    expect(officeWsUrl(loc, dev('3334'))).toBe('ws://127.0.0.1:3334/ws')
+    expect(officeHttpBase(loc, dev('4000'))).toBe('http://127.0.0.1:4000')
+    expect(officeWsUrl(loc, dev('4000'))).toBe('ws://127.0.0.1:4000/ws')
   })
 
-  it('opened by IP (what start-office.sh prints): the hostname follows the page', () => {
+  it('opened by IP (what start-office.sh prints): the same 127.0.0.1', () => {
     const loc = at('http://127.0.0.1:3333/?sim')
     expect(officeHttpBase(loc, dev('4000'))).toBe('http://127.0.0.1:4000')
     expect(officeWsUrl(loc, dev('4000'))).toBe('ws://127.0.0.1:4000/ws')
@@ -74,13 +74,13 @@ describe('served by the Vite dev server', () => {
   it('`vite --port 3400` (AGENT_OFFICE_UI_PORT): still dev, by import.meta.env.DEV', () => {
     const loc = at('http://localhost:3400/')
     expect(isDevServerPage(loc, dev('4000'))).toBe(true)
-    expect(officeHttpBase(loc, dev('4000'))).toBe('http://localhost:4000')
+    expect(officeHttpBase(loc, dev('4000'))).toBe('http://127.0.0.1:4000')
   })
 
   it('a page on 3333 counts as dev even when the env does not say so', () => {
     const loc = at('http://localhost:3333/')
     expect(isDevServerPage(loc, built('4000'))).toBe(true)
-    expect(officeWsUrl(loc, built('4000'))).toBe('ws://localhost:4000/ws')
+    expect(officeWsUrl(loc, built('4000'))).toBe('ws://127.0.0.1:4000/ws')
     expect(VITE_DEV_PORT).toBe(3333)
   })
 })

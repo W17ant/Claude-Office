@@ -216,7 +216,21 @@ describe('signal broadcasts and the WS snapshot', () => {
     const sig = await client.next(m => m.type === 'signal' && m.sessionId === 's-worker')
     expect(sig).toMatchObject({ kind: 'test_failed', agentId: 'agent-toolu_W', agentName: 'Tester', detail: '3 failing' })
     const card = await request(office.server.app).get('/agents/agent-toolu_W')
-    expect(card.body.history.map((h: Message) => h.text)).toContain('test_failed api 3 failing — FAIL tests/a.test.ts')
+    expect(card.body.history.map((h: Message) => h.text)).toContain('test_failed api (exit 1)')
+  })
+
+  it('the inspector history (open without a token) never carries a signal\'s error line or detail', async () => {
+    const secret = "fatal: Authentication failed for 'https://deploy:ghp_SECRET123@github.com/acme/api.git/'"
+    const res = await postEvent(office.server, {
+      type: 'signal', sessionId: 's-leak', project: 'api',
+      signals: [{ kind: 'push_failed', target: 'api', branch: 'main', toDefault: true, error: secret, detail: 'rejected', exitCode: 128 }],
+    })
+    expect(res.status).toBe(200)
+    const card = await request(office.server.app).get('/agents/main-s-leak')
+    const history = JSON.stringify(card.body.history)
+    expect(history).toContain('push_failed api → main (exit 128)')
+    expect(history).not.toContain('ghp_SECRET123')
+    expect(history).not.toContain('rejected')
   })
 
   it('signals on a session_tool_done (which broadcasts nothing itself) still go out', async () => {

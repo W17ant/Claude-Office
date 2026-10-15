@@ -653,13 +653,25 @@ or memory when storage is blocked), strips it from the address bar, and
 presents it each time its WebSocket connects. Browsers cannot set headers on a
 WebSocket, so it travels as a subprotocol value
 (`Sec-WebSocket-Protocol: agent-office, agent-office.token.<token>`), never as
-part of a URL; the server answers with plain `agent-office`. You rarely type it:
+part of a URL; the server answers with plain `agent-office`. Because the token
+stays in that origin's storage, there is one case this does not cover: if the
+office is down, another user's process holds its port and you open the bare
+address in that browser, that process's page runs on the same origin and can
+read the stored token. On a shared machine, prefer `npm run open` (it checks the
+server first) and run `npm run rotate-token` if you ever opened the office while
+it was not running. You rarely type the link:
 
 - **`npm run open`** prints the link and opens it (`open` / `xdg-open` /
   `explorer`; it just prints it when there is no opener). The browser is handed
   a small redirect page, `~/.agent-office/open-office.html` (`0600`), rather
   than the link itself, because an opener's command line — and that of a
   browser it starts — is readable by every local user in `ps` while it runs.
+  Before it prints or opens anything it sends `GET /health?challenge=<random>`
+  and checks the `proof` in the answer, `HMAC-SHA256(token, "office-health:" +
+  challenge)`: a process that took the port while the office was down cannot
+  make it, so it is never handed the link (exit 1, "it is not this office").
+  The desktop app does the same before it puts the token in its window or in
+  "Open in browser", and shows the office read-only otherwise.
   (A Snap-confined browser cannot read hidden folders in your home; paste the
   printed link there.) `--dev` opens the Vite dev server's page instead,
   `--print` only prints.

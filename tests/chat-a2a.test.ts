@@ -237,7 +237,7 @@ describe('A2A protocol surface', () => {
     expect(res.body).toMatchObject({
       protocolVersion: '0.3.0',
       name: 'Agent Office',
-      url: `http://localhost:${office.server.PORT}/a2a`,
+      url: `http://127.0.0.1:${office.server.PORT}/a2a`,
       capabilities: { streaming: false, pushNotifications: false },
       defaultInputModes: ['text/plain'],
       skills: [expect.objectContaining({ id: 'office-message', tags: ['message', 'question', 'review_request', 'task_handoff'] })],

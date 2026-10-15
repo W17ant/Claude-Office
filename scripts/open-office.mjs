@@ -40,7 +40,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import helpers from '../electron/helpers.cjs'
 import { readPort, readUiPort } from '../server/config.js'
 
-const { runtimeDirFromEnv, readOfficeToken, officeLink, writeRedirectPage } = helpers
+const { runtimeDirFromEnv, readOfficeToken, officeLink, writeRedirectPage, officeProofMatches, healthChallenge } = helpers
 
 export const REDIRECT_FILE_NAME = 'open-office.html'
 
@@ -52,14 +52,23 @@ export function openerFor(platform, target) {
 }
 
 /** GET /health within `timeoutMs`: its JSON, or null when the server does not answer. */
-async function health(port, timeoutMs = 1500) {
+/**
+ * GET /health with a fresh challenge. Returns null when nothing answers,
+ * else the health record with `proven`: whether the answer carries the
+ * proof only a holder of `token` can make (server/index.js officeProof).
+ */
+async function health(port, token, timeoutMs = 1500) {
+  const challenge = healthChallenge()
   try {
-    const res = await fetch(`http://127.0.0.1:${port}/health`, { signal: AbortSignal.timeout(timeoutMs) })
-    return res.ok ? await res.json() : null
+    const res = await fetch(`http://127.0.0.1:${port}/health?challenge=${challenge}`, { signal: AbortSignal.timeout(timeoutMs) })
+    if (!res.ok) return null
+    const body = await res.json()
+    return { ...body, proven: officeProofMatches(token, challenge, body?.proof) }
   } catch {
     return null
   }
 }
+
 
 /**
  * Run the opener and wait a moment for its verdict: a quick non-zero exit
@@ -100,10 +109,17 @@ export async function openOffice({ env = process.env, platform = process.platfor
     return 1
   }
 
-  const status = await health(port)
+  const status = await health(port, token)
+  // Something answers on the port but cannot prove it holds the token: a
+  // process that took the port while the office was down. Never hand it the
+  // link (the page would give it the token from the fragment)
+  if (status && !status.proven) {
+    err.write(`Something is answering on port ${port}, but it is not this office: it could not prove it holds your token, so the link was not opened or printed. Stop whatever holds the port, start the office, and run npm run open again.\n`)
+    return 1
+  }
   // The server's own page needs a built UI; without one the Vite dev server serves it
   const useVite = dev || (status && status.uiAvailable === false)
-  const base = useVite ? `http://localhost:${uiPort}` : `http://127.0.0.1:${port}`
+  const base = useVite ? `http://127.0.0.1:${uiPort}` : `http://127.0.0.1:${port}`
   const link = officeLink(base, token)
   out.write(`Agent Office: ${link}\n`)
   if (!status) {
