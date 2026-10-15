@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react'
 import { ROLE_TO_CHAR } from '../config'
 import { getSpritePath, useTheme, toggleTheme, getTheme, themedDisplayName } from '../theme'
 import IncidentBadge from './IncidentBadge'
+import { postSetting } from '../permissions'
 
 export function getAvatarSrc(role: string, agentId?: string): string {
   const charBase = ROLE_TO_CHAR[role] ?? 'employee-3'
@@ -98,14 +99,29 @@ const SlackChat: React.FC<SlackChatProps> = ({ messages, muted, volume, onToggle
     setEmojiPickerMsgId(null)
   }, [onReaction])
 
-  // Prompt-logging level — read-only in the UI (see logPromptsHint); silent when the route is missing
+  // Prompt-logging level — read-only in the UI (see logPromptsHint); silent when the route is missing.
+  // The same GET /settings also says whether permission dialogs may be answered here.
   const [logPrompts, setLogPrompts] = useState<string | null>(null)
+  const [answerHere, setAnswerHere] = useState<boolean | null>(null)
   useEffect(() => {
     fetch(SETTINGS_URL, { signal: AbortSignal.timeout(2000) })
       .then(r => (r.ok ? r.json() : null))
-      .then(d => { if (d && typeof d.logPrompts === 'string') setLogPrompts(d.logPrompts) })
+      .then(d => {
+        if (d && typeof d.logPrompts === 'string') setLogPrompts(d.logPrompts)
+        if (d && typeof d.answerPermissions === 'boolean') setAnswerHere(d.answerPermissions)
+      })
       .catch(() => {})
   }, [])
+
+  // Answer permissions from the office (answerPermissions) — the one setting
+  // the page may change: POST /settings with the UI token from the snapshot
+  // (src/permissions.ts). Optimistic; put back if the server said no.
+  const toggleAnswerHere = useCallback(() => {
+    if (answerHere === null) return
+    const next = !answerHere
+    setAnswerHere(next)
+    postSetting({ answerPermissions: next }).then(ok => { if (!ok) setAnswerHere(answerHere) })
+  }, [answerHere])
 
   // Cron/chat-monitor pause toggle
   const [cronPaused, setCronPaused] = useState(false)
@@ -173,6 +189,18 @@ const SlackChat: React.FC<SlackChatProps> = ({ messages, muted, volume, onToggle
           {logPrompts && (
             <span className={`slack-logprompts ${logPrompts}`} title={logPromptsHint(logPrompts)} data-testid="log-prompts">
               prompts: {logPrompts}
+            </span>
+          )}
+          {answerHere !== null && (
+            <span
+              className={`slack-answer-toggle ${answerHere ? 'on' : 'off'}`}
+              onClick={toggleAnswerHere}
+              title={answerHere
+                ? 'Permission dialogs can be answered from the office (a card appears while Claude waits) — click to turn off'
+                : 'Permission dialogs are answered in the terminal only — click to let the office answer them'}
+              data-testid="answer-permissions"
+            >
+              Answer here: {answerHere ? 'on' : 'off'}
             </span>
           )}
           <div

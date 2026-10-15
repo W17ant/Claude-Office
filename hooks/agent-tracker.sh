@@ -38,6 +38,18 @@
 # the Python's stdout into a variable and only ever exits 0, so nothing of
 # the office leaks into the conversation.
 #
+# PermissionRequest is the one event that may print: what a PermissionRequest
+# hook writes on stdout answers the dialog. When the office is allowed to
+# answer (the marker file $AGENT_OFFICE_HOME/answer-permissions exists — the
+# server keeps it in step with its answerPermissions setting) the event is
+# POSTed in the foreground, the server's reply names a pending permission, and
+# the script long-polls GET /permission/<id> until the office clicks (the
+# server's hookOutput is printed verbatim) or the server says the dialog was
+# answered in the terminal, expired, or is unknown (nothing is printed). If
+# the server cannot be reached at any point, exit 0 at once: the terminal
+# dialog is in charge. Every other event is POSTed in the background and
+# never waits.
+#
 # Background agents (run_in_background): the Agent tool returns straight away
 # with status "async_launched", so PostToolUse only links the office agent to
 # the subagent's agentId. The agent leaves on SubagentStop (or a
@@ -62,11 +74,13 @@ PAYLOAD=$(cat)
 
 # Auth token (optional — read from file if present)
 AUTH_HEADER=""
+AUTH_ARGS=()
 TOKEN_FILE="${AGENT_OFFICE_HOME:-$HOME/.agent-office}/auth-token"
 if [ -f "$TOKEN_FILE" ]; then
     TOKEN=$(cat "$TOKEN_FILE" 2>/dev/null)
     if [ -n "$TOKEN" ]; then
         AUTH_HEADER="Authorization: Bearer $TOKEN"
+        AUTH_ARGS=(-H "$AUTH_HEADER")
     fi
 fi
 
@@ -190,12 +204,16 @@ def one_line(value, limit):
     # Labels: whitespace collapsed, then clamped
     return ' '.join(str(value if value is not None else '').split())[:limit]
 
-def emit_session(event):
+def emit_session(event, wait=False):
     pid = d.get('prompt_id')
     if pid:
         event['promptId'] = str(pid)[:80]
     if SESSION.get('sessionId'):
         emit(event)
+        # A second line tells the wrapper to POST this one in the foreground
+        # and wait for the office's answer (PermissionRequest only)
+        if wait:
+            print('wait')
     sys.exit(0)
 
 # UserPromptSubmit {prompt, prompt_id, permission_mode} — the boss's prompt.
@@ -250,18 +268,58 @@ if hook_event == 'Stop':
 
 # PermissionRequest {tool_name, tool_input, permission_suggestions} — Claude
 # is waiting for the user's answer (no tool_use_id). In -p mode the call is
-# auto-denied right after this fires; interactively the dialog stays up and
-# a Notification{permission_prompt} follows ~6 s later (deduped server-side).
-# A request raised inside a subagent would carry agent_id (schema-only, not
-# captured); it is forwarded when present.
+# auto-denied as soon as every PermissionRequest hook has finished;
+# interactively the dialog stays up and a Notification{permission_prompt}
+# follows ~6 s later (deduped server-side). A request raised inside a
+# subagent would carry agent_id (schema-only, not captured); it is forwarded
+# when present.
+#
+# When the office may answer (ANSWER_MARKER exists, kept by the server in step
+# with its answerPermissions setting) the event also carries what the card
+# needs — answerable, permissionMode, the dialog's own permission_suggestions
+# (echoed back verbatim on "allow and remember", so their shape is kept and
+# only their sizes are bounded) and a detail line (the command, the path, or
+# the tool input as compact JSON) — and the wrapper waits for the answer.
+FILE_TOOLS = ('Write', 'Edit', 'Read', 'MultiEdit', 'NotebookEdit')
+ANSWER_MARKER = os.path.join(os.environ.get('AGENT_OFFICE_HOME') or os.path.join(os.path.expanduser('~'), '.agent-office'), 'answer-permissions')
+
 def permission_summary(name, inp):
     inp = inp if isinstance(inp, dict) else {}
-    if name in ('Write', 'Edit', 'Read', 'MultiEdit', 'NotebookEdit'):
+    if name in FILE_TOOLS:
         path = str(inp.get('file_path') or inp.get('notebook_path') or '')
         return os.path.basename(path.rstrip('/')) or name
     if name == 'Bash':
         return one_line(inp.get('command') or inp.get('description'), 80) or name
     return name
+
+def permission_detail(name, inp):
+    inp = inp if isinstance(inp, dict) else {}
+    if name == 'Bash':
+        text = inp.get('command') or inp.get('description') or ''
+    elif name in FILE_TOOLS:
+        text = inp.get('file_path') or inp.get('notebook_path') or ''
+    else:
+        try:
+            text = json.dumps(inp, separators=(',', ':'), ensure_ascii=False)
+        except Exception:
+            text = ''
+    return clamp(text, 400)
+
+def clamp_json(value, depth=0):
+    # permission_suggestions, bounded but shape-preserving (server re-clamps)
+    if isinstance(value, str):
+        return value[:200]
+    if value is None or isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value
+    if depth >= 3:
+        return None
+    if isinstance(value, list):
+        return [clamp_json(v, depth + 1) for v in value[:8]]
+    if isinstance(value, dict):
+        return {str(k)[:40]: clamp_json(v, depth + 1) for k, v in list(value.items())[:12]}
+    return None
 
 if hook_event == 'PermissionRequest':
     name = str(tool_name or 'tool')
@@ -273,7 +331,14 @@ if hook_event == 'PermissionRequest':
     }
     if d.get('agent_id'):
         event['agentId'] = str(d['agent_id'])
-    emit_session(event)
+    answerable = os.path.exists(ANSWER_MARKER)
+    if answerable:
+        suggestions = d.get('permission_suggestions')
+        event['answerable'] = True
+        event['permissionMode'] = clamp(d.get('permission_mode') or 'default', 40)
+        event['suggestions'] = [clamp_json(s) for s in suggestions if isinstance(s, dict)][:4] if isinstance(suggestions, list) else []
+        event['detail'] = permission_detail(name, d.get('tool_input'))
+    emit_session(event, wait=answerable)
 
 # Notification {message, notification_type, title?} — only the types that mean
 # the session is waiting on a person (or was paused by the quota) are
@@ -647,11 +712,84 @@ PYEOF
 )
 
 # -I: ignore PYTHON* env vars and the user site, and keep the cwd (the
-# project Claude is working in) off sys.path
-EVENT_JSON=$(printf '%s' "$PAYLOAD" | python3 -I -c "$PY")
+# project Claude is working in) off sys.path. The first line is the event;
+# a second line saying `wait` (PermissionRequest the office may answer) makes
+# the POST a foreground one that waits for the answer.
+PY_OUT=$(printf '%s' "$PAYLOAD" | python3 -I -c "$PY")
+EVENT_JSON=$(printf '%s\n' "$PY_OUT" | sed -n 1p)
+WAIT_FLAG=$(printf '%s\n' "$PY_OUT" | sed -n 2p)
 
 # If Python produced no output, nothing to send
 if [ -z "$EVENT_JSON" ]; then
+    exit 0
+fi
+
+# Reads a server reply on stdin. `created`: the /event reply -> the pending
+# permission's id, the poll length and the deadline. `poll`: a GET
+# /permission/<id> reply -> its status, whether the deadline has passed, and
+# the hookOutput to print (one JSON line) when the office decided. Fields are
+# separated by the unit separator, which JSON never contains unescaped.
+PY_REPLY=$(cat <<'PYREPLY'
+import json, sys, time
+try:
+    r = json.loads(sys.stdin.read() or '{}')
+except Exception:
+    r = {}
+if not isinstance(r, dict):
+    r = {}
+mode = sys.argv[1] if len(sys.argv) > 1 else ''
+if mode == 'created':
+    wait = r.get('wait') if isinstance(r.get('wait'), dict) else {}
+    pid = r.get('permissionId')
+    if isinstance(pid, str) and pid:
+        print('\x1f'.join([pid, str(int(wait.get('pollMs') or 20000)), str(int(wait.get('deadline') or 0))]))
+elif mode == 'poll':
+    status = str(r.get('status') or '')
+    deadline = r.get('deadline')
+    late = isinstance(deadline, (int, float)) and time.time() * 1000 > deadline + 2000
+    out = r.get('hookOutput')
+    print('\x1f'.join([status, '1' if late else '0', json.dumps(out) if isinstance(out, dict) else '']))
+PYREPLY
+)
+
+# PermissionRequest the office may answer: POST in the foreground, then poll
+# the pending permission until it is decided here (print the hookOutput),
+# answered in the terminal, expired or gone (print nothing). Any failure to
+# reach the server ends the wait at once, silently.
+answer_from_office() {
+    local base="${SERVER_URL%/event}"
+    local reply id poll_ms deadline wait_s status late hook_output polls=0
+    reply=$(curl -sf -X POST "$SERVER_URL" \
+        -H "Content-Type: application/json" "${AUTH_ARGS[@]}" \
+        -d "$EVENT_JSON" --max-time 2 2>/dev/null) || return 0
+    IFS=$'\x1f' read -r id poll_ms deadline < <(printf '%s' "$reply" | python3 -I -c "$PY_REPLY" created)
+    [ -n "$id" ] || return 0
+    wait_s=$(( ${poll_ms:-20000} / 1000 ))
+    [ "$wait_s" -ge 1 ] || wait_s=1
+    [ "$wait_s" -le 30 ] || wait_s=30
+    # Each poll is bounded by curl; the server ends the wait at the deadline it
+    # set (extended when the session turns out to be interactive), and the
+    # loop cap is a backstop under the hook's 600 s timeout
+    while [ "$polls" -lt 40 ]; do
+        polls=$((polls + 1))
+        reply=$(curl -sf "$base/permission/$id?wait=$wait_s" "${AUTH_ARGS[@]}" \
+            --max-time $((wait_s + 5)) 2>/dev/null) || return 0
+        IFS=$'\x1f' read -r status late hook_output < <(printf '%s' "$reply" | python3 -I -c "$PY_REPLY" poll)
+        case "$status" in
+            allowed|denied)
+                [ -n "$hook_output" ] && printf '%s\n' "$hook_output"
+                return 0 ;;
+            pending)
+                [ "$late" = "1" ] && return 0 ;;
+            *)
+                return 0 ;;
+        esac
+    done
+    return 0
+}
+
+if [ "$WAIT_FLAG" = "wait" ]; then
+    answer_from_office
     exit 0
 fi
 
