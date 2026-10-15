@@ -1573,3 +1573,16 @@
 }
 .slack-logprompts.off  { color: #6a6c70; }
 .slack-logprompts.full { color: #ffd166; }
+
+/* The chat's settings pills (prompt logging, answer permissions), on a row
+   of their own under the header so the header fits the 300 px panel */
+.slack-settings-row {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 12px 4px;
+  background: #1a1d21;
+  border-bottom: 1px solid #35363a;
+  -webkit-app-region: no-drag;
+}
