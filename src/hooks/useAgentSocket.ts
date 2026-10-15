@@ -11,10 +11,13 @@
  *  - Tracks the Claude Code sessions (one per terminal) from the snapshot and
  *    session_started / session_ended events, exposed as `sessions`
  *  - Gracefully falls back to mock/offline mode when the server is unavailable
+ *  - Reports its own open/close to onEvent as `connection` actions, and the
+ *    snapshot's `health` as a `health` event, so the office reducer (not this
+ *    hook) owns the connection state the status strip shows
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { OfficeEvent, PendingPermission, SessionInfo, SnapshotAgent } from '../types'
+import { OfficeEvent, PendingPermission, ServerHealth, SessionInfo, SnapshotAgent } from '../types'
 import type { SessionStatus, MeterTotals } from '../meters'
 import { projectFromCwd } from '../mainState'
 
@@ -57,6 +60,8 @@ interface SnapshotMessage {
   /** Permission dialogs waiting on the office, and the token that answers them (server/permissions.js) */
   pendingPermissions?: PendingPermission[]
   uiToken?: string
+  /** Pipeline health: hooks seen, version, uptime (server/health.js) */
+  health?: ServerHealth
   mcpServers: string[]
   timestamp: number
 }
@@ -244,6 +249,10 @@ export function useAgentSocket(options: AgentSocketOptions = {}): AgentSocketRes
       if (snap.statuses) {
         pushEvent({ type: 'session_status', statuses: snap.statuses.sessions ?? [], totals: snap.statuses.totals })
       }
+      // The server's pipeline health (hooks seen, version, uptime) for the status strip
+      if (snap.health) {
+        pushEvent({ type: 'health', health: snap.health, timestamp: snap.timestamp })
+      }
       // The whole roster goes to the office as one event, so it can reconcile:
       // agents that completed or timed out while we were disconnected leave,
       // agents still here are refreshed in place, new ones walk in (C35). The
@@ -304,6 +313,8 @@ export function useAgentSocket(options: AgentSocketOptions = {}): AgentSocketRes
       }, STABLE_OPEN_MS)
       setConnected(true)
       setOffline(false)
+      // The office reducer keeps the connection phase (status strip); not a server event, so not in `events`
+      onEventRef.current?.({ type: 'connection', socket: 'open', timestamp: Date.now() })
       fetchRoster()
     }
 
@@ -316,6 +327,7 @@ export function useAgentSocket(options: AgentSocketOptions = {}): AgentSocketRes
       if (!mountedRef.current) return
       clearStableTimer()
       setConnected(false)
+      onEventRef.current?.({ type: 'connection', socket: 'closed', timestamp: Date.now() })
       scheduleReconnect()
     }
 

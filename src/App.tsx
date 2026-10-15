@@ -10,6 +10,7 @@ import SessionStrip from './components/SessionStrip'
 import Meters from './components/Meters'
 import PermissionCards from './components/PermissionCard'
 import { isPermissionEvent, reducePermissions, setUiToken, type PermissionAction, type PermissionCardState } from './permissions'
+import StatusStrip from './components/StatusStrip'
 import { Agent, AGENT_CONFIGS } from './types'
 import { getCurrentPhase, getPhaseLabel, type DayPhase } from './daylight'
 import { useAgentSocket } from './hooks/useAgentSocket'
@@ -1548,6 +1549,7 @@ const App: React.FC = () => {
       />
       </div>
       </div>
+      <StatusStrip office={officeRef} />
     </div>
   )
 }

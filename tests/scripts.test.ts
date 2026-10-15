@@ -38,7 +38,7 @@ esac`
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 
-async function waitFor<T>(what: string, fn: () => T | Promise<T>, timeoutMs = 8000): Promise<T> {
+async function waitForWithin<T>(what: string, fn: () => T | Promise<T>, timeoutMs: number): Promise<T> {
   const start = Date.now()
   for (;;) {
     const value = await fn()
@@ -47,6 +47,7 @@ async function waitFor<T>(what: string, fn: () => T | Promise<T>, timeoutMs = 80
     await sleep(50)
   }
 }
+const waitFor = <T,>(what: string, fn: () => T | Promise<T>, timeoutMs = 8000) => waitForWithin(what, fn, timeoutMs)
 
 function alive(pid: number) {
   try { process.kill(pid, 0); return true } catch { return false }
@@ -248,7 +249,10 @@ describe('chat-ai-watcher.sh lock', () => {
   beforeAll(async () => { w = await startWatcher({ staleLock: true }) })
   afterAll(async () => { await w.watcher.stop(); removeOffice(w.office) })
 
+  // Two watcher round trips through a fake `claude -p` in one test: give it
+  // room under full-suite load, where 8 s waits have timed out
   it('clears a stale lock at startup, and an empty/failed `claude -p` neither posts nor leaves the lock behind', async () => {
+    const waitFor = <T,>(what: string, fn: () => T | Promise<T>) => waitForWithin(what, fn, 20_000)
     const lock = join(w.office.dir, 'chat-ai.lock')
     expect(existsSync(lock)).toBe(false)
 
@@ -267,7 +271,7 @@ describe('chat-ai-watcher.sh lock', () => {
     expect(claudeCalls(w)).toHaveLength(2)
     await waitFor('the lock to be released', () => !existsSync(lock))
     expect(w.watcher.out).not.toContain('already generating a reply')
-  })
+  }, 45_000)
 })
 
 // ---------------------------------------------------------------------------
