@@ -4,7 +4,8 @@
 #
 # Claude Code passes hook event JSON on stdin.
 # This script inspects the event and forwards relevant activity to the
-# Agent Office server at http://localhost:3334/event.
+# Agent Office server at http://localhost:3334/event (AGENT_OFFICE_PORT or
+# AGENT_OFFICE_EVENT_URL move it; see SERVER_URL below).
 #
 # Hook events handled:
 #   PreToolUse         — detect Agent tool calls, MCP tool calls, tool activity

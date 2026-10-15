@@ -14,6 +14,7 @@
  */
 
 import type { OfficeEvent, PendingPermission, PermissionSuggestion } from './types'
+import { officeHttpBase } from './serverUrl'
 
 export type PermissionDecision = 'allow' | 'allow-remember' | 'deny'
 
@@ -99,8 +100,6 @@ export function reducePermissions(state: PermissionCardState[], action: Permissi
 // re-renders because of it.
 // ---------------------------------------------------------------------------
 
-const OFFICE_HTTP = 'http://127.0.0.1:3334'
-
 let uiToken: string | null = null
 
 export function setUiToken(token: string | null | undefined): void {
@@ -115,7 +114,7 @@ export function getUiToken(): string | null {
 async function postWithUiToken(path: string, body: unknown): Promise<boolean> {
   if (!uiToken) return false
   try {
-    const res = await fetch(`${OFFICE_HTTP}${path}`, {
+    const res = await fetch(`${officeHttpBase()}${path}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${uiToken}` },
       body: JSON.stringify(body),
