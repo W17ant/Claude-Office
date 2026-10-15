@@ -9,6 +9,11 @@
 # Otherwise fall back to the dev workflow: start the Express server and Vite
 # separately (same behaviour as before).
 #
+# The office opens with its token (scripts/open-office.mjs, the same as
+# `npm run open`): without it the page shows the office read-only. The
+# browser gets a redirect page in $AGENT_OFFICE_HOME rather than the tokened
+# link itself, so the token never shows up on a command line in `ps`.
+#
 # Every process this script starts gets its own process group and a pid file
 # under $AGENT_OFFICE_HOME (~/.agent-office): server.pid, vite.pid and
 # chat-watcher.pid. stop-office.sh — and the Ctrl+C trap here — stop exactly
@@ -140,8 +145,8 @@ if [ -n "$ELECTRON_APP" ]; then
     open_target "$ELECTRON_APP"
     echo ""
     echo -e "${GREEN}Agent Office launched!${RESET}"
-    echo "  The app manages the server internally."
-    echo "  Check $RUNTIME_DIR/auth-token for the auth token."
+    echo "  The app manages the server internally and opens the office with its token."
+    echo "  To open the same office in a browser: npm run open"
     exit 0
 fi
 
@@ -211,13 +216,16 @@ else
     echo -e "${YELLOW}[warn]${RESET} Chat AI watcher may not have started (see $CHAT_AI_LOG)"
 fi
 
-# Open in browser
+# Open in browser, with the office token (the bare address when there is no
+# token to open it with: the office then shows read-only)
 echo -e "${CYAN}[...]${RESET} Opening Agent Office..."
-open_target "$UI_URL"
+if ! node "$SCRIPT_DIR/open-office.mjs" --dev; then
+    open_target "$UI_URL"
+fi
 
 echo ""
 echo -e "${GREEN}Agent Office is running!${RESET}"
-echo "  Office: $UI_URL"
+echo "  Office: $UI_URL  (another browser: npm run open)"
 echo "  Server: http://localhost:$SERVER_PORT"
 echo "  Chat AI: toggle on/off from the UI"
 echo ""

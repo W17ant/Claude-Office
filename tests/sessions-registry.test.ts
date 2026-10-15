@@ -16,7 +16,7 @@ import express from 'express'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import request from 'supertest'
 import WebSocket from 'ws'
-import { listen, loadOffice, postEvent, removeOffice, type Office } from './helpers'
+import { listen, loadOffice, officeProtocols, postEvent, removeOffice, type Office } from './helpers'
 import {
   BOT_SESSION_NAME, DEFAULT_POLL_MS, REGISTRY_STATES, REGISTRY_WAIT_SUMMARY,
   isBotSession, mainFromRegistry, mountRegistry, parseRegistryEntry, pidAlive,
@@ -291,10 +291,11 @@ describe('the registry roster in the office', () => {
     regDir = mkdtempSync(join(tmpdir(), 'claude-sessions-office-'))
     office = await loadOffice({ env: { AGENT_OFFICE_REGISTRY_DIR: regDir } })
     const port = await listen(office.server.httpServer)
-    ws = new WebSocket(`ws://127.0.0.1:${port}/ws`)
+    // The office page's socket (with the token: the broadcasts carry the prompt text)
+    ws = new WebSocket(`ws://127.0.0.1:${port}/ws`, officeProtocols(office.server))
     ws.on('message', raw => messages.push(JSON.parse(raw.toString())))
     await new Promise<void>((res, rej) => { ws.once('open', () => res()); ws.once('error', rej) })
-    await waitFor('the snapshot', () => messages.length > 0)
+    await waitFor('the snapshot', () => messages.some(m => m.type === 'snapshot'))
     mark = messages.length
   })
 

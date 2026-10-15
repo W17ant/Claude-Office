@@ -5,6 +5,7 @@ const path = require('path')
 const fs = require('fs')
 const { spawn } = require('child_process')
 const http = require('http')
+const { pathToFileURL } = require('url')
 const {
   APP_NAME,
   serverPortFromEnv,
@@ -21,6 +22,11 @@ const {
   statusText,
   windowTitle,
   trayMenuTemplate,
+  runtimeDirFromEnv,
+  readOfficeToken,
+  officeLink,
+  redactLink,
+  writeRedirectPage,
 } = require('./helpers.cjs')
 const { createTray } = require('./tray.cjs')
 
@@ -41,6 +47,13 @@ const ALLOWED_ORIGINS = new Set(allowedOrigins)
 // section of package.json — so the server, dist/ and node_modules are plain
 // files the server process can read).
 const SERVER_ENTRY = path.join(__dirname, '..', 'server', 'index.js')
+
+// The office token: the server child inherits this environment, so it keeps
+// its auth-token in the same runtime dir. The window loads the office with
+// the token in the URL fragment (helpers.cjs, "The office link"); without it
+// the page would show the office read-only.
+const TOKEN_FILE = path.join(runtimeDirFromEnv(process.env), 'auth-token')
+const REDIRECT_FILE = path.join(runtimeDirFromEnv(process.env), 'open-office.html')
 
 // Window icon for Linux (macOS and Windows take it from the bundle / the exe).
 const WINDOW_ICON = path.join(__dirname, 'assets', 'icon.png')
@@ -322,8 +335,24 @@ function toggleWindow() {
   refreshMenus()
 }
 
+/**
+ * The same office in the default browser, with the token: through the
+ * redirect page in the runtime dir, so the token is never on an opener's
+ * command line (helpers.cjs). Without a token, the bare (read-only) page.
+ */
 function openInBrowser() {
-  shell.openExternal(`${SERVER_URL}/`)
+  const token = readOfficeToken(TOKEN_FILE)
+  if (!token) {
+    shell.openExternal(`${SERVER_URL}/`)
+    return
+  }
+  try {
+    writeRedirectPage(REDIRECT_FILE, officeLink(SERVER_URL, token))
+    shell.openExternal(pathToFileURL(REDIRECT_FILE).href)
+  } catch (err) {
+    console.error('[main] Could not write the redirect page:', err.message)
+    shell.openExternal(`${SERVER_URL}/`)
+  }
 }
 
 function quitApp() {
@@ -457,7 +486,7 @@ async function createWindow() {
   // Inserted CSS and the zoom do not survive a reload: apply them per load.
   win.webContents.on('dom-ready', applyZoom)
   win.webContents.on('did-finish-load', () => {
-    console.log(`[main] Window loaded ${win.webContents.getURL()}`)
+    console.log(`[main] Window loaded ${redactLink(win.webContents.getURL())}`)
     compactCssKey = null
     applyCompactCss()
     applyZoom()
@@ -499,9 +528,13 @@ async function createWindow() {
 
   // Dev: the Vite dev server. Packaged: the office server, which serves the
   // built UI from its root — one port for the page, its assets and the
-  // WebSocket, with an http:// origin the server's allowlist accepts.
-  const url = app.isPackaged ? `${SERVER_URL}/` : VITE_URL
-  console.log(`[main] Loading ${url}`)
+  // WebSocket, with an http:// origin the server's allowlist accepts. Either
+  // way with the office token in the fragment, read now that the server has
+  // answered /health (it writes the file before it answers anything).
+  const token = readOfficeToken(TOKEN_FILE)
+  if (!token) console.warn(`[main] No office token in ${TOKEN_FILE}: the office is shown read-only`)
+  const url = officeLink(app.isPackaged ? SERVER_URL : VITE_URL, token)
+  console.log(`[main] Loading ${redactLink(url)}`)
   win.loadURL(url)
 
   refreshMenus()

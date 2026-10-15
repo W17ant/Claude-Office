@@ -2,12 +2,15 @@
 
 /**
  * Pure helpers for the desktop app: window geometry, the window-state file,
- * the tray's status text and menu. Nothing here needs Electron, so
+ * the tray's status text and menu, and the office link (the page URL with
+ * the office token). Nothing here needs Electron, so
  * tests/electron-helpers.test.ts runs it in plain Node; main.cjs and tray.cjs
- * supply the `screen`, `BrowserWindow` and `Tray` side.
+ * supply the `screen`, `BrowserWindow` and `Tray` side, and
+ * scripts/open-office.mjs (`npm run open`) shares the link helpers.
  */
 
 const fs = require('fs')
+const os = require('os')
 const path = require('path')
 
 const APP_NAME = 'Agent Office'
@@ -55,6 +58,84 @@ function serverUrls(port = DEFAULT_SERVER_PORT, uiPort = VITE_DEV_PORT) {
       serverUrl,
     ],
   }
+}
+
+// ---------------------------------------------------------------------------
+// The office link
+//
+// The office page shows conversation text and may answer permission dialogs
+// only once its WebSocket presents the office token, the contents of the
+// 0600 auth-token file in the runtime dir (server/index.js, "The
+// WebSocket"). The page cannot read files, so it is handed the token in the
+// URL fragment, http://127.0.0.1:3334/#token=<token>, which a browser never
+// sends to a server; the page keeps it and strips it from the address bar
+// (src/officeToken.ts). The window loads that link directly. A browser is
+// sent a small redirect page in the runtime dir instead of the link itself:
+// an opener's command line — and that of a browser it starts — can be read
+// by every local user (`ps`, /proc/<pid>/cmdline) while it runs, a file in
+// the 0700 runtime dir cannot. Jupyter opens its notebook the same way.
+// ---------------------------------------------------------------------------
+
+// What the server writes: 32 random bytes as 64 lowercase hex digits
+const OFFICE_TOKEN_PATTERN = /^[0-9a-f]{64}$/
+
+/** The runtime dir, as the server resolves it: AGENT_OFFICE_HOME, else ~/.agent-office. */
+function runtimeDirFromEnv(env = process.env, home = os.homedir()) {
+  const dir = env && env.AGENT_OFFICE_HOME
+  return typeof dir === 'string' && dir !== '' ? dir : path.join(home, '.agent-office')
+}
+
+/** The office token in `file`, or null when it is missing, unreadable or not a token. */
+function readOfficeToken(file) {
+  try {
+    const token = fs.readFileSync(file, 'utf8').trim()
+    return OFFICE_TOKEN_PATTERN.test(token) ? token : null
+  } catch {
+    return null
+  }
+}
+
+/** The page URL with the token in its fragment (the bare page without a token). */
+function officeLink(base, token) {
+  const root = `${String(base).replace(/\/+$/, '')}/`
+  return typeof token === 'string' && OFFICE_TOKEN_PATTERN.test(token) ? `${root}#token=${token}` : root
+}
+
+/** A URL fit for a log line: a token in its fragment is masked. */
+function redactLink(url) {
+  return String(url).replace(/#token=[^&]*/, '#token=…')
+}
+
+function escapeHtml(text) {
+  return String(text).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c])
+}
+
+/** The redirect page a browser is sent to: straight on to `link`, a plain link as the fallback. */
+function redirectPage(link) {
+  const href = escapeHtml(link)
+  const target = JSON.stringify(String(link)).replace(/</g, '\\u003c')
+  return [
+    '<!doctype html>',
+    '<html><head><meta charset="utf-8">',
+    '<meta name="referrer" content="no-referrer">',
+    `<meta http-equiv="refresh" content="0;url=${href}">`,
+    '<title>Agent Office</title></head>',
+    `<body><script>location.replace(${target})</script>`,
+    `<p><a href="${href}">Open Agent Office</a></p></body></html>`,
+    '',
+  ].join('\n')
+}
+
+/**
+ * Write the redirect page for `link` to `file`, readable by this user only:
+ * an old file is unlinked and the new one created exclusively, so a symlink
+ * planted there is replaced, not written through. Returns the path.
+ */
+function writeRedirectPage(file, link) {
+  try { fs.unlinkSync(file) } catch (err) { if (err.code !== 'ENOENT') throw err }
+  fs.writeFileSync(file, redirectPage(link), { mode: 0o600, flag: 'wx' })
+  try { fs.chmodSync(file, 0o600) } catch {}
+  return file
 }
 
 // ---------------------------------------------------------------------------
@@ -337,6 +418,13 @@ module.exports = {
   VITE_DEV_PORT,
   serverPortFromEnv,
   serverUrls,
+  OFFICE_TOKEN_PATTERN,
+  runtimeDirFromEnv,
+  readOfficeToken,
+  officeLink,
+  redactLink,
+  redirectPage,
+  writeRedirectPage,
   LAYOUT,
   ROOM_VIEWPORT,
   MIN_SIZE,
