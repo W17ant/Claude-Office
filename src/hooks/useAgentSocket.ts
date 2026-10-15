@@ -16,6 +16,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { OfficeEvent, SessionInfo, SnapshotAgent } from '../types'
 import type { SessionStatus, MeterTotals } from '../meters'
+import { projectFromCwd } from '../mainState'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -93,6 +94,7 @@ function toSessionInfo(id: string, src: Partial<SessionInfo>, prev?: SessionInfo
     lastActivityAt: src.lastActivityAt ?? prev?.lastActivityAt,
     lastStatus:     src.lastStatus     ?? prev?.lastStatus,
     lastStatusAt:   src.lastStatusAt   ?? prev?.lastStatusAt,
+    main:           src.main           ?? prev?.main,
   }
 }
 
@@ -188,6 +190,25 @@ export function useAgentSocket(options: AgentSocketOptions = {}): AgentSocketRes
         // Main-thread activity (no agentId) is the session's own status
         if (!msg.agentId) upsertSession(id, { project: msg.project, lastStatus: msg.status, lastStatusAt: msg.timestamp ?? Date.now() })
         return
+      // The turn events: the pill's title / project / model follow them, and every
+      // session_* broadcast refreshes the server's main-thread record
+      case 'session_prompt':
+        upsertSession(id, { project: msg.project, title: msg.title, main: msg.main })
+        return
+      case 'session_cwd':
+        upsertSession(id, { cwd: msg.cwd, project: msg.project ?? projectFromCwd(msg.cwd), main: msg.main })
+        return
+      case 'session_model':
+        upsertSession(id, { model: msg.model, main: msg.main })
+        return
+      case 'session_turn_end':
+      case 'session_needs_you':
+      case 'session_error':
+      case 'session_compact':
+      case 'session_main':
+      case 'session_tool_done':
+        if (msg.main) upsertSession(id, { main: msg.main })
+        return
       default:
         return
     }
@@ -222,8 +243,15 @@ export function useAgentSocket(options: AgentSocketOptions = {}): AgentSocketRes
       }
       // The whole roster goes to the office as one event, so it can reconcile:
       // agents that completed or timed out while we were disconnected leave,
-      // agents still here are refreshed in place, new ones walk in (C35)
-      pushEvent({ type: 'snapshot', activeAgents: snap.activeAgents ?? [], timestamp: snap.timestamp })
+      // agents still here are refreshed in place, new ones walk in (C35). The
+      // sessions ride along so the office seats a Claude per terminal, in the
+      // state the server's main record says.
+      pushEvent({
+        type: 'snapshot',
+        activeAgents: snap.activeAgents ?? [],
+        sessions: snapSessions.map(s => toSessionInfo(s.id, s)),
+        timestamp: snap.timestamp,
+      })
       return
     }
 

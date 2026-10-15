@@ -9,7 +9,7 @@
  *
  * Here every transition is `(state, action, env) → { state, effects }`:
  *   - `reduceOffice`  handles server / sim events (spawn, working, completed,
- *                     chat, snapshot reconciliation, …)
+ *                     chat, snapshot reconciliation, the session turn events …)
  *   - `stepOffice`    advances one animation frame: walking, arrival, breaks,
  *                     pruning at the door, seating lobby waiters
  *   - effects are plain data; the caller flushes them once, outside React
@@ -17,10 +17,25 @@
  * Nothing in this module touches React, the DOM, timers or Math.random
  * directly (randomness and path-finding come in through `OfficeEnv`), so the
  * whole lifecycle is unit-testable in plain Node.
+ *
+ * Sessions. Every Claude Code terminal gets its own Claude (`main-<sessionId>`,
+ * src/mainState.ts), created on the first event from that session or by the
+ * snapshot and seated by the boss when that desk is free. It acts out the
+ * turn: session_prompt (the boss walks over and hands the prompt across, Claude
+ * types), main-thread agent_working (its status line), session_turn_end (its
+ * reply in the chat, then idle — asleep after 30 s — or waiting on background
+ * workers), session_needs_you (hand up, chime, amber pill), session_error,
+ * session_compact (memory wipe), session_cwd / session_model (pill tags), and
+ * leaves after session_ended's grace. Under ?sim there are no sessions, so the
+ * one decorative Claude (CLAUDE_ID) keeps its desk.
  */
 
-import { Agent, OfficeEvent, Position, SnapshotAgent, AGENT_CONFIGS } from './types'
+import { Agent, OfficeEvent, Position, SnapshotAgent, SessionInfo, SessionMain, MainState, NeedsYou, AGENT_CONFIGS } from './types'
 import { ROOMS, AgentSpot } from './rooms'
+import {
+  mainId, isMainAgent, isFreeMain, isHardNeedsYou, needsYouLabel, agentStateFor,
+  completionStats, summarise, projectFromCwd, countRunningTasks,
+} from './mainState'
 import {
   createAgent,
   stepToward,
@@ -53,13 +68,22 @@ const FILING_SPOT = MAIN_ROOM.agentSpots.find(s => s.type === 'filing') ?? null
 const FILING_ROLES = new Set(['Explore', 'general-purpose'])
 
 export const BOSS_ID = `boss-${BOSS_NAME.toLowerCase()}`
+/** The decorative Claude of ?sim / ?video (no sessions there); live offices get one per session */
 export const CLAUDE_ID = 'assistant-claude'
 export const CLAUDE_ROLE = 'assistant'
+/** The desk next to the boss: the first session's Claude sits here, later ones take the next free desk */
+export const CLAUDE_HOME_SPOT = 'spot-2'
 
 /** How close (in %-units) an agent must be to a target to count as arrived */
 export const ARRIVAL_THRESHOLD = 0.3
 /** Minimum time (ms) an agent stays visible after spawning before it may leave */
 export const MIN_VISIBLE_TIME = 30_000
+/** How long the boss stands at Claude's desk after handing a prompt over */
+export const HANDOVER_DWELL_MS = 3_000
+/** Safety net: the boss returns to his desk this long after setting off, wherever he got to */
+export const HANDOVER_MAX_MS = 15_000
+/** A session's Claude keeps its desk this long after session_ended (a resume within it stays seated) */
+export const SESSION_CLAUDE_GRACE_MS = 10_000
 
 /** Directed agent-to-agent messages: icon per type, visit length at the recipient's desk */
 const A2A_ICONS: Record<string, string> = {
@@ -89,6 +113,8 @@ export interface AgentMeta {
   breakStartedAt: number | null
   /** Which lobby standing spot this agent took while waiting for a desk */
   lobbySlot?: number
+  /** A session's Claude: the main state to go back to when the memory wipe is over */
+  beforeCompact?: MainState
 }
 
 /** An agent_working that arrived before the agent reached its desk (C13) */
@@ -106,6 +132,10 @@ export interface OfficeState {
   meta: Record<string, AgentMeta>
   /** `${timestamp}:${text}` of recent chat_message events, for deduplication */
   recentChatKeys: string[]
+  /** Sessions whose session_ended arrived, with when: their Claude leaves after the grace unless a resume clears it */
+  endedSessions: Record<string, number>
+  /** Bumped per boss hand-over, so a stale handover_over cannot cut a newer visit short */
+  handoverSeq: number
 }
 
 /** Everything impure the reducer needs, injected so tests are deterministic */
@@ -121,12 +151,19 @@ export interface OfficeEnv {
 export type OfficeAction =
   | OfficeEvent
   | { type: 'a2a_visit_over'; agentId: string }
+  /** The boss has said his piece at Claude's desk (seq guards against a stale timer) */
+  | { type: 'handover_over'; seq: number }
+  /** session_ended's grace is over: that session's Claude clocks out */
+  | { type: 'session_claude_leave'; sessionId: string }
 
-export type SfxName = 'doorOpen' | 'typing' | 'celebration' | 'coffee' | 'alarm' | 'error' | 'powerDown' | 'notification'
+export type SfxName = 'doorOpen' | 'typing' | 'celebration' | 'coffee' | 'alarm' | 'error' | 'powerDown' | 'notification' | 'needsYou'
 
 export type OfficeEffect =
-  | { kind: 'msg'; sender: string; role: string; color: string; text: string; isSystem?: boolean; id?: number }
+  /** `agentId` names the character that shows the typing bubble before the line; `tag` marks a prompt / reply row */
+  | { kind: 'msg'; sender: string; role: string; color: string; text: string; isSystem?: boolean; id?: number; agentId?: string; tag?: 'prompt' | 'reply' }
   | { kind: 'sfx'; sfx: SfxName }
+  /** Window / title-bar prefix: '✋ ' while any session needs a person, '' once none does */
+  | { kind: 'title'; prefix: string }
   | { kind: 'furniture'; id: string; state: string }
   /** Dispatch `action` again after `delayMs` (deferred departures, A2A visits) */
   | { kind: 'schedule'; action: OfficeAction; delayMs: number }
@@ -255,11 +292,11 @@ function bossReply(agentName: string, random: () => number): string {
 // Initial state
 // ---------------------------------------------------------------------------
 
-/** The office with its permanent staff (boss, Claude) already seated */
+/** The office with its permanent staff (the boss, and under ?sim the decorative Claude) already seated */
 export function initialOfficeState(agents: Agent[], now: number): OfficeState {
   const meta: Record<string, AgentMeta> = {}
   for (const a of agents) meta[a.id] = newMeta(now, true)
-  return { agents, lobby: [], pendingStatus: {}, meta, recentChatKeys: [] }
+  return { agents, lobby: [], pendingStatus: {}, meta, recentChatKeys: [], endedSessions: {}, handoverSeq: 0 }
 }
 
 // ---------------------------------------------------------------------------
@@ -275,6 +312,10 @@ interface SpawnFields {
   unread?: number
   sessionId?: string
   project?: string
+  /** Sit here when it is free (a session's Claude prefers the desk by the boss) */
+  preferredSpotId?: string
+  statusText?: string
+  model?: string
 }
 
 /**
@@ -296,23 +337,33 @@ function spawnAgent(state: OfficeState, raw: SpawnFields, env: OfficeEnv, announ
   const task = raw.task
   const cfg = cfgFor(role)
   const effects: OfficeEffect[] = [{ kind: 'sfx', sfx: 'doorOpen' }]
-  const common = { sessionId: raw.sessionId, project: raw.project, unread: raw.unread || undefined }
+  const common = {
+    sessionId: raw.sessionId,
+    project: raw.project,
+    unread: raw.unread || undefined,
+    ...(raw.model ? { model: raw.model } : {}),
+  }
 
   let agent: Agent
   let meta = newMeta(env.now)
   let lobby = state.lobby
 
-  const spot = pickSpot(state.agents, role)
+  const preferred = raw.preferredSpotId
+    ? MAIN_ROOM.agentSpots.find(s => s.id === raw.preferredSpotId && !occupiedSpotIds(state.agents).has(s.id)) ?? null
+    : null
+  const spot = preferred ?? pickSpot(state.agents, role)
   if (spot) {
-    const base = createAgent({ id, name, role, task, spot })
+    // hiredAt from the env clock, so the same event reduced twice gives the same agent
+    const base = createAgent({ id, name, role, task, spot, hiredAt: env.now })
     agent = { ...base, ...common, pathQueue: env.computePath(base.position, base.targetPosition) }
+    if (raw.statusText) agent = { ...agent, statusText: raw.statusText }
     if (announce) {
       effects.push({ kind: 'msg', sender: name, role, color: cfg.color, text: task ? (env.live ? `📋 ${task}` : `starting: ${task}`) : spawnMessage() })
     }
   } else {
     const slot = freeLobbySlot(state)
     const pos = lobbyPosition(slot)
-    const base = createAgent({ id, name, role, task, spot: { id: 'lobby', type: 'door', x: pos.x, y: pos.y, spriteFacing: 'front-left' } })
+    const base = createAgent({ id, name, role, task, spot: { id: 'lobby', type: 'door', x: pos.x, y: pos.y, spriteFacing: 'front-left' }, hiredAt: env.now })
     agent = {
       ...base,
       ...common,
@@ -339,16 +390,25 @@ function spawnAgent(state: OfficeState, raw: SpawnFields, env: OfficeEnv, announ
 /**
  * Walk an agent out to the door. `quiet` skips the celebration and boss reply
  * (used when a snapshot tells us the agent left while we were disconnected).
+ * `stats` are what the Agent tool reported (tokens, duration): they make the
+ * completion line "✅ done · 42k tok · 3m12s".
  */
-function completeAgent(state: OfficeState, id: string, result: string | undefined, env: OfficeEnv, quiet: boolean): OfficeResult {
+function completeAgent(
+  state: OfficeState, id: string, result: string | undefined, env: OfficeEnv, quiet: boolean,
+  stats: { tokens?: number; durationMs?: number } = {},
+): OfficeResult {
   const agent = state.agents.find(a => a.id === id)
   if (!agent || agent.state === 'completed') return { state, effects: [] }
 
   const effects: OfficeEffect[] = []
   const resultMsg = result ?? doneMessage()
   if (!quiet) {
-    // The live server posts "done: <result>" itself; under ?sim nobody else will
-    if (!env.live) effects.push({ kind: 'msg', sender: agent.name, role: agent.role, color: cfgFor(agent.role).color, text: `done: ${resultMsg}` })
+    const parts = completionStats(stats.tokens, stats.durationMs)
+    const color = cfgFor(agent.role).color
+    // The live server posts "done: <result>" itself; under ?sim nobody else will.
+    // The numbers are ours either way: the server's row does not carry them.
+    if (!env.live) effects.push({ kind: 'msg', sender: agent.name, role: agent.role, color, text: `done: ${resultMsg}${parts.length ? ` · ${parts.join(' · ')}` : ''}` })
+    else if (parts.length) effects.push({ kind: 'msg', sender: agent.name, role: agent.role, color, text: `✅ done · ${parts.join(' · ')}` })
     effects.push({ kind: 'sfx', sfx: 'celebration' })
     const boss = cfgFor(BOSS_ROLE)
     effects.push({ kind: 'msg', sender: boss.title, role: BOSS_ROLE, color: boss.color, text: bossReply(agent.name, env.random) })
@@ -376,11 +436,225 @@ function completeAgent(state: OfficeState, id: string, result: string | undefine
 }
 
 // ---------------------------------------------------------------------------
+// Sessions: one Claude per terminal
+// ---------------------------------------------------------------------------
+
+/** The session's Claude, if it is in the office (a leaver no longer counts) */
+function findMain(state: OfficeState, sessionId: string): Agent | undefined {
+  const a = state.agents.find(x => x.id === mainId(sessionId))
+  return a && a.state !== 'completed' ? a : undefined
+}
+
+/** How many Claudes share the office right now (two or more: chat lines carry the project) */
+function mainCount(state: OfficeState): number {
+  return state.agents.filter(a => isMainAgent(a) && a.state !== 'completed').length
+}
+
+/** A chat line from a session's Claude; "Claude · <project>" once several terminals are open */
+function claudeMsg(state: OfficeState, claude: Agent, text: string, tag?: 'prompt' | 'reply'): OfficeEffect {
+  const cfg = cfgFor(CLAUDE_ROLE)
+  const sender = mainCount(state) > 1 && claude.project ? `${cfg.title} · ${claude.project}` : cfg.title
+  return { kind: 'msg', sender, role: CLAUDE_ROLE, color: cfg.color, text, agentId: claude.id, ...(tag ? { tag } : {}) }
+}
+
+interface MainPatch {
+  /** The new main state; `null` = unknown again (session ended) */
+  mainState?: MainState | null
+  statusText?: string
+  needsYou?: NeedsYou
+  waitingOn?: number
+  lastFailed?: boolean
+  /** When the server says this state began (a reload shows a long-idle Claude asleep at once) */
+  since?: number
+}
+
+/**
+ * Apply a main-thread transition to a session's Claude. A seated Claude
+ * changes sprite state (working / idle); one walking in, out or to a break
+ * keeps walking and takes the state on arrival. Entering idle starts the
+ * sleep timer (meta.idleSince); leaving it stops it.
+ */
+function applyMain(state: OfficeState, id: string, patch: MainPatch, env: OfficeEnv): OfficeState {
+  const agent = state.agents.find(a => a.id === id)
+  if (!agent || agent.state === 'completed') return state
+  const mainState = patch.mainState === undefined ? agent.mainState : (patch.mainState ?? undefined)
+  const seated = agent.state === 'working' || agent.state === 'idle'
+  // A memory wipe keeps the wait it interrupted, so PostCompact can restore it
+  const keep = mainState === 'compacting'
+  const next: Agent = {
+    ...agent,
+    mainState,
+    needsYou: mainState === 'needs-you' || keep ? (patch.needsYou ?? agent.needsYou) : undefined,
+    waitingOn: mainState === 'waiting' || keep ? (patch.waitingOn ?? agent.waitingOn) : undefined,
+    statusText: patch.statusText ?? agent.statusText,
+    lastFailed: patch.lastFailed ?? agent.lastFailed,
+    state: seated ? agentStateFor(mainState) : agent.state,
+  }
+  const prevMeta = state.meta[id] ?? newMeta(env.now)
+  const idleSince = mainState === 'idle' ? (prevMeta.idleSince ?? patch.since ?? env.now) : null
+  return {
+    ...state,
+    agents: state.agents.map(a => (a.id === id ? next : a)),
+    meta: { ...state.meta, [id]: { ...prevMeta, idleSince } },
+  }
+}
+
+/** Claude's status line for a server-side main record (snapshot / reconnect) */
+function mainStatusText(main: SessionMain): string | undefined {
+  switch (main.state) {
+    case 'working':    return main.lastPrompt ? `✍ ${summarise(main.lastPrompt)}` : '⚡ working'
+    case 'waiting':    return waitingText(main.waitingOn ?? 0)
+    case 'idle':       return 'turn over — idle'
+    case 'needs-you':  return main.needsYou ? needsYouLabel(main.needsYou) : '✋ needs you'
+    case 'error':      return `⚠ API error${main.error?.error ? `: ${main.error.error}` : ''}`
+    case 'compacting': return '🧹 memory wipe'
+    default:           return undefined
+  }
+}
+
+function fromServerMain(main: SessionMain): MainPatch {
+  return { mainState: main.state, needsYou: main.needsYou, waitingOn: main.waitingOn, since: main.since, statusText: mainStatusText(main) }
+}
+
+function waitingText(n: number): string {
+  return n > 0 ? `⏳ waiting on ${n} background worker${n === 1 ? '' : 's'}` : '⏳ waiting on background workers'
+}
+
+/** Claude's status line when PostCompact puts it back where it was */
+function restoredStatus(state: MainState, claude: Agent): string | undefined {
+  switch (state) {
+    case 'working':   return '✍ back to work'
+    case 'idle':      return 'turn over — idle'
+    case 'waiting':   return waitingText(claude.waitingOn ?? 0)
+    case 'needs-you': return claude.needsYou ? needsYouLabel(claude.needsYou) : '✋ needs you'
+    case 'error':     return '⚠ API error'
+    default:          return undefined
+  }
+}
+
+interface SessionFields {
+  project?: string
+  cwd?: string
+  model?: string
+  main?: SessionMain
+}
+
+/**
+ * The session's Claude, created if this is the first we hear of the session.
+ * It walks in like any new hire, to the desk by the boss when that is free,
+ * and posts its own clock-in line (the server posts none for a main thread).
+ * A session that has ended gets no new Claude; a resume (session_started)
+ * clears that first. One caught on its way out by a resume comes back in
+ * through the door.
+ */
+function ensureClaude(state: OfficeState, sessionId: string, info: SessionFields, env: OfficeEnv): OfficeResult & { created: boolean } {
+  const id = mainId(sessionId)
+  const existing = state.agents.find(a => a.id === id)
+  if (existing && existing.state !== 'completed') return { state, effects: [], created: false }
+  if (sessionId in state.endedSessions) return { state, effects: [], created: false }
+
+  let cur = state
+  if (existing) {
+    cur = {
+      ...cur,
+      agents: cur.agents.filter(a => a.id !== id),
+      lobby: cur.lobby.filter(x => x !== id),
+      meta: without(cur.meta, id),
+      pendingStatus: without(cur.pendingStatus, id),
+    }
+  }
+  const project = info.project ?? projectFromCwd(info.cwd)
+  const cfg = cfgFor(CLAUDE_ROLE)
+  const r = spawnAgent(cur, {
+    id, name: cfg.title, role: CLAUDE_ROLE,
+    task: project ? `Claude Code · ${project}` : 'Claude Code',
+    statusText: 'clocked in',
+    sessionId, project, model: info.model,
+    preferredSpotId: CLAUDE_HOME_SPOT,
+  }, env, false)
+  let next = r.state
+  if (info.main) next = applyMain(next, id, fromServerMain(info.main), env)
+  const claude = next.agents.find(a => a.id === id)!
+  const effects: OfficeEffect[] = [...r.effects, claudeMsg(next, claude, `🤖 clocked in${project ? ` · ${project}` : ''}`)]
+  return { state: next, effects, created: true }
+}
+
+/**
+ * The boss gets up and hands the prompt over at Claude's desk: walking-to-
+ * manager → (stepOffice, on arrival) talking-to-manager with `bubble` as the
+ * speech bubble → handover_over → back to his desk. Only a seated boss (or
+ * one already on such a visit) goes; a Claude without a desk gets no visit.
+ */
+function bossHandover(state: OfficeState, claude: Agent, bubble: string, env: OfficeEnv): OfficeResult {
+  const boss = state.agents.find(a => a.id === BOSS_ID)
+  const free = boss && (boss.state === 'working' || boss.state === 'idle' || boss.state === 'walking-to-manager' || boss.state === 'talking-to-manager')
+  if (!boss || !free || !claude.assignedSpotId) return { state, effects: [] }
+  const seq = state.handoverSeq + 1
+  const spot = { x: claude.deskPosition.x + 4, y: claude.deskPosition.y + 2 }
+  const effects: OfficeEffect[] = [{ kind: 'schedule', action: { type: 'handover_over', seq }, delayMs: HANDOVER_MAX_MS }]
+  let next: Agent
+  if (near(boss.position, spot, 1)) {
+    // Already there (a second prompt in quick succession): just say the new line
+    next = { ...boss, state: 'talking-to-manager', statusText: bubble, targetPosition: { ...spot }, pathQueue: [] }
+    effects.push({ kind: 'schedule', action: { type: 'handover_over', seq }, delayMs: HANDOVER_DWELL_MS })
+  } else {
+    next = { ...walkTo(boss, spot, bubble, env), state: 'walking-to-manager' }
+  }
+  return {
+    state: { ...state, handoverSeq: seq, agents: state.agents.map(a => (a.id === BOSS_ID ? next : a)) },
+    effects,
+  }
+}
+
+/** Sessions whose Claude has a hand up for a person (drives the '✋ ' title prefix) */
+function hardNeedsYouCount(state: OfficeState): number {
+  return state.agents.filter(a => isMainAgent(a) && a.state !== 'completed' && a.mainState === 'needs-you' && isHardNeedsYou(a.needsYou)).length
+}
+
+// ---------------------------------------------------------------------------
 // Event reducer
 // ---------------------------------------------------------------------------
 
+/**
+ * One event in, the next state and its effects out. Wraps the per-event
+ * switch so the '✋ ' title prefix follows every raise *and* every clear path
+ * (prompt, turn end, a tool call, session end, snapshot) from one place.
+ */
 export function reduceOffice(state: OfficeState, action: OfficeAction, env: OfficeEnv): OfficeResult {
+  const r = reduceEvent(state, action, env)
+  if (r.state === state) return r
+  const before = hardNeedsYouCount(state) > 0
+  const after = hardNeedsYouCount(r.state) > 0
+  if (before === after) return r
+  return { state: r.state, effects: [...r.effects, { kind: 'title', prefix: after ? '✋ ' : '' }] }
+}
+
+/** Turn events that say nothing once their session has ended (only a session_started revives it) */
+const TURN_EVENTS = new Set<OfficeAction['type']>([
+  'session_prompt', 'session_turn_end', 'session_needs_you', 'session_tool_done', 'session_main',
+  'session_error', 'session_compact', 'session_cwd', 'session_model',
+])
+
+function reduceEvent(state: OfficeState, action: OfficeAction, env: OfficeEnv): OfficeResult {
   const none: OfficeResult = { state, effects: [] }
+
+  // A straggler for a session whose end we already saw: its Claude is on its way out
+  if (TURN_EVENTS.has(action.type) && 'sessionId' in action && action.sessionId && action.sessionId in state.endedSessions) return none
+
+  /** Main-thread activity (a tool call with no agentId) lands on that session's Claude, never on a worker */
+  const mainThreadWorking = (sessionId: string, statusMsg: string, failed: boolean, origin: SessionFields): OfficeResult => {
+    if (sessionId in state.endedSessions) return none
+    const ensured = ensureClaude(state, sessionId, origin, env)
+    const id = mainId(sessionId)
+    let cur = applyMain(ensured.state, id, { mainState: 'working', statusText: statusMsg, lastFailed: failed }, env)
+    const claude = cur.agents.find(a => a.id === id)
+    if (!claude) return none
+    // A status that reaches a Claude still walking in applies on arrival (C13); its line is posted now
+    if (claude.state !== 'working' && claude.state !== 'idle') {
+      cur = { ...cur, pendingStatus: { ...cur.pendingStatus, [id]: { status: statusMsg, failed } } }
+    }
+    return { state: cur, effects: [...ensured.effects, claudeMsg(cur, claude, `${failed ? '❌' : '⚡'} ${statusMsg}`)] }
+  }
 
   switch (action.type) {
     // ── New agent spawned ──────────────────────────────────────────────────
@@ -416,13 +690,17 @@ export function reduceOffice(state: OfficeState, action: OfficeAction, env: Offi
         return { state: { ...state, pendingStatus: { ...state.pendingStatus, [id]: { status: statusMsg, failed } } }, effects }
       }
 
-      // No agentId — tool use from a main thread. With a sessionId, only that
-      // session's workers may show it; a session with none keeps the status on
-      // its pill (SessionStrip). Without a sessionId (old hook, sim mode) any
-      // worker will do.
-      const allWorkers = state.agents.filter(a => a.state === 'working' && a.id !== BOSS_ID)
-      const workers = action.sessionId ? allWorkers.filter(a => a.sessionId === action.sessionId) : allWorkers
-      if (workers.length === 0) return none
+      // No agentId — tool use from a main thread. With a sessionId it is that
+      // session's own Claude at work. Without one (old hook, sim mode) any
+      // worker will do; failing that, the only Claude in the office.
+      const origin = { project: action.project, cwd: action.cwd }
+      if (action.sessionId) return mainThreadWorking(action.sessionId, statusMsg, failed, origin)
+      const workers = state.agents.filter(a => a.state === 'working' && a.id !== BOSS_ID && !isMainAgent(a))
+      if (workers.length === 0) {
+        const mains = state.agents.filter(a => isMainAgent(a) && a.state !== 'completed')
+        if (mains.length === 1 && mains[0].sessionId) return mainThreadWorking(mains[0].sessionId, statusMsg, failed, origin)
+        return none
+      }
       const target = pickOne(workers, env.random)
       return {
         state: { ...state, agents: state.agents.map(a => (a.id === target.id ? { ...a, statusText: statusMsg, lastFailed: failed } : a)) },
@@ -445,7 +723,7 @@ export function reduceOffice(state: OfficeState, action: OfficeAction, env: Offi
           return { state, effects: [{ kind: 'schedule', action, delayMs: MIN_VISIBLE_TIME - elapsed }] }
         }
       }
-      return completeAgent(state, id, action.result, env, false)
+      return completeAgent(state, id, action.result, env, false, { tokens: action.tokens, durationMs: action.durationMs })
     }
 
     // ── Snapshot on (re)connect: reconcile the office with the server ──────
@@ -455,9 +733,10 @@ export function reduceOffice(state: OfficeState, action: OfficeAction, env: Offi
       let cur = state
       const effects: OfficeEffect[] = []
 
-      // 1. Agents that completed or timed out while we were disconnected (C35)
+      // 1. Agents that completed or timed out while we were disconnected (C35).
+      //    The sessions' Claudes are reconciled against the session list below.
       for (const a of state.agents) {
-        if (a.id === BOSS_ID || a.id === CLAUDE_ID || a.state === 'completed' || byId.has(a.id)) continue
+        if (a.id === BOSS_ID || a.id === CLAUDE_ID || isMainAgent(a) || a.state === 'completed' || byId.has(a.id)) continue
         const r = completeAgent(cur, a.id, 'clocked out while we were away', env, true)
         cur = r.state
         effects.push(...r.effects)
@@ -489,6 +768,42 @@ export function reduceOffice(state: OfficeState, action: OfficeAction, env: Offi
         const r = spawnAgent(cur, e, env, true)
         cur = r.state
         effects.push(...r.effects)
+      }
+
+      // 4. Sessions (when the snapshot lists them): a Claude per active
+      //    session, refreshed from the server's main record; the Claude of a
+      //    session the server no longer lists leaves quietly, and one whose
+      //    session ended leaves after the grace
+      if (Array.isArray(action.sessions)) {
+        const listed = action.sessions.filter((s): s is SessionInfo => !!s && !!s.id)
+        const bySid = new Map(listed.map(s => [s.id, s]))
+        for (const a of cur.agents) {
+          if (!isMainAgent(a) || a.state === 'completed') continue
+          const sid = a.sessionId ?? a.id.slice(mainId('').length)
+          if (bySid.has(sid)) continue
+          cur = completeAgent(cur, a.id, 'clocked out while we were away', env, true).state
+        }
+        let ended = cur.endedSessions
+        for (const s of listed) {
+          if (s.state === 'ended') {
+            if (!(s.id in ended)) {
+              ended = { ...ended, [s.id]: env.now }
+              effects.push({ kind: 'schedule', action: { type: 'session_claude_leave', sessionId: s.id }, delayMs: SESSION_CLAUDE_GRACE_MS })
+            }
+            continue
+          }
+          if (s.id in ended) ended = without(ended, s.id)
+          cur = { ...cur, endedSessions: ended }
+          const r = ensureClaude(cur, s.id, { project: s.project, cwd: s.cwd, model: s.model, main: s.main }, env)
+          cur = r.state
+          effects.push(...r.effects)
+          if (!r.created) {
+            const id = mainId(s.id)
+            if (s.main) cur = applyMain(cur, id, fromServerMain(s.main), env)
+            cur = { ...cur, agents: cur.agents.map(a => (a.id === id ? { ...a, project: s.project ?? a.project, model: s.model ?? a.model } : a)) }
+          }
+        }
+        cur = { ...cur, endedSessions: ended }
       }
       return { state: cur, effects }
     }
@@ -569,7 +884,7 @@ export function reduceOffice(state: OfficeState, action: OfficeAction, env: Offi
         msgSender = c.title; msgRole = role; msgColor = c.color
       } else {
         // Attribute to a working agent or fall back to Claude
-        const workers = state.agents.filter(a => a.id !== BOSS_ID && a.id !== CLAUDE_ID && a.state === 'working')
+        const workers = state.agents.filter(a => a.id !== BOSS_ID && a.role !== CLAUDE_ROLE && a.state === 'working')
         if (workers.length > 0) {
           const w = pickOne(workers, env.random)
           msgSender = w.name; msgRole = w.role; msgColor = cfgFor(w.role).color
@@ -612,6 +927,240 @@ export function reduceOffice(state: OfficeState, action: OfficeAction, env: Offi
       const agent = state.agents.find(a => a.id === action.agentId)
       if (!agent || agent.state !== 'walking-to-desk') return none
       return { state: { ...state, agents: state.agents.map(a => (a.id === agent.id ? walkTo(a, a.deskPosition, 'back to work', env) : a)) }, effects: [] }
+    }
+
+    // ── Session lifecycle: a Claude per terminal ───────────────────────────
+    case 'session_started': {
+      const sid = action.sessionId
+      if (!sid) return none
+      const base = sid in state.endedSessions ? { ...state, endedSessions: without(state.endedSessions, sid) } : state
+      const r = ensureClaude(base, sid, { project: action.project, cwd: action.cwd, model: action.model, main: action.main }, env)
+      if (r.created) return r
+      // Already here (a resume, or compaction's SessionStart): refresh what the server knows
+      const id = mainId(sid)
+      let cur = r.state
+      if (action.main) cur = applyMain(cur, id, fromServerMain(action.main), env)
+      const project = action.project ?? projectFromCwd(action.cwd)
+      cur = { ...cur, agents: cur.agents.map(a => (a.id === id ? { ...a, project: project ?? a.project, model: action.model ?? a.model } : a)) }
+      return { state: cur, effects: r.effects }
+    }
+
+    case 'session_ended': {
+      const sid = action.sessionId
+      if (!sid || sid in state.endedSessions) return none
+      let cur: OfficeState = { ...state, endedSessions: { ...state.endedSessions, [sid]: env.now } }
+      const effects: OfficeEffect[] = [{ kind: 'schedule', action: { type: 'session_claude_leave', sessionId: sid }, delayMs: SESSION_CLAUDE_GRACE_MS }]
+      if (findMain(cur, sid)) cur = applyMain(cur, mainId(sid), { mainState: null, statusText: `👋 session ended${action.reason ? ` (${action.reason})` : ''}` }, env)
+      return { state: cur, effects }
+    }
+
+    case 'session_claude_leave': {
+      const sid = action.sessionId
+      if (!(sid in state.endedSessions)) return none            // resumed within the grace
+      const cur: OfficeState = { ...state, endedSessions: without(state.endedSessions, sid) }
+      const claude = findMain(cur, sid)
+      if (!claude) return { state: cur, effects: [] }
+      const r = completeAgent(cur, claude.id, 'clocked out', env, true)
+      return { state: r.state, effects: [...r.effects, claudeMsg(cur, claude, '👋 clocked out')] }
+    }
+
+    // ── The boss hands a prompt over; Claude starts typing ─────────────────
+    case 'session_prompt': {
+      const sid = action.sessionId
+      if (!sid) return none
+      const ensured = ensureClaude(state, sid, { project: action.project, cwd: action.cwd }, env)
+      let cur = ensured.state
+      const effects = [...ensured.effects]
+      const id = mainId(sid)
+      const claude = cur.agents.find(a => a.id === id)
+      if (!claude) return none
+      const serverState = action.main?.state
+
+      if (action.isWakeup) {
+        // A background worker's report woke Claude up: no walk, a small note
+        // (the server resolves the subagent id to the office worker when it can)
+        const workerId = action.wakeupOfficeId ?? action.wakeupAgentId
+        const worker = workerId ? cur.agents.find(a => a.id === workerId) : undefined
+        const label = `📬 ${worker?.name ?? 'a background worker'} reported back`
+        cur = applyMain(cur, id, { mainState: serverState ?? 'working', statusText: label }, env)
+        effects.push(claudeMsg(cur, claude, label))
+        return { state: cur, effects }
+      }
+
+      const summary = summarise(action.text)
+      if (action.text) {
+        const boss = cfgFor(BOSS_ROLE)
+        effects.push({ kind: 'msg', sender: boss.title, role: BOSS_ROLE, color: boss.color, text: action.text, agentId: BOSS_ID, tag: 'prompt' })
+      }
+      const handover = bossHandover(cur, claude, summary ?? '📝 new prompt', env)
+      cur = handover.state
+      effects.push(...handover.effects)
+      cur = applyMain(cur, id, { mainState: serverState ?? 'working', statusText: summary ? `✍ ${summary}` : '✍ working on a prompt' }, env)
+      effects.push({ kind: 'sfx', sfx: 'typing' })
+      return { state: cur, effects }
+    }
+
+    case 'handover_over': {
+      if (action.seq !== state.handoverSeq) return none
+      const boss = state.agents.find(a => a.id === BOSS_ID)
+      if (!boss || (boss.state !== 'walking-to-manager' && boss.state !== 'talking-to-manager')) return none
+      return { state: { ...state, agents: state.agents.map(a => (a.id === BOSS_ID ? walkTo(a, a.deskPosition, 'back to work', env) : a)) }, effects: [] }
+    }
+
+    // ── The turn is over: reply in the chat, then idle or waiting on workers ─
+    case 'session_turn_end': {
+      const sid = action.sessionId
+      if (!sid) return none
+      const ensured = ensureClaude(state, sid, { project: action.project, cwd: action.cwd }, env)
+      let cur = ensured.state
+      const effects = [...ensured.effects]
+      const id = mainId(sid)
+      const claude = cur.agents.find(a => a.id === id)
+      if (!claude) return none
+      if (action.text) effects.push(claudeMsg(cur, claude, action.text, 'reply'))
+      const waitingOn = action.main?.waitingOn ?? countRunningTasks(action.backgroundTasks)
+      const serverState = action.main?.state
+      const next: MainState = serverState === 'waiting' || (serverState === undefined && waitingOn > 0) ? 'waiting' : serverState ?? 'idle'
+      cur = next === 'waiting'
+        ? applyMain(cur, id, { mainState: 'waiting', waitingOn, statusText: waitingText(waitingOn) }, env)
+        : applyMain(cur, id, { mainState: next, statusText: next === 'idle' ? 'turn over — idle' : undefined, since: action.main?.since }, env)
+      return { state: cur, effects }
+    }
+
+    // ── Claude is waiting on a person ──────────────────────────────────────
+    case 'session_needs_you': {
+      const sid = action.sessionId
+      if (!sid) return none
+      const ensured = ensureClaude(state, sid, { project: action.project, cwd: action.cwd }, env)
+      let cur = ensured.state
+      const effects = [...ensured.effects]
+      const id = mainId(sid)
+      const claude = cur.agents.find(a => a.id === id)
+      if (!claude) return none
+      // The server's record already says it is over: follow it
+      if (action.main && action.main.state !== 'needs-you') {
+        return { state: applyMain(cur, id, fromServerMain(action.main), env), effects }
+      }
+      const fromServer = action.main?.needsYou ?? action.needsYou
+      const fresh: NeedsYou = {
+        kind: action.kind ?? fromServer?.kind ?? 'permission',
+        toolName: action.toolName ?? fromServer?.toolName,
+        summary: action.summary ?? fromServer?.summary,
+        message: action.message ?? fromServer?.message,
+        since: fromServer?.since ?? env.now,
+      }
+      // The same wait again (PermissionRequest, then its Notification): keep the first one, say nothing
+      const same = claude.mainState === 'needs-you' && !!claude.needsYou && claude.needsYou.kind === fresh.kind
+        && claude.needsYou.toolName === fresh.toolName && claude.needsYou.summary === fresh.summary
+      const needsYou = same ? claude.needsYou! : fresh
+      const label = needsYouLabel(needsYou)
+      cur = applyMain(cur, id, { mainState: 'needs-you', needsYou, statusText: label }, env)
+      if (!same) {
+        effects.push(claudeMsg(cur, claude, label))
+        if (isHardNeedsYou(needsYou)) effects.push({ kind: 'sfx', sfx: 'needsYou' })
+      }
+      return { state: cur, effects }
+    }
+
+    // ── A main-thread tool call went through: a hand raised for it comes down ─
+    case 'session_tool_done': {
+      const sid = action.sessionId
+      if (!sid) return none
+      const claude = findMain(state, sid)
+      if (!claude) return none
+      const id = claude.id
+      if (action.main) return { state: applyMain(state, id, fromServerMain(action.main), env), effects: [] }
+      const wait = claude.mainState === 'needs-you' ? claude.needsYou : undefined
+      const answers = !!wait && wait.kind === 'permission' && (action.batch === true || (!!action.toolName && wait.toolName === action.toolName))
+      if (!answers) return none
+      const what = action.batch === true ? `tool batch of ${action.count ?? '?'} done` : `${action.toolName} ran`
+      const cur = applyMain(state, id, { mainState: 'working', statusText: `⚡ ${what}` }, env)
+      return { state: cur, effects: [claudeMsg(cur, claude, `✅ permission answered — ${what}`)] }
+    }
+
+    // ── The server changed the record itself (hand lowered by a tool result or the 10-min timeout) ─
+    case 'session_main': {
+      const sid = action.sessionId
+      if (!sid || !action.main) return none
+      const ensured = ensureClaude(state, sid, { project: action.project, cwd: action.cwd, main: action.main }, env)
+      if (ensured.created) return ensured
+      const id = mainId(sid)
+      const before = ensured.state.agents.find(a => a.id === id)
+      if (!before) return none
+      const cur = applyMain(ensured.state, id, fromServerMain(action.main), env)
+      const effects = [...ensured.effects]
+      // The hand came down without a prompt or a tool call of ours: say why
+      if (before.mainState === 'needs-you' && action.main.state !== 'needs-you') {
+        effects.push(claudeMsg(cur, before, `${action.main.state === 'working' ? '✅' : '💤'} ${action.reason ?? 'hand down'}`))
+      }
+      return { state: cur, effects }
+    }
+
+    // ── The API call failed (StopFailure) ──────────────────────────────────
+    case 'session_error': {
+      const sid = action.sessionId
+      if (!sid) return none
+      const ensured = ensureClaude(state, sid, { project: action.project, cwd: action.cwd }, env)
+      const id = mainId(sid)
+      const claude = ensured.state.agents.find(a => a.id === id)
+      if (!claude) return none
+      const label = `⚠ API error${action.error ? `: ${action.error}` : ''}`
+      const cur = applyMain(ensured.state, id, { mainState: action.main?.state ?? 'error', statusText: label }, env)
+      return {
+        state: cur,
+        effects: [...ensured.effects, claudeMsg(cur, claude, `${label}${action.detail ? ` — ${action.detail}` : ''}`), { kind: 'sfx', sfx: 'error' }],
+      }
+    }
+
+    // ── Memory wipe: PreCompact sweeps the desk, PostCompact restores the state ─
+    case 'session_compact': {
+      const sid = action.sessionId
+      if (!sid) return none
+      const ensured = ensureClaude(state, sid, { project: action.project, cwd: action.cwd }, env)
+      let cur = ensured.state
+      const effects = [...ensured.effects]
+      const id = mainId(sid)
+      const claude = cur.agents.find(a => a.id === id)
+      if (!claude) return none
+      const meta = cur.meta[id] ?? newMeta(env.now)
+      if (action.phase !== 'post') {
+        const beforeCompact = claude.mainState === 'compacting' ? meta.beforeCompact : claude.mainState
+        cur = applyMain(cur, id, { mainState: 'compacting', statusText: '🧹 memory wipe' }, env)
+        cur = { ...cur, meta: { ...cur.meta, [id]: { ...cur.meta[id], beforeCompact } } }
+        effects.push(claudeMsg(cur, claude, `🧹 memory wipe${action.trigger ? ` (${action.trigger})` : ''}`))
+        return { state: cur, effects }
+      }
+      // Back to where it was: the server's record when it sends one, else what we remembered
+      const back: MainState = action.main?.state ?? meta.beforeCompact ?? 'working'
+      cur = action.main
+        ? applyMain(cur, id, fromServerMain(action.main), env)
+        : applyMain(cur, id, { mainState: back, statusText: restoredStatus(back, claude) }, env)
+      cur = { ...cur, meta: { ...cur.meta, [id]: { ...cur.meta[id], beforeCompact: undefined } } }
+      return { state: cur, effects }
+    }
+
+    // ── `cd` in the terminal: the project tag follows ──────────────────────
+    case 'session_cwd': {
+      const sid = action.sessionId
+      if (!sid) return none
+      const project = projectFromCwd(action.cwd) ?? action.project
+      if (!project) return none
+      const ensured = ensureClaude(state, sid, { project, cwd: action.cwd }, env)
+      const cur = ensured.state
+      return {
+        state: { ...cur, agents: cur.agents.map(a => (a.sessionId === sid && a.state !== 'completed' ? { ...a, project } : a)) },
+        effects: ensured.effects,
+      }
+    }
+
+    // ── /model mid-session: the badge on the pill and Claude's tooltip ─────
+    case 'session_model': {
+      const sid = action.sessionId
+      if (!sid || !action.model) return none
+      const ensured = ensureClaude(state, sid, { project: action.project, cwd: action.cwd, model: action.model }, env)
+      const id = mainId(sid)
+      const cur = ensured.state
+      return { state: { ...cur, agents: cur.agents.map(a => (a.id === id ? { ...a, model: action.model } : a)) }, effects: ensured.effects }
     }
 
     default:
@@ -671,11 +1220,13 @@ export function stepOffice(state: OfficeState, dt: number, env: OfficeEnv): Step
             // A status that arrived while they were walking in applies now (C13)
             const pending = pendingStatus[agent.id]
             if (pending) pendingStatus = without(pendingStatus, agent.id)
+            // A session's Claude sits down in whatever its main thread is doing and keeps its status line
+            const main = isMainAgent(agent)
             updated = {
               ...agent,
               position,
-              state: 'working',
-              statusText: pending?.status ?? workMessage(),
+              state: main ? agentStateFor(agent.mainState) : 'working',
+              statusText: pending?.status ?? (main ? agent.statusText : workMessage()),
               lastFailed: pending ? pending.failed : agent.lastFailed,
             }
             changed = true
@@ -683,6 +1234,11 @@ export function stepOffice(state: OfficeState, dt: number, env: OfficeEnv): Step
             updated = { ...agent, position }
             changed = true
           }
+        } else if (agent.state === 'walking-to-manager') {
+          // The boss has reached Claude's desk: say the line (SpeechBubble), then handover_over sends him back
+          updated = { ...agent, position, state: 'talking-to-manager' }
+          effects.push({ kind: 'schedule', action: { type: 'handover_over', seq: state.handoverSeq }, delayMs: HANDOVER_DWELL_MS })
+          changed = true
         } else if (agent.state === 'completed' && isAtDoor) {
           if (moved) { updated = { ...agent, position }; changed = true }
         } else if (agent.state === 'coffee-break') {
@@ -712,9 +1268,10 @@ export function stepOffice(state: OfficeState, dt: number, env: OfficeEnv): Step
       changed = true
     }
 
-    // Random coffee / water break for anyone who has sat at their desk a while
+    // Random coffee / water break for anyone who has sat at their desk a while.
+    // A session's Claude never wanders off mid-turn (it dozes at its desk between turns instead).
     const cur = meta[agent.id]
-    if (updated.state === 'working' && cur.arrivedAtDeskAt !== null && !cur.onBreak && COFFEE_SPOT !== null) {
+    if (updated.state === 'working' && !isMainAgent(updated) && cur.arrivedAtDeskAt !== null && !cur.onBreak && COFFEE_SPOT !== null) {
       if (now - cur.arrivedAtDeskAt >= BREAK_MIN_DESK_TIME && env.random() < BREAK_CHANCE_PER_SEC * (dt / 60)) {
         const useWater = env.random() < 0.35 && WATER_SPOTS.length > 0
         const breakSpot = useWater ? pickOne(WATER_SPOTS, env.random) : COFFEE_SPOT
@@ -794,13 +1351,15 @@ export function stepOffice(state: OfficeState, dt: number, env: OfficeEnv): Step
  * Who joins an all-move event. Only seated agents ever get up (one walking
  * out, on a break or waiting in the lobby keeps doing that), and in live mode
  * the real workers stay at their desks — a subagent mid-task does not go to a
- * fire drill (C32). The boss and Claude are decorative and always join.
+ * fire drill (C32). The boss and the ?sim Claude are decorative and always
+ * join; a session's Claude joins only between turns (idle, waiting, or not
+ * heard from yet) — one mid-turn, with a hand up or wiping its memory stays.
  */
 export function moveAgentsForEvent(agents: Agent[], target: Position, statusText: string, env: OfficeEnv): { agents: Agent[]; movedIds: string[] } {
   const movedIds: string[] = []
   const next = agents.map(a => {
     const seated = a.state === 'working' || a.state === 'idle'
-    const decorative = a.id === BOSS_ID || a.id === CLAUDE_ID
+    const decorative = a.id === BOSS_ID || a.id === CLAUDE_ID || (isMainAgent(a) && isFreeMain(a))
     if (!seated || (env.live && !decorative)) return a
     movedIds.push(a.id)
     return walkTo(a, target, statusText, env)
@@ -814,8 +1373,9 @@ export function returnAgentsFromEvent(agents: Agent[], movedIds: string[], env: 
   return agents.map(a => (moved.has(a.id) && a.state === 'walking-to-desk' ? walkTo(a, a.deskPosition, 'back to work', env) : a))
 }
 
-/** The one agent a single-agent event (printer jam) sends somewhere: never the boss, never a live worker */
+/** The one agent a single-agent event (printer jam) sends somewhere: never the boss, never a live worker or a Claude mid-turn */
 export function pickSingleEventAgent(agents: Agent[], env: OfficeEnv): Agent | null {
-  const candidates = agents.filter(a => a.id !== BOSS_ID && (a.state === 'working' || a.state === 'idle') && (!env.live || a.id === CLAUDE_ID))
+  const candidates = agents.filter(a =>
+    a.id !== BOSS_ID && (a.state === 'working' || a.state === 'idle') && (!env.live || a.id === CLAUDE_ID || (isMainAgent(a) && isFreeMain(a))))
   return candidates.length > 0 ? pickOne(candidates, env.random) : null
 }

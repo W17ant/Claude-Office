@@ -26,9 +26,28 @@ export interface ChatMessage {
   /** Name and avatar as they were when the line was posted (the Office cast may change later) */
   displayName?: string
   avatarSrc?: string
+  /** A prompt the boss typed in a terminal, or the session's Claude's reply (session_prompt / session_turn_end) */
+  tag?: 'prompt' | 'reply'
 }
 
 const EMOJI_PICKER = ['👍', '👎', '😊', '🎉', '😡', '🔥', '💯']
+
+// The server's prompt-logging level (GET /settings). Changing it needs the
+// office bearer token, which the browser does not have, so the chat header
+// only shows the level and how to change it. Absent until the route exists.
+const SETTINGS_URL = 'http://127.0.0.1:3334/settings'
+const LOG_PROMPTS_WHAT: Record<string, string> = {
+  off:     'state only — no prompt or reply text is stored, broadcast or shown',
+  summary: 'the first 200 characters of each prompt and reply',
+  full:    'prompts and replies up to 2000 characters',
+}
+function logPromptsHint(level: string): string {
+  return [
+    `Prompt logging: ${level} — ${LOG_PROMPTS_WHAT[level] ?? 'unknown level'}.`,
+    'A server setting (~/.agent-office/settings.json); change it with the office token:',
+    `curl -X POST ${SETTINGS_URL} -H "Authorization: Bearer $(cat ~/.agent-office/auth-token)" -H 'Content-Type: application/json' -d '{"logPrompts":"${level === 'off' ? 'summary' : 'off'}"}'`,
+  ].join('\n')
+}
 
 interface SlackChatProps {
   messages: ChatMessage[]
@@ -78,6 +97,15 @@ const SlackChat: React.FC<SlackChatProps> = ({ messages, muted, volume, onToggle
     onReaction?.(msg.id, updated)
     setEmojiPickerMsgId(null)
   }, [onReaction])
+
+  // Prompt-logging level — read-only in the UI (see logPromptsHint); silent when the route is missing
+  const [logPrompts, setLogPrompts] = useState<string | null>(null)
+  useEffect(() => {
+    fetch(SETTINGS_URL, { signal: AbortSignal.timeout(2000) })
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (d && typeof d.logPrompts === 'string') setLogPrompts(d.logPrompts) })
+      .catch(() => {})
+  }, [])
 
   // Cron/chat-monitor pause toggle
   const [cronPaused, setCronPaused] = useState(false)
@@ -142,6 +170,11 @@ const SlackChat: React.FC<SlackChatProps> = ({ messages, muted, volume, onToggle
         <div className="slack-header-right">
           <div className="slack-online-dot" />
           <span className="slack-online-count">{onlineCount}</span>
+          {logPrompts && (
+            <span className={`slack-logprompts ${logPrompts}`} title={logPromptsHint(logPrompts)} data-testid="log-prompts">
+              prompts: {logPrompts}
+            </span>
+          )}
           <div
             className={`slack-cron-toggle ${cronPaused ? 'paused' : 'active'}`}
             onClick={toggleCron}
@@ -175,7 +208,7 @@ const SlackChat: React.FC<SlackChatProps> = ({ messages, muted, volume, onToggle
           return (
             <React.Fragment key={msg.id}>
               <div
-                className={`slack-msg${msg.isSystem ? ' slack-msg-system' : ''}${isProactive ? ' slack-msg-proactive' : ''}`}
+                className={`slack-msg${msg.isSystem ? ' slack-msg-system' : ''}${isProactive ? ' slack-msg-proactive' : ''}${msg.tag ? ` slack-msg-${msg.tag}` : ''}`}
                 onDoubleClick={() => !msg.isSystem && setEmojiPickerMsgId(prev => prev === msg.id ? null : msg.id)}
               >
                 {!msg.isSystem && (
@@ -200,6 +233,7 @@ const SlackChat: React.FC<SlackChatProps> = ({ messages, muted, volume, onToggle
                       <span className="slack-sender" style={{ color: msg.senderColor }}>
                         {msg.displayName ?? themedDisplayName(msg.senderSprite, msg.sender)}
                       </span>
+                      {msg.tag && <span className={`slack-tag ${msg.tag}`}>{msg.tag}</span>}
                       <span className="slack-time">{msg.timestamp}</span>
                     </div>
                   )}

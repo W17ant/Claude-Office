@@ -380,6 +380,8 @@ export function createAgent(partial: {
   role: string
   task?: string
   spot: AgentSpot
+  /** Spawn time; the reducer passes its env.now so the same input twice gives the same agent */
+  hiredAt?: number
 }): Agent {
   const cfg = AGENT_CONFIGS[partial.role] ?? AGENT_CONFIGS['default']
   const entry = ROOMS['main-office'].entryPoint
@@ -401,6 +403,6 @@ export function createAgent(partial: {
     statusText: spawnMessage(),
     color: cfg.color,
     emoji: cfg.emoji,
-    hiredAt: Date.now(),
+    hiredAt: partial.hiredAt ?? Date.now(),
   }
 }
