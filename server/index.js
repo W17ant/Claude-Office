@@ -289,6 +289,17 @@ const subagentAliases = new Map()
 const pendingStarts = new Map()
 const PENDING_START_MS = 15_000
 
+// How long after its spawn an agent can still be bound by guess (see
+// guessAgentForSubagent). A SubagentStart follows its PreToolUse(Agent) by
+// ~50 ms; the gap only grows while something holds the call between the two,
+// such as another plugin's PreToolUse hook or a permission prompt (the Agent
+// tool asks only under an `ask` rule), and a minute covers that. A subagent's
+// first tool call comes a whole model turn after its start, so the fallback
+// that binds on it waits longer. Anything older is a launch whose start never
+// came (cancelled, or lost), and binding it would hand it someone else's work.
+const START_BIND_MS = 60_000
+const FIRST_TOOL_BIND_MS = 5 * 60_000
+
 // Agents with no activity for this long are assumed gone (missed hand-back,
 // Claude Code killed mid-task) and are walked out of the office.
 const STALE_AGENT_MS = (Number(process.env.AGENT_OFFICE_STALE_MINUTES) || 120) * 60_000
@@ -718,14 +729,21 @@ function sameSession(a, b) {
 }
 
 /**
- * Oldest unlinked, not-completed, non-MCP agent of this Claude Code agent
- * type — from the same session when the event names one, so a SubagentStart
- * in one terminal never binds to an older spawn in another.
+ * The office agent a subagent id we have not seen most likely belongs to,
+ * when all the event says is its agent type: the earliest-spawned unbound,
+ * not-completed, non-MCP agent of that type, spawned within `withinMs` before
+ * the event, and from the same session when the event names one (so a start
+ * in one terminal never binds to a spawn in another). Earliest first keeps
+ * parallel launches of one type in launch order. Agents restored from
+ * agents.json never qualify: their start did not arrive before the restart,
+ * so it either never will or it was lost while the server was down, and the
+ * subagent's own tool calls then get an agent of their own.
  */
-function oldestUnlinkedAgent(agentType, sessionId) {
+function guessAgentForSubagent(agentType, sessionId, withinMs) {
+  const now = Date.now()
   return Array.from(activeAgents.values())
-    .filter(a => !a.server && !a.subagentId && a.state !== 'completed' && a.agentType === agentType)
-    .filter(a => sameSession(a.sessionId, sessionId))
+    .filter(a => !a.server && !a.subagentId && !a.restored && a.state !== 'completed' && a.agentType === agentType)
+    .filter(a => sameSession(a.sessionId, sessionId) && now - a.spawnedAt <= withinMs)
     .sort((a, b) => a.spawnedAt - b.spawnedAt)[0] ?? null
 }
 
@@ -833,6 +851,8 @@ function loadAgents() {
     for (const agent of agents) {
       if (!agent?.id || agent.state === 'completed') continue
       if ((agent.lastActivityAt ?? agent.spawnedAt ?? 0) < cutoff) continue
+      // Never a guess-binding candidate again (guessAgentForSubagent)
+      agent.restored = true
       activeAgents.set(agent.id, agent)
       if (agent.subagentId) subagentAliases.set(agent.subagentId, agent.id)
     }
@@ -1859,10 +1879,10 @@ function processEvent(body) {
     }
 
     case 'agent_started': {
-      // SubagentStart: the subagent exists now. Tie it to the oldest unlinked
-      // agent of the same type — the PreToolUse(Agent) that spawned it fired
-      // ~50 ms earlier, so that agent is normally in the office already. When
-      // the start overtook its spawn, park it until that spawn arrives.
+      // SubagentStart: the subagent exists now. Tie it to the earliest recent
+      // unbound agent of the same type — the PreToolUse(Agent) that spawned it
+      // fired ~50 ms earlier, so that agent is normally in the office already.
+      // When the start overtook its spawn, park it until that spawn arrives.
       const subagentId = body.subagentId
       if (!subagentId) return null
       touchSession(body)
@@ -1878,7 +1898,7 @@ function processEvent(body) {
         console.log(`[~] SubagentStart ${subagentId} (${agentType}) confirms agent ${known}`)
         return null
       }
-      const agent = oldestUnlinkedAgent(agentType, body.sessionId)
+      const agent = guessAgentForSubagent(agentType, body.sessionId, START_BIND_MS)
       if (agent) {
         linkSubagent(agent.id, subagentId)
         setLineage(agent, body.parentId)
@@ -1898,9 +1918,9 @@ function processEvent(body) {
 
       // A subagent id we haven't seen: no SubagentStart reached us (hook not
       // registered, server was down), so fall back to binding it to the
-      // oldest unlinked agent of the same type on its first tool call.
+      // earliest recent unbound agent of the same type on its first tool call.
       if (!id && body.agentId && body.agentType) {
-        const unbound = oldestUnlinkedAgent(body.agentType, body.sessionId)
+        const unbound = guessAgentForSubagent(body.agentType, body.sessionId, FIRST_TOOL_BIND_MS)
         if (unbound) {
           linkSubagent(unbound.id, body.agentId)
           id = unbound.id
@@ -2622,6 +2642,8 @@ export {
   UI_AVAILABLE,
   activeAgents,
   pendingStarts,
+  START_BIND_MS,
+  FIRST_TOOL_BIND_MS,
   sessions,
   registry,
   REGISTRY_DIR,
