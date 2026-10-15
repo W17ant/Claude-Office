@@ -1,5 +1,6 @@
 import type { RoomId } from './rooms'
 import type { SessionStatus, AgentStatus, MeterTotals } from './meters'
+import type { TaskBoardInfo } from './taskBoard'
 
 export type AgentState =
   | 'idle'
@@ -272,6 +273,8 @@ export interface OfficeEvent {
     | 'permission_request' | 'permission_extended' | 'permission_resolved'
     // Pipeline health (the status strip): the server's record, and the socket's own open/close
     | 'health' | 'connection'
+    // A session's task list changed (server/tasks.js), or the snapshot's boards (src/taskBoard.ts)
+    | 'task_board'
   agent?: Partial<Agent>
   agentId?: string
   status?: string
@@ -373,6 +376,10 @@ export interface OfficeEvent {
   reason?: string
   // health: the server's pipeline record (server/health.js), also carried by the snapshot
   health?: ServerHealth
+  // task_board: one session's board (null: no tasks, or the session ended), or
+  // every board at once (`boards`, from the snapshot)
+  board?: TaskBoardInfo | null
+  boards?: TaskBoardInfo[]
   // connection: the WebSocket opened or closed — dispatched by useAgentSocket, not sent by the server
   socket?: 'open' | 'closed'
 }

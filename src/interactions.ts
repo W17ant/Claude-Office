@@ -10,6 +10,8 @@
  * - cooldown: minimum ms between interactions with this item
  */
 
+import { boardChatLines, getShownBoard, type TaskBoardInfo } from './taskBoard'
+
 export interface Interaction {
   walkTo: { x: number; y: number }
   effect: string
@@ -24,7 +26,13 @@ function pick(arr: string[]): string {
   return arr[Math.floor(Math.random() * arr.length)]
 }
 
-export function getInteraction(furnitureId: string): Interaction | null {
+/**
+ * What clicking a piece of furniture does. The kanban board (and the
+ * whiteboard) reads out the task board on the wall when a session has one
+ * (src/taskBoard.ts: "3 to do, 1 in progress: Fix the parser") and keeps its
+ * flavour lines when none has; `board` is the shown board, passed in by tests.
+ */
+export function getInteraction(furnitureId: string, board: TaskBoardInfo | null = getShownBoard()): Interaction | null {
   switch (furnitureId) {
     // Plants — water them
     case 'plant-1':
@@ -77,7 +85,7 @@ export function getInteraction(furnitureId: string): Interaction | null {
         walkTo: { x: 88, y: 56 },
         effect: '/sprites/effects/post-it.png',
         duration: 4000,
-        chatMessage: ['updating the board', 'moving tickets to done', 'adding a post-it', 'sprint planning time'],
+        chatMessage: board ? boardChatLines(board) : ['updating the board', 'moving tickets to done', 'adding a post-it', 'sprint planning time'],
         cooldown: 20000,
       }
 
@@ -92,7 +100,10 @@ export function getInteraction(furnitureId: string): Interaction | null {
       return { walkTo: { x: 63, y: 46 }, effect: '/sprites/effects/star.png', duration: 2000, chatMessage: ['ding ding! standup time', 'ringing the bell', 'attention everyone!', 'all hands!'], cooldown: 20000, sound: 'bell' }
 
     case 'kanban-board':
-      return { walkTo: { x: 78, y: 48 }, effect: '/sprites/effects/post-it.png', duration: 4000, chatMessage: ['updating the board', 'moving tickets to done', 'sprint looks good', 'who left this ticket in review?'], cooldown: 15000 }
+      return {
+        walkTo: { x: 78, y: 48 }, effect: '/sprites/effects/post-it.png', duration: 4000, cooldown: 15000,
+        chatMessage: board ? boardChatLines(board) : ['updating the board', 'moving tickets to done', 'sprint looks good', 'who left this ticket in review?'],
+      }
 
     case 'ship-it-poster':
       return { walkTo: { x: 16, y: 55 }, effect: '/sprites/effects/rocket.png', duration: 3000, chatMessage: ['ship it!', 'feeling motivated', 'that poster never gets old', 'lets gooo'], cooldown: 30000 }

@@ -13,6 +13,8 @@
  * - GET /registry shows that registry as the roster reads it (server/sessions.js)
  * - GET /signals lists the last deploy / build / test / push signals the
  *   hook classified out of the sessions' Bash commands
+ * - GET /tasks shows each session's task list, the board on the office's
+ *   kanban whiteboard (server/tasks.js)
  */
 
 import express from 'express'
@@ -29,6 +31,7 @@ import { addMessage, getMessages, markSeen, addReaction, markInboxRead } from '.
 import db from './chat-db.js'
 import { mountStatus } from './status.js'
 import { mountRegistry } from './sessions.js'
+import { mountTasks } from './tasks.js'
 import { mountPermissions, sanitiseSuggestions } from './permissions.js'
 import { mountHealth, readVersion } from './health.js'
 import { readPort, readUiPort, readHost, loadOfficeConfig, bossFromConfig } from './config.js'
@@ -87,7 +90,8 @@ const UI_DEV_PORT = readUiPort()
 //
 // GET /roster and GET /agents do show each agent's task text and the names of
 // the configured MCP servers; that is the office's purpose, and anything on
-// this machine can already read ~/.claude/settings.json.
+// this machine can already read ~/.claude/settings.json. GET /tasks shows each
+// session's task subjects the same way; their longer descriptions need the token.
 // ---------------------------------------------------------------------------
 
 const AUTH_TOKEN = randomBytes(32).toString('hex')
@@ -408,6 +412,9 @@ const sessions = new Map()
 // tests point AGENT_OFFICE_REGISTRY_DIR at a temp dir
 const CLAUDE_DIR = process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude')
 const REGISTRY_DIR = process.env.AGENT_OFFICE_REGISTRY_DIR || join(CLAUDE_DIR, 'sessions')
+// ...and each session's task list (server/tasks.js); tests point
+// AGENT_OFFICE_TASKS_DIR at a temp dir
+const TASKS_DIR = process.env.AGENT_OFFICE_TASKS_DIR || join(CLAUDE_DIR, 'tasks')
 
 /** @type {Map<string, ReturnType<typeof setTimeout>>} sessionId -> timer that forgets an ended session */
 const sessionTimers = new Map()
@@ -984,6 +991,9 @@ const KNOWN_EVENT_TYPES = new Set([
   'session_model',
   // A Bash call's signals when the call sends no other event (see Signals below)
   'signal',
+  // TaskCreated / TaskCompleted: the task board looks at the session's list now (server/tasks.js)
+  'task_created',
+  'task_completed',
 ])
 
 const MAX_STRING_LEN = 200
@@ -1278,6 +1288,17 @@ const registry = mountRegistry(app, {
   forgetSession,
 })
 
+// The task board (server/tasks.js): each known session's task list, read from
+// ~/.claude/tasks/<session id>/ and broadcast as `task_board` when it changes.
+// GET /tasks is open; the task descriptions on it need the office token.
+// Started with the server, like the registry roster.
+const tasks = mountTasks(app, {
+  sessions,
+  broadcast,
+  tasksDir: TASKS_DIR,
+  hasToken: req => tokenMatches(bearerToken(req)),
+})
+
 /**
  * GET /config — what the page needs to know about this server before it
  * renders: the port and host it is bound to, the boss from
@@ -1341,6 +1362,7 @@ app.get('/roster', (_req, res) => {
  *   { type: "session_tool_done", toolName? | batch: true, count }  (main-thread PostToolUse / PostToolBatch)
  *   { type: "session_cwd",       cwd, project, oldCwd? }                           (CwdChanged)
  *   { type: "session_model",     model, fromModel?, switchSource? }                (PostModelSwitch)
+ *   { type: "task_created" | "task_completed", taskId, subject }        (TaskCreated, TaskCompleted)
  * A foreground agent's agent_completed may add tokens, durationMs, toolUses, model.
  *
  * What a Bash call meant (see Signals): agent_working (PreToolUse,
@@ -1431,6 +1453,9 @@ app.post('/event', requireToken, (req, res) => {
     toolUses:         clampCount(body.toolUses),
     // The worker's own transcript file (SubagentStop.agent_transcript_path), for the inspector's tail
     agentTranscriptPath: clampString(body.agentTranscriptPath, 400),
+    // TaskCreated / TaskCompleted: which task, and its subject (open, like an agent's task)
+    taskId:           clampString(body.taskId, 40),
+    subject:          clampString(body.subject, 120),
     // What the Bash call meant (see Signals): relayed below, not by processEvent
     signals:          undefined,
   }
@@ -1442,6 +1467,9 @@ app.post('/event', requireToken, (req, res) => {
   }
   // After the event that carried them, so the office has its tool status first
   relaySignals(sanitised, signals)
+  // The task board: a session's first event starts the watch on its task list,
+  // its end stops it, TaskCreated / TaskCompleted make it look now
+  tasks.noteEvent(sanitised)
   health.markHook()  // a hook reached us: what the strip's "last seen" counts (after the event, so its counts include it)
 
   // A PermissionRequest the hook will wait on: the response names the pending
@@ -2818,6 +2846,20 @@ function processEvent(body) {
       return null
     }
 
+    case 'task_created':
+    case 'task_completed': {
+      // TaskCreated / TaskCompleted: the session is alive and its Claude's
+      // history gets a line. Nothing is broadcast from here — the board comes
+      // from the task files (POST /event has server/tasks.js rescan them)
+      const session = touchSession(body)
+      if (!session) return null
+      const label = `task ${body.type === 'task_created' ? 'created' : 'completed'}: ${body.subject || `#${body.taskId ?? '?'}`}`
+      recordActivity(mainActivityId(session.id), { kind: 'status', text: label })
+      console.log(`[tasks] ${sessionName(session)}: ${logText(label, 100)}`)
+      saveAgents()
+      return null
+    }
+
     default:
       console.warn(`[?] Unknown event type: ${body.type}`)
       return null
@@ -2944,6 +2986,8 @@ wss.on('connection', (ws, req) => {
     uiToken: UI_TOKEN,
     // The last few signals (see Signals), oldest first, as their broadcasts carried them
     signals: signalRing.slice(-SNAPSHOT_SIGNALS).map(publicSignal),
+    // Each session's task board, the most recently changed first (no descriptions; server/tasks.js)
+    taskBoards: tasks.boards(),
     timestamp: Date.now(),
   }
   ws.send(JSON.stringify(snapshot))
@@ -3019,6 +3063,9 @@ export function start({ port = PORT, host = readHost() } = {}) {
     // test's closed server leaves no poll behind)
     registry.start()
     httpServer.once('close', () => registry.stop())
+    // So does the task board's watch on the sessions' task lists
+    tasks.start()
+    httpServer.once('close', () => tasks.stop())
     const bound = httpServer.address()?.port ?? port
     const mcpServers = discoverMcpServers()
     console.log(`
@@ -3036,6 +3083,7 @@ export function start({ port = PORT, host = readHost() } = {}) {
 
     console.log(`  Auth token written to: ${TOKEN_FILE}`)
     console.log(`  Session registry read from: ${REGISTRY_DIR}`)
+    console.log(`  Task lists read from: ${TASKS_DIR}`)
     if (UI_AVAILABLE) {
       console.log(`  Office UI served from: ${UI_DIR}`)
     } else {
@@ -3086,6 +3134,8 @@ export {
   sessions,
   registry,
   REGISTRY_DIR,
+  tasks,
+  TASKS_DIR,
   pendingNeedsYou,
   permissions,
   settings,

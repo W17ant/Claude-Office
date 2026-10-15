@@ -1,5 +1,5 @@
 {
-  "description": "Forwards Claude Code hook events to the Agent Office server (http://localhost:3334/event, or AGENT_OFFICE_EVENT_URL / AGENT_OFFICE_PORT). Every entry runs hooks/agent-tracker.sh, which exits 0 silently when the server is down or when the event is one it does not act on. The same 17 events as hooks/install-hooks.sh (its EVENTS tuple); keep the two lists in step. No matchers: the tracker reads every PreToolUse and every main-thread PostToolUse (a granted tool's completion lowers a permission hand), and the other events either have no matcher support or are wanted on every occurrence.",
+  "description": "Forwards Claude Code hook events to the Agent Office server (http://localhost:3334/event, or AGENT_OFFICE_EVENT_URL / AGENT_OFFICE_PORT). Every entry runs hooks/agent-tracker.sh, which exits 0 silently when the server is down or when the event is one it does not act on. The same 19 events as hooks/install-hooks.sh (its EVENTS tuple); keep the two lists in step. No matchers: the tracker reads every PreToolUse and every main-thread PostToolUse (a granted tool's completion lowers a permission hand), and the other events either have no matcher support or are wanted on every occurrence.",
   "hooks": {
     "PreToolUse": [
       {
@@ -114,6 +114,20 @@
       }
     ],
     "PostModelSwitch": [
+      {
+        "hooks": [
+          { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/agent-tracker.sh\"" }
+        ]
+      }
+    ],
+    "TaskCreated": [
+      {
+        "hooks": [
+          { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/agent-tracker.sh\"" }
+        ]
+      }
+    ],
+    "TaskCompleted": [
       {
         "hooks": [
           { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/agent-tracker.sh\"" }

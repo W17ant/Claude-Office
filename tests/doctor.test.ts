@@ -131,7 +131,7 @@ describe('runDoctor', () => {
     expect(line(r, 'node')?.level).toBe(PASS)
     const hooks = line(r, 'hooks:')!
     expect(hooks.level).toBe(PASS)
-    expect(hooks.title).toMatch(/^hooks: 17\/17 events run /)
+    expect(hooks.title).toMatch(/^hooks: 19\/19 events run /)
     expect(hooks.title).toContain(TRACKER)
     expect(lines(r, 'hooks:')).toHaveLength(1)                 // no "not this checkout" / duplicate lines
     expect(lines(r, 'plugin')).toHaveLength(0)
@@ -180,7 +180,7 @@ describe('runDoctor', () => {
     const r = (await runDoctor(await base(home))) as Report
     const [summary, foreign, dup] = lines(r, 'hooks:')
     expect(summary.level).toBe(WARN)
-    expect(summary.title).toMatch(/^hooks: 2\/17 events run /)
+    expect(summary.title).toMatch(/^hooks: 2\/19 events run /)
     expect(summary.title).toContain('missing: PostToolUseFailure, SubagentStart')
     expect(foreign.level).toBe(WARN)
     expect(foreign.title).toContain(`${other}/hooks/agent-tracker.sh is not this checkout's hooks/agent-tracker.sh`)
@@ -401,7 +401,7 @@ describe('npm run doctor (the script)', () => {
     expect(res.status).toBe(0)
     expect(res.stdout).toMatch(/^Agent Office doctor/)
     expect(res.stdout).toMatch(/^  PASS  node v\d+/m)
-    expect(res.stdout).toMatch(/^  PASS  hooks: 17\/17 events run /m)
+    expect(res.stdout).toMatch(/^  PASS  hooks: 19\/19 events run /m)
     expect(res.stdout).toMatch(/^  WARN  server: nothing answers on http:\/\/127\.0\.0\.1:\d+\/health/m)
     expect(res.stdout).toContain(`  ${COMMANDS.install}`)
     expect(res.stdout).toContain(COMMANDS.uninstall)
