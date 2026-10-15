@@ -1,10 +1,26 @@
 'use strict'
 
-const { app, BrowserWindow, dialog, screen } = require('electron')
+const { app, BrowserWindow, Menu, dialog, screen, shell } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const { spawn } = require('child_process')
 const http = require('http')
+const {
+  APP_NAME,
+  viewportFor,
+  minSizeFor,
+  defaultSizeFor,
+  fitZoom,
+  compactCss,
+  clampBounds,
+  placeInWorkArea,
+  readWindowState,
+  writeWindowState,
+  statusText,
+  windowTitle,
+  trayMenuTemplate,
+} = require('./helpers.cjs')
+const { createTray } = require('./tray.cjs')
 
 const SERVER_PORT = 3334
 const SERVER_HOST = '127.0.0.1'
@@ -27,8 +43,30 @@ const ALLOWED_ORIGINS = new Set([
 // files the server process can read).
 const SERVER_ENTRY = path.join(__dirname, '..', 'server', 'index.js')
 
-let win
+// Window icon for Linux (macOS and Windows take it from the bundle / the exe).
+const WINDOW_ICON = path.join(__dirname, 'assets', 'icon.png')
+
+// Closing the window keeps the app in the tray on macOS (the Dock icon brings
+// it back) and Windows. Linux desktops do not all show a tray, so there a
+// close is a quit — nothing is left running invisibly.
+const HIDE_ON_CLOSE = process.platform !== 'linux'
+
+let win = null
+let tray = null
 let serverProcess = null
+let quitting = false
+
+// Window state: the full window's bounds, the compact widget's bounds, which
+// mode is on and the always-on-top preference, in userData/window-state.json.
+let state = {}
+let compact = false
+let compactCssKey = null
+let saveTimer = null
+let lastStatus = '' // the tray's last status line, for the right-click menu
+
+function stateFile() {
+  return path.join(app.getPath('userData'), 'window-state.json')
+}
 
 // ---------------------------------------------------------------------------
 // Server lifecycle
@@ -149,7 +187,8 @@ function stopServer() {
 // ---------------------------------------------------------------------------
 // Debug aid: AGENT_OFFICE_SCREENSHOT=<file.png> captures the window a moment
 // after the page has loaded (AGENT_OFFICE_SCREENSHOT_DELAY_MS, default 3000),
-// then quits. Used to verify a packaged build headlessly (xvfb).
+// then quits. Used to verify a packaged build headlessly (xvfb); with
+// --compact it captures the compact widget.
 // ---------------------------------------------------------------------------
 
 function maybeCaptureScreenshot() {
@@ -161,12 +200,177 @@ function maybeCaptureScreenshot() {
       const image = await win.webContents.capturePage()
       fs.writeFileSync(file, image.toPNG())
       const { width, height } = image.getSize()
-      console.log(`[main] Screenshot written to ${file} (${width}x${height})`)
+      const [cw, ch] = win.getContentSize()
+      console.log(`[main] Screenshot written to ${file} (${width}x${height}; content ${cw}x${ch}, zoom ${win.webContents.getZoomFactor().toFixed(3)}, compact=${compact})`)
     } catch (err) {
       console.error('[main] Screenshot failed:', err.message)
     }
-    app.quit()
+    quitApp()
   }, delay)
+}
+
+// ---------------------------------------------------------------------------
+// Window state and modes
+// ---------------------------------------------------------------------------
+
+/** Bounds for a mode: the saved ones, else the defaults, clamped on screen. */
+function boundsFor(isCompact, near) {
+  const saved = isCompact ? state.compactBounds : state.bounds
+  const display = saved ? screen.getDisplayMatching(saved) : near ? screen.getDisplayMatching(near) : screen.getPrimaryDisplay()
+  const { workArea } = display
+  const wanted = saved ?? placeInWorkArea(defaultSizeFor(isCompact), workArea, isCompact ? 'top-right' : 'center')
+  return clampBounds(wanted, workArea, minSizeFor(isCompact))
+}
+
+/** Record the current bounds for the current mode (not while minimized etc.). */
+function rememberBounds() {
+  if (!win || win.isDestroyed() || win.isMinimized() || win.isMaximized() || win.isFullScreen()) return
+  const bounds = win.getBounds()
+  if (compact) state.compactBounds = bounds
+  else state.bounds = bounds
+}
+
+function saveState() {
+  if (saveTimer) clearTimeout(saveTimer)
+  saveTimer = null
+  state.compact = compact
+  if (!writeWindowState(stateFile(), state)) {
+    console.error(`[main] Could not write ${stateFile()}`)
+  }
+}
+
+function scheduleSave() {
+  if (saveTimer) clearTimeout(saveTimer)
+  saveTimer = setTimeout(() => { rememberBounds(); saveState() }, 500)
+}
+
+/** Zoom the page so the mode's viewport fits the window content area. */
+function applyZoom() {
+  if (!win || win.isDestroyed()) return
+  const [width, height] = win.getContentSize()
+  win.webContents.setZoomFactor(fitZoom({ width, height }, viewportFor(compact)))
+}
+
+/** Insert (compact) or remove (full) the CSS that centres the room column. */
+async function applyCompactCss() {
+  if (!win || win.isDestroyed()) return
+  const contents = win.webContents
+  if (compactCssKey) {
+    const key = compactCssKey
+    compactCssKey = null
+    try { await contents.removeInsertedCSS(key) } catch {}
+  }
+  if (compact) {
+    try { compactCssKey = await contents.insertCSS(compactCss()) } catch (err) {
+      console.error('[main] Could not apply compact CSS:', err.message)
+    }
+  }
+}
+
+function isAlwaysOnTop() {
+  return compact || state.alwaysOnTop === true
+}
+
+/** Switch between the full office and the compact widget. */
+function setCompact(next) {
+  next = !!next
+  if (!win || win.isDestroyed() || next === compact) return
+  rememberBounds()
+  const near = win.getBounds()
+  compact = next
+  const min = minSizeFor(compact)
+  win.setMinimumSize(min.width, min.height)
+  win.setBounds(boundsFor(compact, near))
+  win.setAlwaysOnTop(isAlwaysOnTop(), 'floating')
+  win.setVisibleOnAllWorkspaces(compact, { visibleOnFullScreen: compact })
+  applyCompactCss()
+  applyZoom()
+  console.log(`[main] ${compact ? 'Compact widget' : 'Full office'} (${win.getContentSize().join('x')})`)
+  saveState()
+  refreshMenus()
+}
+
+function setAlwaysOnTop(flag) {
+  state.alwaysOnTop = !!flag
+  if (win && !win.isDestroyed()) win.setAlwaysOnTop(isAlwaysOnTop(), 'floating')
+  saveState()
+  refreshMenus()
+}
+
+/** Back to the mode's default size and spot. */
+function resetBounds() {
+  if (!win || win.isDestroyed()) return
+  if (compact) delete state.compactBounds
+  else delete state.bounds
+  win.setBounds(boundsFor(compact, win.getBounds()))
+  applyZoom()
+  saveState()
+}
+
+function showWindow() {
+  if (!win || win.isDestroyed()) return
+  if (win.isMinimized()) win.restore()
+  win.show()
+  win.focus()
+}
+
+function toggleWindow() {
+  if (!win || win.isDestroyed()) return
+  if (win.isVisible() && !win.isMinimized()) win.hide()
+  else showWindow()
+  refreshMenus()
+}
+
+function openInBrowser() {
+  shell.openExternal(`${SERVER_URL}/`)
+}
+
+function quitApp() {
+  quitting = true
+  app.quit()
+}
+
+// ---------------------------------------------------------------------------
+// Menus: the application menu (menu bar on macOS, accelerators everywhere),
+// the tray menu and the window's right-click menu, which mirrors the tray.
+// ---------------------------------------------------------------------------
+
+function menuState() {
+  return {
+    visible: !!win && !win.isDestroyed() && win.isVisible() && !win.isMinimized(),
+    compact,
+    alwaysOnTop: state.alwaysOnTop === true,
+  }
+}
+
+const menuActions = { toggleWindow, setCompact, setAlwaysOnTop, openInBrowser, quit: quitApp }
+
+function applicationMenuTemplate() {
+  const isMac = process.platform === 'darwin'
+  return [
+    ...(isMac ? [{ role: 'appMenu' }] : []),
+    {
+      label: 'Office',
+      submenu: [
+        { label: 'Compact widget', type: 'checkbox', checked: compact, accelerator: 'CmdOrCtrl+Shift+C', click: () => setCompact(!compact) },
+        { label: 'Always on top', type: 'checkbox', checked: isAlwaysOnTop(), enabled: !compact, accelerator: 'CmdOrCtrl+Shift+T', click: () => setAlwaysOnTop(!state.alwaysOnTop) },
+        { label: 'Reset window size', click: resetBounds },
+        { type: 'separator' },
+        { label: 'Open in browser', accelerator: 'CmdOrCtrl+Shift+O', click: openInBrowser },
+        { type: 'separator' },
+        { role: 'reload' },
+        { role: 'toggleDevTools' },
+        ...(isMac ? [] : [{ type: 'separator' }, { role: 'quit' }]),
+      ],
+    },
+    { role: 'editMenu' },
+    { role: 'windowMenu' },
+  ]
+}
+
+function refreshMenus() {
+  Menu.setApplicationMenu(Menu.buildFromTemplate(applicationMenuTemplate()))
+  if (tray) tray.refresh()
 }
 
 // ---------------------------------------------------------------------------
@@ -189,25 +393,32 @@ async function createWindow() {
       // instead of opening a blank window.
       console.error('[main] Server did not become ready in time')
       dialog.showErrorBox(
-        'Agent Office',
+        APP_NAME,
         `The office server did not start on port ${SERVER_PORT}.\n\n` +
-        'If something else is using that port, stop it and open Agent Office again.',
+        `If something else is using that port, stop it and open ${APP_NAME} again.`,
       )
-      app.quit()
+      quitApp()
       return
     } else {
       console.error('[main] Server did not become ready in time — continuing anyway (start it with `npm run server`)')
     }
   }
 
-  const { width: screenW } = screen.getPrimaryDisplay().workAreaSize
+  state = readWindowState(stateFile())
+  compact = app.commandLine.hasSwitch('compact') || state.compact === true
+  const bounds = boundsFor(compact)
+  const min = minSizeFor(compact)
+  console.log(`[main] Window ${compact ? 'compact' : 'full'} at ${bounds.x},${bounds.y} ${bounds.width}x${bounds.height} (state: ${stateFile()})`)
 
   win = new BrowserWindow({
-    width: 520,
-    height: 720,
-    x: screenW - 400,
-    y: 20,
-    alwaysOnTop: true,
+    ...bounds,
+    useContentSize: true,
+    minWidth: min.width,
+    minHeight: min.height,
+    title: APP_NAME,
+    icon: process.platform === 'linux' ? WINDOW_ICON : undefined,
+    alwaysOnTop: isAlwaysOnTop(),
+    // The office draws its own title bar (the drag region is in office.css)
     frame: false,
     transparent: false,
     resizable: true,
@@ -220,6 +431,7 @@ async function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
+      zoomFactor: fitZoom(bounds, viewportFor(compact)),
     },
   })
 
@@ -240,14 +452,48 @@ async function createWindow() {
     return { action: 'deny' }
   })
 
+  // Inserted CSS and the zoom do not survive a reload: apply them per load.
+  win.webContents.on('dom-ready', applyZoom)
   win.webContents.on('did-finish-load', () => {
     console.log(`[main] Window loaded ${win.webContents.getURL()}`)
+    compactCssKey = null
+    applyCompactCss()
+    applyZoom()
     maybeCaptureScreenshot()
   })
 
   win.webContents.on('did-fail-load', (_event, code, description, failedUrl) => {
     console.error(`[main] Window failed to load ${failedUrl}: ${description} (${code})`)
   })
+
+  // Right-click anywhere that is not a text field: the tray menu, so the
+  // frameless window has its controls on every platform.
+  win.webContents.on('context-menu', (event, params) => {
+    if (params.isEditable) return
+    event.preventDefault()
+    Menu.buildFromTemplate(trayMenuTemplate({ ...menuState(), status: lastStatus }, menuActions)).popup({ window: win })
+  })
+
+  win.on('resize', () => { applyZoom(); scheduleSave() })
+  win.on('move', scheduleSave)
+  win.on('show', refreshMenus)
+  win.on('hide', refreshMenus)
+  win.on('minimize', refreshMenus)
+  win.on('restore', refreshMenus)
+
+  win.on('close', (event) => {
+    rememberBounds()
+    saveState()
+    if (!quitting && HIDE_ON_CLOSE) {
+      event.preventDefault()
+      win.hide()
+      refreshMenus()
+    }
+  })
+
+  win.on('closed', () => { win = null })
+
+  if (compact) win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
 
   // Dev: the Vite dev server. Packaged: the office server, which serves the
   // built UI from its root — one port for the page, its assets and the
@@ -256,26 +502,63 @@ async function createWindow() {
   console.log(`[main] Loading ${url}`)
   win.loadURL(url)
 
-  // Make window level float above everything (like Clippy)
-  win.setAlwaysOnTop(true, 'floating')
-  win.setVisibleOnAllWorkspaces(true)
+  refreshMenus()
+  createTrayIcon()
+}
+
+// ---------------------------------------------------------------------------
+// Tray
+// ---------------------------------------------------------------------------
+
+function createTrayIcon() {
+  try {
+    tray = createTray({
+      serverUrl: SERVER_URL,
+      getState: menuState,
+      actions: {
+        ...menuActions,
+        onSummary(summary) {
+          lastStatus = statusText(summary)
+          const title = windowTitle(summary)
+          if (win && !win.isDestroyed() && win.getTitle() !== title) win.setTitle(title)
+        },
+      },
+    })
+    console.log('[main] Tray created')
+  } catch (err) {
+    tray = null
+    console.error('[main] Tray unavailable:', err.message)
+  }
 }
 
 // ---------------------------------------------------------------------------
 // App lifecycle
 // ---------------------------------------------------------------------------
 
-app.whenReady().then(createWindow)
-
-app.on('window-all-closed', () => {
-  stopServer()
+// One packaged instance: opening the app again (from the Dock, a launcher or
+// the Start menu) brings the existing window back instead of fighting over
+// port 3334. Dev runs (`electron .`) are not locked, so one can run beside a
+// packaged app.
+if (app.isPackaged && !app.requestSingleInstanceLock()) {
   app.quit()
-})
+} else {
+  app.on('second-instance', () => showWindow())
 
-app.on('before-quit', () => {
-  stopServer()
-})
+  app.whenReady().then(createWindow)
 
-app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) createWindow()
-})
+  app.on('window-all-closed', () => {
+    stopServer()
+    app.quit()
+  })
+
+  app.on('before-quit', () => {
+    quitting = true
+    if (tray) { tray.dispose(); tray = null }
+    stopServer()
+  })
+
+  app.on('activate', () => {
+    if (win && !win.isDestroyed()) showWindow()
+    else if (BrowserWindow.getAllWindows().length === 0) createWindow()
+  })
+}

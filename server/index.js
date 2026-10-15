@@ -26,6 +26,7 @@ import { addMessage, getMessages, markSeen, addReaction, markInboxRead } from '.
 import db from './chat-db.js'
 import { mountStatus } from './status.js'
 import { mountRegistry } from './sessions.js'
+import { mountHealth } from './health.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -926,6 +927,12 @@ app.options('*', (_req, res) => res.sendStatus(204))
 // fed by the Claude Code status line and keyed by the same session ids as `sessions`
 const status = mountStatus(app, { requireToken, broadcast, staleMs: STALE_AGENT_MS, sessions })
 
+// Pipeline health: GET /health + the throttled `health` broadcast (server/health.js);
+// POST /event stamps it, the WS snapshot carries it, the status strip and `npm run doctor` read it.
+// `sessions` counts every active session, registry-only ones included: "2 sessions, 0 hooks seen"
+// is exactly the picture the doctor needs when the hooks are not installed.
+const health = mountHealth(app, { broadcast, uiAvailable: UI_AVAILABLE, counts: () => ({ agents: activeAgents.size, clients: wss?.clients.size ?? 0, sessions: Array.from(sessions.values()).filter(s => s.state === 'active').length }) })
+
 // The registry roster (server/sessions.js): Claude Code's own session registry
 // adds the sessions nothing has hooks for, and ends them when their process
 // goes. Nothing is read until start() — importing the module stays side-effect
@@ -937,11 +944,6 @@ const registry = mountRegistry(app, {
   toEvent: sessionEvent,
   endSession,
   forgetSession,
-})
-
-// Health check
-app.get('/health', (_req, res) => {
-  res.json({ status: 'ok', agents: activeAgents.size, clients: wss?.clients.size ?? 0, registry: registry.stats() })
 })
 
 // MCP server roster + the agents in the office (same view as the WS snapshot)
@@ -1066,6 +1068,7 @@ app.post('/event', requireToken, (req, res) => {
   if (event) {
     broadcast(event)
   }
+  health.markHook()  // a hook reached us: what the strip's "last seen" counts (after the event, so its counts include it)
 
   res.json({ ok: true, ...(event?.type === 'agent_spawned' ? { agentId: event.agent.id } : {}) })
 })
@@ -2278,6 +2281,7 @@ wss.on('connection', (ws, req) => {
     activeAgents: liveAgents(),
     sessions: Array.from(sessions.values()).map(sessionToJSON),
     statuses: status.summary(),
+    health: health.snapshot(),
     mcpServers: discoverMcpServers(),
     timestamp: Date.now(),
   }

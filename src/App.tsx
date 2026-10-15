@@ -8,6 +8,7 @@ import Character from './components/Character'
 import FurnitureRenderer from './components/FurnitureRenderer'
 import SessionStrip from './components/SessionStrip'
 import Meters from './components/Meters'
+import StatusStrip from './components/StatusStrip'
 import { Agent, AGENT_CONFIGS } from './types'
 import { getCurrentPhase, getPhaseLabel, type DayPhase } from './daylight'
 import { useAgentSocket } from './hooks/useAgentSocket'
@@ -1534,6 +1535,7 @@ const App: React.FC = () => {
       />
       </div>
       </div>
+      <StatusStrip office={officeRef} />
     </div>
   )
 }

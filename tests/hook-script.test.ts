@@ -934,8 +934,12 @@ describe('agent-tracker.sh: the bash wrapper', () => {
       maxBuffer: 16 * 1024 * 1024,
       env,
     })
-    for (let i = 0; i < 40 && !existsSync(log); i++) await sleep(50)
-    const calls = existsSync(log) ? readFileSync(log, 'utf8').trim().split('\n').map(l => JSON.parse(l) as string[]) : []
+    // The fake curl's `>>` creates the log before its python has written the
+    // line, so wait for a complete line, not just for the file (a read in that
+    // window parsed '' and failed under full-suite load)
+    const complete = () => existsSync(log) && readFileSync(log, 'utf8').endsWith('\n')
+    for (let i = 0; i < 60 && !complete(); i++) await sleep(50)
+    const calls = complete() ? readFileSync(log, 'utf8').trim().split('\n').map(l => JSON.parse(l) as string[]) : []
     const args = calls[0] ?? null
     const body = args ? JSON.parse(args[args.indexOf('-d') + 1]) : null
     return { stdout: res.stdout, stderr: res.stderr, status: res.status, calls, args, body }

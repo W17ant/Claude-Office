@@ -72,11 +72,9 @@ describe('WebSocket /ws', () => {
     expect(snapshot.timestamp).toBeTypeOf('number')
 
     const health = await request(office.server.app).get('/health')
-    // The registry roster is mounted but idle until start() (tests/sessions-registry.test.ts drives it)
-    expect(health.body).toEqual({
-      status: 'ok', agents: 1, clients: 1,
-      registry: { dir: office.server.REGISTRY_DIR, watching: false, entries: 0, lastScanAt: null },
-    })
+    expect(health.body).toMatchObject({ status: 'ok', agents: 1, clients: 1 })
+    // The same record rides on the snapshot (server/health.js; tests/health.test.ts has the rest)
+    expect(snapshot.health).toMatchObject({ status: 'ok', agents: 1, hooksSeen: 0, lastHookAt: null })
   })
 
   it('broadcasts a POSTed event (and its chat announcement) to every connected client', async () => {

@@ -311,9 +311,12 @@ describe('the registry roster in the office', () => {
   it('is mounted against the directory the env named, idle until start()', async () => {
     expect(office.server.REGISTRY_DIR).toBe(regDir)
     expect(reg().running).toBe(false)
-    const health = await request(office.server.app).get('/health')
-    expect(health.body.registry).toEqual({ dir: regDir, watching: false, entries: 0, lastScanAt: null })
+    expect(reg().stats()).toEqual({ dir: regDir, watching: false, count: 0, lastScanAt: null })
+    const roster = await request(office.server.app).get('/registry')
+    expect(roster.body).toEqual({ dir: regDir, watching: false, count: 0, lastScanAt: null, entries: [] })
     expect(office.server.sessions.size).toBe(0)
+    // Health counts sessions from the same map: none yet, and no hook has ever reached the server
+    expect((await request(office.server.app).get('/health')).body).toMatchObject({ sessions: 0, hooksSeen: 0 })
   })
 
   it('a live entry nobody has hooks for becomes an unhooked session: GET /sessions, GET /registry and a session_started { hooked: false }', async () => {
@@ -343,7 +346,9 @@ describe('the registry roster in the office', () => {
     expect(roster.body).toMatchObject({ dir: regDir, watching: false })
     expect(roster.body.entries).toEqual([{ sessionId: A, pid: process.pid, name: 'alpha-7f', status: 'busy', kind: 'interactive', hooked: false }])
     expect(roster.body.lastScanAt).toBeTypeOf('number')
-    expect((await request(office.server.app).get('/health')).body.registry).toMatchObject({ entries: 1, watching: false })
+    expect(roster.body.count).toBe(1)
+    // An unhooked session is a session as far as health is concerned ("1 session, 0 hooks seen" is the whole story)
+    expect((await request(office.server.app).get('/health')).body).toMatchObject({ sessions: 1, hooksSeen: 0 })
   })
 
   it('a status change is a session_registry broadcast and moves main.state; "waiting" is needs-you', async () => {
@@ -541,7 +546,7 @@ describe('the registry roster in the office', () => {
   it('start() picks up a file written afterwards on its own (watch + poll) and stop() ends that', async () => {
     reg().start({ pollMs: 40 })
     expect(reg().running).toBe(true)
-    expect((await request(office.server.app).get('/health')).body.registry.watching).toBe(true)
+    expect((await request(office.server.app).get('/registry')).body.watching).toBe(true)
     const child = liveChild()
     children.push(child)
     writeEntry(regDir, { pid: child.pid, sessionId: G, cwd: '/home/me/eta', name: 'eta-11', status: 'busy' })

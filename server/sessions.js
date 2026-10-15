@@ -61,8 +61,8 @@
  * server (start()), never on import — the tests point registryDir at a temp
  * dir and drive scan() themselves.
  *
- *   GET /registry  -> { dir, watching, lastScanAt, entries: [{ sessionId, pid,
- *                       name, status, kind, hooked }] }  (open, like GET /sessions)
+ *   GET /registry  -> { dir, watching, lastScanAt, count, entries: [{ sessionId,
+ *                       pid, name, status, kind, hooked }] }  (open, like GET /sessions)
  */
 
 import { readdirSync, readFileSync, statSync, watch } from 'fs'
@@ -402,7 +402,7 @@ export function mountRegistry(app, {
   }
 
   function stats() {
-    return { dir: registryDir, watching: timer !== null, entries: known.size, lastScanAt }
+    return { dir: registryDir, watching: timer !== null, count: known.size, lastScanAt }
   }
 
   app.get('/registry', (_req, res) => {

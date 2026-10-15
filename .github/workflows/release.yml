@@ -1,0 +1,116 @@
+name: Release
+
+# Pushing a tag such as v1.1.0 builds the desktop installers on each OS and
+# attaches them to a DRAFT GitHub release for that tag. Publishing the draft is
+# a manual step — see "Cutting a release" in README.md. "Run workflow" on a
+# tag rebuilds it the same way, so a failed leg can be redone without moving
+# the tag.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+# The release and its assets are created with the workflow's own token; no
+# other write access is needed.
+permissions:
+  contents: write
+
+# A re-tag, or a dispatch while the push build is still running, would upload
+# to the same draft at the same time. Only the newest run for a ref goes on.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  draft:
+    name: Draft release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the tag against package.json
+        id: version
+        # electron-builder names the release v<package.json version>, so a tag
+        # that disagrees with package.json would land its installers on the
+        # release for another version. `npm version` bumps and tags in one
+        # step; this only trips on a tag made by hand.
+        run: |
+          version=$(node -p "require('./package.json').version")
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_REF_TYPE" = tag ] && [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match package.json version $version"
+            exit 1
+          fi
+
+      - name: Create the draft release
+        # The three build jobs run at once, and electron-builder's publisher
+        # lists releases and then creates one when none matches, so left to
+        # themselves they can race and leave duplicate drafts. The draft is
+        # created here, once, before any of them starts; they find it and only
+        # upload. An existing release is kept as it is (a draft keeps the
+        # notes typed so far; a published one is never touched — electron-
+        # builder refuses to upload to a published release and says so).
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "release $TAG exists already"
+          else
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft --title "$TAG" --generate-notes --target "$GITHUB_SHA"
+          fi
+
+  build:
+    name: ${{ matrix.name }}
+    needs: draft
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      # One platform failing must not cancel the others; the failed leg can be
+      # re-run on its own and uploads to the same draft.
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            name: macOS (dmg, arm64 and x64)
+            args: --mac
+          - os: windows-latest
+            name: Windows (nsis)
+            args: --win
+          - os: ubuntu-latest
+            name: Linux (AppImage)
+            args: --linux
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        # A full install, unlike CI: electron-builder needs the Electron
+        # binary for the platform it packages. better-sqlite3 installs its
+        # prebuilt for the runner's Node; electron/after-pack.cjs swaps in the
+        # Electron one per packaged architecture.
+        run: npm ci
+
+      - name: Build the office
+        # No office.config.json here, on purpose: a release ships the default
+        # boss. src/config.ts reads the optional file at build time and
+        # falls back to the defaults when it is missing.
+        run: npm run build
+
+      - name: Package and upload to the draft
+        # --publish always: upload from this job, tag or not (a dispatch on a
+        # branch is still a rebuild). package.json's "repository" tells the
+        # publisher which repo, and its "publish" block says draft.
+        run: npx electron-builder ${{ matrix.args }} --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # There is no signing certificate: build unsigned instead of
+          # searching the keychain. Only the macOS packager reads this.
+          CSC_IDENTITY_AUTO_DISCOVERY: false
