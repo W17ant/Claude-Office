@@ -27,6 +27,11 @@
 #                        permission hand the batch answered)
 #   CwdChanged         — the session cd'd somewhere else (project tag follows)
 #   PostModelSwitch    — the session runs another model now
+#   TaskCreated /
+#   TaskCompleted      — the session's task list changed (the TaskCreate tool,
+#                        TaskUpdate to completed); the office reads the list
+#                        itself from ~/.claude/tasks/<session_id>/, these only
+#                        make it look at once
 #
 # Every event carries the session it came from: sessionId (session_id),
 # project (basename of cwd), cwd and transcriptPath. Two terminals are two
@@ -434,6 +439,25 @@ if hook_event == 'PostModelSwitch':
         if isinstance(d.get('source'), str) and d['source']:
             event['switchSource'] = d['source'][:20]
         emit_session(event)
+    sys.exit(0)
+
+# TaskCreated {task_id, task_subject, task_description?, teammate_name?} — the
+# TaskCreate tool is making a task; TaskCompleted — TaskUpdate is setting one
+# to completed. Shapes from the schema and the hooks reference (never fired
+# here: this machine's sessions have no task tools). The task list itself is
+# on disk (~/.claude/tasks/<session_id>/<n>.json) and the server reads it
+# (server/tasks.js), so the event only names the task and says "look now";
+# nothing is printed on stdout, which on these events could veto the change.
+# The description stays here: it is longer, conversation-derived text, and
+# the server serves it from the file only to a token holder.
+if hook_event in ('TaskCreated', 'TaskCompleted'):
+    task_id = one_line(d.get('task_id'), 40)
+    if task_id:
+        emit_session({
+            'type':    'task_created' if hook_event == 'TaskCreated' else 'task_completed',
+            'taskId':  task_id,
+            'subject': one_line(d.get('task_subject'), 120),
+        })
     sys.exit(0)
 
 if not tool_name:

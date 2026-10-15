@@ -147,8 +147,8 @@ describe('hooks/hooks.json', () => {
     }
   })
 
-  it('registers exactly the 17 events the installer registers (workers, sessions, the main thread’s turn)', () => {
-    expect(INSTALLER_EVENTS).toHaveLength(17)
+  it('registers exactly the 19 events the installer registers (workers, sessions, the main thread’s turn, the task list)', () => {
+    expect(INSTALLER_EVENTS).toHaveLength(19)
     expect(Object.keys(hooks).sort()).toEqual([...INSTALLER_EVENTS].sort())
   })
 
@@ -215,6 +215,8 @@ describe('hooks/hooks.json × agent-tracker.sh', () => {
     PostToolBatch: { tool_calls: [{ ...tool, tool_response: '' }] },
     CwdChanged: { old_cwd: '/tmp/project', new_cwd: '/tmp' },
     PostModelSwitch: { from_model: 'a', to_model: 'b', requested_model: 'b', source: 'command', context_tokens: 1 },
+    TaskCreated: { task_id: '1', task_subject: 'Fix the parser', task_description: 'The parser drops trailing commas' },
+    TaskCompleted: { task_id: '1', task_subject: 'Fix the parser' },
   }
 
   // An AGENT_OFFICE_HOME with no auth-token, so the script never finds a server to call
@@ -267,7 +269,7 @@ describe('commands/office.md', () => {
   })
 
   it('sends plugin users to the status-line-only install for the meters, never to the full installer', () => {
-    // npm run install-hooks would register the 17 hooks next to the plugin's: every event twice
+    // npm run install-hooks would register every hook again next to the plugin's: every event twice
     expect(source).toContain('npm run install-status-line')
     expect(source).not.toMatch(/run `npm run install-hooks` from/)
     const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
