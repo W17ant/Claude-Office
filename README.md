@@ -130,7 +130,7 @@ The chat AI watcher (`scripts/chat-ai-watcher.sh`, log in `~/.agent-office/chat-
 
 ### Running tests
 
-`npm test` runs the Vitest suite in `tests/` (server API, WebSocket, sessions, status/meters, incident commands, the office reducer, hook script, status line, installer, shell scripts — 289 tests) against a temp `AGENT_OFFICE_HOME`, so your real `~/.agent-office` is never touched; `npm run test:watch` keeps it running. CI (`.github/workflows/ci.yml`) runs `tsc --noEmit`, `npm test` and `vite build` on every push to `main` and every pull request.
+`npm test` runs the Vitest suite in `tests/` (server API, WebSocket, sessions, status/meters, health, incident commands, the office reducer, hook script, status line, installer, doctor, shell scripts — 516 tests) against a temp `AGENT_OFFICE_HOME`, so your real `~/.agent-office` is never touched; `npm run test:watch` keeps it running. CI (`.github/workflows/ci.yml`) runs `tsc --noEmit`, `npm test` and `vite build` on every push to `main` and every pull request.
 
 ### Auto-permissions
 
@@ -272,6 +272,15 @@ claude plugin install agent-office@agent-office
 `hooks/hooks.json` registers `hooks/agent-tracker.sh` from the installed copy (`${CLAUDE_PLUGIN_ROOT}`) for the same 17 events as the installer, with no matchers (the tracker acts on every tool call, and exits silently on anything it does not act on). `/agent-office:office` checks `http://127.0.0.1:3334/health` and prints how to start the server, which still runs from a clone or from the installed plugin directory (`npm install && npm run build && npm run server`). To remove it: `claude plugin uninstall agent-office@agent-office` (and `claude plugin marketplace remove agent-office` to drop the marketplace too).
 
 Two things to know. Plugin hooks merge with the ones in your settings, so pick one path: if you ran `npm run install-hooks` earlier, remove its entries as described under **Uninstall**, or every agent arrives twice. And a plugin can set [`subagentStatusLine` but not `statusLine`](https://code.claude.com/docs/en/plugins/components#default-settings), so the payroll / electricity / memory meters below still come from `npm run install-hooks`; run it from the clone when you want them. `claude plugin validate . --strict` runs in CI, and plugins do not load in cloud sessions.
+
+### Troubleshooting
+
+"Nothing appears" is almost always one of three things: the server is not running, the hooks are not installed (or point at a checkout that has since moved), or Claude Code simply has not run a tool yet. Two places tell you which:
+
+- **The status strip** along the bottom of the office (hidden under `?sim` / `?video`, which get a `SIM` badge instead) shows `ONLINE` / `RECONNECTING…` / `OFFLINE` for the WebSocket to `127.0.0.1:3334`, then `hooks: last seen 12 s ago` once a hook event has reached the server — or, after a minute online with nothing heard (and the server up that long), `no hook events yet — run npm run install-hooks` — then the session count and the server version. Hover it for the details and the command to type; while the server is down the strip says so and shows `npm run server`.
+- **`npm run doctor`** prints a `PASS` / `WARN` / `FAIL` line per link in the chain: the Node version; the hook entries in `~/.claude/settings.json` (or `$CLAUDE_CONFIG_DIR/settings.json`) running an `agent-tracker.sh` that exists — the installer's own rule — or the `agent-office` plugin being installed; the status line; `python3` / `bash` / `curl` on the PATH; the server answering `GET /health` on `AGENT_OFFICE_PORT` and whether hooks have reached it since it started; the auth token (present, mode `0600`); `dist/` built. It ends with the install, uninstall and start commands and exits 1 on any `FAIL`, so it works in a script too (`--json` for machine-readable output).
+
+`GET /health` returns `{ status, agents, clients, sessions, lastHookAt, hooksSeen, uiAvailable, version, uptimeMs }`; the server also sends it in the WebSocket snapshot and as a `health` event, at most one every 5 s while hooks arrive.
 
 ## Payroll, electricity and memory
 
@@ -585,9 +594,9 @@ token, and the rest stay open:
 ```
 Claude-Office/
 ├── src/                    # React frontend
-│   ├── components/         # Character, SlackChat, SessionStrip, IncidentLayer, FurnitureRenderer
+│   ├── components/         # Character, SlackChat, SessionStrip, StatusStrip, IncidentLayer, FurnitureRenderer
 │   ├── hooks/              # useAgentSocket (WebSocket + reconnect)
-│   ├── styles/             # office.css, rooms.css
+│   ├── styles/             # office.css, rooms.css, meters.css, incident.css, strip.css
 │   ├── officeReducer.ts    # Pure office state machine (arrival gate, lobby, snapshot reconcile)
 │   ├── incident.ts         # Incident mode state machine
 │   ├── theme.ts            # Dunder Mifflin skin (cast, props, chatter)
@@ -595,10 +604,12 @@ Claude-Office/
 ├── server/                 # Express + WebSocket server
 │   ├── index.js            # HTTP endpoints + WS broadcast
 │   ├── status.js           # /status: payroll / electricity / memory feed
+│   ├── health.js           # /health: hooks seen, sessions, version — the status strip's feed
 │   └── chat-db.js          # SQLite wrapper
 ├── scripts/                # Shell + Python scripts
 │   ├── start-office.sh     # Start everything (writes pid files)
 │   ├── stop-office.sh      # Stop everything (by pid file; --force for ports)
+│   ├── doctor.mjs          # npm run doctor: PASS/WARN/FAIL for node, hooks, server, token, build
 │   ├── chat-ai-watcher.sh  # Polls chat, generates Claude replies
 │   ├── agent-message.py    # Agent-to-agent messages from the shell
 │   ├── notify.sh           # Desktop notification (osascript / notify-send)
