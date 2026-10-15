@@ -23,6 +23,7 @@ import { dirname } from 'path'
 import { addMessage, getMessages, markSeen, addReaction, markInboxRead } from './chat-db.js'
 import db from './chat-db.js'
 import { mountStatus } from './status.js'
+import { mountHealth } from './health.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -881,10 +882,9 @@ app.options('*', (_req, res) => res.sendStatus(204))
 // fed by the Claude Code status line and keyed by the same session ids as `sessions`
 const status = mountStatus(app, { requireToken, broadcast, staleMs: STALE_AGENT_MS, sessions })
 
-// Health check
-app.get('/health', (_req, res) => {
-  res.json({ status: 'ok', agents: activeAgents.size, clients: wss?.clients.size ?? 0 })
-})
+// Pipeline health: GET /health + the throttled `health` broadcast (server/health.js);
+// POST /event stamps it, the WS snapshot carries it, the status strip and `npm run doctor` read it
+const health = mountHealth(app, { broadcast, uiAvailable: UI_AVAILABLE, counts: () => ({ agents: activeAgents.size, clients: wss?.clients.size ?? 0, sessions: Array.from(sessions.values()).filter(s => s.state === 'active').length }) })
 
 // MCP server roster + the agents in the office (same view as the WS snapshot)
 app.get('/roster', (_req, res) => {
@@ -1008,6 +1008,7 @@ app.post('/event', requireToken, (req, res) => {
   if (event) {
     broadcast(event)
   }
+  health.markHook()  // a hook reached us: what the strip's "last seen" counts (after the event, so its counts include it)
 
   res.json({ ok: true, ...(event?.type === 'agent_spawned' ? { agentId: event.agent.id } : {}) })
 })
@@ -2215,6 +2216,7 @@ wss.on('connection', (ws, req) => {
     activeAgents: liveAgents(),
     sessions: Array.from(sessions.values()).map(sessionToJSON),
     statuses: status.summary(),
+    health: health.snapshot(),
     mcpServers: discoverMcpServers(),
     timestamp: Date.now(),
   }
