@@ -65,6 +65,10 @@ Works on macOS and Linux, and on Windows through WSL or Git Bash with `python3` 
 - Answer it from the office: while Claude waits on a permission a card shows what it wants to run or write, with **Allow**, **Allow & remember** and **Deny** (or `y` / `n`); a click answers the real dialog in that terminal — see [Answer permissions from the office](#connect-claude-code)
 - `GET /sessions` lists them (project, cwd, model, agent counts, the `main` record); sessions survive a server restart and are forgotten a minute after they end
 
+**Click a character**
+- Click any character and a card opens over the room (Esc, its × or the same character again closes it): name, role and task, what it is doing and for how long, which project and session it belongs to, the tools it has used — a count per tool and the last ten calls with their times, the failed ones marked — its tokens, duration, tool uses and model once it has finished, who spawned it and its unread messages. A background agent's totals are not reported by Claude Code, so the office works them out (tokens and model from the last message in its transcript, the same sum Claude Code reports for a foreground agent; duration and tool uses from what it saw) and the card says so. A session's Claude shows its main state instead (working, waiting on N workers, idle, needs you and what for, API error, compacting), its model, scheduled crons, how full its context is and the last prompt and reply
+- Under that, a transcript tail: the last few things the agent itself said and the tools it called, read from the end of its own Claude Code transcript (never the whole file) at the detail `logPrompts` allows — `off` hides it, `summary` shows 200 characters per entry, `full` 2000. `GET /agents/:id` serves the same card as JSON (`main-<sessionId>` for a session's Claude); the card refreshes every two seconds while open and the office keeps moving underneath
+
 **Meters**
 - Payroll (cost so far and $/min), electricity (tokens per minute) and memory (context-window fill) per session, straight from Claude Code's status line; claude.ai subscribers also get the five-hour rate-limit pill — see [Payroll, electricity and memory](#payroll-electricity-and-memory)
 
@@ -597,7 +601,7 @@ token, and the rest stay open:
 | **Token required** | `POST /event`, `POST /status`, `/chat/reply`, `/a2a`, `/chat/inbox/read`, `/chat/seen`, `/chat/react`, `/chat/video-mode`, `GET /permission/:id` (the hook's long-poll for a decision), and `POST /chat` for a destructive slash command (`/clear`) | Speaks for an agent, writes another agent's inbox, feeds the meters, learns how a permission was decided, or wipes history — a local process must not be able to do these |
 | **UI token or token** | `POST /permission/:id` (answer a permission dialog), `POST /settings` | The two things the office page itself may change. The page cannot read the token file, so the server mints a second secret per process, the UI token, and hands it out in one place only: the WebSocket snapshot, which is origin-gated — browsers always send `Origin`, and only the loopback UI ports pass — so no web page on another origin (a malicious site, a DNS-rebinding page) can open that socket or learn the token. A local process that could connect without an `Origin` could read the token file anyway. The UI token lives in memory, changes on every restart and is compared in constant time |
 | **Open** | every other `GET` (`GET /permissions` lists the pending dialogs, like `GET /sessions` shows the hand), `POST /chat` (a plain line a person typed, and the read-only `/status` · `/agents` · `/help` · `/incident` · `/all-clear` commands), `POST /chat/typing`, `POST /chat/cron-state` | The office UI has no token; the worst these do is read what the office already shows or post a chat line |
-| **Open, but the transcript needs the token** | `GET /chat`, `GET /sessions` | Without the token the boss's prompts and Claude's replies are left out: the chat rows with `msg_type` `prompt` / `reply`, and `main.lastPrompt` / `main.lastReply` on each session. With it (the office scripts), they are included. The office UI reads them from the origin-gated WebSocket snapshot instead |
+| **Open, but the transcript needs the token** | `GET /chat`, `GET /sessions`, `GET /agents/main-<sessionId>` | Without the token the boss's prompts and Claude's replies are left out: the chat rows with `msg_type` `prompt` / `reply`, and `main.lastPrompt` / `main.lastReply` on each session (and on a session's Claude in the inspector). With it (the office scripts), they are included. The office UI reads them from the origin-gated WebSocket snapshot instead |
 
 - The token is 32 random bytes generated at startup and written to
   `~/.agent-office/auth-token` (mode `0600`) **only once the port is bound**, so
@@ -634,10 +638,16 @@ token, and the rest stay open:
   marker is removed and the hook behaves as before).
 - Errors are returned as `{ "error": ... }` with no stack trace or absolute
   path; message ids are validated and a message's reactions are capped.
-- `GET /roster` and `GET /agents` do expose each agent's task text (the first
-  80 characters of the subagent's description) and the names of the configured
-  MCP servers. That is the office's purpose, it is localhost only, and anything
-  on the machine can already read `~/.claude/settings.json`.
+- `GET /roster`, `GET /agents` and the inspector's `GET /agents/:id` do expose
+  each agent's task text (the first 80 characters of the subagent's
+  description), its tool calls and the names of the configured MCP servers.
+  `GET /agents/:id` also serves the **transcript tail** — the last few things
+  the agent itself said and the tools it called, read from the end of its own
+  Claude Code transcript — and that tail follows `logPrompts` exactly like the
+  prompts above: `off` serves none of it, `summary` 200 characters per entry,
+  `full` 2000. That is the office's purpose, it is localhost only, and anything
+  on the machine can already read `~/.claude/settings.json` and the
+  transcripts themselves.
 
 ## Tech stack
 

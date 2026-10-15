@@ -20,6 +20,10 @@ interface CharacterProps {
   isTyping?: boolean
   /** Show the agent's project (its Claude Code session) — when several sessions share the office */
   showProject?: boolean
+  /** Click to inspect (the sprite becomes the click target; see .character-wrapper.clickable in office.css) */
+  onClick?: (agentId: string) => void
+  /** This character's card is open: a ring at its feet */
+  inspected?: boolean
 }
 
 // Movement direction → sprite variant
@@ -70,7 +74,7 @@ const OPPOSITE: Record<SpriteDirection, SpriteDirection> = {
   'rear-right': 'front-left',
 }
 
-const Character: React.FC<CharacterProps> = ({ agent, idleDurationMs = 0, zIndex, isTyping, showProject }) => {
+const Character: React.FC<CharacterProps> = ({ agent, idleDurationMs = 0, zIndex, isTyping, showProject, onClick, inspected }) => {
   const prevPosRef = useRef({ x: agent.position.x, y: agent.position.y })
   const directionRef = useRef<SpriteDirection>(agent.spriteFacing ?? 'front-right')
   const [turnedAround, setTurnedAround] = useState(false)
@@ -160,7 +164,7 @@ const Character: React.FC<CharacterProps> = ({ agent, idleDurationMs = 0, zIndex
 
   return (
     <div
-      className={`character-wrapper state-${animState}${mainState ? ` main-${mainState}` : ''}`}
+      className={`character-wrapper state-${animState}${mainState ? ` main-${mainState}` : ''}${onClick ? ' clickable' : ''}${inspected ? ' inspected' : ''}`}
       style={{
         left: `${agent.position.x}%`,
         top: `${agent.position.y}%`,
@@ -197,7 +201,15 @@ const Character: React.FC<CharacterProps> = ({ agent, idleDurationMs = 0, zIndex
         <SpeechBubble key={agent.statusText} text={agent.statusText} isManager={agent.role === BOSS_ROLE} duration={3200} />
       )}
 
-      <div className="char-body-group">
+      <div
+        className="char-body-group"
+        // The sprite alone takes the click (the wrapper stays pointer-events: none)
+        onClick={onClick ? () => onClick(agent.id) : undefined}
+        role={onClick ? 'button' : undefined}
+        aria-label={onClick ? `Inspect ${agent.name}` : undefined}
+        aria-pressed={onClick ? !!inspected : undefined}
+        data-agent-id={agent.id}
+      >
         <div className="char-shadow" />
         <img
           src={spriteSrc}

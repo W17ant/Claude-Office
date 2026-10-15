@@ -404,6 +404,46 @@
   position: relative;
 }
 
+/* Click to inspect (src/components/AgentCard.tsx). The wrapper above keeps
+   pointer-events: none — its badges, labels and bubbles overhang the
+   furniture and must not catch clicks meant for it, and the day/night and
+   incident overlays are already click-through — so the sprite group alone is
+   the target. A faint ring at the feet on hover, a lit one while the card is
+   open. */
+.character-wrapper.clickable .char-body-group {
+  pointer-events: auto;
+  cursor: pointer;
+}
+.character-wrapper.clickable .char-body-group::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -3px;
+  width: 36px;
+  height: 12px;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  border: 2px solid transparent;
+  pointer-events: none;
+  z-index: 8;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.character-wrapper.clickable .char-body-group:hover::after {
+  border-color: rgba(255, 255, 255, 0.45);
+}
+.character-wrapper.inspected .char-body-group::after {
+  border-color: rgba(79, 163, 255, 0.95);
+  box-shadow: 0 0 8px rgba(79, 163, 255, 0.55), inset 0 0 6px rgba(79, 163, 255, 0.25);
+  animation: inspectRing 1.6s ease-in-out infinite;
+}
+@keyframes inspectRing {
+  0%, 100% { opacity: 0.7; }
+  50%      { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .character-wrapper.inspected .char-body-group::after { animation: none; }
+}
+
 .char-sprite {
   image-rendering: pixelated;
   display: block;

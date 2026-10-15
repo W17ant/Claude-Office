@@ -184,11 +184,17 @@ if hook_event == 'SubagentStart':
 # so emit nothing rather than a completion for an id the office never saw.
 if hook_event == 'SubagentStop':
     if d.get('agent_id') and d.get('agent_type'):
-        emit({
+        event = {
             'type':    'agent_completed',
             'agentId': str(d['agent_id']),
             'result':  str(d.get('last_assistant_message') or 'done')[:120],
-        })
+        }
+        # The worker's own transcript (…/<session_id>/subagents/agent-<agent_id>.jsonl),
+        # which the inspector card tails; a path string, nothing from inside it
+        transcript = d.get('agent_transcript_path')
+        if isinstance(transcript, str) and transcript:
+            event['agentTranscriptPath'] = transcript[:400]
+        emit(event)
     sys.exit(0)
 
 # ── The session's own Claude ────────────────────────────────────────────────
@@ -672,6 +678,7 @@ if hook_event == 'PostToolUseFailure':
         'type':   'agent_working',
         'status': f"failed: {tool_name} — {error_summary(d.get('error'))}",
         'failed': True,
+        'tool':   str(tool_name)[:80],
     }))
     sys.exit(0)
 
@@ -703,9 +710,12 @@ if hook_event == 'PreToolUse':
 
     status_fn = status_map.get(tool_name)
     status = status_fn(inp) if status_fn else f"using {str(tool_name)[:40]}"
+    # The tool's own name travels beside the status line: the inspector card
+    # counts calls per tool, and the status is a phrase, not an identifier
     emit(tag_subagent({
         'type': 'agent_working',
         'status': status,
+        'tool': str(tool_name)[:80],
     }))
 
 sys.exit(0)

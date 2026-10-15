@@ -8,6 +8,7 @@ import Character from './components/Character'
 import FurnitureRenderer from './components/FurnitureRenderer'
 import SessionStrip from './components/SessionStrip'
 import Meters from './components/Meters'
+import AgentCard from './components/AgentCard'
 import PermissionCards from './components/PermissionCard'
 import { isPermissionEvent, reducePermissions, setUiToken, type PermissionAction, type PermissionCardState } from './permissions'
 import StatusStrip from './components/StatusStrip'
@@ -319,6 +320,11 @@ const App: React.FC = () => {
     const timer = setInterval(() => setSlowClock(n => n + 1), 2000)
     return () => clearInterval(timer)
   }, [])
+
+  // The inspector card (src/components/AgentCard.tsx): the character clicked
+  // last; clicking the same one again closes it
+  const [inspectedId, setInspectedId] = useState<string | null>(null)
+  const handleCharacterClick = useCallback((id: string) => setInspectedId(prev => (prev === id ? null : id)), [])
 
   const handleFurnitureClick = useCallback((itemId: string) => {
     const interaction = getInteraction(itemId)
@@ -1467,6 +1473,8 @@ const App: React.FC = () => {
                 zIndex={zOverride}
                 isTyping={typingAgents.has(agent.id)}
                 showProject={activeSessionCount > 1}
+                onClick={handleCharacterClick}
+                inspected={agent.id === inspectedId}
               />
             )
           })}
@@ -1532,6 +1540,7 @@ const App: React.FC = () => {
         </div>
       </div>
 
+      <AgentCard agentId={inspectedId} agent={agents.find(a => a.id === inspectedId)} sessions={sessions} onClose={() => setInspectedId(null)} />
       <div className="chat-column">
       {!isSimMode && <PermissionCards cards={permissionCards} dispatch={dispatchPermissions} />}
       <Meters onNotice={text => addMsg('system', 'default', '#8b8d91', text, true)} />

@@ -127,6 +127,7 @@ describe('agent-tracker.sh: inside a subagent', () => {
     })).toEqual({
       type: 'agent_working',
       status: 'running: ls /etc | wc -l',
+      tool: 'Bash',
       agentId: 'a1921bf97b0af9fd1',
       agentType: 'general-purpose',
       role: 'general-purpose',
@@ -137,7 +138,7 @@ describe('agent-tracker.sh: inside a subagent', () => {
   it('PreToolUse Read on the main thread -> agent_working without an agent id', () => {
     expect(runHook({
       hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input: { file_path: '/repo/server/index.js' },
-    })).toEqual({ type: 'agent_working', status: 'reading index.js' })
+    })).toEqual({ type: 'agent_working', status: 'reading index.js', tool: 'Read' })
   })
 
   it('SubagentStop -> agent_completed with the last assistant message', () => {
@@ -169,6 +170,7 @@ describe('agent-tracker.sh: inside a subagent', () => {
       type: 'agent_working',
       status: 'failed: Bash — Exit code 1 cat: /definitely/not/here: No such file or direc',
       failed: true,
+      tool: 'Bash',
       agentId: 'a29964dc791f62039',
       agentType: 'general-purpose',
       role: 'general-purpose',
@@ -299,6 +301,7 @@ describe('agent-tracker.sh: captured 2.1.300 payloads', () => {
     })).toEqual({
       type: 'agent_working',
       status: 'running: ls /etc | wc -l',
+      tool: 'Bash',
       agentId: 'a29964dc791f62039',
       agentType: 'general-purpose',
       role: 'general-purpose',
@@ -321,7 +324,12 @@ describe('agent-tracker.sh: captured 2.1.300 payloads', () => {
       last_assistant_message: last,
       background_tasks: [{ id: 'ac5ff55b850b4fecf', type: 'subagent', status: 'running', description: 'Count etc', agent_type: 'general-purpose' }],
       session_crons: [],
-    })).toEqual({ type: 'agent_completed', agentId: 'ac5ff55b850b4fecf', result: last.slice(0, 120), ...session })
+    })).toEqual({
+      type: 'agent_completed', agentId: 'ac5ff55b850b4fecf', result: last.slice(0, 120),
+      // The worker's own transcript travels as a path string (the inspector card tails it)
+      agentTranscriptPath: '/root/.claude/projects/-tmp-claude-0--home-user-Claude-Office-c25c5511-f321-521a-825b-f189ac4d57e8-scratchpad-hookcap/8cf68f64-5433-40f7-a130-557fc7f67e42/subagents/agent-ac5ff55b850b4fecf.jsonl',
+      ...session,
+    })
   })
 
   it('phantom SubagentStop (compaction summariser, agent_type "") -> nothing', () => {
@@ -391,6 +399,7 @@ describe('agent-tracker.sh: captured 2.1.300 payloads', () => {
       type: 'agent_working',
       status: 'failed: Bash — Exit code 1 cat: /definitely/not/here: No such file or direc',
       failed: true,
+      tool: 'Bash',
       ...failureSession,
     })
 
@@ -402,7 +411,7 @@ describe('agent-tracker.sh: captured 2.1.300 payloads', () => {
       error: 'Exit code 1',
       is_interrupt: false,
       duration_ms: 53,
-    })).toEqual({ type: 'agent_working', status: 'failed: Bash — Exit code 1', failed: true, ...failureSession })
+    })).toEqual({ type: 'agent_working', status: 'failed: Bash — Exit code 1', failed: true, tool: 'Bash', ...failureSession })
   })
 
   it('PostToolUseFailure of an MCP call -> mcp_done, of an Agent launch -> agent_completed', () => {
@@ -543,12 +552,12 @@ describe('agent-tracker.sh: sessions', () => {
     expect(runHook({ ...read, cwd: '/home/me/Claude-Office/' })?.project).toBe('Claude-Office')
     expect(runHook({ ...read, cwd: '/' })?.project).toBe('/')
     // No cwd: no project/cwd keys, but the session id still travels
-    expect(runHook({ ...read })).toEqual({ type: 'agent_working', status: 'reading x', sessionId: 's', transcriptPath: '/t.jsonl' })
+    expect(runHook({ ...read })).toEqual({ type: 'agent_working', status: 'reading x', tool: 'Read', sessionId: 's', transcriptPath: '/t.jsonl' })
   })
 
   it('payloads without session fields (older hooks, hand-made events) emit the old shapes unchanged', () => {
     expect(runHook({ hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input: { file_path: '/a/b.js' } }))
-      .toEqual({ type: 'agent_working', status: 'reading b.js' })
+      .toEqual({ type: 'agent_working', status: 'reading b.js', tool: 'Read' })
   })
 })
 
@@ -572,12 +581,12 @@ describe('agent-tracker.sh: MCP tools', () => {
 describe('agent-tracker.sh: every tool call is activity', () => {
   it('PreToolUse of a tool without a specific status line -> a generic "using <tool>" working status, main thread or worker', () => {
     expect(runHook({ hook_event_name: 'PreToolUse', tool_name: 'WebFetch', tool_input: { url: 'https://example.com' } }))
-      .toEqual({ type: 'agent_working', status: 'using WebFetch' })
+      .toEqual({ type: 'agent_working', status: 'using WebFetch', tool: 'WebFetch' })
     expect(runHook({ hook_event_name: 'PreToolUse', tool_name: 'TodoWrite', agent_id: 'a1921bf97b0af9fd1', agent_type: 'Explore', tool_input: { todos: [] } }))
-      .toEqual({ type: 'agent_working', status: 'using TodoWrite', agentId: 'a1921bf97b0af9fd1', agentType: 'Explore', role: 'Explore', name: 'Explorer' })
+      .toEqual({ type: 'agent_working', status: 'using TodoWrite', tool: 'TodoWrite', agentId: 'a1921bf97b0af9fd1', agentType: 'Explore', role: 'Explore', name: 'Explorer' })
     // The known tools keep their specific lines; a tool_input that is not an object does not crash the hook
     expect(runHook({ hook_event_name: 'PreToolUse', tool_name: 'Grep', tool_input: { pattern: 'needle' } })?.status).toBe("searching for 'needle'")
-    expect(runHook({ hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input: null })).toEqual({ type: 'agent_working', status: 'reading ' })
+    expect(runHook({ hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input: null })).toEqual({ type: 'agent_working', status: 'reading ', tool: 'Read' })
   })
 
   it('PostToolUse of an ordinary tool on the main thread -> session_tool_done {toolName} (lowers a permission hand on the server); inside a worker, or without a session, nothing', () => {
