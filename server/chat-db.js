@@ -8,7 +8,7 @@
 import Database from 'better-sqlite3'
 import { homedir } from 'os'
 import { join } from 'path'
-import { mkdirSync } from 'fs'
+import { mkdirSync, chmodSync, existsSync } from 'fs'
 
 // ---------------------------------------------------------------------------
 // Initialise DB
@@ -16,16 +16,36 @@ import { mkdirSync } from 'fs'
 
 const RUNTIME_DIR = process.env.AGENT_OFFICE_HOME || join(homedir(), '.agent-office')
 try { mkdirSync(RUNTIME_DIR, { recursive: true, mode: 0o700 }) } catch {}
+// mkdirSync's mode is ignored for a dir that already exists (the installer or
+// start-office.sh may have made it 0755), so tighten it unconditionally.
+try { chmodSync(RUNTIME_DIR, 0o700) } catch {}
 
 /** Distinct emoji a message can carry; a toggle past this is ignored. */
 export const MAX_REACTIONS = 20
 
 const DB_PATH = join(RUNTIME_DIR, 'chat.db')
 
-const db = new Database(DB_PATH)
-
-// WAL mode for better concurrent read/write performance
-db.pragma('journal_mode = WAL')
+// chat.db holds the boss's prompts and Claude's replies (logPrompts), so it
+// must be private to this user. SQLite creates the db, and later its -wal and
+// -shm siblings, under the process umask — 0644 by default — and never
+// through writePrivate. Create them under a 0077 umask so they start 0600,
+// then chmod any that already exist (an older 0644 build, an interrupted run)
+// so an upgrade repairs them too.
+const prevUmask = process.platform === 'win32' ? null : process.umask(0o077)
+let db
+try {
+  db = new Database(DB_PATH)
+  // WAL mode for better concurrent read/write performance
+  db.pragma('journal_mode = WAL')
+} finally {
+  if (prevUmask !== null) process.umask(prevUmask)
+}
+if (process.platform !== 'win32') {
+  for (const name of ['chat.db', 'chat.db-wal', 'chat.db-shm']) {
+    const file = join(RUNTIME_DIR, name)
+    try { if (existsSync(file)) chmodSync(file, 0o600) } catch {}
+  }
+}
 
 db.exec(
   'CREATE TABLE IF NOT EXISTS messages (' +

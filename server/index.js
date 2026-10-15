@@ -21,7 +21,7 @@ import { WebSocketServer, WebSocket } from 'ws'
 import { readFileSync, existsSync, writeFileSync, mkdirSync, realpathSync, chmodSync, unlinkSync, openSync, fstatSync, closeSync, constants as fsConstants } from 'fs'
 import { homedir } from 'os'
 import { join, basename } from 'path'
-import { randomBytes, timingSafeEqual } from 'crypto'
+import { randomBytes, timingSafeEqual, createHmac } from 'crypto'
 import { execFile } from 'child_process'
 import { fileURLToPath } from 'url'
 import { dirname } from 'path'
@@ -106,6 +106,11 @@ const UI_DEV_PORT = readUiPort()
 
 const RUNTIME_DIR = process.env.AGENT_OFFICE_HOME || join(homedir(), '.agent-office')
 try { mkdirSync(RUNTIME_DIR, { recursive: true, mode: 0o700 }) } catch {}
+// mkdirSync's mode is ignored when the dir already exists, so a dir the
+// installer or an older build left group/world-readable keeps those bits.
+// Tighten it to 0700 unconditionally (the prompts in chat.db and the A2A
+// inbox under here must not be readable by other local users).
+try { chmodSync(RUNTIME_DIR, 0o700) } catch {}
 const TOKEN_FILE = join(RUNTIME_DIR, 'auth-token')
 
 // What the server writes: 32 random bytes as 64 lowercase hex digits
@@ -150,6 +155,22 @@ function writePrivate(path, data) {
 }
 
 /**
+ * Repair the runtime dir and the chat database so another local user cannot
+ * read them. mkdirSync's mode and SQLite's own file-create mode apply only
+ * when they create the entry, so a dir left 0755 by the installer /
+ * start-office.sh, or chat.db* left 0644 by an older build or the process
+ * umask, keeps those bits. Fix them on every start. No-op on Windows.
+ */
+function repairPrivateModes() {
+  if (process.platform === 'win32') return
+  try { chmodSync(RUNTIME_DIR, 0o700) } catch {}
+  for (const name of ['chat.db', 'chat.db-wal', 'chat.db-shm']) {
+    const file = join(RUNTIME_DIR, name)
+    try { if (existsSync(file)) chmodSync(file, 0o600) } catch {}
+  }
+}
+
+/**
  * Put AUTH_TOKEN in the token file (after listen). A reused token is already
  * there. A new one replaces whatever the file was — unlinked first and then
  * created exclusively, so a symlink or a file owned by someone else is
@@ -179,20 +200,76 @@ function bearerToken(req) {
   return header.startsWith('Bearer ') ? header.slice(7).trim() : ''
 }
 
+// ---------------------------------------------------------------------------
+// Request signing — how the hook proves it holds the token without ever
+// putting it on a command line
+//
+// The hook (and status line) run as short-lived processes whose argv every
+// local user can read in `ps` / /proc/<pid>/cmdline. A bearer token on that
+// argv leaks to anyone on the machine, and since the token is stable across
+// restarts (#41) the leak stays useful — a port squatter that answered the
+// first POST while the office was down would own the token for good. So the
+// hook no longer sends the token at all: it signs each request with
+// HMAC-SHA256(token, method\npath\ntimestamp\nbody) and sends the timestamp
+// and the signature as headers. A reader of the argv sees only a signature
+// bound to one method, path, body and minute — useless beyond replaying that
+// exact request inside the window, which is the victim's own event. The
+// token stays in the 0600 file (and, for the hook, in its own process memory
+// / environment, which only its owner can read), never on a command line.
+//
+// The server accepts a request to a token-guarded route when it carries
+// either a valid bearer token (the Python chat scripts and A2A clients send
+// it from their own memory, not argv) or a valid signature whose timestamp is
+// within SIGNATURE_WINDOW_MS. Both checks are constant-time.
+// ---------------------------------------------------------------------------
+
+/** ±1 minute: wide enough for clock skew, narrow enough that a leaked signature expires fast. */
+const SIGNATURE_WINDOW_MS = 60_000
+
+/** HMAC-SHA256(token, canonical request) as the hook computes it. The key is the token string's bytes. */
+function requestSignature(method, path, timestamp, rawBody) {
+  const h = createHmac('sha256', AUTH_TOKEN)
+  h.update(`${method}\n${path}\n${timestamp}\n`)
+  h.update(rawBody && rawBody.length ? rawBody : Buffer.alloc(0))
+  return h.digest()
+}
+
+/**
+ * True when the request carries a signature this server's token would
+ * produce over the raw body, for a timestamp within the window. `req.rawBody`
+ * is captured by express.json's verify hook (the exact bytes the hook signed);
+ * it is empty for the hook's GET long-poll, which signs an empty body.
+ */
+function signatureValid(req) {
+  const ts = req.headers['x-office-timestamp']
+  const sig = req.headers['x-office-signature']
+  if (typeof ts !== 'string' || typeof sig !== 'string' || !/^[0-9a-f]+$/.test(sig)) return false
+  const tnum = Number(ts)
+  if (!Number.isFinite(tnum) || Math.abs(Date.now() - tnum) > SIGNATURE_WINDOW_MS) return false
+  const given = Buffer.from(sig, 'hex')
+  const expected = requestSignature(req.method, req.originalUrl, ts, req.rawBody)
+  return given.length === expected.length && timingSafeEqual(given, expected)
+}
+
+/** A caller proved it holds the token: a valid bearer token, or a valid request signature. */
+function tokenAuthed(req) {
+  return tokenMatches(bearerToken(req)) || signatureValid(req)
+}
+
 function unauthorized(res, body) {
   res.setHeader('WWW-Authenticate', 'Bearer realm="agent-office"')
   return res.status(401).json(body)
 }
 
-/** Express middleware: the route needs the office's bearer token. */
+/** Express middleware: the route needs the office's token (bearer or a valid signature). */
 function requireToken(req, res, next) {
-  if (tokenMatches(bearerToken(req))) return next()
+  if (tokenAuthed(req)) return next()
   unauthorized(res, { error: 'Unauthorized' })
 }
 
 /** Same, answering in the JSON-RPC envelope for the A2A endpoint. */
 function requireTokenRpc(req, res, next) {
-  if (tokenMatches(bearerToken(req))) return next()
+  if (tokenAuthed(req)) return next()
   unauthorized(res, { jsonrpc: '2.0', id: req.body?.id ?? null, error: { code: -32001, message: 'Unauthorized: send the office auth token as Authorization: Bearer <token>' } })
 }
 
@@ -220,6 +297,36 @@ function isAllowedOrigin(origin) {
   } catch {
     return false  // not a URL (`null`)
   }
+}
+
+// ---------------------------------------------------------------------------
+// Host-header guard — defeats DNS rebinding
+//
+// The origin allowlist keeps cross-origin browser requests out, but a
+// same-origin GET from a page the browser rebound to 127.0.0.1 carries no
+// Origin header (the Fetch spec adds Origin only to CORS-tainted or
+// non-GET/HEAD requests). Such a request would otherwise read every open GET
+// — the pending command lines on GET /permissions, cwds and titles on
+// GET /sessions, agent tasks on GET /agents. What it cannot forge is the Host
+// header the browser sends: a rebinding page's Host is still its own domain.
+// So every request must name a loopback host (any port: Vite proxies as
+// localhost:3333, Electron loads 127.0.0.1:<port>); anything else is 421.
+// ---------------------------------------------------------------------------
+
+/** The host name of a Host header, port stripped, brackets kept for IPv6 ([::1]:3334 -> [::1]). */
+function hostName(hostHeader) {
+  if (typeof hostHeader !== 'string' || hostHeader === '') return ''
+  if (hostHeader.startsWith('[')) {
+    const end = hostHeader.indexOf(']')
+    return end === -1 ? hostHeader : hostHeader.slice(0, end + 1)
+  }
+  const colon = hostHeader.indexOf(':')
+  return colon === -1 ? hostHeader : hostHeader.slice(0, colon)
+}
+
+/** A request is served only when its Host names a loopback host; guards against DNS rebinding. */
+function isAllowedHost(hostHeader) {
+  return LOOPBACK_HOSTS.has(hostName(hostHeader))
 }
 
 // ---------------------------------------------------------------------------
@@ -1108,6 +1215,17 @@ function syncAnswerMarker() {
   }
 }
 
+/**
+ * Remove the answer-permissions marker. Called when the office stops (close /
+ * SIGINT / SIGTERM / exit): the hook waits for an office answer only while the
+ * marker is there, so a stopped office must not leave it behind, or every
+ * later PermissionRequest would park on whatever now holds the port (a
+ * squatter) instead of falling back to the terminal dialog at once.
+ */
+function removeAnswerMarker() {
+  try { if (existsSync(ANSWER_MARKER_FILE)) unlinkSync(ANSWER_MARKER_FILE) } catch {}
+}
+
 /** Prompt / reply text at the configured logPrompts level: '' when off, else its first N characters. */
 function transcriptText(text) {
   const max = LOG_PROMPTS_LEVELS.get(settings.logPrompts) ?? 0
@@ -1265,8 +1383,22 @@ const app = express()
 // /event alone takes more. Its sanitiser clamps every field it keeps.
 const JSON_LIMIT = '10kb'
 const EVENT_JSON_LIMIT = '64kb'
-const jsonBody = express.json({ limit: JSON_LIMIT })
-const eventJsonBody = express.json({ limit: EVENT_JSON_LIMIT })
+// Capture the exact request bytes so a signed request (the hook) can be
+// verified over the body it actually sent (requestSignature / signatureValid).
+const captureRaw = (req, _res, buf) => { req.rawBody = buf }
+const jsonBody = express.json({ limit: JSON_LIMIT, verify: captureRaw })
+const eventJsonBody = express.json({ limit: EVENT_JSON_LIMIT, verify: captureRaw })
+
+// Host-header guard: the first thing every request passes, before the body
+// parsers and CORS. A non-loopback (or missing) Host is a DNS-rebinding page
+// or a cross-host request and is refused outright.
+app.use((req, res, next) => {
+  if (!isAllowedHost(req.headers.host)) {
+    return res.status(421).json({ error: 'Forbidden host' })
+  }
+  next()
+})
+
 app.use((req, res, next) => (req.path === '/event' ? eventJsonBody : jsonBody)(req, res, next))
 
 // CORS for local dev — only allow known localhost origins
@@ -1319,6 +1451,10 @@ const permissions = mountPermissions(app, {
   broadcast,
   onDecided: onOfficeDecision,
   canSeeDetail: req => { const supplied = bearerToken(req); return tokenMatches(supplied) || uiTokenMatches(supplied) },
+  // The hook trusts a decision only when the office proves it holds the token:
+  // HMAC(token, nonce + permissionId + decision) over the nonce the hook made.
+  // A squatter has never seen the token, so it cannot forge this.
+  proof: (nonce, id, decision) => createHmac('sha256', AUTH_TOKEN).update(`${nonce}${id}${decision}`).digest('hex'),
 })
 
 /**
@@ -1483,6 +1619,9 @@ app.post('/event', requireToken, (req, res) => {
     // detail is the command or the path (400), the suggestions go back to
     // Claude Code verbatim, so their shape is kept and their sizes bounded
     answerable:       body.answerable === true || undefined,
+    // The per-request nonce the hook signs the server's proof over (hex, kept
+    // out of the broadcast event and the public permission record)
+    nonce:            clampString(body.nonce, 64),
     permissionMode:   clampString(body.permissionMode, 40),
     suggestions:      body.type === 'session_needs_you' ? sanitiseSuggestions(body.suggestions) : undefined,
     error:            clampString(body.error, 40),
@@ -1535,6 +1674,7 @@ app.post('/event', requireToken, (req, res) => {
       permissionMode: sanitised.permissionMode,
       promptId: sanitised.promptId,
       agentId: sanitised.agentId,
+      nonce: sanitised.nonce,
     })
     return res.json({ ok: true, permissionId: permission.id, wait })
   }
@@ -3096,6 +3236,13 @@ const httpServer = createServer(app)
 const wss = new WebSocketServer({ server: httpServer, path: '/ws', handleProtocols })
 
 wss.on('connection', (ws, req) => {
+  // Host validation — loopback hosts only (see isAllowedHost): defence in
+  // depth against a DNS-rebinding page that opens the WebSocket
+  if (!isAllowedHost(req.headers.host)) {
+    console.warn(`[ws] Rejected connection from disallowed host: ${req.headers.host}`)
+    ws.close(1008, 'Forbidden host')
+    return
+  }
   // Origin validation — loopback origins only (see isAllowedOrigin)
   const origin = req.headers.origin
   if (origin && !isAllowedOrigin(origin)) {
@@ -3211,12 +3358,31 @@ export function start({ port = PORT, host = readHost() } = {}) {
   httpServer.on('error', onFatal)
   wss.on('error', onFatal)
 
+  // The answer-permissions marker must not outlive the office (see
+  // removeAnswerMarker): drop it when the process goes, however it goes.
+  // Registered once, before listen, so a failed bind still cleans up.
+  if (!start.cleanupRegistered) {
+    start.cleanupRegistered = true
+    process.once('exit', removeAnswerMarker)
+    for (const sig of ['SIGINT', 'SIGTERM']) {
+      process.once(sig, () => { removeAnswerMarker(); process.exit(0) })
+    }
+  }
+
   httpServer.listen(port, host, () => {
     writeTokenFile()
+    // Tighten the runtime dir and the chat database to 0600/0700 even when an
+    // installer, a start script or an older build created them world-readable
+    // first (mkdirSync's mode and SQLite's own create mode do not fix an
+    // existing file). The prompts and replies in chat.db must stay private.
+    repairPrivateModes()
+    // The marker tracks the live office: (re)write it now, per the setting,
+    // and the shutdown handlers above remove it when we stop.
+    syncAnswerMarker()
     // The registry roster runs with the server (and stops with it, so a
     // test's closed server leaves no poll behind)
     registry.start()
-    httpServer.once('close', () => registry.stop())
+    httpServer.once('close', () => { registry.stop(); removeAnswerMarker() })
     const bound = httpServer.address()?.port ?? port
     const mcpServers = discoverMcpServers()
     console.log(`
