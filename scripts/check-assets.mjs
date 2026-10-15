@@ -128,7 +128,7 @@ function readIfExists(rel) {
   return existsSync(full) ? readFileSync(full, 'utf8') : null
 }
 
-/** Quoted strings inside `anchor = [ ... ]` (or `{ ... }` values); null when the anchor is absent. */
+/** Quoted strings inside `anchor = [ ... ]`; null when the anchor is absent. */
 function quotedIn(text, anchorRe) {
   const m = anchorRe.exec(text)
   if (!m) return null
