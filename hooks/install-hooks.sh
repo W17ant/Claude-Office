@@ -284,7 +284,7 @@ merge_failed() {
 # object, an event given as one group instead of a list, entries that are not
 # objects) are repaired or ignored instead of crashing the install.
 # ---------------------------------------------------------------------------
-echo -e "${CYAN}[...]${RESET} Registering the 17 hook events (tool calls, subagents, sessions, the main thread's turn)..."
+echo -e "${CYAN}[...]${RESET} Registering the 19 hook events (tool calls, subagents, sessions, the main thread's turn, the task list)..."
 
 python3 - "$SETTINGS_FILE" "$HOOK_COMMAND" "$TRACKER_SCRIPT" <<'PYEOF' || merge_failed
 import json, os, shlex, sys
@@ -304,6 +304,8 @@ EVENTS = (
     # a permission answered (batch done), cd, model switch
     'UserPromptSubmit', 'Stop', 'PermissionRequest', 'Notification', 'StopFailure', 'PreCompact', 'PostCompact',
     'PostToolBatch', 'CwdChanged', 'PostModelSwitch',
+    # the task board: the session's task list changed (the office reads the list itself)
+    'TaskCreated', 'TaskCompleted',
 )
 
 with open(settings_path, 'r') as f:

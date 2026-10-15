@@ -38,6 +38,8 @@ import {
   useVariant, getIncident, pinIncidentFromUrl, failureToolFromStatus, signalIncidentInput,
 } from './incident'
 import IncidentLayer from './components/IncidentLayer'
+import TaskBoard from './components/TaskBoard'
+import { dispatchTaskBoards } from './taskBoard'
 
 // ---------------------------------------------------------------------------
 // Placement helper — loaded via ?helper query param
@@ -674,6 +676,11 @@ const App: React.FC = () => {
     // Payroll / electricity / memory (the status-line feed): its own store, no agent involved
     if (action.type === 'session_status' || action.type === 'agent_status') {
       dispatchMeters(action)
+      return
+    }
+    // The sessions' task lists (server/tasks.js): the kanban board's own store (src/taskBoard.ts)
+    if (action.type === 'task_board') {
+      dispatchTaskBoards(action)
       return
     }
 
@@ -1461,6 +1468,9 @@ const App: React.FC = () => {
 
           {/* Furniture — apply interactive state overrides */}
           <FurnitureRenderer onItemClick={handleFurnitureClick} items={furnitureItems} />
+
+          {/* The session's real task list on the kanban whiteboard (nothing drawn while no session has tasks) */}
+          <TaskBoard sessions={sessions} night={forcedNight ? 1 : dayNightMode === 'auto' ? nightOpacity : dayNightMode === 'night' ? 1 : 0} onActivate={() => handleFurnitureClick('kanban-board')} />
 
           {/* Agents */}
           {agents.map(agent => {

@@ -25,6 +25,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { OfficeEvent, PendingPermission, ServerHealth, SessionInfo, SessionRegistry, SnapshotAgent } from '../types'
 import type { SessionStatus, MeterTotals } from '../meters'
+import type { TaskBoardInfo } from '../taskBoard'
 import { projectFromCwd } from '../mainState'
 import { officeHttpBase, officeWsUrl } from '../serverUrl'
 import { officeWsProtocols } from '../officeToken'
@@ -77,6 +78,8 @@ interface SnapshotMessage {
   uiToken?: string
   /** Pipeline health: hooks seen, version, uptime (server/health.js) */
   health?: ServerHealth
+  /** Each session's task board, no descriptions (server/tasks.js) */
+  taskBoards?: TaskBoardInfo[]
   mcpServers: string[]
   timestamp: number
 }
@@ -296,6 +299,10 @@ export function useAgentSocket(options: AgentSocketOptions = {}): AgentSocketRes
       // The server's pipeline health (hooks seen, version, uptime) for the status strip
       if (snap.health) {
         pushEvent({ type: 'health', health: snap.health, timestamp: snap.timestamp })
+      }
+      // The task boards replace ours as a whole (left alone by a server without them)
+      if (Array.isArray(snap.taskBoards)) {
+        pushEvent({ type: 'task_board', boards: snap.taskBoards, timestamp: snap.timestamp })
       }
       // The whole roster goes to the office as one event, so it can reconcile:
       // agents that completed or timed out while we were disconnected leave,
