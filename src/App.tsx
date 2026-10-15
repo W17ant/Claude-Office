@@ -246,7 +246,10 @@ const App: React.FC = () => {
   // computed inside a setState updater, so no event or side-effect can be
   // dropped or doubled (C12/C14/C31).
   const officeRef = useRef<OfficeState | null>(null)
-  if (officeRef.current === null) officeRef.current = initialOfficeState([createBoss(), createClaude()], Date.now())
+  // Live: the boss alone until the server names a session — each terminal
+  // then gets its own Claude (officeReducer ensureClaude). ?sim / ?video have
+  // no sessions, so the decorative Claude keeps its desk there.
+  if (officeRef.current === null) officeRef.current = initialOfficeState(isSimMode ? [createBoss(), createClaude()] : [createBoss()], Date.now())
   const [agents, setAgents] = useState<Agent[]>(() => officeRef.current!.agents)
   // Always officeRef.current.agents — for callbacks that only need the roster
   const agentsRef = useRef<Agent[]>(officeRef.current.agents)
@@ -298,6 +301,20 @@ const App: React.FC = () => {
 
   // Boss interaction effect (shown above boss character)
   const [bossEffect, setBossEffect] = useState<string | null>(null)
+
+  // '✋ ' in front of the window title and the title bar while any session's
+  // Claude waits on a person (reducer 'title' effect)
+  const [titlePrefix, setTitlePrefix] = useState('')
+  const baseTitleRef = useRef(document.title)
+  useEffect(() => { document.title = `${titlePrefix}${baseTitleRef.current}` }, [titlePrefix])
+
+  // A slow clock so a Claude that has been idle for 30 s falls asleep even
+  // when nothing else moves (the animation loop only commits on change)
+  const [, setSlowClock] = useState(0)
+  useEffect(() => {
+    const timer = setInterval(() => setSlowClock(n => n + 1), 2000)
+    return () => clearInterval(timer)
+  }, [])
 
   const handleFurnitureClick = useCallback((itemId: string) => {
     const interaction = getInteraction(itemId)
@@ -412,6 +429,7 @@ const App: React.FC = () => {
     text: string,
     isSystem = false,
     id?: number,
+    tag?: 'prompt' | 'reply',
   ) => {
     setMessages(prev => [...prev.slice(-50), {
       id: id ?? makeMsgId(),
@@ -422,6 +440,7 @@ const App: React.FC = () => {
       channel: 'office-general',
       timestamp: timeNow(),
       isSystem,
+      tag,
       reactions: undefined,
       // Why: resolved now, so the transcript keeps the name and face a line was
       // posted under even if the Office cast is re-dealt later (C47)
@@ -441,9 +460,10 @@ const App: React.FC = () => {
       switch (fx.kind) {
         case 'msg': {
           if (fx.isSystem) { addMsg(fx.sender, fx.role, fx.color, fx.text, true, fx.id); break }
-          // Show typing indicator 500ms before the message appears
-          const agentId = agentsRef.current.find(a => a.role === fx.role)?.id
-          if (!agentId) { addMsg(fx.sender, fx.role, fx.color, fx.text, false, fx.id); break }
+          // Show typing indicator 500ms before the message appears — on the
+          // character the effect names (a session's Claude), else the role's first
+          const agentId = fx.agentId ?? agentsRef.current.find(a => a.role === fx.role)?.id
+          if (!agentId) { addMsg(fx.sender, fx.role, fx.color, fx.text, false, fx.id, fx.tag); break }
           setTypingAgents(prev => new Set(prev).add(agentId))
           schedule(() => {
             setTypingAgents(prev => {
@@ -451,7 +471,7 @@ const App: React.FC = () => {
               next.delete(agentId)
               return next
             })
-            addMsg(fx.sender, fx.role, fx.color, fx.text, false, fx.id)
+            addMsg(fx.sender, fx.role, fx.color, fx.text, false, fx.id, fx.tag)
           }, 500)
           break
         }
@@ -466,7 +486,11 @@ const App: React.FC = () => {
             case 'error':       sfx.playError(); break
             case 'powerDown':   sfx.playPowerDown(); break
             case 'notification': sfx.playNotification(); break
+            case 'needsYou':    sfx.playNeedsYou(); break
           }
+          break
+        case 'title':
+          setTitlePrefix(fx.prefix)
           break
         case 'furniture':
           setFurnitureStates(prev => ({ ...prev, [fx.id]: fx.state }))
@@ -510,6 +534,8 @@ const App: React.FC = () => {
     arrivedRef.current = true
     const bossCfg = AGENT_CONFIGS[BOSS_ROLE] ?? AGENT_CONFIGS['default']
     addMsg(bossCfg.title, BOSS_ROLE, bossCfg.color, '👑 clocked in')
+    // Live: each session's Claude posts its own clock-in when it walks in (reducer)
+    if (!isSimMode) return
     const claudeCfg = AGENT_CONFIGS[CLAUDE_ROLE] ?? AGENT_CONFIGS['default']
     setTimeout(() => {
       addMsg(claudeCfg.title, CLAUDE_ROLE, claudeCfg.color, '🤖 clocked in')
@@ -1361,7 +1387,7 @@ const App: React.FC = () => {
         <div className="title-bar-dot" style={{ background: '#ff5f57' }} />
         <div className="title-bar-dot" style={{ background: '#febc2e' }} />
         <div className="title-bar-dot" style={{ background: '#28c840' }} />
-        <span className="title-bar-text">{variant === 'incident' ? '🔥 PROD IS DOWN — AGENT OFFICE' : 'CLAUDE CODE — AGENT OFFICE'}</span>
+        <span className="title-bar-text">{titlePrefix}{variant === 'incident' ? '🔥 PROD IS DOWN — AGENT OFFICE' : 'CLAUDE CODE — AGENT OFFICE'}</span>
         <SessionStrip sessions={sessions} agents={agents} />
         <button
           className="title-bar-daynight"
