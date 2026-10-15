@@ -3,6 +3,7 @@ import { ROLE_TO_CHAR } from '../config'
 import { getSpritePath, useTheme, toggleTheme, getTheme, themedDisplayName } from '../theme'
 import IncidentBadge from './IncidentBadge'
 import { postSetting } from '../permissions'
+import { officeHttpBase } from '../serverUrl'
 
 export function getAvatarSrc(role: string, agentId?: string): string {
   const charBase = ROLE_TO_CHAR[role] ?? 'employee-3'
@@ -36,7 +37,7 @@ const EMOJI_PICKER = ['👍', '👎', '😊', '🎉', '😡', '🔥', '💯']
 // The server's prompt-logging level (GET /settings). Changing it needs the
 // office bearer token, which the browser does not have, so the chat header
 // only shows the level and how to change it. Absent until the route exists.
-const SETTINGS_URL = 'http://127.0.0.1:3334/settings'
+const SETTINGS_URL = `${officeHttpBase()}/settings`
 const LOG_PROMPTS_WHAT: Record<string, string> = {
   off:     'state only — no prompt or reply text is stored, broadcast or shown',
   summary: 'the first 200 characters of each prompt and reply',
@@ -128,7 +129,7 @@ const SlackChat: React.FC<SlackChatProps> = ({ messages, muted, volume, onToggle
 
   // Load initial state from server
   useEffect(() => {
-    fetch('http://127.0.0.1:3334/chat/cron-state')
+    fetch(`${officeHttpBase()}/chat/cron-state`)
       .then(r => r.json())
       .then(d => setCronPaused(!!d.paused))
       .catch(() => {})
@@ -138,7 +139,7 @@ const SlackChat: React.FC<SlackChatProps> = ({ messages, muted, volume, onToggle
     const newState = !cronPaused
     setCronPaused(newState)
     // Update the state file via a simple POST
-    fetch('http://127.0.0.1:3334/chat/cron-state', {
+    fetch(`${officeHttpBase()}/chat/cron-state`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ paused: newState }),

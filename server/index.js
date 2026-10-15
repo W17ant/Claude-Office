@@ -1,9 +1,10 @@
 /**
  * Agent Office - WebSocket + HTTP Event Server
  *
- * Runs on port 3334.
- * - React frontend connects via ws://localhost:3334/ws
- * - Claude Code hook script POSTs to http://localhost:3334/event
+ * Runs on port 3334, or AGENT_OFFICE_PORT (server/config.js).
+ * - React frontend connects via ws://localhost:<port>/ws
+ * - Claude Code hook script POSTs to http://localhost:<port>/event
+ * - GET /config tells the page the port and the boss from office.config.json
  * - GET /roster returns discovered MCP servers
  * - GET /agents lists agents in the office; POST /chat/reply with a recipient
  *   sends a directed agent-to-agent message
@@ -27,7 +28,8 @@ import db from './chat-db.js'
 import { mountStatus } from './status.js'
 import { mountRegistry } from './sessions.js'
 import { mountPermissions, sanitiseSuggestions } from './permissions.js'
-import { mountHealth } from './health.js'
+import { mountHealth, readVersion } from './health.js'
+import { readPort, readUiPort, readHost, loadOfficeConfig, bossFromConfig } from './config.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -40,7 +42,10 @@ function sendNotification(title, msg) {
   } catch {}
 }
 
-const PORT = 3334
+// The port and the Vite dev port come from AGENT_OFFICE_PORT /
+// AGENT_OFFICE_UI_PORT (server/config.js); the bind host is read in start().
+const PORT = readPort()
+const UI_DEV_PORT = readUiPort()
 
 // ---------------------------------------------------------------------------
 // Runtime dir + auth token
@@ -52,7 +57,9 @@ const PORT = 3334
 // effects outside RUNTIME_DIR and a second instance that loses the port race
 // never clobbers the running instance's token.
 //
-// Threat model. The server only listens on 127.0.0.1. Browsers are kept out
+// Threat model. The server only listens on loopback (AGENT_OFFICE_HOST may
+// spell it 127.0.0.1, localhost or ::1; anything else is refused by
+// readHost, with the reason, and loopback is bound). Browsers are kept out
 // by the origin allowlist below (every other origin gets 403 / a 1008 close)
 // and by the JSON content type, which makes cross-site POSTs preflight. What
 // is left is any other process on this machine, which can reach the port
@@ -135,16 +142,18 @@ function requireTokenRpc(req, res, next) {
 // ---------------------------------------------------------------------------
 // Allowed origins
 //
-// The office UI is served from this server (port 3334: `npm run build`, the
-// packaged desktop app) or from the Vite dev server (port 3333), and browsers
-// reach either as localhost, 127.0.0.1 or ::1 — the Origin header spells it
-// whichever way the page was opened, so match the loopback host rather than
-// a fixed string. Anything else (other ports, `null`, `file://`) is refused.
+// The office UI is served from this server (PORT, 3334 by default: `npm run
+// build`, the packaged desktop app) or from the Vite dev server (UI_DEV_PORT,
+// 3333 by default), and browsers reach either as localhost, 127.0.0.1 or ::1
+// — the Origin header spells it whichever way the page was opened, so match
+// the loopback host rather than a fixed string. Anything else (other ports,
+// `null`, `file://`) is refused. 3333 stays allowed next to a configured
+// AGENT_OFFICE_UI_PORT: `npm run dev` ignores that variable and still opens
+// Vite on 3333 (vite.config.ts).
 // ---------------------------------------------------------------------------
 
-const UI_DEV_PORT = 3333
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'])
-const ALLOWED_ORIGIN_PORTS = new Set([String(UI_DEV_PORT), String(PORT)])
+const ALLOWED_ORIGIN_PORTS = new Set([String(UI_DEV_PORT), '3333', String(PORT)])
 
 function isAllowedOrigin(origin) {
   if (!origin) return true  // no Origin header: curl, the hook script, same-origin GETs
@@ -197,7 +206,7 @@ function requireUi(req, res, next) {
 //
 // `vite build` writes the React app, plus everything in public/, to dist/.
 // When that directory exists the server serves it from its root, so
-// http://127.0.0.1:3334/ is the whole office on one port: the packaged
+// http://127.0.0.1:<PORT>/ is the whole office on one port: the packaged
 // Electron app loads this URL, and `npm run build && npm run server` works in
 // a plain browser. `npm run dev` keeps using Vite on 3333 instead. Tests point
 // AGENT_OFFICE_UI_DIR at a temp dir.
@@ -205,6 +214,20 @@ function requireUi(req, res, next) {
 
 const UI_DIR = process.env.AGENT_OFFICE_UI_DIR || join(__dirname, '..', 'dist')
 const UI_AVAILABLE = existsSync(join(UI_DIR, 'index.html'))
+
+// ---------------------------------------------------------------------------
+// office.config.json
+//
+// The boss character's name, sprite, colour and emoji. The file sits next to
+// package.json: the checkout root in dev, and resources/app/ in a packaged
+// desktop build (asar is off). Read on every GET /config rather than once,
+// so a rename shows up on the next page load with no restart; tests point
+// AGENT_OFFICE_CONFIG_DIR at a temp dir. The bundle keeps its own build-time
+// copy (src/config.ts) as the fallback for ?sim and for a server that is down.
+// ---------------------------------------------------------------------------
+
+const CONFIG_DIR = process.env.AGENT_OFFICE_CONFIG_DIR || join(__dirname, '..')
+const VERSION = readVersion()
 
 // ---------------------------------------------------------------------------
 // MCP server discovery
@@ -1043,6 +1066,28 @@ const registry = mountRegistry(app, {
   toEvent: sessionEvent,
   endSession,
   forgetSession,
+})
+
+/**
+ * GET /config — what the page needs to know about this server before it
+ * renders: the port and host it is bound to, the boss from
+ * office.config.json (the file's fields over the defaults; `configFile` is
+ * the path that was read, or null when there is none and `boss` is all
+ * defaults, so the page keeps its bundled values then) and the version.
+ * Open, like GET /health: nothing here that http://127.0.0.1:<port>/ does
+ * not already show.
+ */
+app.get('/config', (_req, res) => {
+  const { config, file } = loadOfficeConfig(CONFIG_DIR)
+  const address = httpServer.address()
+  const bound = address && typeof address === 'object' ? address : null
+  res.json({
+    port: bound?.port || PORT,
+    host: bound?.address || '127.0.0.1',
+    boss: bossFromConfig(config),
+    configFile: file,
+    version: VERSION,
+  })
 })
 
 // MCP server roster + the agents in the office (same view as the WS snapshot)
@@ -2484,9 +2529,12 @@ function broadcast(payload) {
  * used to overwrite the file with its own token and then die on EADDRINUSE,
  * so every hook event to the surviving server was a 401 until it was
  * restarted. Now the loser exits without touching the file.
+ * The host comes from AGENT_OFFICE_HOST here, at start, so a refused value
+ * is logged next to the banner: loopback forms bind as given, anything else
+ * binds 127.0.0.1 (readHost in server/config.js has the reason).
  * @param {{ port?: number, host?: string }} [opts] — tests bind an ephemeral port
  */
-export function start({ port = PORT, host = '127.0.0.1' } = {}) {
+export function start({ port = PORT, host = readHost() } = {}) {
   // A listen failure (EADDRINUSE: another instance already holds the port)
   // surfaces on the http server, but ws re-emits it on the WebSocketServer —
   // and an unhandled 'error' there throws. Handle it in one place, once,
@@ -2532,7 +2580,7 @@ export function start({ port = PORT, host = '127.0.0.1' } = {}) {
     if (UI_AVAILABLE) {
       console.log(`  Office UI served from: ${UI_DIR}`)
     } else {
-      console.log('  Office UI not built (npm run build) — use the Vite dev server on port 3333')
+      console.log(`  Office UI not built (npm run build) — use the Vite dev server on port ${UI_DEV_PORT}`)
     }
 
     if (mcpServers.length > 0) {
@@ -2567,6 +2615,9 @@ export {
   TOKEN_FILE,
   ANSWER_MARKER_FILE,
   PORT,
+  UI_DEV_PORT,
+  CONFIG_DIR,
+  isAllowedOrigin,
   UI_DIR,
   UI_AVAILABLE,
   activeAgents,

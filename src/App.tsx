@@ -24,6 +24,7 @@ import {
   type OfficeState, type OfficeAction, type OfficeEffect, type OfficeEnv,
 } from './officeReducer'
 import { BOSS_ROLE } from './config'
+import { officeHttpBase, officeWsUrl } from './serverUrl'
 import { pickEvent } from './events'
 import { getInteraction } from './interactions'
 import {
@@ -674,7 +675,7 @@ const App: React.FC = () => {
   // WebSocket connection
   // ---------------------------------------------------------------------------
 
-  const { sessions } = useAgentSocket({ onEvent: handleEvent, url: 'ws://localhost:3334/ws', disabled: isSimMode })
+  const { sessions } = useAgentSocket({ onEvent: handleEvent, url: officeWsUrl(), disabled: isSimMode })
   const activeSessionCount = sessions.filter(s => s.state === 'active').length
 
   // ---------------------------------------------------------------------------
@@ -1352,7 +1353,7 @@ const App: React.FC = () => {
     // Send to server so Claude can read it. ?sim / ?video scripts stay local:
     // their scripted prompts must not reach chat.db or the AI watcher (C36).
     if (isSimMode) return
-    fetch('http://127.0.0.1:3334/chat', {
+    fetch(`${officeHttpBase()}/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ sender: bossCfg.title, text }),

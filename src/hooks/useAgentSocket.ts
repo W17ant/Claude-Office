@@ -1,8 +1,10 @@
 /**
  * useAgentSocket — React hook for the Agent Office WebSocket connection.
  *
- * Connects to ws://localhost:3334/ws, receives real-time agent events from the
- * Claude Code hook pipeline, and exposes them to the React tree.
+ * Connects to the office server's /ws (officeWsUrl: the page's own origin
+ * when the server serves the page, the configured port under Vite), receives
+ * real-time agent events from the Claude Code hook pipeline, and exposes
+ * them to the React tree.
  *
  * Features:
  *  - Auto-reconnect with exponential back-off (capped at 30 s)
@@ -20,6 +22,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { OfficeEvent, PendingPermission, ServerHealth, SessionInfo, SessionRegistry, SnapshotAgent } from '../types'
 import type { SessionStatus, MeterTotals } from '../meters'
 import { projectFromCwd } from '../mainState'
+import { officeHttpBase, officeWsUrl } from '../serverUrl'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -28,7 +31,7 @@ import { projectFromCwd } from '../mainState'
 export interface AgentSocketOptions {
   /** Called for every incoming event. Stable reference recommended (useCallback). */
   onEvent?: (event: OfficeEvent) => void
-  /** WebSocket URL — defaults to ws://localhost:3334/ws */
+  /** WebSocket URL — defaults to officeWsUrl() (src/serverUrl.ts) */
   url?: string
   /** Disable connection entirely (mock mode). Defaults to false. */
   disabled?: boolean
@@ -72,8 +75,6 @@ type ServerMessage = OfficeEvent | SnapshotMessage
 // Constants
 // ---------------------------------------------------------------------------
 
-const WS_URL         = 'ws://localhost:3334/ws'
-const ROSTER_URL     = 'http://localhost:3334/roster'
 const MAX_EVENTS     = 50
 const BACKOFF_INITIAL = 500   // ms
 const BACKOFF_MAX    = 30_000 // ms
@@ -127,7 +128,7 @@ function fullRecord(msg: OfficeEvent, sessionId: string): SessionPatch {
 export function useAgentSocket(options: AgentSocketOptions = {}): AgentSocketResult {
   const {
     onEvent,
-    url     = WS_URL,
+    url     = officeWsUrl(),
     disabled = false,
   } = options
 
@@ -159,7 +160,7 @@ export function useAgentSocket(options: AgentSocketOptions = {}): AgentSocketRes
   // ---------------------------------------------------------------------------
   const fetchRoster = useCallback(async () => {
     try {
-      const res = await fetch(ROSTER_URL, { signal: AbortSignal.timeout(2000) })
+      const res = await fetch(`${officeHttpBase()}/roster`, { signal: AbortSignal.timeout(2000) })
       if (!res.ok) return
       const data = await res.json()
       if (mountedRef.current && Array.isArray(data.mcpServers)) {

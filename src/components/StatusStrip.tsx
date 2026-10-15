@@ -22,13 +22,14 @@ import { hookVerdict, initialHealth, HOOK_WARN_MS, type HealthState, type HookVe
 import { needsYouLabel, stripCounts, type StripCounts } from '../mainState'
 import type { SessionInfo } from '../types'
 import { pillLabel } from './SessionStrip'
+import { officeHttpBase } from '../serverUrl'
 import '../styles/strip.css'
 
 const params = new URLSearchParams(window.location.search)
 const MODE: 'live' | 'sim' | 'video' = params.has('video') ? 'video' : params.has('sim') ? 'sim' : 'live'
 const WARN_MS = Number(import.meta.env.VITE_HOOK_WARN_MS) || HOOK_WARN_MS
 
-const SERVER_URL  = 'http://127.0.0.1:3334'
+const SERVER_URL  = officeHttpBase()
 const START_CMD   = 'npm run server'
 const START_ALT   = 'bash scripts/start-office.sh'
 const INSTALL_CMD = 'npm run install-hooks'
