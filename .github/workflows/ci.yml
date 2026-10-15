@@ -49,3 +49,8 @@ jobs:
 
       - name: Build
         run: npx vite build
+
+      - name: Check assets
+        # Every sprite and room the code can ask for exists in public/, and
+        # public/ stays under its size budget (scripts/check-assets.mjs)
+        run: npm run check-assets
