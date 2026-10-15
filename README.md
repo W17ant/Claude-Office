@@ -196,6 +196,25 @@ Now spawn agents in Claude Code and watch them appear in the office.
 
 **Uninstall.** There is no `--uninstall` flag yet (one is coming). Today, open `~/.claude/settings.json` and delete the entries whose command runs `hooks/agent-tracker.sh` (one under each of the seven events above) and the `statusLine` / `subagentStatusLine` entries that run `hooks/status-line.sh`. If the installer chained a status line you already had, its command is saved in `~/.agent-office/statusline-prev` (and `subagent-statusline-prev`) — put it back by hand. The installer's `settings.json.backup.<timestamp>` is the quick way back to the pre-install file.
 
+### Install as a Claude Code plugin
+
+The repository is also a [Claude Code plugin](https://code.claude.com/docs/en/plugins) (`.claude-plugin/plugin.json`) and its own marketplace (`.claude-plugin/marketplace.json`), so the hooks can be installed without the installer touching `~/.claude/settings.json`. In a Claude Code session:
+
+```text
+/plugin install agent-office --marketplace W17ant/Claude-Office
+```
+
+or from your shell, where it needs no confirmation:
+
+```bash
+claude plugin marketplace add W17ant/Claude-Office
+claude plugin install agent-office@agent-office
+```
+
+`hooks/hooks.json` registers `hooks/agent-tracker.sh` from the installed copy (`${CLAUDE_PLUGIN_ROOT}`) for the same seven events as the installer, and also for `UserPromptSubmit`, `Stop`, `PermissionRequest`, `Notification`, `StopFailure`, `PreCompact`, `PostCompact`, `CwdChanged` and `PostModelSwitch`; the tracker exits silently on events it does not act on yet. `PostToolUse` is narrowed to the tools the tracker reads after a call (`Agent`, `Task`, `SubagentHandback` and `mcp__*`). `/agent-office:office` checks `http://127.0.0.1:3334/health` and prints how to start the server, which still runs from a clone or from the installed plugin directory (`npm install && npm run build && npm run server`). To remove it: `claude plugin uninstall agent-office@agent-office` (and `claude plugin marketplace remove agent-office` to drop the marketplace too).
+
+Two things to know. Plugin hooks merge with the ones in your settings, so pick one path: if you ran `npm run install-hooks` earlier, remove its entries as described under **Uninstall**, or every agent arrives twice. And a plugin can set [`subagentStatusLine` but not `statusLine`](https://code.claude.com/docs/en/plugins/components#default-settings), so the payroll / electricity / memory meters below still come from `npm run install-hooks`; run it from the clone when you want them. `claude plugin validate . --strict` runs in CI, and plugins do not load in cloud sessions.
+
 ## Payroll, electricity and memory
 
 A wall panel appears above the chat the moment Claude Code sends its first status line, and not before (an office without one looks exactly as it did). **PAYROLL** is what the open sessions have cost, with the $/min burn over the last five minutes underneath; **ELECTRICITY** is the tokens the API chews through per minute (context re-reads included — that is what you pay for) as a gauge whose stripes flow faster the harder it burns; **MEMORY** is the context-window fill — amber past 70 %, red past 90 %, and once a session passes 85 % the chat gets a "Claude's desk is getting cluttered" line (once per session). claude.ai subscribers also get a **5h** pill with the five-hour rate-limit utilisation. Hover any meter for the exact numbers and the model; with several terminals open the panel stacks one row per session (up to four).
