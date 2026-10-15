@@ -26,6 +26,7 @@ import {
   type OfficeAction,
 } from '../src/officeReducer'
 import { createAgent } from '../src/agentManager'
+import { BOSS_NAME } from '../src/config'
 import type { Agent } from '../src/types'
 
 // ---------------------------------------------------------------------------
@@ -412,7 +413,9 @@ describe('server message ids (C34)', () => {
   })
 
   it("the boss's own echo is not re-posted, only its row id is adopted", () => {
-    const { state, effects } = reduceOffice(fullOffice(1), { type: 'chat_message', id: 42, sender: 'Boss', text: 'ship it', timestamp: 12 }, env())
+    // The echo is recognised by the configured boss name, which is 'Boss' without
+    // an office.config.json and whatever the file says with one (CI copies the example)
+    const { state, effects } = reduceOffice(fullOffice(1), { type: 'chat_message', id: 42, sender: BOSS_NAME, text: 'ship it', timestamp: 12 }, env())
     expect(texts(effects)).toEqual([])
     expect(effects).toContainEqual({ kind: 'adoptMsgId', id: 42, text: 'ship it' })
     expect(state.recentChatKeys).toEqual([])
