@@ -246,6 +246,188 @@ const sessionTimers = new Map()
 // An ended session stays listed (state 'ended') this long so UIs can show it leaving
 const SESSION_FORGET_MS = 60_000
 
+// ---------------------------------------------------------------------------
+// The session's own Claude — `main` on every session record
+//
+// Besides its workers, each session has the Claude the boss talks to. The
+// tracker reports its turn from the main-thread hooks (UserPromptSubmit,
+// PreToolUse, Stop, PermissionRequest, Notification, StopFailure,
+// Pre/PostCompact) and the server keeps one record per session:
+//
+//   main: {
+//     state:       'working' | 'waiting' | 'idle' | 'needs-you' | 'error' | 'compacting',
+//     since:       when it entered that state,
+//     lastPrompt,  lastPromptAt,     the boss's last prompt (clamped to 2000 chars)
+//     lastReply,   lastReplyAt,      Claude's last reply (Stop.last_assistant_message)
+//     waitingOn:   background tasks still running when the turn ended,
+//     needsYou?:   { kind, toolName?, summary?, message?, notificationType?, since, promptId? },
+//     error?:      { error, detail, since },
+//     promptId?:   the current prompt (Claude Code's prompt_id)
+//   }
+//
+// Transitions: session_prompt -> working (clears needs-you); a main-thread
+// agent_working -> working; session_needs_you -> needs-you; session_turn_end
+// -> waiting when a background task is still running, else idle;
+// session_error -> error; session_compact pre -> compacting, post -> the
+// state before; session_ended and a resume reset it. Each change logs one
+// `[main]` line. The record travels on GET /sessions, the WS snapshot and
+// every session_* broadcast, and persists with the session.
+// ---------------------------------------------------------------------------
+
+const MAIN_STATES = new Set(['working', 'waiting', 'idle', 'needs-you', 'error', 'compacting'])
+const NEEDS_YOU_KINDS = new Set(['permission', 'idle', 'quota', 'agent-input'])
+// Needs-you timing:
+// - a wait is applied and announced only after NEEDS_YOU_DEBOUNCE_MS: in a
+//   headless (-p) session a PermissionRequest is auto-denied and its
+//   PostToolBatch follows ~60 ms later, which would make the hand flap
+// - PermissionRequest fires at once and Notification{permission_prompt} ~6 s
+//   later for the same dialog: a repeat within NEEDS_YOU_DEDUPE_MS is the same wait
+// - PreToolUse fires ~70 ms before the PermissionRequest of the same call and
+//   the hook's POSTs are backgrounded, so the two can arrive in either order:
+//   a working event does not lower a hand raised less than PERMISSION_RACE_MS ago
+// - a hand nobody answers comes down by itself after NEEDS_YOU_TIMEOUT_MS
+const NEEDS_YOU_DEBOUNCE_MS = 300
+const NEEDS_YOU_DEDUPE_MS = 10_000
+const PERMISSION_RACE_MS = 1_000
+const NEEDS_YOU_TIMEOUT_MS = 10 * 60_000
+// Stop.background_tasks statuses that mean the task is still in flight
+const TASK_IN_FLIGHT = /^(running|pending)$/i
+
+/** @type {Map<string, {wait: object, agentId?: string, timer: ReturnType<typeof setTimeout>}>} sessionId -> needs-you waiting out the debounce */
+const pendingNeedsYou = new Map()
+/** @type {Map<string, ReturnType<typeof setTimeout>>} sessionId -> timer that lowers a hand nobody answered */
+const needsYouTimers = new Map()
+
+function cancelPendingNeedsYou(sessionId) {
+  const pending = pendingNeedsYou.get(sessionId)
+  if (!pending) return null
+  clearTimeout(pending.timer)
+  pendingNeedsYou.delete(sessionId)
+  return pending
+}
+
+function clearNeedsYouTimer(sessionId) {
+  const timer = needsYouTimers.get(sessionId)
+  if (!timer) return
+  clearTimeout(timer)
+  needsYouTimers.delete(sessionId)
+}
+
+function newMain(now = Date.now()) {
+  return { state: 'idle', since: now, waitingOn: 0 }
+}
+
+/** A session's main record, created on first use (sessions restored from an older agents.json). */
+function mainOf(session, now = Date.now()) {
+  if (!session.main) session.main = newMain(now)
+  return session.main
+}
+
+/** A persisted main record, or a fresh one when the file predates it or holds junk. */
+function restoredMain(main) {
+  if (!main || typeof main !== 'object' || !MAIN_STATES.has(main.state)) return newMain()
+  return { ...main, waitingOn: Number.isInteger(main.waitingOn) ? main.waitingOn : 0 }
+}
+
+function sessionName(session) {
+  return session.project ?? session.id
+}
+
+/**
+ * Move a session's Claude to `state`. Stamps `since` and logs one line only
+ * on a change; returns whether the state changed.
+ */
+function setMainState(session, state, reason, now = Date.now()) {
+  const main = mainOf(session, now)
+  if (main.state === state) return false
+  if (main.state === 'needs-you') clearNeedsYouTimer(session.id)
+  console.log(`[main] ${sessionName(session)}: ${main.state} -> ${state}${reason ? ` (${reason})` : ''}`)
+  main.state = state
+  main.since = now
+  return true
+}
+
+/** The label a needs-you wait gets in the log. */
+function needsYouLabel(wait) {
+  if (wait.kind === 'permission') return `permission: ${[wait.toolName, wait.summary].filter(Boolean).join(' ') || wait.message || 'tool call'}`
+  return `${wait.kind}${wait.notificationType ? ` / ${wait.notificationType}` : ''}${wait.message ? `: ${wait.message}` : ''}`
+}
+
+/** A server-side change to main (a hand lowered by a tool result or a timeout) as a broadcast. */
+function mainEvent(session, reason, now = Date.now()) {
+  return { type: 'session_main', sessionId: session.id, project: session.project, reason, main: { ...session.main }, timestamp: now }
+}
+
+/** Lower a hand nobody answered within NEEDS_YOU_TIMEOUT_MS. */
+function armNeedsYouTimeout(session) {
+  clearNeedsYouTimer(session.id)
+  const since = session.main.needsYou?.since
+  const timer = setTimeout(() => {
+    needsYouTimers.delete(session.id)
+    const current = sessions.get(session.id)
+    if (!current || current.main?.state !== 'needs-you' || current.main.needsYou?.since !== since) return
+    delete current.main.needsYou
+    setMainState(current, 'idle', `needs-you unanswered for ${NEEDS_YOU_TIMEOUT_MS / 60_000} min`)
+    saveAgents()
+    broadcast(mainEvent(current, 'needs-you timed out'))
+  }, NEEDS_YOU_TIMEOUT_MS)
+  timer.unref?.()
+  needsYouTimers.set(session.id, timer)
+}
+
+/**
+ * The debounce ran out: the wait parked by session_needs_you is still
+ * unanswered, so it becomes the session's state and is announced.
+ */
+function applyNeedsYou(sessionId) {
+  const pending = cancelPendingNeedsYou(sessionId)
+  const session = sessions.get(sessionId)
+  if (!pending || !session || session.state === 'ended') return
+  const now = Date.now()
+  const main = mainOf(session, now)
+  const wait = pending.wait
+  main.needsYou = { ...wait }
+  if (wait.promptId) main.promptId = wait.promptId
+  delete main.error
+  delete main.beforeCompact
+  const label = needsYouLabel(wait)
+  if (!setMainState(session, 'needs-you', label, now)) console.log(`[main] ${sessionName(session)}: needs-you again (${label})`)
+  armNeedsYouTimeout(session)
+  saveAgents()
+  // A request raised inside a subagent names it; resolved to the office agent when known
+  const agentId = pending.agentId ? (lookupAgentId(pending.agentId) ?? pending.agentId) : undefined
+  broadcast({
+    type: 'session_needs_you',
+    sessionId: session.id,
+    project: session.project,
+    kind: wait.kind,
+    ...(wait.promptId ? { promptId: wait.promptId } : {}),
+    ...(wait.toolName ? { toolName: wait.toolName } : {}),
+    ...(wait.summary ? { summary: wait.summary } : {}),
+    ...(wait.message ? { message: wait.message } : {}),
+    ...(wait.notificationType ? { notificationType: wait.notificationType } : {}),
+    ...(agentId ? { agentId } : {}),
+    needsYou: { ...main.needsYou },
+    main: { ...main },
+    timestamp: now,
+  })
+}
+
+/** A tool call on the main thread: Claude is working (unless a hand just went up, see PERMISSION_RACE_MS). */
+function mainWorking(session, status, now = Date.now()) {
+  const main = mainOf(session, now)
+  if (main.state === 'needs-you' && main.needsYou?.kind === 'permission' && now - main.needsYou.since < PERMISSION_RACE_MS) return false
+  delete main.needsYou
+  delete main.error
+  delete main.beforeCompact
+  return setMainState(session, 'working', status ? `tool call: ${status}` : 'tool call', now)
+}
+
+/** One line of text for a log line. */
+function logText(text, max = 60) {
+  return String(text ?? '').replace(/\s+/g, ' ').slice(0, max)
+}
+
 /** Display name of a session: the tracker's project, else the last path segment of cwd. */
 function projectName(project, cwd) {
   if (project) return project
@@ -258,12 +440,21 @@ function sessionToRecord(session) {
   return { ...session, agentIds: Array.from(session.agentIds) }
 }
 
-/** Session record -> API/WS shape: the record plus live agent counts. */
-function sessionToJSON(session) {
+/**
+ * Session record -> API/WS shape: the record plus live agent counts. Without
+ * `withText` the prompt and reply text is left out of `main` (the open
+ * GET /sessions; the origin-gated WS snapshot and broadcasts carry it).
+ */
+function sessionToJSON(session, { withText = true } = {}) {
   const live = Array.from(activeAgents.values())
     .filter(a => a.sessionId === session.id && !a.server && a.state !== 'completed')
+  const record = sessionToRecord(session)
+  if (!withText && record.main) {
+    const { lastPrompt, lastReply, ...rest } = record.main
+    record.main = rest
+  }
   return {
-    ...sessionToRecord(session),
+    ...record,
     agentCount: live.length,
     workingCount: live.filter(a => a.state === 'working').length,
   }
@@ -285,6 +476,7 @@ function createSession({ id, project, cwd, source, model, title, now = Date.now(
     startedAt: now,
     lastActivityAt: now,
     agentIds: new Set(),
+    main: newMain(now),
   }
   if (model) session.model = model
   if (title) session.title = title
@@ -335,6 +527,8 @@ function clearSessionTimer(id) {
 
 function forgetSession(id) {
   clearSessionTimer(id)
+  cancelPendingNeedsYou(id)
+  clearNeedsYouTimer(id)
   const session = sessions.get(id)
   if (!session) return
   sessions.delete(id)
@@ -352,6 +546,10 @@ function endSession(session, reason, now = Date.now()) {
   session.endedAt = now
   session.reason = reason
   session.lastActivityAt = now
+  cancelPendingNeedsYou(session.id)
+  clearNeedsYouTimer(session.id)
+  if (session.main?.state !== 'idle') console.log(`[main] ${sessionName(session)}: ${session.main?.state ?? 'idle'} -> idle (session ended)`)
+  session.main = newMain(now)
   for (const agentId of Array.from(session.agentIds)) {
     const agent = activeAgents.get(agentId)
     if (!agent || agent.server || agent.state === 'completed') continue
@@ -535,7 +733,7 @@ function loadAgents() {
       if (!session?.id || session.state === 'ended') continue
       if ((session.lastActivityAt ?? session.startedAt ?? 0) < cutoff) continue
       const agentIds = (Array.isArray(session.agentIds) ? session.agentIds : []).filter(id => activeAgents.has(id))
-      sessions.set(session.id, { ...session, state: 'active', agentIds: new Set(agentIds) })
+      sessions.set(session.id, { ...session, state: 'active', agentIds: new Set(agentIds), main: restoredMain(session.main) })
     }
     for (const agent of activeAgents.values()) {
       if (agent.sessionId) sessions.get(agent.sessionId)?.agentIds.add(agent.id)
@@ -562,13 +760,82 @@ const KNOWN_EVENT_TYPES = new Set([
   'mcp_done',
   'session_started',
   'session_ended',
+  // The session's own Claude (see `main` above)
+  'session_prompt',
+  'session_turn_end',
+  'session_needs_you',
+  'session_tool_done',
+  'session_error',
+  'session_compact',
+  'session_cwd',
+  'session_model',
 ])
 
 const MAX_STRING_LEN = 200
+// A prompt or a reply: the same room POST /chat gives a chat line
+const MAX_TEXT_LEN = 2000
 
 function clampString(val, max = MAX_STRING_LEN) {
   if (typeof val !== 'string') return undefined
   return val.slice(0, max)
+}
+
+/** A count from a hook payload: a non-negative integer, else undefined. */
+function clampCount(val, max = Number.MAX_SAFE_INTEGER) {
+  return Number.isInteger(val) && val >= 0 ? Math.min(val, max) : undefined
+}
+
+// ---------------------------------------------------------------------------
+// Settings — $AGENT_OFFICE_HOME/settings.json
+//
+// logPrompts says how much of the boss's prompts and Claude's replies (the
+// session_prompt / session_turn_end text) the office keeps and shows:
+//   off      state transitions only; no text is stored or broadcast
+//   summary  the first 200 characters (default)
+//   full     the whole 2000-character clamp
+// The file is written by POST /settings (token) and read at startup; GET
+// /settings is open.
+// ---------------------------------------------------------------------------
+
+const SETTINGS_FILE = join(RUNTIME_DIR, 'settings.json')
+const LOG_PROMPTS_LEVELS = new Map([['off', 0], ['summary', 200], ['full', MAX_TEXT_LEN]])
+const settings = { logPrompts: 'summary' }
+
+function loadSettings() {
+  if (!existsSync(SETTINGS_FILE)) return
+  try {
+    const saved = JSON.parse(readFileSync(SETTINGS_FILE, 'utf8'))
+    if (saved && typeof saved === 'object' && LOG_PROMPTS_LEVELS.has(saved.logPrompts)) settings.logPrompts = saved.logPrompts
+  } catch (err) {
+    console.warn('[settings] Could not read settings:', err.message)
+  }
+}
+
+function saveSettings() {
+  try {
+    writePrivate(SETTINGS_FILE, JSON.stringify(settings, null, 2) + '\n')
+  } catch (err) {
+    console.warn('[settings] Could not save settings:', err.message)
+  }
+}
+
+/** Prompt / reply text at the configured logPrompts level: '' when off, else its first N characters. */
+function transcriptText(text) {
+  const max = LOG_PROMPTS_LEVELS.get(settings.logPrompts) ?? 0
+  return max ? String(text ?? '').slice(0, max) : ''
+}
+
+loadSettings()
+
+/** Stop.background_tasks as forwarded by the tracker: at most 10, four clamped strings each. */
+function sanitiseTasks(list) {
+  if (!Array.isArray(list)) return undefined
+  return list.slice(0, 10).filter(t => t && typeof t === 'object').map(t => ({
+    id:          clampString(t.id, 64) ?? '',
+    type:        clampString(t.type, 40) ?? '',
+    status:      clampString(t.status, 40) ?? '',
+    description: clampString(t.description, 120) ?? '',
+  }))
 }
 
 function validateEvent(body) {
@@ -583,7 +850,16 @@ function validateEvent(body) {
 // ---------------------------------------------------------------------------
 
 const app = express()
-app.use(express.json({ limit: '10kb' }))
+
+// JSON bodies: 10 KiB is plenty for a chat line or a tool event, but a
+// session_prompt / session_turn_end carries up to MAX_TEXT_LEN characters of
+// text (JSON-escaped, several bytes each) plus the background-task list, so
+// /event alone takes more. Its sanitiser clamps every field it keeps.
+const JSON_LIMIT = '10kb'
+const EVENT_JSON_LIMIT = '64kb'
+const jsonBody = express.json({ limit: JSON_LIMIT })
+const eventJsonBody = express.json({ limit: EVENT_JSON_LIMIT })
+app.use((req, res, next) => (req.path === '/event' ? eventJsonBody : jsonBody)(req, res, next))
 
 // CORS for local dev — only allow known localhost origins
 app.use((req, res, next) => {
@@ -641,6 +917,18 @@ app.get('/roster', (_req, res) => {
  *   { type: "session_started", sessionId, project, cwd, source, model?, title? }   (SessionStart)
  *   { type: "session_ended",   sessionId, reason }                                 (SessionEnd)
  *
+ * The session's own Claude (its `main` record; all carry sessionId, promptId?):
+ *   { type: "session_prompt",    text, isWakeup, wakeupAgentId?, wakeupStatus? }  (UserPromptSubmit)
+ *   { type: "session_turn_end",  text, backgroundTasks[], crons, stopHookActive } (Stop)
+ *   { type: "session_needs_you", kind, toolName?, summary?, message?, notificationType?, agentId? }
+ *                                                           (PermissionRequest, Notification)
+ *   { type: "session_error",     error, detail }                                   (StopFailure)
+ *   { type: "session_compact",   phase: "pre" | "post", trigger }                  (Pre/PostCompact)
+ *   { type: "session_tool_done", toolName? | batch: true, count }  (main-thread PostToolUse / PostToolBatch)
+ *   { type: "session_cwd",       cwd, project, oldCwd? }                           (CwdChanged)
+ *   { type: "session_model",     model, fromModel?, switchSource? }                (PostModelSwitch)
+ * A foreground agent's agent_completed may add tokens, durationMs, toolUses, model.
+ *
  * Every event may carry sessionId, project, cwd and transcriptPath — the
  * Claude Code session the hook fired in. Agents are filed under it.
  */
@@ -686,6 +974,34 @@ app.post('/event', requireToken, (req, res) => {
     model:   clampString(body.model),
     title:   clampString(body.title),
     reason:  clampString(body.reason),
+    // The session's own Claude: prompt / reply text gets the chat-line clamp,
+    // labels the usual 200, enums are checked, the task list is rebuilt
+    promptId:         clampString(body.promptId, 80),
+    text:             clampString(body.text, MAX_TEXT_LEN),
+    isWakeup:         body.isWakeup === true || undefined,
+    wakeupAgentId:    clampString(body.wakeupAgentId, 80),
+    wakeupStatus:     clampString(body.wakeupStatus, 40),
+    kind:             NEEDS_YOU_KINDS.has(body.kind) ? body.kind : undefined,
+    toolName:         clampString(body.toolName, 80),
+    summary:          clampString(body.summary),
+    message:          clampString(body.message),
+    notificationType: clampString(body.notificationType, 40),
+    error:            clampString(body.error, 40),
+    detail:           clampString(body.detail),
+    phase:            body.phase === 'pre' || body.phase === 'post' ? body.phase : undefined,
+    trigger:          clampString(body.trigger, 20),
+    backgroundTasks:  sanitiseTasks(body.backgroundTasks),
+    crons:            clampCount(body.crons, 1000),
+    stopHookActive:   body.stopHookActive === true || undefined,
+    batch:            body.batch === true || undefined,
+    count:            clampCount(body.count, 1000),
+    oldCwd:           clampString(body.oldCwd, 400),
+    fromModel:        clampString(body.fromModel, 80),
+    switchSource:     clampString(body.switchSource, 20),
+    // What a foreground agent cost (agent_completed)
+    tokens:           clampCount(body.tokens),
+    durationMs:       clampCount(body.durationMs),
+    toolUses:         clampCount(body.toolUses),
   }
 
   const event = processEvent(sanitised)
@@ -826,7 +1142,9 @@ app.post('/chat/video-mode', requireToken, (req, res) => {
 app.get('/chat', (req, res) => {
   const since = parseInt(req.query.since) || 0
   const recipient = typeof req.query.recipient === 'string' ? req.query.recipient : null
-  let messages = getMessages({ since, limit: 50, recipient })
+  // The Boss / Claude transcript rows only for a caller with the office token
+  // (the chat watcher and any other local process never see them)
+  let messages = getMessages({ since, limit: 50, recipient, transcript: tokenMatches(bearerToken(req)) })
   if (videoPaused && videoPausedSince) {
     // Hide any messages created after video mode was enabled (scripted messages)
     messages = messages.filter(m => m.timestamp < videoPausedSince)
@@ -969,11 +1287,37 @@ app.get('/agents', (_req, res) => {
 
 /**
  * GET /sessions — the Claude Code sessions (one per terminal) the office knows
- * about: project, cwd, how it started, its agent counts and the last
- * main-thread status. Ended sessions stay listed for SESSION_FORGET_MS.
+ * about: project, cwd, how it started, its agent counts, the last main-thread
+ * status and `main` — what the session's own Claude is doing (state, last
+ * prompt and reply, what it waits on). Ended sessions stay listed for
+ * SESSION_FORGET_MS.
  */
-app.get('/sessions', (_req, res) => {
-  res.json({ sessions: Array.from(sessions.values()).map(sessionToJSON) })
+app.get('/sessions', (req, res) => {
+  // The prompt / reply text in `main` only for a caller with the office token
+  const withText = tokenMatches(bearerToken(req))
+  res.json({ sessions: Array.from(sessions.values()).map(s => sessionToJSON(s, { withText })) })
+})
+
+/**
+ * GET /settings — the office settings (see Settings above). Open.
+ * POST /settings — change them: { logPrompts: "off" | "summary" | "full" }.
+ * Needs the bearer token: it decides what of the conversation is kept.
+ */
+app.get('/settings', (_req, res) => {
+  res.json({ ...settings, logPromptsLevels: Array.from(LOG_PROMPTS_LEVELS.keys()) })
+})
+
+app.post('/settings', requireToken, (req, res) => {
+  const { logPrompts } = req.body ?? {}
+  if (logPrompts !== undefined) {
+    if (typeof logPrompts !== 'string' || !LOG_PROMPTS_LEVELS.has(logPrompts)) {
+      return res.status(400).json({ error: `logPrompts must be one of ${Array.from(LOG_PROMPTS_LEVELS.keys()).join(', ')}` })
+    }
+    settings.logPrompts = logPrompts
+  }
+  saveSettings()
+  console.log(`[settings] logPrompts = ${settings.logPrompts}`)
+  res.json({ ok: true, ...settings })
 })
 
 /**
@@ -1373,11 +1717,14 @@ function processEvent(body) {
         }
       }
       // Unknown or missing id is main-thread activity. It is remembered on the
-      // session (the last thing Claude itself did) and the broadcast names the
-      // session, so the frontend can show it there instead of on a random worker.
+      // session (the last thing Claude itself did), moves the session's Claude
+      // to 'working', and the broadcast names the session, so the frontend can
+      // show it there instead of on a random worker.
       if (session) {
+        const now = Date.now()
         session.lastStatus = body.status ?? ''
-        session.lastStatusAt = Date.now()
+        session.lastStatusAt = now
+        mainWorking(session, body.status, now)
         saveAgents()
       }
       return {
@@ -1399,9 +1746,17 @@ function processEvent(body) {
         console.log(`[-] Agent already completed: ${id}`)
         return null
       }
+      // What a foreground agent cost, when its result said (PostToolUse(Agent) totals)
+      const stats = {
+        ...(body.tokens !== undefined ? { tokens: body.tokens } : {}),
+        ...(body.durationMs !== undefined ? { durationMs: body.durationMs } : {}),
+        ...(body.toolUses !== undefined ? { toolUses: body.toolUses } : {}),
+        ...(body.model ? { model: body.model } : {}),
+      }
       if (id) {
         const agent = activeAgents.get(id)
         agent.state = 'completed'
+        Object.assign(agent, stats)
         saveAgents()
         // Remove after a short grace period so frontends can animate exit
         setTimeout(() => forgetAgent(id), 10_000)
@@ -1416,12 +1771,13 @@ function processEvent(body) {
           sendNotification('Agent Failed', agent.name + ' failed')
         }
       }
-      console.log(`[-] Agent completed: ${id ?? body.agentId}`)
+      console.log(`[-] Agent completed: ${id ?? body.agentId}${stats.tokens !== undefined ? ` (${stats.tokens} tokens${stats.durationMs !== undefined ? `, ${stats.durationMs} ms` : ''})` : ''}`)
       const sessionId = id ? activeAgents.get(id).sessionId : undefined
       return {
         type: 'agent_completed',
         agentId: id ?? body.agentId,
         result: body.result,
+        ...stats,
         ...(sessionId ? { sessionId } : {}),
         timestamp: Date.now(),
       }
@@ -1482,6 +1838,7 @@ function processEvent(body) {
           session.state = 'active'
           delete session.endedAt
           delete session.reason
+          session.main = newMain(now)
           console.log(`[session] back (${source}): ${session.project ?? id} (${id})`)
         }
         session.lastActivityAt = now
@@ -1507,6 +1864,240 @@ function processEvent(body) {
       if (!session) return { type: 'session_ended', sessionId: id, reason, timestamp: Date.now() }
       if (session.state !== 'ended') endSession(session, reason)
       return sessionEvent(session, 'session_ended')
+    }
+
+    // ── The session's own Claude (see `main` near the session tracking) ────
+
+    case 'session_prompt': {
+      // UserPromptSubmit: the boss spoke (or a background worker woke Claude
+      // up — isWakeup, with the worker's subagent id in wakeupAgentId)
+      const session = touchSession(body)
+      if (!session) return null
+      const now = Date.now()
+      const main = mainOf(session, now)
+      const text = transcriptText(body.text)
+      const wakeup = body.isWakeup === true
+      main.lastPrompt = text
+      main.lastPromptAt = now
+      if (body.promptId) main.promptId = body.promptId
+      cancelPendingNeedsYou(session.id)
+      delete main.needsYou
+      delete main.error
+      delete main.beforeCompact
+      setMainState(session, 'working', wakeup ? `woken by ${body.wakeupAgentId ?? 'a background task'}` : 'prompt', now)
+      console.log(`[main] ${sessionName(session)}: ${wakeup ? 'wake-up' : 'prompt'}: ${logText(text)}`)
+      // The boss's words become a chat row (role 'boss', msg_type 'prompt')
+      // for the transcript; the chat watcher only answers role 'default'
+      // rows, so it never replies to them. A wake-up is not the boss speaking.
+      const row = text && !wakeup ? addMessage({ sender: 'Boss', role: 'boss', text, msgType: 'prompt' }) : null
+      const wakeupOfficeId = wakeup ? lookupAgentId(body.wakeupAgentId) : null
+      saveAgents()
+      return {
+        type: 'session_prompt',
+        sessionId: session.id,
+        project: session.project,
+        ...(body.promptId ? { promptId: body.promptId } : {}),
+        text,
+        isWakeup: wakeup,
+        ...(body.wakeupAgentId ? { wakeupAgentId: body.wakeupAgentId } : {}),
+        ...(wakeupOfficeId ? { wakeupOfficeId } : {}),
+        ...(body.wakeupStatus ? { wakeupStatus: body.wakeupStatus } : {}),
+        ...(row ? { messageId: row.id } : {}),
+        main: { ...main },
+        timestamp: now,
+      }
+    }
+
+    case 'session_turn_end': {
+      // Stop: Claude replied. Still-running background tasks mean it is
+      // waiting to be woken, otherwise it is idle until the next prompt.
+      const session = touchSession(body)
+      if (!session) return null
+      const now = Date.now()
+      const main = mainOf(session, now)
+      const text = transcriptText(body.text)
+      const tasks = Array.isArray(body.backgroundTasks) ? body.backgroundTasks : []
+      const inFlight = tasks.filter(t => TASK_IN_FLIGHT.test(t.status ?? ''))
+      main.lastReply = text
+      main.lastReplyAt = now
+      main.waitingOn = inFlight.length
+      main.crons = body.crons ?? 0
+      if (body.promptId) main.promptId = body.promptId
+      cancelPendingNeedsYou(session.id)
+      delete main.needsYou
+      delete main.error
+      delete main.beforeCompact
+      if (inFlight.length) setMainState(session, 'waiting', `turn ended, ${inFlight.length} background task(s) still running`, now)
+      else setMainState(session, 'idle', 'turn ended', now)
+      console.log(`[main] ${sessionName(session)}: reply: ${logText(text)}`)
+      // Claude's words become a chat row too (role 'assistant', msg_type 'reply')
+      const row = text ? addMessage({ sender: 'Claude', role: 'assistant', text, msgType: 'reply' }) : null
+      saveAgents()
+      return {
+        type: 'session_turn_end',
+        sessionId: session.id,
+        project: session.project,
+        ...(body.promptId ? { promptId: body.promptId } : {}),
+        text,
+        // A subagent task is also given its office agent id when the office knows it
+        backgroundTasks: tasks.map(t => {
+          const officeId = lookupAgentId(t.id)
+          return officeId ? { ...t, officeId } : { ...t }
+        }),
+        crons: main.crons,
+        stopHookActive: body.stopHookActive === true,
+        ...(row ? { messageId: row.id } : {}),
+        main: { ...main },
+        timestamp: now,
+      }
+    }
+
+    case 'session_needs_you': {
+      // PermissionRequest / Notification: the session is waiting on a person.
+      // The wait is parked for NEEDS_YOU_DEBOUNCE_MS (see applyNeedsYou) so a
+      // headless auto-deny, answered by its PostToolBatch within ~60 ms,
+      // never shows; nothing is broadcast here.
+      if (!NEEDS_YOU_KINDS.has(body.kind)) return null
+      const session = touchSession(body)
+      if (!session) return null
+      const now = Date.now()
+      const main = mainOf(session, now)
+      const sameWait = w => w && w.kind === body.kind
+        && (w.promptId ?? null) === (body.promptId ?? null)
+        && (!body.toolName || w.toolName === body.toolName)
+      // One wait, several hooks (PermissionRequest, then Notification
+      // {permission_prompt} ~6 s later): a repeat for the same prompt within
+      // NEEDS_YOU_DEDUPE_MS changes nothing
+      const current = main.state === 'needs-you' ? main.needsYou : null
+      if (sameWait(current) && now - current.since < NEEDS_YOU_DEDUPE_MS) {
+        console.log(`[main] ${sessionName(session)}: needs-you (${body.kind}) repeated within ${NEEDS_YOU_DEDUPE_MS / 1000}s — ignored`)
+        return null
+      }
+      const pending = pendingNeedsYou.get(session.id)
+      if (pending && sameWait(pending.wait)) return null
+      cancelPendingNeedsYou(session.id)
+      const wait = {
+        kind: body.kind,
+        since: now,
+        ...(body.promptId ? { promptId: body.promptId } : {}),
+        ...(body.toolName ? { toolName: body.toolName } : {}),
+        ...(body.summary ? { summary: body.summary } : {}),
+        ...(body.message ? { message: body.message } : {}),
+        ...(body.notificationType ? { notificationType: body.notificationType } : {}),
+      }
+      console.log(`[main] ${sessionName(session)}: needs-you requested (${needsYouLabel(wait)})`)
+      const timer = setTimeout(() => applyNeedsYou(session.id), NEEDS_YOU_DEBOUNCE_MS)
+      timer.unref?.()
+      pendingNeedsYou.set(session.id, { wait, agentId: body.agentId, timer })
+      return null
+    }
+
+    case 'session_tool_done': {
+      // A main-thread tool call ran (PostToolUse) or a whole batch of them
+      // was answered (PostToolBatch): a permission hand raised for that tool
+      // — or any hand, for a batch — comes down, since the call went ahead
+      const session = touchSession(body)
+      if (!session) return null
+      const answers = w => w && w.kind === 'permission' && (body.batch === true || (body.toolName && w.toolName === body.toolName))
+      const what = body.batch === true ? `tool batch of ${body.count ?? '?'} done` : `${body.toolName ?? 'tool'} ran`
+      const pending = pendingNeedsYou.get(session.id)
+      if (pending && answers(pending.wait)) {
+        cancelPendingNeedsYou(session.id)
+        console.log(`[main] ${sessionName(session)}: needs-you withdrawn before it was shown (${needsYouLabel(pending.wait)}; ${what} ${Date.now() - pending.wait.since} ms later)`)
+      }
+      const main = mainOf(session)
+      if (main.state !== 'needs-you' || !answers(main.needsYou)) return null
+      delete main.needsYou
+      setMainState(session, 'working', what)
+      saveAgents()
+      return mainEvent(session, 'permission answered')
+    }
+
+    case 'session_cwd': {
+      // CwdChanged: the session moved; its project tag (and its workers') follows
+      const session = touchSession(body)
+      if (!session || !body.cwd) return null
+      const oldCwd = body.oldCwd ?? session.cwd
+      session.cwd = body.cwd
+      session.project = projectName(body.project, body.cwd)
+      for (const agentId of session.agentIds) {
+        const agent = activeAgents.get(agentId)
+        if (agent) agent.project = session.project
+      }
+      saveAgents()
+      console.log(`[session] cwd: ${oldCwd ?? '?'} -> ${body.cwd} (${session.project ?? session.id})`)
+      return { ...sessionEvent(session, 'session_cwd'), ...(oldCwd ? { oldCwd } : {}) }
+    }
+
+    case 'session_model': {
+      // PostModelSwitch: the session runs another model from here on
+      const session = touchSession(body)
+      if (!session || !body.model) return null
+      const fromModel = body.fromModel ?? session.model
+      session.model = body.model
+      saveAgents()
+      console.log(`[session] model: ${fromModel ?? '?'} -> ${body.model}${body.switchSource ? ` (${body.switchSource})` : ''} (${session.project ?? session.id})`)
+      return {
+        ...sessionEvent(session, 'session_model'),
+        ...(fromModel ? { fromModel } : {}),
+        ...(body.switchSource ? { switchSource: body.switchSource } : {}),
+      }
+    }
+
+    case 'session_error': {
+      // StopFailure: the turn ended on an API error (rate_limit, overloaded, ...)
+      const session = touchSession(body)
+      if (!session) return null
+      const now = Date.now()
+      const main = mainOf(session, now)
+      main.error = { error: body.error || 'unknown', detail: body.detail ?? '', since: now }
+      if (body.promptId) main.promptId = body.promptId
+      cancelPendingNeedsYou(session.id)
+      delete main.needsYou
+      delete main.beforeCompact
+      setMainState(session, 'error', `${main.error.error}${main.error.detail ? `: ${logText(main.error.detail, 80)}` : ''}`, now)
+      saveAgents()
+      return {
+        type: 'session_error',
+        sessionId: session.id,
+        project: session.project,
+        ...(body.promptId ? { promptId: body.promptId } : {}),
+        error: main.error.error,
+        detail: main.error.detail,
+        main: { ...main },
+        timestamp: now,
+      }
+    }
+
+    case 'session_compact': {
+      // PreCompact / PostCompact: Claude is rewriting its memory. A `pre`
+      // may have no `post` (compaction refused), so any later event moves on.
+      if (body.phase !== 'pre' && body.phase !== 'post') return null
+      const session = touchSession(body)
+      if (!session) return null
+      const now = Date.now()
+      const main = mainOf(session, now)
+      const trigger = body.trigger || 'manual'
+      if (body.phase === 'pre') {
+        if (main.state !== 'compacting') main.beforeCompact = main.state
+        setMainState(session, 'compacting', `${trigger} compaction`, now)
+      } else if (main.state === 'compacting') {
+        // Back to what Claude was doing; idle when the pre was never seen
+        const back = MAIN_STATES.has(main.beforeCompact) && main.beforeCompact !== 'compacting' ? main.beforeCompact : 'idle'
+        delete main.beforeCompact
+        setMainState(session, back, 'compaction done', now)
+      }
+      saveAgents()
+      return {
+        type: 'session_compact',
+        sessionId: session.id,
+        project: session.project,
+        ...(body.promptId ? { promptId: body.promptId } : {}),
+        phase: body.phase,
+        trigger,
+        main: { ...main },
+        timestamp: now,
+      }
     }
 
     default:
@@ -1750,6 +2341,8 @@ export {
   activeAgents,
   pendingStarts,
   sessions,
+  pendingNeedsYou,
+  settings,
   processEvent,
   sendAgentMessage,
   sweepStale,

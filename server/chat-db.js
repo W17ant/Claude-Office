@@ -60,21 +60,29 @@ const stmtInsert = db.prepare(
   'VALUES (@sender, @role, @text, @timestamp, @isSystem, @threadId, @recipient, @msgType)'
 )
 
+// The transcript rows — the boss's prompts and Claude's replies the session
+// hooks store (msg_type 'prompt' / 'reply') — are left out of every read
+// unless the caller asks for them (@transcript = 1: the office's own token
+// was presented). Everything else on the machine sees the chat as before.
+const TRANSCRIPT_FILTER = "(@transcript = 1 OR msg_type IS NULL OR msg_type NOT IN ('prompt', 'reply'))"
+
 const stmtGetAll = db.prepare(
-  'SELECT * FROM (SELECT * FROM messages ORDER BY timestamp DESC, id DESC LIMIT @limit) ' +
+  'SELECT * FROM (SELECT * FROM messages ' +
+  `  WHERE ${TRANSCRIPT_FILTER} ` +
+  '  ORDER BY timestamp DESC, id DESC LIMIT @limit) ' +
   'ORDER BY timestamp ASC, id ASC'
 )
 
 const stmtGetSince = db.prepare(
   'SELECT * FROM messages ' +
-  'WHERE timestamp > @since ' +
+  `WHERE timestamp > @since AND ${TRANSCRIPT_FILTER} ` +
   'ORDER BY timestamp ASC, id ASC ' +
   'LIMIT @limit'
 )
 
 const stmtGetForRecipient = db.prepare(
   'SELECT * FROM (SELECT * FROM messages ' +
-  '  WHERE recipient = @recipient COLLATE NOCASE AND timestamp > @since ' +
+  `  WHERE recipient = @recipient COLLATE NOCASE AND timestamp > @since AND ${TRANSCRIPT_FILTER} ` +
   '  ORDER BY timestamp DESC, id DESC LIMIT @limit) ' +
   'ORDER BY timestamp ASC, id ASC'
 )
@@ -132,17 +140,20 @@ export function addMessage({ sender, role = 'default', text, isSystem = false, t
 
 /**
  * Retrieve recent messages.
- * @param {{ since?: number, limit?: number, recipient?: string }} opts
- *   recipient — only messages addressed to this agent (case-insensitive)
+ * @param {{ since?: number, limit?: number, recipient?: string, transcript?: boolean }} opts
+ *   recipient  — only messages addressed to this agent (case-insensitive)
+ *   transcript — include the prompt / reply rows (msg_type 'prompt' | 'reply');
+ *                off by default, see TRANSCRIPT_FILTER
  */
-export function getMessages({ since = 0, limit = 50, recipient = null } = {}) {
+export function getMessages({ since = 0, limit = 50, recipient = null, transcript = false } = {}) {
+  const params = { since, limit, transcript: transcript ? 1 : 0 }
   if (recipient) {
-    return stmtGetForRecipient.all({ recipient, since, limit })
+    return stmtGetForRecipient.all({ ...params, recipient })
   }
   if (since) {
-    return stmtGetSince.all({ since, limit })
+    return stmtGetSince.all(params)
   }
-  return stmtGetAll.all({ limit })
+  return stmtGetAll.all(params)
 }
 
 /**

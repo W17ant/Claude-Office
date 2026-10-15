@@ -199,6 +199,24 @@ describe('chat-ai-watcher.sh', () => {
     expect(claudeCalls(w)).toHaveLength(1)
   })
 
+  it("never sees the Boss prompt and Claude reply rows the main-thread events persist: GET /chat hides them without the token, and their roles are boss/assistant anyway", async () => {
+    w.office.server.processEvent({ type: 'session_prompt', sessionId: 'sess-watch', project: 'watch', promptId: 'p1', text: 'there is a bug in login, fix it' })
+    w.office.server.processEvent({ type: 'session_turn_end', sessionId: 'sess-watch', promptId: 'p1', text: 'Fixed the bug in login.', backgroundTasks: [], crons: 0 })
+
+    // Stored, visible with the office token...
+    const withToken = await request(w.office.server.app).get('/chat').set('Authorization', `Bearer ${w.office.server.AUTH_TOKEN}`)
+    expect(withToken.body.messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({ sender: 'Boss', role: 'boss', msg_type: 'prompt', text: 'there is a bug in login, fix it' }),
+      expect.objectContaining({ sender: 'Claude', role: 'assistant', msg_type: 'reply', text: 'Fixed the bug in login.' }),
+    ]))
+    // ...and absent from what the watcher polls
+    const msgs = await chat(w)
+    expect(msgs.some(m => m.msg_type === 'prompt' || m.msg_type === 'reply' || m.sender === 'Boss')).toBe(false)
+
+    await sleep(1000)
+    expect(claudeCalls(w)).toHaveLength(1)
+  })
+
   it('ignores slash commands and system lines', async () => {
     await say(w, '/nonsense there is a bug')
     await say(w, '/help')

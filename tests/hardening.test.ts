@@ -80,6 +80,7 @@ describe('bearer token on routes that act as an agent or destroy state (C05, C06
     ['/chat/seen', { messageId: 1 }],
     ['/chat/react', { messageId: 1, emoji: 'x' }],
     ['/chat/video-mode', { enabled: true }],
+    ['/settings', { logPrompts: 'summary' }],
   ]
 
   for (const [path, body] of protectedRoutes) {
@@ -143,7 +144,7 @@ describe('bearer token on routes that act as an agent or destroy state (C05, C06
   const officeApp = () => office.server.app
 
   it('keeps every GET, a plain chat line, the typing indicator and the pause toggle open', async () => {
-    for (const path of ['/health', '/chat', '/agents', '/roster', '/sessions', '/a2a/agents', '/.well-known/agent-card.json', '/chat/cron-state']) {
+    for (const path of ['/health', '/chat', '/agents', '/roster', '/sessions', '/settings', '/a2a/agents', '/.well-known/agent-card.json', '/chat/cron-state']) {
       const res = await request(office.server.app).get(path)
       expect(res.status, path).toBe(200)
     }
