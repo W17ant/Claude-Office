@@ -7,6 +7,8 @@ const { spawn } = require('child_process')
 const http = require('http')
 const {
   APP_NAME,
+  serverPortFromEnv,
+  serverUrls,
   viewportFor,
   minSizeFor,
   defaultSizeFor,
@@ -22,20 +24,17 @@ const {
 } = require('./helpers.cjs')
 const { createTray } = require('./tray.cjs')
 
-const SERVER_PORT = 3334
-const SERVER_HOST = '127.0.0.1'
-const SERVER_URL = `http://${SERVER_HOST}:${SERVER_PORT}`
-const HEALTH_URL = `${SERVER_URL}/health`
-const VITE_URL = 'http://localhost:3333'
+// The server's port: AGENT_OFFICE_PORT, default 3334 (helpers.cjs mirrors
+// server/config.js). The same number goes to the server child's environment,
+// the window's load URL, the navigation allowlist and the tray's poller, so
+// `AGENT_OFFICE_PORT=4000 electron .` — or the variable in the environment a
+// packaged app is launched with — moves the whole desktop app at once.
+const SERVER_PORT = serverPortFromEnv(process.env)
+const { serverUrl: SERVER_URL, healthUrl: HEALTH_URL, viteUrl: VITE_URL, allowedOrigins } = serverUrls(SERVER_PORT)
 
 // Allowed origins for navigation and new-window events: the Vite dev server
-// (3333) and the office server (3334), by name or loopback IP.
-const ALLOWED_ORIGINS = new Set([
-  'http://localhost:3333',
-  'http://127.0.0.1:3333',
-  'http://localhost:3334',
-  'http://127.0.0.1:3334',
-])
+// (3333) and the office server (SERVER_PORT), by name or loopback IP.
+const ALLOWED_ORIGINS = new Set(allowedOrigins)
 
 // The server sits next to this file in both layouts: <repo>/server in dev and
 // <app>/resources/app/server in a packaged build (asar is off — see the build
@@ -73,7 +72,7 @@ function stateFile() {
 // ---------------------------------------------------------------------------
 
 /**
- * Check if the server is already responding on port 3334.
+ * Check if the server is already responding on SERVER_PORT.
  * Returns a Promise<boolean>.
  */
 function isServerRunning() {
@@ -144,10 +143,12 @@ function waitForServer(retries = 30, intervalMs = 300) {
 function startServer() {
   const packaged = app.isPackaged
   const command = packaged ? process.execPath : (process.env.npm_node_execpath || 'node')
-  const env = { ...process.env }
+  // The child binds the port this process resolved, so an unparsable
+  // AGENT_OFFICE_PORT falls back to 3334 on both sides alike.
+  const env = { ...process.env, AGENT_OFFICE_PORT: String(SERVER_PORT) }
   if (packaged) env.ELECTRON_RUN_AS_NODE = '1'
 
-  console.log(`[main] Spawning server: ${command} ${SERVER_ENTRY}`)
+  console.log(`[main] Spawning server: ${command} ${SERVER_ENTRY} (port ${SERVER_PORT})`)
 
   serverProcess = spawn(command, [SERVER_ENTRY], {
     stdio: 'pipe',
@@ -395,7 +396,8 @@ async function createWindow() {
       dialog.showErrorBox(
         APP_NAME,
         `The office server did not start on port ${SERVER_PORT}.\n\n` +
-        `If something else is using that port, stop it and open ${APP_NAME} again.`,
+        `If something else is using that port, stop it and open ${APP_NAME} again, ` +
+        `or launch it with AGENT_OFFICE_PORT set to a free port.`,
       )
       quitApp()
       return
@@ -537,7 +539,7 @@ function createTrayIcon() {
 
 // One packaged instance: opening the app again (from the Dock, a launcher or
 // the Start menu) brings the existing window back instead of fighting over
-// port 3334. Dev runs (`electron .`) are not locked, so one can run beside a
+// the port. Dev runs (`electron .`) are not locked, so one can run beside a
 // packaged app.
 if (app.isPackaged && !app.requestSingleInstanceLock()) {
   app.quit()

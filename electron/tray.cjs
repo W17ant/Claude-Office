@@ -50,7 +50,7 @@ function fetchJson(url, timeoutMs = 2000) {
 /**
  * Create the tray.
  *
- *   serverUrl  the office server (http://127.0.0.1:3334)
+ *   serverUrl  the office server (http://127.0.0.1:<AGENT_OFFICE_PORT>, 3334 by default)
  *   getState   () => { visible, compact, alwaysOnTop } for the menu
  *   actions    { toggleWindow, setCompact, setAlwaysOnTop, openInBrowser, quit, onSummary? }
  *   pollMs     how often /agents and /sessions are read (default 5 s)

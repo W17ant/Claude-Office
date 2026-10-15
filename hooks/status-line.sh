@@ -37,7 +37,10 @@
 # nothing and never blocks the status line.
 # =============================================================================
 
-SERVER_URL="${AGENT_OFFICE_STATUS_URL:-http://localhost:3334/status}"
+# Where the office listens: AGENT_OFFICE_STATUS_URL wins, else the port from
+# AGENT_OFFICE_PORT (the same knob as agent-tracker.sh and the office
+# scripts), default 3334
+SERVER_URL="${AGENT_OFFICE_STATUS_URL:-http://localhost:${AGENT_OFFICE_PORT:-3334}/status}"
 OFFICE_HOME="${AGENT_OFFICE_HOME:-$HOME/.agent-office}"
 
 MODE="main"

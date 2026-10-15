@@ -251,6 +251,51 @@ describe('tray status', () => {
   })
 })
 
+describe('the server port (AGENT_OFFICE_PORT)', () => {
+  it('serverPortFromEnv is 3334 when unset or empty', () => {
+    expect(h.serverPortFromEnv({})).toBe(3334)
+    expect(h.serverPortFromEnv({ AGENT_OFFICE_PORT: '' })).toBe(3334)
+    expect(h.DEFAULT_SERVER_PORT).toBe(3334)
+  })
+
+  it('parses a port, tolerating whitespace', () => {
+    expect(h.serverPortFromEnv({ AGENT_OFFICE_PORT: '4000' })).toBe(4000)
+    expect(h.serverPortFromEnv({ AGENT_OFFICE_PORT: ' 4123 ' })).toBe(4123)
+    expect(h.serverPortFromEnv({ AGENT_OFFICE_PORT: '65535' })).toBe(65535)
+  })
+
+  it('falls back to 3334 for anything that is not a port, exactly as server/config.js readPort does', async () => {
+    const { readPort } = await import('../server/config.js')
+    const quiet = { warn: () => {} }
+    for (const raw of ['abc', '0', '70000', '-1', '33.34', '3334abc', '0x3334', '4000', ' 4001 ', '']) {
+      const env = { AGENT_OFFICE_PORT: raw }
+      expect(h.serverPortFromEnv(env), raw).toBe(readPort(env, quiet))
+    }
+  })
+
+  it('serverUrls derives the load URL, health URL and navigation allowlist from the port', () => {
+    expect(h.serverUrls(4000)).toEqual({
+      port: 4000,
+      serverUrl: 'http://127.0.0.1:4000',
+      healthUrl: 'http://127.0.0.1:4000/health',
+      viteUrl: 'http://localhost:3333',
+      allowedOrigins: ['http://localhost:3333', 'http://127.0.0.1:3333', 'http://localhost:4000', 'http://127.0.0.1:4000'],
+    })
+    // The default is what main.cjs hard-coded before
+    expect(h.serverUrls().allowedOrigins).toEqual(['http://localhost:3333', 'http://127.0.0.1:3333', 'http://localhost:3334', 'http://127.0.0.1:3334'])
+    expect(h.serverUrls(h.serverPortFromEnv({})).serverUrl).toBe('http://127.0.0.1:3334')
+  })
+
+  it('main.cjs takes the port from the env, passes it to the server child and the tray, and hard-codes no port', () => {
+    const main = readFileSync(join(ROOT, 'electron/main.cjs'), 'utf8')
+    expect(main).toContain('serverPortFromEnv(process.env)')
+    expect(main).toContain('AGENT_OFFICE_PORT: String(SERVER_PORT)')
+    expect(main).toContain('serverUrl: SERVER_URL')
+    const code = main.split('\n').filter(line => !/^\s*(\/\/|\*|\/\*)/.test(line)).join('\n')
+    expect(code).not.toMatch(/\b3334\b/)
+  })
+})
+
 describe('trayMenuTemplate', () => {
   const actions = {
     toggleWindow: vi.fn(),
