@@ -131,7 +131,9 @@ The chat AI watcher (`scripts/chat-ai-watcher.sh`, log in `~/.agent-office/chat-
 
 ### Running tests
 
-`npm test` runs the Vitest suite in `tests/` (server API, WebSocket, sessions, status/meters, health, incident commands, the office reducer, hook script, status line, installer, doctor, shell scripts — 516 tests) against a temp `AGENT_OFFICE_HOME`, so your real `~/.agent-office` is never touched; `npm run test:watch` keeps it running. CI (`.github/workflows/ci.yml`) runs `tsc --noEmit`, `npm test` and `vite build` on every push to `main` and every pull request.
+`npm test` runs the Vitest suite in `tests/` (server API, WebSocket, sessions, status/meters, health, incident commands, the office reducer, hook script, status line, installer, doctor, shell scripts — 516 tests) against a temp `AGENT_OFFICE_HOME`, so your real `~/.agent-office` is never touched; `npm run test:watch` keeps it running. CI (`.github/workflows/ci.yml`) runs `tsc --noEmit`, `npm test`, `vite build` and `npm run check-assets` on every push to `main` and every pull request.
+
+`npm run check-assets` guards `public/`: every sprite and room the code can ask for must exist (a missing one fails), files nothing references are listed, and `public/` must stay under a size budget. To add a sprite, drop the PNG under `public/sprites/` and reference it from the code — a literal path or one of the dynamic patterns documented at the top of `scripts/check-assets.mjs` — so the check sees it; rooms are exported at twice the 754 px they are drawn at.
 
 ### Auto-permissions
 

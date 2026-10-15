@@ -25,6 +25,7 @@
     "server": "node server/index.js",
     "test": "vitest run",
     "test:watch": "vitest",
+    "check-assets": "node scripts/check-assets.mjs",
     "install-hooks": "bash hooks/install-hooks.sh",
     "uninstall-hooks": "bash hooks/install-hooks.sh --uninstall",
     "doctor": "node scripts/doctor.mjs",

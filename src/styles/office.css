@@ -201,16 +201,6 @@
   flex-shrink: 0;
 }
 
-/* ===== FLOOR - pixel art background ===== */
-.office-floor {
-  position: absolute;
-  inset: 0;
-  background-image: url('/office-bg.png');
-  background-size: cover;
-  background-position: center;
-  image-rendering: pixelated;
-}
-
 /* ===== WALLS (hidden - using background image) ===== */
 .wall { display: none; }
 
