@@ -38,11 +38,12 @@ interface ThemeState {
   angelaCat: string | null
 }
 
-let state: ThemeState = loadInitial()
-const listeners = new Set<() => void>()
-
+// Why: declared before `state` — loadInitial() runs at module load and reads them
 const THEME_KEY = 'agent-office-theme'
 const CAST_KEY = 'agent-office-cast'
+
+let state: ThemeState = loadInitial()
+const listeners = new Set<() => void>()
 
 function loadInitial(): ThemeState {
   const base: ThemeState = { name: 'default', castByRole: {}, angelaRole: null, angelaCat: null }
