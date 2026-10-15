@@ -26,6 +26,7 @@ All notable changes to Claude Office. Numbers refer to pull requests.
 - Scripts hardening: the chat watcher no longer answers its own replies or the office's announcements, runs `claude -p` with `--safe-mode` so it cannot fire the office hooks, always releases its lock, is rate-capped; `stop-office.sh` only stops what `start-office.sh` started; Linux start works; `notify.sh` passes text as arguments (#14).
 - Server hardening: bearer token on every route that acts as an agent or destroys state, constant-time compare, token written only after the port is bound, private file modes, JSON error middleware, lifecycle and input fixes (#16, #17).
 - The installer registers all hook events idempotently, adds the status line (chaining an existing one), repairs entries from a moved checkout and tolerates malformed settings files (#5, #15, #18).
+- `bash hooks/install-hooks.sh --uninstall` (`npm run uninstall-hooks`) takes the office back out of `~/.claude/settings.json`: every `agent-tracker.sh` hook goes (stale paths and duplicates included, empty groups/events/`hooks` dropped), a chained status line is put back from the saved command and the saved files are deleted, foreign hooks and settings are untouched, nothing of ours means exit 0 and no write; backup first (#25).
 
 ### Documentation
 - README leads with the product; NOTICE for the fan-art skin; CONTRIBUTING and issue templates (#20).
