@@ -263,7 +263,10 @@ describe('chat-ai-watcher.sh lock', () => {
     await waitFor('the empty-reply log line', () => w.watcher.out.includes('Empty reply from claude'))
     expect(claudeCalls(w)).toHaveLength(1)
     expect(w.watcher.out).toContain('claude: Not logged in')
-    expect(existsSync(lock)).toBe(false)
+    // The watcher prints the empty-reply line inside do_reply and removes the
+    // lock when it returns, so the log line can arrive a few ms before the
+    // file is gone: wait for the release rather than asserting it at once
+    await waitFor('the lock to be released after the empty reply', () => !existsSync(lock))
     expect(replies(await chat(w))).toHaveLength(0)
 
     // ...and the next message is answered once the CLI works again
