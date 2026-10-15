@@ -1,0 +1,17 @@
+{
+  "name": "agent-office",
+  "description": "Claude Office: the pixel-art office that visualises Claude Code agents. This repository is its own marketplace; the plugin is the repository root.",
+  "owner": {
+    "name": "W17ant",
+    "url": "https://github.com/W17ant"
+  },
+  "plugins": [
+    {
+      "name": "agent-office",
+      "source": "./",
+      "description": "Hooks that forward subagent, MCP and session activity to the Agent Office server, plus the /agent-office:office command.",
+      "category": "productivity",
+      "tags": ["hooks", "agents", "visualization"]
+    }
+  ]
+}

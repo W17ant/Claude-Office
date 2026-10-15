@@ -28,7 +28,23 @@ jobs:
           cp office.config.example.json office.config.json
           npx tsc --noEmit -p .
 
+      - name: Install Claude Code
+        # The npm package installs the same native binary as the standalone
+        # installer. `claude plugin validate` only reads files, so no login
+        # or network access is needed once it is installed.
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Validate plugin manifests
+        # The repository root is the agent-office plugin and its own
+        # marketplace (.claude-plugin/). --strict fails on warnings too, so an
+        # unknown field or a missing description stops here, not on install.
+        run: claude plugin validate . --strict
+        env:
+          DISABLE_AUTOUPDATER: 1
+
       - name: Test
+        # tests/plugin.test.ts runs `claude plugin validate` again from vitest
+        # now that the CLI is on PATH (it skips with a note when it is not)
         run: npm test
 
       - name: Build
