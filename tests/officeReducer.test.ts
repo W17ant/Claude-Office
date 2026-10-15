@@ -36,7 +36,7 @@ import {
 import { mainId } from '../src/mainState'
 import { createAgent } from '../src/agentManager'
 import { BOSS_NAME } from '../src/config'
-import type { Agent, ServerHealth } from '../src/types'
+import { AGENT_CONFIGS, type Agent, type ServerHealth } from '../src/types'
 
 // ---------------------------------------------------------------------------
 // Harness
@@ -776,6 +776,59 @@ describe('one Claude per session', () => {
     expect(movedIds).toContain(mainId('s1'))
     expect(movedIds).not.toContain(mainId('s2'))
     expect(pickSingleEventAgent(settled.agents, env({ live: true }))!.id).toBe(mainId('s1'))
+  })
+})
+
+describe('sessions without hooks (the registry roster)', () => {
+  const R1 = { sessionId: 'r1', project: 'office', cwd: '/home/me/office' }
+
+  it('session_started { hooked: false } seats no Claude; the same session arriving hooked later gets one', () => {
+    const office = liveOffice()
+    const r = reduceOffice(office, { type: 'session_started', ...R1, hooked: false, source: 'registry', main: { state: 'working', since: T0 } }, env())
+    expect(r.state).toBe(office)
+    expect(r.effects).toEqual([])
+    expect(claudeOf(r.state, 'r1')).toBeUndefined()
+
+    // The first hook event flipped it on the server: session_started comes again with hooked: true
+    const flipped = reduceOffice(r.state, { type: 'session_started', ...R1, hooked: true, source: 'implicit' }, env())
+    const c = claudeOf(flipped.state, 'r1')!
+    expect(c.name).toBe(AGENT_CONFIGS['assistant'].title)
+    expect(c.sessionId).toBe('r1')
+    expect(c.assignedSpotId).toBe(CLAUDE_HOME_SPOT)
+    expect(msgs(flipped.effects)).toEqual([expect.objectContaining({ role: 'assistant', text: '🤖 clocked in · office', agentId: mainId('r1') })])
+  })
+
+  it('the snapshot seats a Claude only for hooked sessions, and walks out the Claude of one it now lists as unhooked', () => {
+    const office = sessionOffice()
+    const { state, effects } = reduceOffice(office, {
+      type: 'snapshot',
+      activeAgents: [],
+      sessions: [
+        { id: 's1', project: 'office', state: 'active', hooked: false, main: { state: 'working' } },
+        { id: 'r2', project: 'api', state: 'active', hooked: false, main: { state: 'needs-you', needsYou: { kind: 'registry', summary: 'waiting in the terminal' } } },
+        { id: 's2', project: 'docs', state: 'active', hooked: true, main: { state: 'idle', since: T0 } },
+        { id: 'r3', project: 'old', state: 'ended', hooked: false },
+      ],
+    }, env())
+    expect(claudeOf(state, 's1')!.state).toBe('completed')     // the server only knows s1 from the registry now
+    expect(claudeOf(state, 'r2')).toBeUndefined()
+    expect(claudeOf(state, 's2')).toBeDefined()
+    expect(claudeOf(state, 'r3')).toBeUndefined()
+    expect(state.endedSessions).toEqual({})                    // an ended unhooked session schedules no leave
+    expect(titles(effects)).toEqual([])                        // a registry needs-you raises no ✋ in the title
+  })
+
+  it('session_registry changes nothing on the floor; session_ended of an unhooked session finds no Claude to send home', () => {
+    const office = sessionOffice()
+    const r = reduceOffice(office, { type: 'session_registry', sessionId: 's1', hooked: true, registry: { pid: 4242, status: 'idle' }, main: { state: 'working' } }, env())
+    expect(r.state).toBe(office)
+    expect(r.effects).toEqual([])
+    const e = reduceOffice(office, { type: 'session_ended', sessionId: 'r9', hooked: false, reason: 'exited' }, env())
+    expect(claudeOf(e.state, 'r9')).toBeUndefined()
+    expect(claudeOf(e.state, 's1')!.state).toBe('idle')
+    expect(e.effects).toEqual([{ kind: 'schedule', action: { type: 'session_claude_leave', sessionId: 'r9' }, delayMs: SESSION_CLAUDE_GRACE_MS }])
+    const { state: later } = reduceOffice(e.state, { type: 'session_claude_leave', sessionId: 'r9' }, env({ now: T0 + SESSION_CLAUDE_GRACE_MS }))
+    expect(later.agents).toHaveLength(e.state.agents.length)
   })
 })
 

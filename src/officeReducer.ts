@@ -853,11 +853,13 @@ function reduceEvent(state: OfficeState, action: OfficeAction, env: OfficeEnv): 
       }
 
       // 4. Sessions (when the snapshot lists them): a Claude per active
-      //    session, refreshed from the server's main record; the Claude of a
-      //    session the server no longer lists leaves quietly, and one whose
-      //    session ended leaves after the grace
+      //    hooked session, refreshed from the server's main record; the Claude
+      //    of a session the server no longer lists (or now lists as unhooked,
+      //    i.e. only the registry knows it) leaves quietly, and one whose
+      //    session ended leaves after the grace. Unhooked sessions are pills
+      //    only: no Claude is seated for them.
       if (Array.isArray(action.sessions)) {
-        const listed = action.sessions.filter((s): s is SessionInfo => !!s && !!s.id)
+        const listed = action.sessions.filter((s): s is SessionInfo => !!s && !!s.id && s.hooked !== false)
         const bySid = new Map(listed.map(s => [s.id, s]))
         for (const a of cur.agents) {
           if (!isMainAgent(a) || a.state === 'completed') continue
@@ -1015,6 +1017,10 @@ function reduceEvent(state: OfficeState, action: OfficeAction, env: OfficeEnv): 
     case 'session_started': {
       const sid = action.sessionId
       if (!sid) return none
+      // Known only from Claude Code's session registry (no hook has reported):
+      // a pill in the strip, no Claude in the office. Its first hook event
+      // flips it to hooked and the server sends this again with hooked: true.
+      if (action.hooked === false) return none
       const base = sid in state.endedSessions ? { ...state, endedSessions: without(state.endedSessions, sid) } : state
       const r = ensureClaude(base, sid, { project: action.project, cwd: action.cwd, model: action.model, main: action.main }, env)
       if (r.created) return r
@@ -1035,6 +1041,13 @@ function reduceEvent(state: OfficeState, action: OfficeAction, env: OfficeEnv): 
       if (findMain(cur, sid)) cur = applyMain(cur, mainId(sid), { mainState: null, statusText: `👋 session ended${action.reason ? ` (${action.reason})` : ''}` }, env)
       return { state: cur, effects }
     }
+
+    // The session's registry entry changed (server/sessions.js): presence and
+    // status for the pill, which reads it from the session list — nothing for
+    // the office floor. A hooked session's Claude follows the hooks, and an
+    // unhooked session has none.
+    case 'session_registry':
+      return none
 
     case 'session_claude_leave': {
       const sid = action.sessionId

@@ -19,7 +19,7 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { OfficeEvent, PendingPermission, ServerHealth, SessionInfo, SnapshotAgent } from '../types'
+import { OfficeEvent, PendingPermission, ServerHealth, SessionInfo, SessionRegistry, SnapshotAgent } from '../types'
 import type { SessionStatus, MeterTotals } from '../meters'
 import { projectFromCwd } from '../mainState'
 import { officeHttpBase, officeWsUrl } from '../serverUrl'
@@ -87,8 +87,15 @@ const STABLE_OPEN_MS = 5_000
 // An ended session's pill lingers this long before it is dropped
 const ENDED_SESSION_LINGER_MS = 10_000
 
-/** The session fields of a session_started/session_ended event or snapshot entry. */
-function toSessionInfo(id: string, src: Partial<SessionInfo>, prev?: SessionInfo): SessionInfo {
+/**
+ * The session fields of a session_started/session_ended/session_registry
+ * event or snapshot entry. Those three carry the whole record, so a missing
+ * `registry` there means the entry is gone: the caller passes `registry: null`
+ * to clear it, while a partial update (undefined) keeps what we had.
+ */
+type SessionPatch = Omit<Partial<SessionInfo>, 'registry'> & { registry?: SessionRegistry | null }
+
+function toSessionInfo(id: string, src: SessionPatch, prev?: SessionInfo): SessionInfo {
   return {
     ...prev,
     id,
@@ -104,7 +111,14 @@ function toSessionInfo(id: string, src: Partial<SessionInfo>, prev?: SessionInfo
     lastStatus:     src.lastStatus     ?? prev?.lastStatus,
     lastStatusAt:   src.lastStatusAt   ?? prev?.lastStatusAt,
     main:           src.main           ?? prev?.main,
+    hooked:         src.hooked         ?? prev?.hooked,
+    registry:       src.registry === null ? undefined : (src.registry ?? prev?.registry),
   }
+}
+
+/** A full-record event as a patch: a `registry` the server left out is one that has gone (the event's own `id` is a chat row id, not the session's). */
+function fullRecord(msg: OfficeEvent, sessionId: string): SessionPatch {
+  return { ...msg, id: sessionId, registry: msg.registry ?? null }
 }
 
 // ---------------------------------------------------------------------------
@@ -168,7 +182,7 @@ export function useAgentSocket(options: AgentSocketOptions = {}): AgentSocketRes
   // ---------------------------------------------------------------------------
   // Session bookkeeping — one entry per Claude Code terminal
   // ---------------------------------------------------------------------------
-  const upsertSession = useCallback((id: string, src: Partial<SessionInfo>) => {
+  const upsertSession = useCallback((id: string, src: SessionPatch) => {
     setSessions(prev => {
       const existing = prev.find(s => s.id === id)
       const next = toSessionInfo(id, src, existing)
@@ -189,11 +203,16 @@ export function useAgentSocket(options: AgentSocketOptions = {}): AgentSocketRes
     if (!id) return
     switch (msg.type) {
       case 'session_started':
-        upsertSession(id, { ...msg, id, state: 'active', reason: undefined })
+        upsertSession(id, { ...fullRecord(msg, id), state: 'active', reason: undefined })
         return
       case 'session_ended':
-        upsertSession(id, { ...msg, id, state: 'ended' })
+        upsertSession(id, { ...fullRecord(msg, id), state: 'ended' })
         dropSessionLater(id)
+        return
+      // The session's registry entry changed: status, name, attached to a hooked
+      // session, or gone (an unhooked session's state comes from it)
+      case 'session_registry':
+        upsertSession(id, fullRecord(msg, id))
         return
       case 'agent_working':
         // Main-thread activity (no agentId) is the session's own status
@@ -244,7 +263,7 @@ export function useAgentSocket(options: AgentSocketOptions = {}): AgentSocketRes
       }
       // The server's session list replaces ours (a reconnect may have missed ends)
       const snapSessions = (snap.sessions ?? []).filter(s => s?.id)
-      setSessions(snapSessions.map(s => toSessionInfo(s.id, s)))
+      setSessions(snapSessions.map(s => toSessionInfo(s.id, { ...s, registry: s.registry ?? null })))
       for (const s of snapSessions) if (s.state === 'ended') dropSessionLater(s.id)
       // The server's status store replaces ours too (a restart forgets sessions)
       if (snap.statuses) {

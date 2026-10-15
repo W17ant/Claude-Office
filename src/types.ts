@@ -51,7 +51,8 @@ export interface Agent {
 /** What a session's main thread (its Claude) is doing — the server's `main.state` */
 export type MainState = 'working' | 'waiting' | 'idle' | 'needs-you' | 'error' | 'compacting'
 
-export type NeedsYouKind = 'permission' | 'idle' | 'quota' | 'agent-input'
+/** `registry`: an unhooked session whose registry status is "waiting" (a dialog or question in its terminal) */
+export type NeedsYouKind = 'permission' | 'idle' | 'quota' | 'agent-input' | 'registry'
 
 /** Why a session is waiting on a person (session_needs_you / main.needsYou) */
 export interface NeedsYou {
@@ -145,6 +146,31 @@ export interface SessionInfo {
   lastStatusAt?: number
   /** The server's main-thread record, once it sends one */
   main?: SessionMain
+  /**
+   * false: known only from Claude Code's session registry (no hook has
+   * reported yet — the strip shows it tinted "not hooked", the office seats
+   * no Claude for it); true or absent: the hooks report it.
+   */
+  hooked?: boolean
+  /** Its entry in Claude Code's session registry, while its process runs */
+  registry?: SessionRegistry
+}
+
+/**
+ * What the server keeps of a ~/.claude/sessions/<pid>.json entry (server/
+ * sessions.js): presence and status only. `status` is Claude Code's own word
+ * (busy | shell | idle | waiting); `name` is the registry display name
+ * ("office-7f" derived from the cwd, or what --name / /rename set).
+ */
+export interface SessionRegistry {
+  pid: number
+  name?: string
+  nameSource?: string
+  status?: string
+  kind?: string
+  version?: string
+  startedAt?: number
+  statusUpdatedAt?: number
 }
 
 /**
@@ -191,6 +217,8 @@ export interface OfficeEvent {
     // session_tool_done (main-thread PostToolUse / PostToolBatch, the input that lowers a hand)
     | 'session_prompt' | 'session_turn_end' | 'session_needs_you' | 'session_error' | 'session_compact' | 'session_cwd' | 'session_model'
     | 'session_main' | 'session_tool_done'
+    // session_registry: the session's registry entry changed (status, name, attached, gone) — the full session record
+    | 'session_registry'
     // A permission dialog waiting on the office, its deadline moving, and its end (src/permissions.ts)
     | 'permission_request' | 'permission_extended' | 'permission_resolved'
     // Pipeline health (the status strip): the server's record, and the socket's own open/close
@@ -258,7 +286,7 @@ export interface OfficeEvent {
   // The Claude Code session the event came from (every hook event carries it)
   sessionId?: string
   project?: string
-  // session_started / session_ended
+  // session_started / session_ended / session_registry
   cwd?: string
   source?: string
   model?: string
@@ -268,6 +296,10 @@ export interface OfficeEvent {
   lastActivityAt?: number
   lastStatus?: string
   lastStatusAt?: number
+  // false while only Claude Code's session registry knows the session (no hook has reported)
+  hooked?: boolean
+  // the session's registry entry; absent once its process has gone
+  registry?: SessionRegistry
   timestamp?: number
   // session_status / agent_status: the payroll / electricity / memory feed (src/meters.ts)
   session?: SessionStatus
