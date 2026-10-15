@@ -187,23 +187,6 @@ const SlackChat: React.FC<SlackChatProps> = ({ messages, muted, volume, onToggle
         <div className="slack-header-right">
           <div className="slack-online-dot" />
           <span className="slack-online-count">{onlineCount}</span>
-          {logPrompts && (
-            <span className={`slack-logprompts ${logPrompts}`} title={logPromptsHint(logPrompts)} data-testid="log-prompts">
-              prompts: {logPrompts}
-            </span>
-          )}
-          {answerHere !== null && (
-            <span
-              className={`slack-answer-toggle ${answerHere ? 'on' : 'off'}`}
-              onClick={toggleAnswerHere}
-              title={answerHere
-                ? 'Permission dialogs can be answered from the office (a card appears while Claude waits) — click to turn off'
-                : 'Permission dialogs are answered in the terminal only — click to let the office answer them'}
-              data-testid="answer-permissions"
-            >
-              Answer here: {answerHere ? 'on' : 'off'}
-            </span>
-          )}
           <div
             className={`slack-cron-toggle ${cronPaused ? 'paused' : 'active'}`}
             onClick={toggleCron}
@@ -228,6 +211,31 @@ const SlackChat: React.FC<SlackChatProps> = ({ messages, muted, volume, onToggle
           />
         </div>
       </div>
+
+      {/* The two settings pills sit on their own row: with the AI toggle,
+          mute and volume they no longer fit the 300 px panel, and the
+          overflow made the whole window scroll sideways */}
+      {(logPrompts || answerHere !== null) && (
+        <div className="slack-settings-row">
+          {logPrompts && (
+            <span className={`slack-logprompts ${logPrompts}`} title={logPromptsHint(logPrompts)} data-testid="log-prompts">
+              prompts: {logPrompts}
+            </span>
+          )}
+          {answerHere !== null && (
+            <span
+              className={`slack-answer-toggle ${answerHere ? 'on' : 'off'}`}
+              onClick={toggleAnswerHere}
+              title={answerHere
+                ? 'Permission dialogs can be answered from the office (a card appears while Claude waits) — click to turn off'
+                : 'Permission dialogs are answered in the terminal only — click to let the office answer them'}
+              data-testid="answer-permissions"
+            >
+              Answer here: {answerHere ? 'on' : 'off'}
+            </span>
+          )}
+        </div>
+      )}
 
       <IncidentBadge />
 
