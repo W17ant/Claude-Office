@@ -2,13 +2,16 @@
  * StatusStrip — pipeline health along the bottom of the office: connection
  * (online / reconnecting / offline), when a Claude Code hook last reached the
  * server — or that none has, with the installer command — how many sessions
- * the server knows, and its version. The answer to "nothing appears".
+ * there are, how many of them are not hooked and how many need you, and the
+ * server's version. The answer to "nothing appears".
  *
- * The state lives in the office reducer (OfficeState.health: `connection`
+ * The health lives in the office reducer (OfficeState.health: `connection`
  * actions from useAgentSocket, `health` events from server/health.js). The
  * strip samples it once a second — the cadence its "12 s ago" label needs
- * anyway — so App.tsx mounts it with one line and nothing else re-renders on
- * its account. Under ?sim / ?video there is no server: only a SIM badge.
+ * anyway — so nothing else re-renders on its account. The session counts
+ * come from the sessions list App.tsx already holds (useAgentSocket), the
+ * records the title-bar pills draw, not from the throttled health report.
+ * Under ?sim / ?video there is no server: only a SIM badge.
  *
  * VITE_HOOK_WARN_MS (build-time, ms) lowers the 60 s "no hook events yet"
  * threshold, for screenshots and demos.
@@ -16,6 +19,9 @@
 
 import React, { useEffect, useState } from 'react'
 import { hookVerdict, initialHealth, HOOK_WARN_MS, type HealthState, type HookVerdict, type OfficeState, type ConnectionPhase } from '../officeReducer'
+import { needsYouLabel, stripCounts, type StripCounts } from '../mainState'
+import type { SessionInfo } from '../types'
+import { pillLabel } from './SessionStrip'
 import { officeHttpBase } from '../serverUrl'
 import '../styles/strip.css'
 
@@ -39,6 +45,8 @@ const CONNECTION_LABEL: Record<ConnectionPhase, string> = {
 interface StatusStripProps {
   /** The office state as App.tsx holds it (officeRef); sampled, not subscribed */
   office: { readonly current: OfficeState | null }
+  /** The sessions App.tsx holds (useAgentSocket): counted, not-hooked and needs-you */
+  sessions?: SessionInfo[]
 }
 
 /** "just now", "12 s ago", "3 min ago", "2 h ago" */
@@ -78,7 +86,7 @@ function hooksPill(v: HookVerdict): { text: string; tone: 'ok' | 'warn' | 'dim' 
 }
 
 /** The tooltip: what is going on and what to type */
-function describe(h: HealthState, v: HookVerdict, now: number): string {
+function describe(h: HealthState, v: HookVerdict, now: number, c: StripCounts): string {
   const s = h.server
   const lines: Array<string | null> = []
   switch (h.connection) {
@@ -98,13 +106,22 @@ function describe(h: HealthState, v: HookVerdict, now: number): string {
   }
   if (s) {
     lines.push(`Sessions: ${s.sessions} · agents: ${s.agents} · clients: ${s.clients}`)
+    if (c.notHooked.length > 0) {
+      lines.push(`Not hooked: ${c.notHooked.map(pillLabel).join(', ')} — run ${INSTALL_CMD} to see what ${c.notHooked.length === 1 ? 'it is' : 'they are'} doing`)
+    }
+    if (c.needYou.length > 0) {
+      lines.push('Waiting on you:')
+      for (const session of c.needYou) {
+        if (session.main?.needsYou) lines.push(`  ${pillLabel(session)} — ${needsYouLabel(session.main.needsYou)}`)
+      }
+    }
     lines.push(`Server v${s.version}, up ${formatSpan(s.uptimeMs + Math.max(0, now - (h.reportedAt ?? now)))} · UI: ${s.uiAvailable ? 'built (dist/)' : 'dev server (dist/ not built)'}`)
   }
   lines.push(`Diagnose: ${DOCTOR_CMD}`)
   return lines.filter(Boolean).join('\n')
 }
 
-const StatusStrip: React.FC<StatusStripProps> = ({ office }) => {
+const StatusStrip: React.FC<StatusStripProps> = ({ office, sessions = [] }) => {
   // Sample the reducer's health once a second (also ticks the "ago" labels)
   const [view, setView] = useState(() => ({ health: office.current?.health ?? null, now: Date.now() }))
   useEffect(() => {
@@ -127,13 +144,14 @@ const StatusStrip: React.FC<StatusStripProps> = ({ office }) => {
   const pill = hooksPill(v)
   const s = h.server
   const down = h.connection === 'offline' || h.connection === 'reconnecting'
+  const c = stripCounts(sessions)
 
   return (
     <div
       className="status-strip"
       role="status"
       aria-label="Pipeline health"
-      title={describe(h, v, view.now)}
+      title={describe(h, v, view.now, c)}
       data-connection={h.connection}
       data-hooks={v.kind}
     >
@@ -146,7 +164,11 @@ const StatusStrip: React.FC<StatusStripProps> = ({ office }) => {
       {s && (
         <>
           <span className="strip-sep" />
-          <span className="strip-item strip-sessions">{s.sessions} session{s.sessions === 1 ? '' : 's'}</span>
+          <span className="strip-item strip-sessions">
+            {c.sessionsText}
+            {c.notHookedText && <><span className="strip-mid">·</span><span className="strip-unhooked">{c.notHookedText}</span></>}
+            {c.needYouText && <><span className="strip-mid">·</span><span className="strip-needs-you">{c.needYouText}</span></>}
+          </span>
         </>
       )}
       <span className="strip-spacer" />

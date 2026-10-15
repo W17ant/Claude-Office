@@ -10,7 +10,7 @@
  * input), error (StopFailure) and compacting (PreCompact → PostCompact).
  */
 
-import type { Agent, AgentState, MainState, NeedsYou, NeedsYouKind } from './types'
+import type { Agent, AgentState, MainState, NeedsYou, NeedsYouKind, SessionInfo } from './types'
 
 /** Agents whose id starts with this are a session's Claude (`main-<sessionId>`) */
 export const MAIN_ID_PREFIX = 'main-'
@@ -110,6 +110,38 @@ export function mainPillText(mainState: MainState | undefined, needsYou?: NeedsY
     case 'error':      return '⚠ error'
     case 'compacting': return '🧹 wipe'
     default:           return null
+  }
+}
+
+/**
+ * The status strip's session counts ("3 sessions · 1 not hooked · 2 need
+ * you"), from the sessions the page holds. Ended sessions linger on the
+ * title bar for a minute but are not counted. Not hooked: known only from
+ * Claude Code's session registry (the dashed pills). Need you: a hard
+ * needs-you, the amber pills; an idle prompt or a quota pause raises no hand
+ * and is not counted. An unhooked session the registry marks "waiting" is
+ * both. The lists feed the strip's tooltip; a zero count has no text.
+ */
+export interface StripCounts {
+  sessions: number
+  notHooked: SessionInfo[]
+  needYou: SessionInfo[]
+  sessionsText: string
+  notHookedText: string | null
+  needYouText: string | null
+}
+
+export function stripCounts(sessions: SessionInfo[]): StripCounts {
+  const live = sessions.filter(s => s.state !== 'ended')
+  const notHooked = live.filter(s => s.hooked === false)
+  const needYou = live.filter(s => s.main?.state === 'needs-you' && isHardNeedsYou(s.main.needsYou))
+  return {
+    sessions: live.length,
+    notHooked,
+    needYou,
+    sessionsText: `${live.length} session${live.length === 1 ? '' : 's'}`,
+    notHookedText: notHooked.length > 0 ? `${notHooked.length} not hooked` : null,
+    needYouText: needYou.length > 0 ? `${needYou.length} need${needYou.length === 1 ? 's' : ''} you` : null,
   }
 }
 
