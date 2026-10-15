@@ -20,11 +20,16 @@ import {
   CLAUDE_ID,
   MIN_VISIBLE_TIME,
   A2A_VISIT_MS,
+  CLAUDE_HOME_SPOT,
+  HANDOVER_DWELL_MS,
+  HANDOVER_MAX_MS,
+  SESSION_CLAUDE_GRACE_MS,
   type OfficeState,
   type OfficeEnv,
   type OfficeEffect,
   type OfficeAction,
 } from '../src/officeReducer'
+import { mainId } from '../src/mainState'
 import { createAgent } from '../src/agentManager'
 import { BOSS_NAME } from '../src/config'
 import type { Agent } from '../src/types'
@@ -42,9 +47,9 @@ function env(over: Partial<OfficeEnv> = {}): OfficeEnv {
 
 const spot = (id: string) => MAIN_ROOM.agentSpots.find(s => s.id === id)!
 
-/** An agent already sitting at its desk */
+/** An agent already sitting at its desk (hired at the fixed clock, so two fixtures are equal) */
 function seated(id: string, role: string, spotId: string): Agent {
-  const a = createAgent({ id, name: id, role, spot: spot(spotId) })
+  const a = createAgent({ id, name: id, role, spot: spot(spotId), hiredAt: T0 })
   return { ...a, state: 'working', position: { ...a.deskPosition }, pathQueue: [] }
 }
 
@@ -320,27 +325,43 @@ describe('snapshot reconciliation (C35)', () => {
 
 describe('effects are returned as data, exactly once per event (C12/C31)', () => {
   it('is pure: the same input twice (React StrictMode style) gives equal output and leaves the input untouched', () => {
-    // The only randomness outside OfficeEnv is the themed chatter pools (spawn / work / done lines)
-    vi.spyOn(Math, 'random').mockReturnValue(0.5)
-    const office = fullOffice(1)
-    const frozen = JSON.stringify(office)
-    const events: OfficeAction[] = [
-      spawn('a2', 'test-engineer', 'write tests'),
-      { type: 'agent_working', agentId: 'w1', status: 'reading' },
-      { type: 'chat_message', id: 5, sender: 'w1', role: 'debugger', text: 'hello', timestamp: 1 },
-      { type: 'chat_message', id: 6, sender: 'w1', role: 'debugger', text: 'ping', timestamp: 2, recipient: 'a2', recipientId: 'a2', senderId: 'w1' },
-    ]
-    let a = office
-    let b = office
-    for (const ev of events) {
-      const r1 = reduceOffice(a, ev, env())
-      const r2 = reduceOffice(b, ev, env())
-      expect(r2.state).toEqual(r1.state)
-      expect(r2.effects).toEqual(r1.effects)
-      a = r1.state; b = r2.state
+    // Everything time- or chance-dependent comes through OfficeEnv (now, random,
+    // computePath); the themed chatter pools are the one Math.random left, pinned
+    // here. The two runs start from two separately built but identical offices, so
+    // nothing is shared between them, and the clock is the env's, never Date.now().
+    const spy = vi.spyOn(Math, 'random').mockReturnValue(0.5)
+    try {
+      const build = () => fullOffice(1)
+      const office = build()
+      const frozen = JSON.stringify(office)
+      const events: OfficeAction[] = [
+        spawn('a2', 'test-engineer', 'write tests'),
+        { type: 'agent_working', agentId: 'w1', status: 'reading' },
+        { type: 'chat_message', id: 5, sender: 'w1', role: 'debugger', text: 'hello', timestamp: 1 },
+        { type: 'chat_message', id: 6, sender: 'w1', role: 'debugger', text: 'ping', timestamp: 2, recipient: 'a2', recipientId: 'a2', senderId: 'w1' },
+        { type: 'session_started', sessionId: 's1', project: 'office', cwd: '/home/me/office' },
+        { type: 'session_prompt', sessionId: 's1', text: 'fix the flaky test' },
+        { type: 'agent_working', sessionId: 's1', status: 'reading a.ts' },
+        { type: 'session_needs_you', sessionId: 's1', kind: 'permission', toolName: 'Bash', summary: 'npm test' },
+        { type: 'session_turn_end', sessionId: 's1', text: 'done', backgroundTasks: [] },
+      ]
+      let a = office
+      let b = build()
+      expect(b).toEqual(a)
+      for (const ev of events) {
+        const r1 = reduceOffice(a, ev, env())
+        const r2 = reduceOffice(b, ev, env())
+        expect(r2.state).toEqual(r1.state)
+        expect(r2.effects).toEqual(r1.effects)
+        a = r1.state; b = r2.state
+      }
+      expect(JSON.stringify(office)).toBe(frozen)
+      // The spawn clock is the env's: no Date.now() anywhere in the reducer's path
+      expect(agent(a, 'a2')!.hiredAt).toBe(T0)
+      expect(agent(a, mainId('s1'))!.hiredAt).toBe(T0)
+    } finally {
+      spy.mockRestore()
     }
-    expect(JSON.stringify(office)).toBe(frozen)
-    vi.restoreAllMocks()
   })
 
   it('a store that flushes outside React delivers each effect once and dedups a re-broadcast chat row', () => {
@@ -497,5 +518,499 @@ describe('lifecycle chat lines are not duplicated', () => {
     const { effects: done } = reduceOffice(fullOffice(1), { type: 'agent_completed', agentId: 'w1', result: 'all green' }, late)
     expect(texts(done)[0]).toBe('done: all green')
     expect(texts(done)).toHaveLength(2)                     // plus the boss reply
+  })
+})
+
+// ---------------------------------------------------------------------------
+// F01 / F02 — a Claude per session that acts out the turn, and needs-you
+// ---------------------------------------------------------------------------
+
+/** A live office: the boss alone, until the server names a session */
+function liveOffice(now = T0): OfficeState {
+  return initialOfficeState([seated(BOSS_ID, 'boss', 'spot-1')], now)
+}
+
+const S1 = { sessionId: 's1', project: 'office', cwd: '/home/me/office' }
+const S2 = { sessionId: 's2', project: 'api', cwd: '/home/me/api' }
+
+/** A worker spawned for a session */
+const spawnFor = (id: string, s: { sessionId: string; project: string }, role = 'debugger'): OfficeAction =>
+  ({ type: 'agent_spawned', agent: { id, name: id, role, task: `task ${id}` }, sessionId: s.sessionId, project: s.project })
+
+/** A live office with session s1's Claude seated (and n of its workers) */
+function sessionOffice(n = 0): OfficeState {
+  const ids = Array.from({ length: n }, (_, i) => `w${i + 1}`)
+  const { state } = dispatchAll(liveOffice(), [{ type: 'session_started', ...S1 }, ...ids.map(id => spawnFor(id, S1))])
+  return settle(state).state
+}
+
+const claudeOf = (s: OfficeState, sid: string) => agent(s, mainId(sid))
+const msgs = (effects: OfficeEffect[]) => effects.filter(e => e.kind === 'msg') as Array<Extract<OfficeEffect, { kind: 'msg' }>>
+const titles = (effects: OfficeEffect[]) => effects.filter(e => e.kind === 'title').map(e => (e as { prefix: string }).prefix)
+
+describe('one Claude per session', () => {
+  it('session_started seats a Claude for that session by the boss, with its own clock-in line', () => {
+    const { state, effects } = reduceOffice(liveOffice(), { type: 'session_started', ...S1, model: 'claude-sonnet-4-5-20250929' }, env())
+    const c = claudeOf(state, 's1')!
+    expect(c.role).toBe('assistant')
+    expect(c.name).toBe('Claude')
+    expect(c.sessionId).toBe('s1')
+    expect(c.project).toBe('office')
+    expect(c.model).toBe('claude-sonnet-4-5-20250929')
+    expect(c.assignedSpotId).toBe(CLAUDE_HOME_SPOT)
+    expect(c.state).toBe('new-hire')
+    expect(c.mainState).toBeUndefined()
+    expect(sfx(effects)).toEqual(['doorOpen'])
+    expect(msgs(effects)).toEqual([expect.objectContaining({ sender: 'Claude', role: 'assistant', text: '🤖 clocked in · office', agentId: mainId('s1') })])
+
+    // It walks in and sits down idle (nothing heard from its main thread yet), not typing
+    const { state: settled } = settle(state)
+    expect(claudeOf(settled, 's1')!.state).toBe('idle')
+    expect(claudeOf(settled, 's1')!.position).toEqual(claudeOf(settled, 's1')!.deskPosition)
+    expect(settled.meta[mainId('s1')].idleSince).toBeNull()      // unknown is not asleep
+
+    // The same session again is a no-op; a second session gets its own Claude at another desk
+    const again = reduceOffice(settled, { type: 'session_started', ...S1 }, env())
+    expect(again.state.agents).toHaveLength(settled.agents.length)
+    expect(again.effects).toEqual([])
+    const { state: two, effects: e2 } = reduceOffice(settled, { type: 'session_started', ...S2 }, env())
+    const c2 = claudeOf(two, 's2')!
+    expect(c2.assignedSpotId).not.toBe(CLAUDE_HOME_SPOT)
+    expect(c2.assignedSpotId).toMatch(/^spot-/)
+    // With two terminals open the chat line names the project
+    expect(msgs(e2)[0].sender).toBe('Claude · api')
+  })
+
+  it('the first event of any kind from a session creates its Claude; nothing is created for an ended session', () => {
+    const { state } = reduceOffice(liveOffice(), { type: 'agent_working', ...S1, status: 'reading a.ts' }, env())
+    expect(claudeOf(state, 's1')).toBeDefined()
+    const { state: ended } = reduceOffice(state, { type: 'session_ended', sessionId: 's1', reason: 'other' }, env())
+    const { state: late } = reduceOffice(ended, { type: 'agent_working', sessionId: 's2', status: 'x' }, env({ now: T0 + 1 }))
+    expect(claudeOf(late, 's2')).toBeDefined()               // another session is fine
+    const { state: straggler, effects: none } = reduceOffice(late, { type: 'session_prompt', sessionId: 's1', text: 'late' }, env())
+    expect(straggler).toBe(late)
+    expect(none).toEqual([])
+  })
+
+  it('the snapshot seats a Claude per listed session, in the state the server records, and walks out the Claude of a session it no longer lists', () => {
+    const office = sessionOffice()
+    const { state, effects } = reduceOffice(office, {
+      type: 'snapshot',
+      activeAgents: [],
+      sessions: [
+        { id: 's2', project: 'api', state: 'active', main: { state: 'needs-you', since: T0 - 5000, needsYou: { kind: 'permission', toolName: 'Write', summary: 'src/a.ts', since: T0 - 5000 } } },
+        { id: 's3', project: 'docs', state: 'active', main: { state: 'idle', since: T0 - 60_000 } },
+      ],
+    }, env())
+    expect(claudeOf(state, 's1')!.state).toBe('completed')   // s1 is gone: its Claude is walking out
+    const c2 = agent(state, mainId('s2'))!
+    expect(c2.mainState).toBe('needs-you')
+    expect(c2.needsYou).toEqual({ kind: 'permission', toolName: 'Write', summary: 'src/a.ts', since: T0 - 5000 })
+    expect(c2.statusText).toBe('✋ needs you: Write · src/a.ts')
+    expect(titles(effects)).toEqual(['✋ '])
+    const c3 = agent(state, mainId('s3'))!
+    expect(c3.mainState).toBe('idle')
+    expect(state.meta[mainId('s3')].idleSince).toBe(T0 - 60_000) // long idle: asleep as soon as it sits down
+    const { state: settled } = settle(state)
+    expect(agent(settled, mainId('s1'))).toBeUndefined()
+    expect(agent(settled, mainId('s2'))!.state).toBe('idle')    // blocked on you: not typing
+    expect(agent(settled, mainId('s3'))!.state).toBe('idle')
+  })
+
+  it('a snapshot without a session list leaves the Claudes alone (older server)', () => {
+    const office = sessionOffice()
+    const { state } = reduceOffice(office, { type: 'snapshot', activeAgents: [] }, env())
+    expect(claudeOf(state, 's1')!.state).toBe('idle')
+  })
+
+  it('session_ended keeps the Claude seated for the grace, then it clocks out; a resume within the grace keeps it', () => {
+    const office = sessionOffice()
+    const { state: s1, effects } = reduceOffice(office, { type: 'session_ended', sessionId: 's1', reason: 'prompt_input_exit' }, env())
+    expect(claudeOf(s1, 's1')!.statusText).toBe('👋 session ended (prompt_input_exit)')
+    expect(claudeOf(s1, 's1')!.mainState).toBeUndefined()
+    expect(effects).toEqual([{ kind: 'schedule', action: { type: 'session_claude_leave', sessionId: 's1' }, delayMs: SESSION_CLAUDE_GRACE_MS }])
+
+    const late = env({ now: T0 + SESSION_CLAUDE_GRACE_MS })
+    const { state: gone, effects: bye } = reduceOffice(s1, { type: 'session_claude_leave', sessionId: 's1' }, late)
+    expect(agent(gone, mainId('s1'))!.state).toBe('completed')
+    expect(agent(gone, mainId('s1'))!.targetPosition).toEqual(DOOR_TARGET)
+    expect(texts(bye)).toEqual(['👋 clocked out'])
+    expect(sfx(bye)).toEqual([])                              // quiet: no celebration, no boss reply
+    expect(agent(settle(gone, late).state, mainId('s1'))).toBeUndefined()
+
+    // Resume before the grace is over: the leave is a no-op
+    const { state: back } = reduceOffice(s1, { type: 'session_started', ...S1, source: 'resume' }, env())
+    expect(back.endedSessions).toEqual({})
+    const r = reduceOffice(back, { type: 'session_claude_leave', sessionId: 's1' }, late)
+    expect(r.state).toBe(back)
+    expect(claudeOf(r.state, 's1')!.state).toBe('idle')
+  })
+
+  it('a Claude between turns joins a fire drill; one mid-turn or with a hand up stays at its desk (C32 for Claude)', () => {
+    const { state } = dispatchAll(sessionOffice(), [
+      { type: 'session_started', ...S2 },
+      { type: 'session_prompt', ...S2, text: 'go' },
+    ])
+    const settled = settle(state).state
+    expect(claudeOf(settled, 's1')!.mainState).toBeUndefined()
+    expect(claudeOf(settled, 's2')!.mainState).toBe('working')
+    const { movedIds } = moveAgentsForEvent(settled.agents, { x: 67.5, y: 48.9 }, 'Fire Drill', env({ live: true }))
+    expect(movedIds).toContain(mainId('s1'))
+    expect(movedIds).not.toContain(mainId('s2'))
+    expect(pickSingleEventAgent(settled.agents, env({ live: true }))!.id).toBe(mainId('s1'))
+  })
+})
+
+describe("main-thread activity lands on the session's Claude", () => {
+  it('an agent_working with a sessionId and no agentId is that Claude working, never a worker', () => {
+    const office = sessionOffice(2)
+    const w1Before = agent(office, 'w1')!
+    const { state, effects } = reduceOffice(office, { type: 'agent_working', ...S1, status: 'editing src/a.ts' }, env())
+    const c = claudeOf(state, 's1')!
+    expect(c.mainState).toBe('working')
+    expect(c.state).toBe('working')
+    expect(c.statusText).toBe('editing src/a.ts')
+    expect(agent(state, 'w1')).toBe(w1Before)
+    expect(agent(state, 'w2')!.statusText).not.toBe('editing src/a.ts')
+    expect(msgs(effects)).toEqual([expect.objectContaining({ sender: 'Claude', role: 'assistant', text: '⚡ editing src/a.ts', agentId: mainId('s1') })])
+
+    const failed = reduceOffice(state, { type: 'agent_working', ...S1, status: 'running: npm test', failed: true }, env())
+    expect(claudeOf(failed.state, 's1')!.lastFailed).toBe(true)
+    expect(texts(failed.effects)).toEqual(['❌ running: npm test'])
+  })
+
+  it('without a sessionId (old hook) a worker shows it, or the only Claude when no worker is at work', () => {
+    const withWorkers = sessionOffice(1)
+    const r1 = reduceOffice(withWorkers, { type: 'agent_working', status: 'grep' }, env())
+    expect(agent(r1.state, 'w1')!.statusText).toBe('grep')
+    expect(claudeOf(r1.state, 's1')!.statusText).not.toBe('grep')
+
+    const alone = sessionOffice()
+    const r2 = reduceOffice(alone, { type: 'agent_working', status: 'grep' }, env())
+    expect(claudeOf(r2.state, 's1')!.statusText).toBe('grep')
+    expect(claudeOf(r2.state, 's1')!.mainState).toBe('working')
+  })
+
+  it('a status for a Claude still walking in is posted now and shown on arrival (C13)', () => {
+    const { state } = reduceOffice(liveOffice(), { type: 'session_started', ...S1 }, env())
+    const { state: s1, effects } = reduceOffice(state, { type: 'agent_working', ...S1, status: 'reading README' }, env())
+    expect(claudeOf(s1, 's1')!.state).toBe('new-hire')
+    expect(texts(effects)).toEqual(['⚡ reading README'])
+    const { state: s2 } = settle(s1)
+    expect(claudeOf(s2, 's1')!.state).toBe('working')
+    expect(claudeOf(s2, 's1')!.statusText).toBe('reading README')
+  })
+})
+
+describe('session_prompt: the boss hands the prompt over, Claude types', () => {
+  it("walks the boss to Claude's desk with the prompt as his line, posts the prompt as his chat row, and starts Claude working", () => {
+    const office = sessionOffice()
+    const claude = claudeOf(office, 's1')!
+    const { state, effects } = reduceOffice(office, { type: 'session_prompt', ...S1, text: 'Fix the flaky purity test in tests/officeReducer.test.ts please', promptId: 'p1' }, env())
+
+    const boss = agent(state, BOSS_ID)!
+    expect(boss.state).toBe('walking-to-manager')
+    expect(boss.targetPosition).toEqual({ x: claude.deskPosition.x + 4, y: claude.deskPosition.y + 2 })
+    expect(boss.statusText).toBe('Fix the flaky purity test in tests/officeReducer.test.ts pl…')   // 60 chars for a bubble
+    expect(state.handoverSeq).toBe(1)
+
+    const c = claudeOf(state, 's1')!
+    expect(c.mainState).toBe('working')
+    expect(c.state).toBe('working')
+    expect(c.statusText).toBe('✍ Fix the flaky purity test in tests/officeReducer.test.ts pl…')
+
+    expect(msgs(effects)).toEqual([expect.objectContaining({ sender: BOSS_NAME, role: 'boss', text: 'Fix the flaky purity test in tests/officeReducer.test.ts please', tag: 'prompt', agentId: BOSS_ID })])
+    expect(sfx(effects)).toEqual(['typing'])
+    expect(effects).toContainEqual({ kind: 'schedule', action: { type: 'handover_over', seq: 1 }, delayMs: HANDOVER_MAX_MS })
+
+    // He arrives, says his line (talking-to-manager drives the speech bubble) and the dwell is scheduled
+    const { state: arrived, effects: walk } = settle(state)
+    expect(agent(arrived, BOSS_ID)!.state).toBe('talking-to-manager')
+    expect(walk).toContainEqual({ kind: 'schedule', action: { type: 'handover_over', seq: 1 }, delayMs: HANDOVER_DWELL_MS })
+
+    // A stale timer is ignored; the right one sends him back to his desk
+    expect(reduceOffice(arrived, { type: 'handover_over', seq: 0 }, env()).state).toBe(arrived)
+    const { state: back } = reduceOffice(arrived, { type: 'handover_over', seq: 1 }, env())
+    expect(agent(back, BOSS_ID)!.state).toBe('walking-to-desk')
+    expect(agent(back, BOSS_ID)!.targetPosition).toEqual(agent(back, BOSS_ID)!.deskPosition)
+    const { state: home } = settle(back)
+    expect(agent(home, BOSS_ID)!.state).toBe('working')
+    expect(claudeOf(home, 's1')!.state).toBe('working')        // Claude kept typing throughout
+  })
+
+  it('a second prompt while the boss is still over there just gives him the new line, with a new sequence', () => {
+    const office = sessionOffice()
+    const { state: s1 } = reduceOffice(office, { type: 'session_prompt', ...S1, text: 'first' }, env())
+    const { state: there } = settle(s1)
+    const { state: s2, effects } = reduceOffice(there, { type: 'session_prompt', ...S1, text: 'second' }, env())
+    expect(agent(s2, BOSS_ID)!.state).toBe('talking-to-manager')
+    expect(agent(s2, BOSS_ID)!.statusText).toBe('second')
+    expect(s2.handoverSeq).toBe(2)
+    expect(effects).toContainEqual({ kind: 'schedule', action: { type: 'handover_over', seq: 2 }, delayMs: HANDOVER_DWELL_MS })
+    expect(reduceOffice(s2, { type: 'handover_over', seq: 1 }, env()).state).toBe(s2)
+  })
+
+  it('a wake-up from a background worker is a note on Claude, not a walk', () => {
+    const office = sessionOffice(1)
+    // The hook names the subagent id; the server adds the office id when it knows the worker
+    const { state, effects } = reduceOffice(office, { type: 'session_prompt', ...S1, isWakeup: true, wakeupAgentId: 'a4b69979afca21afd', wakeupOfficeId: 'w1', text: 'tests pass' }, env())
+    expect(agent(state, BOSS_ID)!.state).toBe('working')
+    expect(state.handoverSeq).toBe(0)
+    const c = claudeOf(state, 's1')!
+    expect(c.mainState).toBe('working')
+    expect(c.statusText).toBe('📬 w1 reported back')
+    expect(msgs(effects)).toEqual([expect.objectContaining({ sender: 'Claude', text: '📬 w1 reported back' })])
+    expect(sfx(effects)).toEqual([])
+  })
+
+  it('with logPrompts off the text is absent: no prompt row, a generic bubble, Claude still works', () => {
+    const office = sessionOffice()
+    const { state, effects } = reduceOffice(office, { type: 'session_prompt', ...S1, text: '' }, env())
+    expect(msgs(effects)).toEqual([])
+    expect(agent(state, BOSS_ID)!.statusText).toBe('📝 new prompt')
+    expect(claudeOf(state, 's1')!.statusText).toBe('✍ working on a prompt')
+    expect(claudeOf(state, 's1')!.mainState).toBe('working')
+  })
+
+  it('the boss only goes when he is at his desk; Claude works either way', () => {
+    const office = sessionOffice()
+    const onBreak = { ...office, agents: office.agents.map(a => (a.id === BOSS_ID ? { ...a, state: 'coffee-break' as const } : a)) }
+    const { state } = reduceOffice(onBreak, { type: 'session_prompt', ...S1, text: 'go' }, env())
+    expect(agent(state, BOSS_ID)!.state).toBe('coffee-break')
+    expect(state.handoverSeq).toBe(0)
+    expect(claudeOf(state, 's1')!.mainState).toBe('working')
+  })
+})
+
+describe('session_turn_end: the reply, then idle or waiting', () => {
+  it("posts the reply as Claude's chat row and goes idle with the sleep timer started", () => {
+    const { state: working } = reduceOffice(sessionOffice(), { type: 'session_prompt', ...S1, text: 'go' }, env())
+    const { state, effects } = reduceOffice(working, { type: 'session_turn_end', ...S1, text: 'All 289 tests pass.', backgroundTasks: [], crons: [], stopHookActive: false }, env({ now: T0 + 5000 }))
+    const c = claudeOf(state, 's1')!
+    expect(c.mainState).toBe('idle')
+    expect(c.state).toBe('idle')
+    expect(c.statusText).toBe('turn over — idle')
+    expect(c.waitingOn).toBeUndefined()
+    expect(state.meta[mainId('s1')].idleSince).toBe(T0 + 5000)     // sleeping.png after 30 s (getEffect)
+    expect(msgs(effects)).toEqual([expect.objectContaining({ sender: 'Claude', text: 'All 289 tests pass.', tag: 'reply', agentId: mainId('s1') })])
+
+    // The next prompt wakes it: the timer is cleared
+    const { state: again } = reduceOffice(state, { type: 'session_prompt', ...S1, text: 'more' }, env({ now: T0 + 9000 }))
+    expect(again.meta[mainId('s1')].idleSince).toBeNull()
+    expect(claudeOf(again, 's1')!.state).toBe('working')
+  })
+
+  it('with background workers still out it waits on them (glass of water), counting the unfinished ones', () => {
+    const { state, effects } = reduceOffice(sessionOffice(), {
+      type: 'session_turn_end', ...S1, text: 'Kicked off two reviewers.',
+      backgroundTasks: [
+        { id: 't1', type: 'subagent', status: 'running', description: 'review PR' },
+        { id: 't2', type: 'shell', status: 'running', description: 'npm test' },
+        { id: 't3', type: 'subagent', status: 'completed', description: 'done already' },
+      ],
+    }, env())
+    const c = claudeOf(state, 's1')!
+    expect(c.mainState).toBe('waiting')
+    expect(c.state).toBe('idle')
+    expect(c.waitingOn).toBe(2)
+    expect(c.statusText).toBe('⏳ waiting on 2 background workers')
+    expect(state.meta[mainId('s1')].idleSince).toBeNull()        // waiting is not asleep
+    expect(texts(effects)).toEqual(['Kicked off two reviewers.'])
+
+    // The server's own count wins when it sends one
+    const { state: one } = reduceOffice(sessionOffice(), { type: 'session_turn_end', ...S1, backgroundTasks: [], main: { state: 'waiting', waitingOn: 1 } }, env())
+    expect(claudeOf(one, 's1')!.statusText).toBe('⏳ waiting on 1 background worker')
+  })
+
+  it('without text (logPrompts off) there is no reply row, only the state change', () => {
+    const { state, effects } = reduceOffice(sessionOffice(), { type: 'session_turn_end', ...S1, text: '', backgroundTasks: [] }, env())
+    expect(msgs(effects)).toEqual([])
+    expect(claudeOf(state, 's1')!.mainState).toBe('idle')
+  })
+})
+
+describe('session_compact: memory wipe', () => {
+  it('pre sweeps the desk and remembers the state; post goes back to it', () => {
+    const { state: working } = reduceOffice(sessionOffice(), { type: 'session_prompt', ...S1, text: 'go' }, env())
+    const { state: pre, effects } = reduceOffice(working, { type: 'session_compact', ...S1, phase: 'pre', trigger: 'auto' }, env())
+    const c = claudeOf(pre, 's1')!
+    expect(c.mainState).toBe('compacting')
+    expect(c.state).toBe('working')
+    expect(c.statusText).toBe('🧹 memory wipe')
+    expect(pre.meta[mainId('s1')].beforeCompact).toBe('working')
+    expect(texts(effects)).toEqual(['🧹 memory wipe (auto)'])
+
+    const { state: post, effects: quiet } = reduceOffice(pre, { type: 'session_compact', ...S1, phase: 'post', trigger: 'auto' }, env())
+    expect(claudeOf(post, 's1')!.mainState).toBe('working')
+    expect(claudeOf(post, 's1')!.statusText).toBe('✍ back to work')
+    expect(post.meta[mainId('s1')].beforeCompact).toBeUndefined()
+    expect(texts(quiet)).toEqual([])
+
+    // A manual /compact at idle comes back idle
+    const { state: idle } = reduceOffice(sessionOffice(), { type: 'session_turn_end', ...S1, backgroundTasks: [] }, env())
+    const { state: pre2 } = reduceOffice(idle, { type: 'session_compact', ...S1, phase: 'pre', trigger: 'manual' }, env())
+    const { state: post2 } = reduceOffice(pre2, { type: 'session_compact', ...S1, phase: 'post', trigger: 'manual' }, env())
+    expect(claudeOf(post2, 's1')!.mainState).toBe('idle')
+    expect(claudeOf(post2, 's1')!.state).toBe('idle')
+
+    // A wipe while waiting on workers comes back waiting on them, count and line intact
+    const tasks = [{ id: 't1', type: 'subagent', status: 'running' }, { id: 't2', type: 'shell', status: 'running' }]
+    const { state: waiting } = reduceOffice(sessionOffice(), { type: 'session_turn_end', ...S1, backgroundTasks: tasks }, env())
+    const { state: pre3 } = reduceOffice(waiting, { type: 'session_compact', ...S1, phase: 'pre', trigger: 'auto' }, env())
+    expect(claudeOf(pre3, 's1')!.statusText).toBe('🧹 memory wipe')
+    const { state: post3 } = reduceOffice(pre3, { type: 'session_compact', ...S1, phase: 'post', trigger: 'auto' }, env())
+    expect(claudeOf(post3, 's1')!.mainState).toBe('waiting')
+    expect(claudeOf(post3, 's1')!.waitingOn).toBe(2)
+    expect(claudeOf(post3, 's1')!.statusText).toBe('⏳ waiting on 2 background workers')
+
+    // With the server's record on the post event, that record wins
+    const { state: post4 } = reduceOffice(pre3, { type: 'session_compact', ...S1, phase: 'post', trigger: 'auto', main: { state: 'idle', since: T0 + 5 } }, env())
+    expect(claudeOf(post4, 's1')!.mainState).toBe('idle')
+  })
+})
+
+describe('session_error', () => {
+  it('shows the red API-error state with a chat line and the error sound, until the next prompt', () => {
+    const { state, effects } = reduceOffice(sessionOffice(), { type: 'session_error', ...S1, error: 'rate_limit', detail: 'Rate limit reached, retry in 30s' }, env())
+    const c = claudeOf(state, 's1')!
+    expect(c.mainState).toBe('error')
+    expect(c.state).toBe('idle')
+    expect(c.statusText).toBe('⚠ API error: rate_limit')
+    expect(texts(effects)).toEqual(['⚠ API error: rate_limit — Rate limit reached, retry in 30s'])
+    expect(sfx(effects)).toEqual(['error'])
+    const { state: next } = reduceOffice(state, { type: 'session_prompt', ...S1, text: 'retry' }, env())
+    expect(claudeOf(next, 's1')!.mainState).toBe('working')
+  })
+})
+
+describe('session_needs_you (F02)', () => {
+  const permission: OfficeAction = { type: 'session_needs_you', ...S1, kind: 'permission', toolName: 'Bash', summary: 'rm -rf dist', message: 'Claude needs your permission' }
+
+  it('a permission request raises the hand, turns the pill amber, chimes once and prefixes the title', () => {
+    const { state: working } = reduceOffice(sessionOffice(), { type: 'session_prompt', ...S1, text: 'clean up' }, env())
+    const { state, effects } = reduceOffice(working, permission, env({ now: T0 + 100 }))
+    const c = claudeOf(state, 's1')!
+    expect(c.mainState).toBe('needs-you')
+    expect(c.state).toBe('idle')                               // not typing while blocked on you
+    expect(c.needsYou).toEqual({ kind: 'permission', toolName: 'Bash', summary: 'rm -rf dist', message: 'Claude needs your permission', since: T0 + 100 })
+    expect(c.statusText).toBe('✋ needs you: Bash · rm -rf dist')
+    expect(texts(effects)).toEqual(['✋ needs you: Bash · rm -rf dist'])
+    expect(sfx(effects)).toEqual(['needsYou'])
+    expect(titles(effects)).toEqual(['✋ '])
+
+    // The same request again (the trailing Notification): nothing new
+    const again = reduceOffice(state, permission, env({ now: T0 + 6000 }))
+    expect(again.effects.filter(e => e.kind !== 'title')).toEqual([])
+    expect(titles(again.effects)).toEqual([])
+    expect(claudeOf(again.state, 's1')!.needsYou!.since).toBe(T0 + 100)
+  })
+
+  it('clears on the next tool call, prompt, turn end or a server record that has moved on — and the title prefix goes', () => {
+    const { state: raised } = reduceOffice(sessionOffice(), permission, env())
+    const clears: OfficeAction[] = [
+      { type: 'agent_working', ...S1, status: 'running: rm -rf dist' },
+      { type: 'session_prompt', ...S1, text: 'ok go' },
+      { type: 'session_turn_end', ...S1, text: 'done', backgroundTasks: [] },
+      { type: 'session_needs_you', ...S1, kind: 'permission', toolName: 'Bash', main: { state: 'working' } },
+      { type: 'session_ended', sessionId: 's1' },
+    ]
+    for (const clear of clears) {
+      const { state, effects } = reduceOffice(raised, clear, env())
+      expect(claudeOf(state, 's1')!.mainState, clear.type).not.toBe('needs-you')
+      expect(claudeOf(state, 's1')!.needsYou, clear.type).toBeUndefined()
+      expect(titles(effects), clear.type).toEqual([''])
+    }
+    // Two sessions with hands up: the prefix stays until the last one is cleared
+    const { state: both } = dispatchAll(raised, [{ type: 'session_started', ...S2 }, { ...permission, ...S2 }])
+    const { state: one, effects: e1 } = reduceOffice(both, { type: 'agent_working', ...S1, status: 'x' }, env())
+    expect(titles(e1)).toEqual([])
+    const { effects: e2 } = reduceOffice(one, { type: 'agent_working', ...S2, status: 'x' }, env())
+    expect(titles(e2)).toEqual([''])
+  })
+
+  it('session_main (the server lowered the hand: the granted tool ran, or nobody answered for 10 min) clears it with a line', () => {
+    const { state: raised } = reduceOffice(sessionOffice(), permission, env())
+    const granted = reduceOffice(raised, { type: 'session_main', sessionId: 's1', project: 'office', reason: 'permission answered', main: { state: 'working', since: T0 + 2000, waitingOn: 0 } }, env())
+    expect(claudeOf(granted.state, 's1')!.mainState).toBe('working')
+    expect(claudeOf(granted.state, 's1')!.needsYou).toBeUndefined()
+    expect(texts(granted.effects)).toEqual(['✅ permission answered'])
+    expect(titles(granted.effects)).toEqual([''])
+
+    const timedOut = reduceOffice(raised, { type: 'session_main', sessionId: 's1', reason: 'needs-you timed out', main: { state: 'idle', since: T0 + 600_000, waitingOn: 0 } }, env({ now: T0 + 600_000 }))
+    expect(claudeOf(timedOut.state, 's1')!.mainState).toBe('idle')
+    expect(timedOut.state.meta[mainId('s1')].idleSince).toBe(T0 + 600_000)
+    expect(texts(timedOut.effects)).toEqual(['💤 needs-you timed out'])
+
+    // A session_main for a session we have not seen seats its Claude in that state
+    const fresh = reduceOffice(liveOffice(), { type: 'session_main', ...S2, reason: 'x', main: { state: 'error', error: { error: 'overloaded', detail: '529' } } }, env())
+    expect(claudeOf(fresh.state, 's2')!.mainState).toBe('error')
+    expect(claudeOf(fresh.state, 's2')!.statusText).toBe('⚠ API error: overloaded')
+  })
+
+  it('session_tool_done lowers a permission hand for that tool or for the whole batch, and nothing else', () => {
+    const { state: raised } = reduceOffice(sessionOffice(), permission, env())
+    expect(reduceOffice(raised, { type: 'session_tool_done', sessionId: 's1', toolName: 'Read' }, env()).state).toBe(raised)
+    expect(reduceOffice(raised, { type: 'session_tool_done', sessionId: 's2', toolName: 'Bash' }, env()).state).toBe(raised)
+    const ran = reduceOffice(raised, { type: 'session_tool_done', sessionId: 's1', toolName: 'Bash' }, env())
+    expect(claudeOf(ran.state, 's1')!.mainState).toBe('working')
+    expect(claudeOf(ran.state, 's1')!.statusText).toBe('⚡ Bash ran')
+    expect(texts(ran.effects)).toEqual(['✅ permission answered — Bash ran'])
+    expect(titles(ran.effects)).toEqual([''])
+    const batch = reduceOffice(raised, { type: 'session_tool_done', sessionId: 's1', batch: true, count: 2 }, env())
+    expect(claudeOf(batch.state, 's1')!.statusText).toBe('⚡ tool batch of 2 done')
+    // An idle prompt is not answered by a tool
+    const { state: idle } = reduceOffice(sessionOffice(), { type: 'session_needs_you', ...S1, kind: 'idle' }, env())
+    expect(reduceOffice(idle, { type: 'session_tool_done', sessionId: 's1', batch: true, count: 1 }, env()).state).toBe(idle)
+  })
+
+  it('idle and quota are soft: a note, no chime, no title prefix; agent-input is a hand like a permission', () => {
+    const idle = reduceOffice(sessionOffice(), { type: 'session_needs_you', ...S1, kind: 'idle', message: 'Claude is waiting for your input' }, env())
+    expect(claudeOf(idle.state, 's1')!.statusText).toBe('💤 idle prompt')
+    expect(claudeOf(idle.state, 's1')!.mainState).toBe('needs-you')
+    expect(sfx(idle.effects)).toEqual([])
+    expect(titles(idle.effects)).toEqual([])
+
+    const quota = reduceOffice(sessionOffice(), { type: 'session_needs_you', ...S1, kind: 'quota', message: 'usage limit' }, env())
+    expect(claudeOf(quota.state, 's1')!.statusText).toBe('⏳ waiting for tokens')
+    expect(texts(quota.effects)).toEqual(['⏳ waiting for tokens'])
+    expect(sfx(quota.effects)).toEqual([])
+    expect(titles(quota.effects)).toEqual([])
+
+    const input = reduceOffice(sessionOffice(), { type: 'session_needs_you', ...S1, kind: 'agent-input', summary: 'which branch?' }, env())
+    expect(claudeOf(input.state, 's1')!.statusText).toBe('✋ needs input: which branch?')
+    expect(sfx(input.effects)).toEqual(['needsYou'])
+    expect(titles(input.effects)).toEqual(['✋ '])
+  })
+})
+
+describe('session_cwd / session_model', () => {
+  it('cd moves the project tag of the Claude and its workers; /model sets the badge', () => {
+    const office = sessionOffice(1)
+    const { state } = reduceOffice(office, { type: 'session_cwd', sessionId: 's1', cwd: '/home/me/office/packages/web/' }, env())
+    expect(claudeOf(state, 's1')!.project).toBe('web')
+    expect(agent(state, 'w1')!.project).toBe('web')
+    expect(agent(state, BOSS_ID)!.project).toBeUndefined()
+
+    const { state: m } = reduceOffice(state, { type: 'session_model', sessionId: 's1', model: 'claude-opus-4-1' }, env())
+    expect(claudeOf(m, 's1')!.model).toBe('claude-opus-4-1')
+  })
+})
+
+describe("completion line with the Agent tool's numbers", () => {
+  const late = env({ now: T0 + MIN_VISIBLE_TIME + 1 })
+
+  it('live: "✅ done · 42k tok · 3m12s" next to the boss reply; nothing extra without the numbers', () => {
+    const { effects } = reduceOffice(fullOffice(1), { type: 'agent_completed', agentId: 'w1', result: 'all green', tokens: 42_000, durationMs: 192_000, toolUses: 17 }, late)
+    expect(texts(effects)[0]).toBe('✅ done · 42k tok · 3m12s')
+    expect(texts(effects)).toHaveLength(2)                    // plus the boss reply
+    const { effects: plain } = reduceOffice(fullOffice(1), { type: 'agent_completed', agentId: 'w1', result: 'all green' }, late)
+    expect(texts(plain)).toHaveLength(1)
+    const { effects: tokensOnly } = reduceOffice(fullOffice(1), { type: 'agent_completed', agentId: 'w1', tokens: 950 }, late)
+    expect(texts(tokensOnly)[0]).toBe('✅ done · 950 tok')
+  })
+
+  it('sim: the numbers join the "done:" line', () => {
+    const { effects } = reduceOffice(fullOffice(1), { type: 'agent_completed', agentId: 'w1', result: 'all green', tokens: 4_200, durationMs: 45_000 }, env({ now: T0 + MIN_VISIBLE_TIME + 1, live: false }))
+    expect(texts(effects)[0]).toBe('done: all green · 4.2k tok · 45s')
   })
 })
