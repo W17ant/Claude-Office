@@ -4,6 +4,7 @@ All notable changes to Claude Office. Numbers refer to pull requests.
 
 ## Unreleased
 
+- The tracker hook parses under macOS's stock bash 3.2 again: it died with a syntax error and exit 2 (which blocks Stop / PreToolUse / UserPromptSubmit in Claude Code) because bash 3.2 cannot parse a heredoc with quotes inside `$( )`; the three embedded Python blocks are now read with `read -r -d ''`, and a test runs `/bin/bash -n` on the script (#59).
 - Prod Is Down now sounds the alarm: as an incident starts the room flashes deep red three times over 1.8 s (under the 3-a-second photosensitivity limit), then settles into a darker red tint. A reload halfway through an incident, a mini-incident from a random event, and reduced-motion settings get no flash.
 
 ## 1.1.1 — 2026-10-15
