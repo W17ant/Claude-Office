@@ -67,6 +67,17 @@ function runHook(payload: unknown): Record<string, any> | null {
   return lines.length ? JSON.parse(lines[0]) : null
 }
 
+describe('agent-tracker.sh: parses under the system bash', () => {
+  // Hooks run as `bash agent-tracker.sh`; on macOS that is bash 3.2, which
+  // cannot parse a heredoc holding quotes inside $( ). A syntax error exits 2,
+  // and exit 2 blocks Stop / PreToolUse / UserPromptSubmit in Claude Code.
+  it('/bin/bash -n accepts the script', () => {
+    const r = spawnSync('/bin/bash', ['-n', TRACKER], { encoding: 'utf8' })
+    expect(r.stderr).toBe('')
+    expect(r.status).toBe(0)
+  })
+})
+
 describe('agent-tracker.sh: Agent tool', () => {
   it('PreToolUse Agent -> agent_spawned, with the role hinted from the task and background flag', () => {
     expect(runHook({
