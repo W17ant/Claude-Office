@@ -110,7 +110,7 @@ fi
 # big tool_response (a 300 KB file read is routine) is over the ~128 KiB
 # single-argument limit and would fail the exec with E2BIG. No shell
 # variables are interpolated into the Python source.
-PY=$(cat <<'PYEOF'
+PY_A=$(cat <<'PYEOF'
 import json, sys, os, re, hashlib
 
 try:
@@ -763,6 +763,13 @@ SIGNAL_VERBS = frozenset((
     '--prod', '--production', '-m',
 ))
 
+PYEOF
+)
+# The Python is split into two heredocs on purpose: Git Bash on Windows
+# (MSYS bash 5.2) deadlocks on a heredoc larger than 64 KiB inside $(...),
+# hanging every hook until Claude Code's timeout. Keep each half well under
+# that. tests/hook-script.test.ts joins every PYEOF block in order.
+PY_B=$(cat <<'PYEOF'
 def might_signal(command):
     s = command
     for ch in ';|&()<>\'"`${}\n\t':
@@ -1480,6 +1487,8 @@ if hook_event == 'PreToolUse':
 sys.exit(0)
 PYEOF
 )
+PY="$PY_A
+$PY_B"
 
 # -I: ignore PYTHON* env vars and the user site, and keep the cwd (the
 # project Claude is working in) off sys.path. The token and the event URL go
