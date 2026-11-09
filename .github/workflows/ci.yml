@@ -88,12 +88,16 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Make python3 resolve on Windows
-        # Why: the hook calls `python3`, and the python.org / setup-python
-        # install only ships python.exe
+      - name: Make sure python3 resolves on Windows
+        # Why: the hook calls `python3`; a python.org install only ships
+        # python.exe (setup-python adds python3.exe today, but fail loudly
+        # here rather than in the hook if that changes)
         if: runner.os == 'Windows'
         shell: bash
-        run: cp "$(cygpath -u "$pythonLocation")/python.exe" "$(cygpath -u "$pythonLocation")/python3.exe"
+        run: |
+          dir="$(cygpath -u "$pythonLocation")"
+          [ -e "$dir/python3.exe" ] || cp "$dir/python.exe" "$dir/python3.exe"
+          python3 --version
 
       - name: Run the hook end to end
         # Windows: Git Bash (not WSL's bash.exe, which `bash` can resolve to
