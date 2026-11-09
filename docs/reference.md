@@ -663,10 +663,26 @@ allowlist accepts `https://my-mac.tail1234.ts.net`. Entries must be plain
 host names with at least one dot — wildcards, schemes, paths and IP
 addresses are logged and ignored.
 
-**Through that name nothing is open.** Every request through the proxy
+**Through the proxy nothing is open.** Every request through the proxy
 arrives from `127.0.0.1`, so on loopback's rules "any local process" would
-mean every device your tailnet lets reach this machine. A request whose
-`Host` is an `AGENT_OFFICE_ALLOWED_HOSTS` name therefore needs the office
+mean every device your tailnet lets reach this machine. And the `Host` alone
+cannot tell a proxied request apart: `tailscale serve` routes by the TLS
+name and forwards the client's `Host` unchanged, so a tailnet device could
+send `Host: localhost`. So a request counts as proxied when its `Host` is an
+`AGENT_OFFICE_ALLOWED_HOSTS` name, **or** it carries a header a reverse
+proxy adds — `X-Forwarded-For`, `X-Forwarded-Host`, `X-Forwarded-Proto`,
+`Forwarded`, `Tailscale-User-*` — **or** its peer address is not loopback.
+That is reliable for `tailscale serve`: its proxy (Go's
+`httputil.ReverseProxy` in Rewrite mode) first deletes any client-sent
+`Forwarded` / `X-Forwarded-*`, then always sets `X-Forwarded-Host` and
+`X-Forwarded-For` (and `X-Forwarded-Proto` over HTTPS) on every request it
+relays, tagged and shared nodes included; the `Tailscale-User-*` identity
+headers are set only for tailnet users with a login, so they are extra
+markers, not the key (checked in `ipn/ipnlocal/serve.go` and
+`net/http/httputil/reverseproxy.go`). This holds whether or not
+`AGENT_OFFICE_ALLOWED_HOSTS` is set, so a `tailscale serve` pointed at the
+office without it gets nothing open either (the Host guard refuses its name
+anyway). A proxied request needs the office
 token or the UI token as `Authorization: Bearer` for every route — the open
 `GET`s (`/agents`, `/sessions`, `/tasks`, `/config`, `/health`, ...) and
 `POST /chat` included — and gets a `401` without one; only the built UI's
@@ -676,8 +692,9 @@ there is no read-only view through the proxy. The office page sends the
 header itself when it was served over HTTPS from such a name (the UI token
 once the WebSocket handed it over; the office token before that, on reads
 only — a `POST` never carries the file token, so `/clear` typed in the chat
-stays refused as on loopback). Requests with a loopback `Host` work exactly
-as before. The office token crosses the tailnet only inside Tailscale's HTTPS.
+stays refused as on loopback). A request from loopback with a loopback
+`Host` and none of those headers — the hook, the scripts, the desktop app,
+a browser on this machine — works exactly as before. The office token crosses the tailnet only inside Tailscale's HTTPS.
 
 **Use `tailscale serve`, never `tailscale funnel`.** Funnel publishes the
 proxy on the internet. Tailscale marks each request Funnel relays with

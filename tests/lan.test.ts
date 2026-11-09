@@ -603,6 +603,41 @@ describe('AGENT_OFFICE_ALLOWED_HOSTS: the loopback guard behind tailscale serve'
     expect((await request(app).post('/chat/typing').send({ sender: 'x' })).status).toBe(200)
   })
 
+  it('a loopback Host through the proxy is still remote: serve\'s forwarding headers mark it', async () => {
+    const app = office.server.app
+    const markers: Array<[string, string]> = [
+      ['X-Forwarded-For', '100.101.102.103'], ['X-Forwarded-Host', 'localhost'], ['X-Forwarded-Proto', 'https'],
+      ['Forwarded', 'for=100.101.102.103'], ['Tailscale-User-Login', 'someone@example.com'], ['Tailscale-User-Name', 'Someone'],
+    ]
+    for (const host of ['localhost', '127.0.0.1:3334', '[::1]']) {
+      for (const [name, value] of markers) {
+        for (const path of ['/agents', '/sessions', '/health']) {
+          expect((await request(app).get(path).set('Host', host).set(name, value)).status, `${host} ${name} ${path}`).toBe(401)
+        }
+        expect((await request(app).post('/chat').set('Host', host).set(name, value).send({ sender: 'x', text: 'hi' })).status).toBe(401)
+        expect((await request(app).get('/agents').set('Host', host).set(name, value).set('Authorization', bearer())).status).toBe(200)
+        expect((await request(app).get('/').set('Host', host).set(name, value)).status).toBe(200)
+      }
+    }
+    // The peer address too: anything not on loopback is remote
+    const fake = (remoteAddress: string, headers: Record<string, string> = { host: 'localhost' }) => ({ headers, socket: { remoteAddress } }) as any
+    expect(office.server.isRemoteRequest(fake('127.0.0.1'))).toBe(false)
+    expect(office.server.isRemoteRequest(fake('::ffff:127.0.0.1'))).toBe(false)
+    expect(office.server.isRemoteRequest(fake('::1'))).toBe(false)
+    expect(office.server.isRemoteRequest(fake('100.101.102.103'))).toBe(true)
+    expect(office.server.isRemoteRequest(fake('192.168.1.5'))).toBe(true)
+  })
+
+  it('the WebSocket with serve\'s markers and no token is refused, whatever the Host', async () => {
+    const url = `ws://127.0.0.1:${port}/ws`
+    for (const extra of [{ 'X-Forwarded-For': '100.101.102.103' }, { 'Tailscale-User-Login': 'someone@example.com' }, { 'X-Forwarded-Host': 'localhost' }]) {
+      expect((await openWs(url, ['agent-office'], { Host: 'localhost', ...extra })).code, JSON.stringify(extra)).toBe(1008)
+      const trusted = (await openWs(url, officeProtocols(office.server), { Host: 'localhost', ...extra })).client!
+      expect(trusted.messages[0]).toEqual({ type: 'auth', trusted: true })
+      trusted.ws.terminate()
+    }
+  })
+
   it('refuses Tailscale Funnel requests outright, on any Host', async () => {
     const app = office.server.app
     expect((await request(app).get('/').set('Host', NAME).set('Tailscale-Funnel-Request', '?1')).status).toBe(403)

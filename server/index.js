@@ -446,6 +446,46 @@ function isRemoteHost(hostHeader) {
   return !LOOPBACK_HOSTS.has(hostName(hostHeader)) && allowedHostMatches(hostHeader, ALLOWED_HOSTS)
 }
 
+// The Host alone cannot say a request came through the proxy: `tailscale
+// serve` forwards the client's Host unchanged (it routes by the TLS SNI), so
+// a tailnet device could send `Host: localhost`. What it cannot hide is what
+// serve adds. Its reverse proxy is Go's httputil.ReverseProxy in Rewrite
+// mode, which first deletes any client-sent Forwarded / X-Forwarded-For /
+// -Host / -Proto; serve then always sets X-Forwarded-Host, X-Forwarded-For
+// (every serve web request carries its serveHTTPContext) and, over TLS,
+// X-Forwarded-Proto (addProxyForwardedHeaders in ipn/ipnlocal/serve.go). The
+// Tailscale-User-* identity headers are added only for tailnet users (not
+// tagged nodes, not Funnel), after stripping client copies, so they are
+// extra markers, not the key. Any of these marks a request as proxied —
+// whatever the proxy, configured or not. Nothing of ours sends them (the
+// Vite dev proxy does not set x-forwarded headers), and a local process
+// that adds one only makes itself stricter.
+const PROXY_MARKER_HEADERS = [
+  'x-forwarded-for', 'x-forwarded-host', 'x-forwarded-proto', 'forwarded',
+  'tailscale-user-login', 'tailscale-user-name', 'tailscale-user-profile-pic', 'tailscale-headers-info',
+]
+
+/** A loopback peer address: 127.0.0.0/8, ::1, or 127.x mapped into IPv6. */
+function isLoopbackAddress(addr) {
+  if (typeof addr !== 'string') return false
+  const v4 = addr.startsWith('::ffff:') ? addr.slice(7) : addr
+  return v4.startsWith('127.') || addr === '::1'
+}
+
+/**
+ * True when a request must be treated as coming from beyond this machine,
+ * so it needs a token (see "Remote hosts"): its Host is an
+ * AGENT_OFFICE_ALLOWED_HOSTS name, it carries a header a reverse proxy adds,
+ * or — belt and braces, the listener binds loopback — its peer is not loopback.
+ * @param {import('http').IncomingMessage} req
+ * @returns {boolean}
+ */
+function isRemoteRequest(req) {
+  if (isRemoteHost(req.headers.host)) return true
+  if (PROXY_MARKER_HEADERS.some(name => req.headers[name] !== undefined)) return true
+  return !isLoopbackAddress(req.socket?.remoteAddress)
+}
+
 /** A remote request carries the office token or the UI token as a bearer. */
 function remoteAuthed(req) {
   const supplied = bearerToken(req)
@@ -1672,7 +1712,7 @@ app.use((req, res, next) => {
     console.warn(`[security] Refused a Tailscale Funnel request (${req.method} ${req.path}): Funnel is not supported, use tailscale serve`)
     return res.status(403).json({ error: 'Tailscale Funnel is not supported: use tailscale serve (tailnet only)' })
   }
-  if (!isRemoteHost(req.headers.host)) return next()
+  if (!isRemoteRequest(req)) return next()
   if (remoteAuthed(req)) return next()
   // Only the built UI's files go without a token; anything they do not hold is a 401
   if (remoteStatic && (req.method === 'GET' || req.method === 'HEAD')) {
@@ -3628,8 +3668,8 @@ wss.on('connection', (ws, req) => {
 
   const trusted = tokenMatches(wsTokenFrom(req))
   // Through a proxy name the office token is required: no read-only tier (see "Remote hosts")
-  if (!trusted && isRemoteHost(req.headers.host)) {
-    console.warn(`[ws] Rejected a connection through ${req.headers.host} without the office token`)
+  if (!trusted && isRemoteRequest(req)) {
+    console.warn(`[ws] Rejected a proxied connection (Host ${req.headers.host}) without the office token`)
     ws.close(1008, 'Office token required')
     return
   }
@@ -4203,6 +4243,7 @@ export {
   ALLOWED_HOSTS,
   isAllowedHost,
   isRemoteHost,
+  isRemoteRequest,
   officeLink,
   ANSWER_MARKER_FILE,
   PORT,
