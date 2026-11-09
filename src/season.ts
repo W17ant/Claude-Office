@@ -11,14 +11,17 @@
  * the incident art uses) the normal image is shown, so the art can arrive one
  * file at a time with no code change.
  *
- * When it is on:
+ * When it is on, first match wins:
  *   ?season=christmas   always (a demo, a screenshot in July)
  *   ?season=none        never
- *   otherwise           1 December to 6 January (Twelfth Night), local time
+ *   the Settings panel  Christmas / Off, remembered in this browser
+ *                       (src/settings.ts, `agent-office-season`)
+ *   otherwise (Auto)    1 December to 6 January (Twelfth Night), local time
  */
 
 import { useSyncExternalStore } from 'react'
 import { probeImage, subscribeIncidentAssets } from './incidentAssets'
+import { readSeasonPreference, seasonFromUrl, type SeasonPreference } from './settings'
 
 export type Season = 'christmas'
 
@@ -26,15 +29,17 @@ export type Season = 'christmas'
 export const SEASON_SUFFIX: Record<Season, string> = { christmas: '-xmas' }
 
 /**
- * The season in force, from the URL override or the date.
+ * The season in force: the URL override, else the stored preference, else the date.
  * @param now the local date to judge by
  * @param search the page's query string (location.search)
+ * @param stored the Settings panel's choice (src/settings.ts readSeasonPreference)
  * @returns the season, or null outside one
  */
-export function seasonFor(now: Date, search: string): Season | null {
-  const forced = new URLSearchParams(search).get('season')
-  if (forced === 'christmas') return 'christmas'
-  if (forced === 'none') return null
+export function seasonFor(now: Date, search: string, stored: SeasonPreference = 'auto'): Season | null {
+  // Why the URL first: a demo or screenshot link must look the same in every browser
+  const pref = seasonFromUrl(search) ?? stored
+  if (pref === 'christmas') return 'christmas'
+  if (pref === 'off') return null
   const month = now.getMonth() // 0 = January
   const day = now.getDate()
   // Why 6 January: Twelfth Night, when the decorations traditionally come down
@@ -45,7 +50,8 @@ export function seasonFor(now: Date, search: string): Season | null {
 // Why judged once per page load: a season flipping mid-session (midnight on
 // 30 November) would swap every sprite at once with no reason the user sees;
 // the next reload picks it up.
-const season: Season | null = seasonFor(new Date(), typeof location === 'undefined' ? '' : location.search)
+// The Settings panel's season change therefore asks for a reload too.
+const season: Season | null = seasonFor(new Date(), typeof location === 'undefined' ? '' : location.search, readSeasonPreference())
 
 /** The season this page loaded in (null outside one). */
 export function currentSeason(): Season | null {

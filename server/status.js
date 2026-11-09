@@ -414,9 +414,12 @@ export function createStatusStore({ staleMs = 120 * 60_000, sessions = null, now
  * server/meterEstimate.js). The stale sweep runs every `sweepMs` on an
  * unref'd timer, so importing the server never keeps a process alive; it
  * also broadcasts the burn rates the clock has moved (store.refresh). `now`
- * is the store's clock, injectable for tests.
+ * is the store's clock, injectable for tests. `onSessionStatus(sessionId,
+ * cost)`, when given, hears every accepted session_status report after the
+ * store has taken it (server/recap.js books the day's payroll from it); it
+ * cannot change the report or the response.
  */
-export function mountStatus(app, { requireToken, broadcast, staleMs, sessions, sweepMs = 60_000, estimateThrottleMs = ESTIMATE_THROTTLE_MS, now = () => Date.now() } = {}) {
+export function mountStatus(app, { requireToken, broadcast, staleMs, sessions, sweepMs = 60_000, estimateThrottleMs = ESTIMATE_THROTTLE_MS, now = () => Date.now(), onSessionStatus = null } = {}) {
   if (typeof requireToken !== 'function') throw new TypeError('mountStatus needs the requireToken middleware')
   const store = createStatusStore({ staleMs, sessions, now })
   const estimator = createMeterEstimator({
@@ -442,6 +445,10 @@ export function mountStatus(app, { requireToken, broadcast, staleMs, sessions, s
     const event = store.ingest(req.body)
     if (req.body.type === 'session_status') estimator.forget(event.sessionId)
     if (event) broadcast(event)
+    if (event?.type === 'session_status' && onSessionStatus) {
+      // Why the try: a listener's failure must not turn an accepted report into a 500
+      try { onSessionStatus(event.sessionId, event.session?.cost ?? 0) } catch {}
+    }
     res.json({ ok: true })
   })
 

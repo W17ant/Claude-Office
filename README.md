@@ -121,13 +121,15 @@ Toggle it off any time with `/the-office` again — state persists in `localStor
 - Boss character (you) with an energy drink, Claude with coffee
 - Random office events: pizza deliveries, fire drills, power flickers, printer jams
 - Day/night cycle with smooth transitions
+- **Settings** (the ⚙ in the title bar): theme, day/night, season, sound and the server settings in one panel — see [Settings](docs/reference.md#settings-panel)
+- **Today** (bottom-right of the status strip): the day's sessions, agents, tasks, deploys, failures, incidents and payroll, kept across restarts — or `/recap` in the chat
 
 **AI-Powered Office Chat**
 - Back-and-forth conversation with Claude through the office chat panel
 - Claude has a witty office manager personality with running jokes
 - Multi-agent routing — mention a bug and the Debugger responds, ask about UI and Frontend answers
 - Typing indicators, emoji reactions, read receipts
-- Slash commands: `/status`, `/agents`, `/incident`, `/all-clear`, `/help`
+- Slash commands: `/status`, `/agents`, `/recap`, `/incident`, `/all-clear`, `/help`
 - Chat history persists across restarts (SQLite)
 - Proactive messages — agents announce when they start and finish work
 - Desktop notifications for important events
@@ -230,6 +232,7 @@ python3 scripts/extract-boss-sprite.py your-character.png MyChar-1
 |---------|-------------|
 | `/status` | Office stats — agents, clients |
 | `/agents` | List active agents |
+| `/recap` | Today so far, as the office manager tells it — sessions, agents, tasks, deploys, failures, incidents, payroll |
 | `/incident` | Declare an incident by hand |
 | `/all-clear` | End the incident and post the postmortem |
 | `/help` | Show available commands |
@@ -271,6 +274,8 @@ Agents can also message each other directly — see [Agent-to-agent messages](do
 | `127.0.0.1:3333?helper` | Placement helper — dev tool for positioning furniture |
 | `127.0.0.1:3333?variant=incident` | Incident — pins "Prod Is Down" on |
 | `127.0.0.1:3333?season=christmas` | Christmas — the festive office any day (on by itself 1 Dec – 6 Jan) |
+
+The theme, day/night mode, season and sound are also in **Settings** (the ⚙ at the right of the title bar) and are remembered per browser; a `?theme=` or `?season=` in the address still wins over what is stored there.
 
 ## Tech Stack
 
