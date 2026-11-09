@@ -1,5 +1,6 @@
 /** theme.ts — Office TV theme pack (characters, rooms, chatter, names, events) */
 
+import { seasonalUrl } from './season'
 import { useSyncExternalStore } from 'react'
 import { getVariant, pickIncidentLine, type IncidentLineKind } from './incident'
 
@@ -157,14 +158,16 @@ export function getSpriteDir(): string {
 /** Kept signature-compatible for existing callers — agentId ignored; role is the key. */
 export function getSpritePath(_agentId: string, role: string, defaultBase: string, direction: string): string {
   const base = getCharacterBaseForRole(role, defaultBase)
-  return `${getSpriteDir()}/${base}-${direction}.png`
+  // Why seasonalUrl: in December a festive copy (…-xmas.png) replaces the
+  // sprite once that file exists; until then this is the normal sprite
+  return seasonalUrl(`${getSpriteDir()}/${base}-${direction}.png`)
 }
 
 export function getRoomImage(phase: 'day' | 'night'): string {
   if (state.name === 'office') {
-    return phase === 'night' ? '/rooms/office-night-dm.png' : '/rooms/office-day-dm.png'
+    return seasonalUrl(phase === 'night' ? '/rooms/office-night-dm.png' : '/rooms/office-day-dm.png')
   }
-  return phase === 'night' ? '/rooms/office-night.png' : '/rooms/office-day.png'
+  return seasonalUrl(phase === 'night' ? '/rooms/office-night.png' : '/rooms/office-day.png')
 }
 
 /** Returns the ROLE currently cast as Angela (if any), plus cat sprite path. */

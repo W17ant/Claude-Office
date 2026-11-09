@@ -2,6 +2,10 @@
 
 All notable changes to Claude Office. Numbers refer to pull requests.
 
+## Unreleased
+
+- Christmas in the office, from 1 December to 6 January: decorated rooms (day and night, both themes), Christmas trees in the plant pots, festive desks, Claude as an elf and the boss as Santa. `?season=christmas` / `?season=none` override the date. Each festive image is an optional `-xmas.webp` copy beside the original, so a missing one just shows the normal art.
+
 ## 1.1.2 — 2026-11-09
 
 - The tracker hook's Python now lives in its own file, `hooks/agent-tracker.py`, run by `agent-tracker.sh` as `python3 -I agent-tracker.py`. As a ~65 KB heredoc passed through `python3 -c` it hung Git Bash on Windows (a heredoc over 64 KiB deadlocks, found in #74), was over Windows' 32 KB command-line limit (#72), and could not be parsed by macOS bash 3.2 (#53). A test keeps it out of the wrapper and keeps the two small heredocs left there under 16 KB.

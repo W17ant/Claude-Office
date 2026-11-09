@@ -69,6 +69,7 @@ const KNOWN_DYNAMIC = new Set([
   '*/*-*.png',                          // theme.ts getSpritePath (P1, P2)
   '/sprites/characters/*-*.png',        // PlacementHelper.tsx (P1)
   '/sprites/office/cats/*.png',         // theme.ts getAngelaCat, OFFICE_CATS_PATHS (P3)
+  '*.webp',                             // season.ts seasonalVariant: name.png -> name-xmas.webp (P5)
 ])
 
 /** Art the code names but nobody has drawn: the unbuilt rooms in src/rooms.ts. */
@@ -223,6 +224,16 @@ if (incident !== null) {
   }
 }
 
+// P5 — seasonal copies (src/season.ts): `<name><suffix>.webp` next to a
+// `<name>.png` the code asks for. Optional: one that exists is referenced
+// through its original; one that does not is simply not drawn yet, so the
+// missing ones are not listed (every sprite could have one).
+const season = readIfExists('src/season.ts')
+const seasonSuffixes = season === null ? [] : anchorOrFail('src/season.ts', 'SEASON_SUFFIX', (() => {
+  const m = /SEASON_SUFFIX[^=]*=\s*\{([^}]*)\}/.exec(season)
+  return m ? [...m[1].matchAll(/'([^']+)'/g)].map(q => q[1]) : null
+})())
+
 // ---------------------------------------------------------------------------
 // 2. Walk public/
 // ---------------------------------------------------------------------------
@@ -234,6 +245,14 @@ if (!existsSync(publicDir)) {
 
 const files = walk(publicDir).map(f => ({ rel: toPosix(relative(publicDir, f)), bytes: statSync(f).size }))
 const present = new Set(files.map(f => f.rel))
+for (const f of files) {
+  for (const suffix of seasonSuffixes) {
+    if (!f.rel.endsWith(`${suffix}.webp`)) continue
+    const base = `${f.rel.slice(0, -`${suffix}.webp`.length)}.png`
+    // Why only beside a known original: a festive copy of nothing would never load
+    if (required.has(base) || optional.has(base) || present.has(base)) ref(optional, f.rel, `P5 seasonal copy of ${base}`)
+  }
+}
 const totalBytes = files.reduce((n, f) => n + f.bytes, 0)
 
 const missing = [...required].filter(([rel]) => !present.has(rel) && !PLANNED.has(rel))

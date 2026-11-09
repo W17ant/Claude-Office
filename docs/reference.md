@@ -223,6 +223,14 @@ The numbers are Claude Code's own: `npm run install-hooks` registers `hooks/stat
 
 Dated, Bedrock and Vertex spellings of an id count as the id. The reading refreshes when a hook event for the session arrives, at most once every 5 s per session (a burst ends in one trailing read), from the end of the file only, after the server has answered the hook. The panel draws it with a small **est.** marker; its tooltip says it comes from the transcript because no status line is registered. **PAYROLL** and **ELECTRICITY** are not estimated — the transcript has no cost and no rate limits, and the office does not price tokens or invent limits — so when no session reports them the tiles say *needs the status line* (hover for `npm run install-status-line`), and an estimated session's row shows no cost. The moment a real status line reports for that session it wins and the estimate stops for good. The estimate is numbers and a model id only, never what was said, so it is on the open `GET /status` with `source: "transcript"` and an `estimate` block (`tokens`, `basis`: `model` / `1m-tag` / `unknown` / `overflow`, `approximate`); status-line sessions carry `source: "statusline"`.
 
+## Christmas
+
+From 1 December to 6 January the office decorates itself: tinsel, fairy lights and snow outside in all four rooms (day and night, both themes), Christmas trees in the plant pots, garlands and a mug on every desk, Claude as an elf and the boss in a Santa suit. `?season=christmas` turns it on any day (a demo, a screenshot), `?season=none` keeps it off in December; the date is judged once per page load.
+
+![The office at Christmas](images/christmas.jpg)
+
+Each festive image is an optional copy saved next to the one it replaces, `<name>-xmas.webp` beside `<name>.png` (`src/season.ts`): until a copy exists the normal art shows, so festive art can be added one file at a time with no code change — a custom boss sprite, say, gets a Santa suit by dropping `<sprite>-<direction>-xmas.webp` beside it. WebP, not PNG, because at quality 90 a room is ~200 KB instead of ~2 MB, which keeps `public/` inside its size budget; `npm run check-assets` counts a copy as referenced through its original. Copies must keep the original's canvas size and anchor (a character's feet, a desk's footprint) exactly, or the sprite shifts in the office.
+
 ## Incident mode — "Prod Is Down"
 
 The office declares an incident **by itself** when real failures happen: a deploy that fails (a `deploy_fail` [signal](#connect-claude-code) — `vercel deploy`, `fly deploy`, `kubectl apply`, ... exiting non-zero) switches it on at once, and three failed tool calls (`PostToolUseFailure`) inside five minutes do too — a failed build or test run counts as one under its own name (*tests failed in api: 3 failing*), never twice. A `deploy-fail` or `who-broke-build` random event starts a 90 s mini-incident instead, and `/incident` in the chat declares one by hand (relayed to every open office).

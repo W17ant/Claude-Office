@@ -1,3 +1,4 @@
+import { useSeasonArt } from '../season'
 import React, { useRef, useState, useEffect } from 'react'
 import { Agent, AgentState } from '../types'
 import SpeechBubble from './SpeechBubble'
@@ -156,6 +157,7 @@ const Character: React.FC<CharacterProps> = ({ agent, idleDurationMs = 0, zIndex
   const animState = getAnimState(agent.state)
   const charBase = getCharBase(agent.role)
   const theme = useTheme() // Why: re-render on theme toggle so sprite path updates
+  useSeasonArt() // Why: re-render when this sprite's festive copy turns out to exist
   const spriteSrc = getSpritePath(agent.id, agent.role, charBase, directionRef.current)
   void theme
   const variant = useVariant() // Why: re-render when incident mode flips so the failure bubble shows/hides
