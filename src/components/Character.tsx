@@ -1,6 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react'
 import { Agent, AgentState } from '../types'
 import SpeechBubble from './SpeechBubble'
+import ResilientImg from './ResilientImg'
 import EffectBubble from './EffectBubble'
 import { getEffect } from '../agentManager'
 import { ROLE_TO_CHAR, BOSS_ROLE } from '../config'
@@ -240,7 +241,7 @@ const Character: React.FC<CharacterProps> = ({ agent, idleDurationMs = 0, zIndex
         data-agent-id={agent.id}
       >
         <div className="char-shadow" />
-        <img
+        <ResilientImg
           src={spriteSrc}
           alt={agent.name}
           className="char-sprite"

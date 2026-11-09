@@ -6,6 +6,7 @@
  */
 
 import React from 'react'
+import ResilientImg from './ResilientImg'
 
 interface EffectBubbleProps {
   /** Full path to the sprite, e.g. '/sprites/effects/typing.png' */
@@ -17,7 +18,7 @@ interface EffectBubbleProps {
 const EffectBubble: React.FC<EffectBubbleProps> = ({ src, alt = 'effect' }) => {
   return (
     <div className="effect-bubble">
-      <img
+      <ResilientImg
         src={src}
         alt={alt}
         className="effect-bubble-img"
