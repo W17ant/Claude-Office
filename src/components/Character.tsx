@@ -1,5 +1,5 @@
 import { currentSeason, useSeasonArt } from '../season'
-import { HAT_SRC, useHeadAnchor } from '../hat'
+import { HAT_SRC, useHeadAnchor, wearsOverlayHat } from '../hat'
 import React, { useRef, useState, useEffect } from 'react'
 import { Agent, AgentState } from '../types'
 import SpeechBubble from './SpeechBubble'
@@ -162,7 +162,7 @@ const Character: React.FC<CharacterProps> = ({ agent, idleDurationMs = 0, zIndex
   const spriteSrc = getSpritePath(agent.id, agent.role, charBase, directionRef.current)
   // In December everyone wears a Santa hat, placed on the head measured from
   // the sprite itself (src/hat.ts), so every cast and custom sprite gets one
-  const head = useHeadAnchor(spriteSrc, currentSeason() === 'christmas')
+  const head = useHeadAnchor(spriteSrc, currentSeason() === 'christmas' && wearsOverlayHat(spriteSrc))
   void theme
   const variant = useVariant() // Why: re-render when incident mode flips so the failure bubble shows/hides
   void variant

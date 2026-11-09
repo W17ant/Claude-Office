@@ -4,7 +4,7 @@ All notable changes to Claude Office. Numbers refer to pull requests.
 
 ## Unreleased
 
-- Christmas in the office, from 1 December to 6 January: decorated rooms (day and night, both themes), Christmas trees in the plant pots, festive desks, and a Santa hat on every character (one hat sprite, placed on each head as measured from the sprite itself). `?season=christmas` / `?season=none` override the date. Each festive image is an optional `-xmas.webp` copy beside the original, so a missing one just shows the normal art.
+- Christmas in the office, from 1 December to 6 January: decorated rooms (day and night, both themes), Christmas trees in the plant pots, festive desks, and a Santa hat on every character (one hat sprite, placed on each head as measured from the sprite itself). Claude dresses as an elf, the boss swaps his cap for a Santa hat, and characters with ponytails or big hair wear Christmas jumpers instead of the hat. `?season=christmas` / `?season=none` override the date. Each festive image is an optional `-xmas.webp` copy beside the original, so a missing one just shows the normal art.
 
 ## 1.1.2 — 2026-11-09
 

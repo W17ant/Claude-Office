@@ -1,7 +1,7 @@
 /** hat.ts - finding a sprite's head from its alpha channel. */
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { headAnchorFromAlpha } from '../src/hat'
+import { headAnchorFromAlpha, wearsOverlayHat } from '../src/hat'
 
 /** An alpha map of w x h with opaque rectangles [x0, y0, x1, y1) */
 function alphaWith(w: number, h: number, rects: Array<[number, number, number, number]>) {
@@ -29,5 +29,16 @@ describe('headAnchorFromAlpha', () => {
 
   it('the hat it is drawn from exists', () => {
     expect(readFileSync(new URL('../public/sprites/effects/santa-hat.png', import.meta.url)).length).toBeGreaterThan(1000)
+  })
+})
+
+describe('wearsOverlayHat', () => {
+  it('everyone gets the hat except festive copies and the ponytail / big-hair list', () => {
+    expect(wearsOverlayHat('/sprites/characters/dev-1-front-left.png')).toBe(true)
+    expect(wearsOverlayHat('/sprites/office/characters/jim-halpert-rear-right.png')).toBe(true)
+    expect(wearsOverlayHat('/sprites/characters/Claude-1-front-left-xmas.webp')).toBe(false)
+    expect(wearsOverlayHat('/sprites/characters/employee-2-front-right.png')).toBe(false)
+    expect(wearsOverlayHat('/sprites/office/characters/erin-hannon-rear-left.png')).toBe(false)
+    expect(wearsOverlayHat('/sprites/characters/Me-1-front-left.png')).toBe(false)
   })
 })

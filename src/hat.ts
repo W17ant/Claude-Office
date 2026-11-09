@@ -13,6 +13,25 @@ import { useEffect, useState } from 'react'
 
 export const HAT_SRC = '/sprites/effects/santa-hat.png'
 
+// Why: on a ponytail, a bun or big hair the one-size hat sits wrong (judged
+// on all four directions of every cast sprite); these characters wear their
+// own festive sprite instead (a Christmas jumper, -xmas.webp), and until that
+// file exists they simply go without a hat rather than wear a bad one
+const NO_HAT = new Set(['employee-2', 'erin-hannon', 'Frontend-dev-1', 'Me-1'])
+
+/**
+ * Whether a sprite gets the overlay hat: not when it is already a festive
+ * copy (the elf, a jumper, a sprite with its own Santa hat), and not for the
+ * characters in NO_HAT.
+ * @param src the sprite URL being drawn
+ */
+export function wearsOverlayHat(src: string): boolean {
+  if (src.endsWith('-xmas.webp')) return false
+  const file = src.slice(src.lastIndexOf('/') + 1)
+  const base = file.replace(/-(front|rear)-(left|right)\.png$/, '')
+  return !NO_HAT.has(base)
+}
+
 /** Where the hat goes, as fractions of the sprite's width and height. */
 export interface HeadAnchor {
   /** Centre of the head, 0..1 from the left */
