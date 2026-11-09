@@ -4,7 +4,7 @@ All notable changes to Claude Office. Numbers refer to pull requests.
 
 ## Unreleased
 
-- Characters walk instead of gliding: while one moves it steps through a stand, stride, stand, stride cycle (`src/walk.ts`). Stride frames are optional `-walk1.webp` / `-walk2.webp` files beside each sprite; Claude, the boss and three of the cast have them so far, and a sprite without them glides as before.
+- Characters walk instead of gliding: while one moves it steps through a stand, stride, stand, stride cycle (`src/walk.ts`). Stride frames are optional `-walk1.webp` / `-walk2.webp` files beside each sprite; every character has them (the default cast, the boss and the whole Dunder Mifflin cast), and a sprite without them (a custom one) glides as before.
 
 ## 1.1.2 — 2026-11-09
 
