@@ -33,14 +33,20 @@ import { mountStatus } from './status.js'
 import { mountRegistry } from './sessions.js'
 import { mountTasks } from './tasks.js'
 import { mountPermissions, sanitiseSuggestions, redactPermission } from './permissions.js'
+import { createPermissionNotifier } from './permission-notify.js'
 import { mountHealth, readVersion } from './health.js'
 import { readPort, readUiPort, readHost, loadOfficeConfig, bossFromConfig } from './config.js'
 import { agentTranscriptPath, readTranscript, isTranscriptPath, clampLine } from './transcript.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
-const NOTIFY_SCRIPT = join(__dirname, '..', 'scripts', 'notify.sh')
+// Why: AGENT_OFFICE_NOTIFY_SCRIPT lets the tests swap in a script that records
+// its arguments (or does nothing), so `npm test` never pops real banners and
+// can prove what reaches notify.sh. It is read from the server's own
+// environment, which only whoever starts the office controls.
+const NOTIFY_SCRIPT = process.env.AGENT_OFFICE_NOTIFY_SCRIPT || join(__dirname, '..', 'scripts', 'notify.sh')
 
+/** A desktop notification through scripts/notify.sh (macOS and Linux; a no-op elsewhere). Fire and forget. */
 function sendNotification(title, msg) {
   try {
     const child = execFile('bash', [NOTIFY_SCRIPT, title, msg], { timeout: 3000 })
@@ -1324,12 +1330,17 @@ function clampCount(val, max = Number.MAX_SAFE_INTEGER) {
 // server mirrors it as a marker file: $AGENT_OFFICE_HOME/answer-permissions
 // exists while the setting is on and is removed when it is off. Without the
 // marker the hook's PermissionRequest branch behaves as it always did.
+//
+// notifyPermissions (default true) says whether a permission wait the office
+// could answer also raises one OS notification (server/permission-notify.js):
+// project and tool name only, after the 300 ms needs-you delay, at most one
+// per session a minute.
 // ---------------------------------------------------------------------------
 
 const SETTINGS_FILE = join(RUNTIME_DIR, 'settings.json')
 const ANSWER_MARKER_FILE = join(RUNTIME_DIR, 'answer-permissions')
 const LOG_PROMPTS_LEVELS = new Map([['off', 0], ['summary', 200], ['full', MAX_TEXT_LEN]])
-const settings = { logPrompts: 'summary', answerPermissions: true }
+const settings = { logPrompts: 'summary', answerPermissions: true, notifyPermissions: true }
 
 function loadSettings() {
   if (!existsSync(SETTINGS_FILE)) return
@@ -1338,6 +1349,7 @@ function loadSettings() {
     if (saved && typeof saved === 'object') {
       if (LOG_PROMPTS_LEVELS.has(saved.logPrompts)) settings.logPrompts = saved.logPrompts
       if (typeof saved.answerPermissions === 'boolean') settings.answerPermissions = saved.answerPermissions
+      if (typeof saved.notifyPermissions === 'boolean') settings.notifyPermissions = saved.notifyPermissions
     }
   } catch (err) {
     console.warn('[settings] Could not read settings:', err.message)
@@ -1646,6 +1658,16 @@ const permissions = mountPermissions(app, {
   proof: (nonce, id, decision) => createHmac('sha256', AUTH_TOKEN).update(`${nonce}${id}${decision}`).digest('hex'),
 })
 
+// One OS notification when a permission wait starts (server/permission-notify.js):
+// only once it has outlasted the same debounce the needs-you hand waits out,
+// only while it is still pending, and only while the setting is on.
+const permissionNotifier = createPermissionNotifier({
+  notify: sendNotification,
+  isEnabled: () => settings.notifyPermissions,
+  isPending: id => permissions.get(id)?.status === 'pending',
+  delayMs: NEEDS_YOU_DEBOUNCE_MS,
+})
+
 /**
  * The session showed activity after a PermissionRequest: whatever permission
  * was pending for it was answered in the terminal (see server/permissions.js).
@@ -1908,6 +1930,7 @@ app.post('/event', requireToken, (req, res) => {
       nonce: sanitised.nonce,
       callKey: sanitised.callKey,
     })
+    permissionNotifier.schedule(permission)
     return res.json({ ok: true, permissionId: permission.id, wait })
   }
 
@@ -2408,7 +2431,7 @@ app.get('/signals', (req, res) => {
 /**
  * GET /settings — the office settings (see Settings above). Open.
  * POST /settings — change them: { logPrompts: "off" | "summary" | "full",
- * answerPermissions: boolean }. Needs the UI token (the office page) or the
+ * answerPermissions: boolean, notifyPermissions: boolean }. Needs the UI token (the office page) or the
  * bearer token: it decides what of the conversation is kept and whether a
  * permission dialog may be answered from here.
  */
@@ -2417,7 +2440,7 @@ app.get('/settings', (_req, res) => {
 })
 
 app.post('/settings', requireUi, (req, res) => {
-  const { logPrompts, answerPermissions } = req.body ?? {}
+  const { logPrompts, answerPermissions, notifyPermissions } = req.body ?? {}
   if (logPrompts !== undefined) {
     if (typeof logPrompts !== 'string' || !LOG_PROMPTS_LEVELS.has(logPrompts)) {
       return res.status(400).json({ error: `logPrompts must be one of ${Array.from(LOG_PROMPTS_LEVELS.keys()).join(', ')}` })
@@ -2426,11 +2449,15 @@ app.post('/settings', requireUi, (req, res) => {
   if (answerPermissions !== undefined && typeof answerPermissions !== 'boolean') {
     return res.status(400).json({ error: 'answerPermissions must be true or false' })
   }
+  if (notifyPermissions !== undefined && typeof notifyPermissions !== 'boolean') {
+    return res.status(400).json({ error: 'notifyPermissions must be true or false' })
+  }
   if (logPrompts !== undefined) settings.logPrompts = logPrompts
   if (answerPermissions !== undefined) settings.answerPermissions = answerPermissions
+  if (notifyPermissions !== undefined) settings.notifyPermissions = notifyPermissions
   saveSettings()
   syncAnswerMarker()
-  console.log(`[settings] logPrompts = ${settings.logPrompts}, answerPermissions = ${settings.answerPermissions}`)
+  console.log(`[settings] logPrompts = ${settings.logPrompts}, answerPermissions = ${settings.answerPermissions}, notifyPermissions = ${settings.notifyPermissions}`)
   // A lower level applies to the text already held too (rows in chat.db stay until /clear)
   if (logPrompts !== undefined) retrimAndAnnounce(`logPrompts ${settings.logPrompts}`)
   res.json({ ok: true, ...settings })
@@ -3758,6 +3785,7 @@ export {
   TASKS_DIR,
   pendingNeedsYou,
   permissions,
+  permissionNotifier,
   settings,
   activity,
   processEvent,

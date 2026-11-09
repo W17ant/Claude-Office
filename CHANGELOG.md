@@ -2,6 +2,11 @@
 
 All notable changes to Claude Office. Numbers refer to pull requests.
 
+## Unreleased
+
+- A desktop notification when Claude starts waiting on a permission the office can answer: *Claude needs you* — `alpha · Bash wants to run a command`. Project and tool only, never the command line or path (notifications show on the lock screen); only once the wait has lasted 300 ms, so a headless `claude -p` auto-deny never notifies; at most one per session a minute. A new setting, `notifyPermissions` (default on), with a **Notify** toggle beside **Answer here** in the chat.
+- The desktop app checks GitHub for a newer release when it starts and every 6 hours (unauthenticated, `User-Agent: Agent-Office/<version>`, nothing else sent). When one is out the tray and right-click menus show **Update available: vX.Y.Z — Download**, which opens the release page, and one notification is shown per new version. Failures are silent. There is still no auto-updater: the builds are unsigned.
+
 ## 1.1.2 — 2026-11-09
 
 - The tracker hook's Python now lives in its own file, `hooks/agent-tracker.py`, run by `agent-tracker.sh` as `python3 -I agent-tracker.py`. As a ~65 KB heredoc passed through `python3 -c` it hung Git Bash on Windows (a heredoc over 64 KiB deadlocks, found in #74), was over Windows' 32 KB command-line limit (#72), and could not be parsed by macOS bash 3.2 (#53). A test keeps it out of the wrapper and keeps the two small heredocs left there under 16 KB.
