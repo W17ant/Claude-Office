@@ -33,10 +33,12 @@ describe('headAnchorFromAlpha', () => {
 })
 
 describe('wearsOverlayHat', () => {
-  it('everyone gets the hat except festive copies and the ponytail / big-hair list', () => {
+  it('everyone gets the hat, jumper or not, except the NO_HAT list (ponytails, big hair, own festive hat)', () => {
     expect(wearsOverlayHat('/sprites/characters/dev-1-front-left.png')).toBe(true)
+    expect(wearsOverlayHat('/sprites/characters/dev-1-front-left-xmas.webp')).toBe(true)
     expect(wearsOverlayHat('/sprites/office/characters/jim-halpert-rear-right.png')).toBe(true)
     expect(wearsOverlayHat('/sprites/characters/Claude-1-front-left-xmas.webp')).toBe(false)
+    expect(wearsOverlayHat('/sprites/characters/Me-1-rear-right-xmas.webp')).toBe(false)
     expect(wearsOverlayHat('/sprites/characters/employee-2-front-right.png')).toBe(false)
     expect(wearsOverlayHat('/sprites/office/characters/erin-hannon-rear-left.png')).toBe(false)
     expect(wearsOverlayHat('/sprites/characters/Me-1-front-left.png')).toBe(false)
