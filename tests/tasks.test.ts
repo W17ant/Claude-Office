@@ -19,8 +19,8 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import WebSocket from 'ws'
 import { listen, loadOffice, officeProtocols, postEvent, removeOffice, type Office } from './helpers'
 import {
-  DEFAULT_DEBOUNCE_MS, DEFAULT_POLL_MS, MAX_TASKS, compareTaskIds, countTasks, isSafeSessionId, mountTasks,
-  parseTask, publicTask, readTaskDir,
+  DEFAULT_DEBOUNCE_MS, DEFAULT_POLL_MS, MAX_TASKS, compareTaskIds, countTasks, derivedTeamName, isSafeSessionId, mountTasks,
+  parseTask, parseTeamConfig, publicTask, readTaskDir, teamKey,
 } from '../server/tasks.js'
 
 const sleep = (ms: number) => new Promise(res => setTimeout(res, ms))
@@ -412,6 +412,189 @@ describe('mountTasks', () => {
 })
 
 // ---------------------------------------------------------------------------
+// Agent teams: ~/.claude/teams/<team>/config.json + ~/.claude/tasks/<team>/
+// (shapes from the agent-teams docs and the 2.1.321 binary; never fired here)
+// ---------------------------------------------------------------------------
+
+/**
+ * A team config as Claude Code writes it at session start (the binary's team
+ * setup: name, createdAt, leadAgentId, leadSessionId, leadProcess, members
+ * with agentId / name / agentType / joinedAt / tmuxPaneId / cwd /
+ * subscriptions / backendType), with made-up teammates added.
+ */
+function teamConfig(teamName: string, leadSessionId: string, teammates: string[] = []) {
+  return {
+    name: teamName,
+    createdAt: 1_760_000_000_000,
+    leadAgentId: `team-lead@${teamName}`,
+    leadSessionId,
+    leadProcess: { pid: 4242 },
+    members: [
+      { agentId: `team-lead@${teamName}`, name: 'team-lead', agentType: 'team-lead', joinedAt: 1_760_000_000_000, tmuxPaneId: 'leader', cwd: '/home/me/secret-project', subscriptions: [], backendType: 'in-process' },
+      ...teammates.map(n => ({ agentId: `${n}@${teamName}`, name: n, agentType: 'general-purpose', joinedAt: 1_760_000_000_001, tmuxPaneId: '%3', cwd: '/home/me/secret-project', prompt: `You are ${n}: a spawn prompt from the conversation`, backendType: 'in-process' })),
+    ],
+  }
+}
+
+function writeTeam(teamsDir: string, teamName: string, config: unknown) {
+  mkdirSync(join(teamsDir, teamName), { recursive: true })
+  writeFileSync(join(teamsDir, teamName, 'config.json'), typeof config === 'string' ? config : JSON.stringify(config, null, 2))
+}
+
+describe('agent teams: parseTeamConfig, derivedTeamName', () => {
+  it('derives Claude Code\'s team name from a UUID session id (session- + 8 characters), nothing from any other id', () => {
+    expect(derivedTeamName('aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa')).toBe('session-aaaaaaaa')
+    expect(derivedTeamName('C25C5511-F321-521A-825B-F189AC4D57E8')).toBe('session-c25c5511')
+    for (const id of ['plugin-test', '', 'aaaaaaaa', '../aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa', 42 as any]) expect(derivedTeamName(id)).toBeNull()
+    expect(teamKey('session-aaaaaaaa')).toBe('team:session-aaaaaaaa')
+  })
+
+  it('keeps the lead session and the members\' names only (deduplicated, clamped, at most 20), nothing else of the config', () => {
+    const info = parseTeamConfig(JSON.stringify(teamConfig('session-aaaaaaaa', 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa', ['researcher', 'tester', 'researcher'])))
+    expect(info).toEqual({ leadSessionId: 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa', members: ['team-lead', 'researcher', 'tester'] })
+    const many = teamConfig('t', 'lead-1', Array.from({ length: 30 }, (_, i) => `mate-${i}-${'x'.repeat(60)}`))
+    const parsed = parseTeamConfig(JSON.stringify(many))!
+    expect(parsed.members).toHaveLength(20)
+    expect(parsed.members[1]).toHaveLength(40)
+    for (const bad of ['not json', '[]', 'null', '{}', JSON.stringify({ leadSessionId: '../x', members: [] }), JSON.stringify({ leadSessionId: 7 })]) {
+      expect(parseTeamConfig(bad), bad).toBeNull()
+    }
+    expect(parseTeamConfig(JSON.stringify({ leadSessionId: 'lead-1', members: [null, 3, { name: '' }, { agentId: 'x' }] }))).toEqual({ leadSessionId: 'lead-1', members: [] })
+  })
+})
+
+describe('mountTasks: agent teams', () => {
+  let root: string
+  let teamsDir: string
+  let sessions: Map<string, any>
+  let sent: any[]
+  let tasks: ReturnType<typeof mountTasks>
+  let app: express.Express
+
+  const A = 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa'
+  const TEAM = 'session-aaaaaaaa'
+  const KEY = 'team:session-aaaaaaaa'
+  const teamBoards = () => sent.filter(m => m.type === 'task_board' && m.boardId === KEY)
+  const ownBoards = () => sent.filter(m => m.type === 'task_board' && m.sessionId === A && !m.boardId)
+
+  function mount(opts: Record<string, unknown> = {}) {
+    root = tempDir('claude-tasks-teams-')
+    teamsDir = tempDir('claude-teams-')
+    sessions = new Map()
+    sent = []
+    app = express()
+    tasks = mountTasks(app, { sessions, broadcast: (m: any) => sent.push(m), tasksDir: root, teamsDir, debounceMs: 100, log: () => {}, ...opts })
+  }
+  afterEach(() => tasks?.stop())
+
+  it('a session leading a team gets the team\'s shared list as its own board, named after the team, with the members\' names only', () => {
+    mount()
+    sessions.set(A, { id: A, state: 'active', project: 'alpha' })
+    writeTeam(teamsDir, TEAM, teamConfig(TEAM, A, ['researcher', 'tester']))
+    writeTask(join(root, TEAM), '1', { status: 'in_progress', owner: 'researcher', description: 'secret team plan' })
+    writeTask(join(root, TEAM), '2', { owner: 'tester' })
+    tasks.start({ pollMs: 60_000 })
+
+    expect(tasks.watching).toEqual([A])
+    expect(tasks.teams).toEqual([KEY])
+    expect(ownBoards()).toEqual([])                                     // the lead's own list was moved into the team's
+    expect(teamBoards()).toHaveLength(1)
+    const [msg] = teamBoards()
+    expect(msg).toMatchObject({ type: 'task_board', sessionId: A, boardId: KEY })
+    expect(msg.board).toMatchObject({
+      sessionId: A, boardId: KEY, project: 'alpha',
+      team: { name: TEAM, members: ['team-lead', 'researcher', 'tester'] },
+      counts: { pending: 1, in_progress: 1, completed: 0 },
+    })
+    expect(msg.board.tasks.map((t: any) => [t.id, t.owner])).toEqual([['1', 'researcher'], ['2', 'tester']])
+    // Never the description, the members' cwd, pane ids, agent ids or spawn prompts
+    const wire = JSON.stringify(sent)
+    for (const secret of ['secret team plan', 'secret-project', 'spawn prompt', '%3', 'researcher@']) expect(wire).not.toContain(secret)
+    expect(tasks.stats()).toMatchObject({ watching: 1, teamsDir, teams: 1 })
+  })
+
+  it('a session\'s own board and its team\'s are two boards; GET /tasks?sessionId lists both, descriptions only with the token', async () => {
+    mount({ hasToken: (req: any) => req.headers.authorization === 'Bearer good' })
+    sessions.set(A, { id: A, state: 'active', project: 'alpha' })
+    writeTeam(teamsDir, TEAM, teamConfig(TEAM, A))
+    writeTask(join(root, A), '1', { description: 'own plan' })
+    writeTask(join(root, TEAM), '1', { description: 'team plan' })
+    tasks.start({ pollMs: 60_000 })
+    expect(ownBoards()).toHaveLength(1)
+    expect(teamBoards()).toHaveLength(1)
+    expect(tasks.boards()).toHaveLength(2)
+
+    const open = await request(app).get(`/tasks?sessionId=${A}`)
+    expect(open.body.boards.map((b: any) => b.boardId ?? b.sessionId).sort()).toEqual([A, KEY].sort())
+    expect(JSON.stringify(open.body)).not.toMatch(/own plan|team plan/)
+    const tokened = await request(app).get(`/tasks?sessionId=${A}`).set('Authorization', 'Bearer good')
+    expect(tokened.body.boards.find((b: any) => b.boardId === KEY).tasks[0].description).toBe('team plan')
+  })
+
+  it('reads the derived team directory before the config exists, and picks up the members once it is written', () => {
+    mount()
+    sessions.set(A, { id: A, state: 'active' })
+    writeTask(join(root, TEAM), '1')
+    tasks.start({ pollMs: 60_000 })
+    expect(teamBoards()).toHaveLength(1)
+    expect(teamBoards()[0].board.team).toEqual({ name: TEAM, members: [] })
+
+    writeTeam(teamsDir, TEAM, teamConfig(TEAM, A, ['researcher']))
+    tasks.reconcile()
+    expect(teamBoards()).toHaveLength(2)
+    expect(teamBoards()[1].board.team.members).toEqual(['team-lead', 'researcher'])
+    tasks.reconcile()                                                   // nothing changed: nothing sent
+    expect(teamBoards()).toHaveLength(2)
+  })
+
+  it('a team named otherwise is found by its config\'s leadSessionId; one led by another session, or with a broken config, is not shown', () => {
+    mount()
+    const other = 'cccccccc-3333-4333-8333-cccccccccccc'
+    sessions.set(A, { id: A, state: 'active' })
+    writeTeam(teamsDir, 'my-team', teamConfig('my-team', A, ['builder']))
+    writeTask(join(root, 'my-team'), '1')
+    writeTeam(teamsDir, 'not-mine', teamConfig('not-mine', other))
+    writeTask(join(root, 'not-mine'), '1')
+    writeTeam(teamsDir, 'broken', 'not json')
+    writeTask(join(root, 'broken'), '1')
+    tasks.start({ pollMs: 60_000 })
+    const boards = sent.filter(m => m.type === 'task_board' && m.board)
+    expect(boards.map(m => m.boardId)).toEqual(['team:my-team'])
+    expect(boards[0].board.team).toEqual({ name: 'my-team', members: ['team-lead', 'builder'] })
+  })
+
+  it('TeammateIdle rescans the team board at once; SessionEnd takes it down (board: null with its boardId)', () => {
+    mount()
+    sessions.set(A, { id: A, state: 'active' })
+    writeTeam(teamsDir, TEAM, teamConfig(TEAM, A, ['researcher']))
+    writeTask(join(root, TEAM), '1', { status: 'in_progress' })
+    tasks.start({ pollMs: 60_000 })
+    expect(teamBoards()).toHaveLength(1)
+
+    writeTask(join(root, TEAM), '1', { status: 'completed' })
+    tasks.noteEvent({ type: 'teammate_idle', sessionId: A, name: 'researcher' })
+    expect(teamBoards()).toHaveLength(2)
+    expect(teamBoards()[1].board.counts).toEqual({ pending: 0, in_progress: 0, completed: 1 })
+
+    sessions.get(A).state = 'ended'
+    tasks.noteEvent({ type: 'session_ended', sessionId: A })
+    expect(teamBoards().at(-1)).toMatchObject({ sessionId: A, boardId: KEY, board: null })
+    expect(tasks.teams).toEqual([])
+    expect(tasks.watching).toEqual([])
+  })
+
+  it('without teamsDir nothing of a team is read (the board works as before)', () => {
+    mount({ teamsDir: null })
+    sessions.set(A, { id: A, state: 'active' })
+    writeTask(join(root, TEAM), '1')
+    tasks.start({ pollMs: 60_000 })
+    expect(sent).toEqual([])
+    expect(tasks.teams).toEqual([])
+    expect(tasks.stats()).toEqual({ dir: root, running: true, watching: 1, lastScanAt: expect.any(Number) })
+  })
+})
+
+// ---------------------------------------------------------------------------
 // In the office: POST /event, the WS snapshot and broadcasts, GET /tasks
 // ---------------------------------------------------------------------------
 
@@ -460,7 +643,7 @@ describe('the task board in the office', () => {
     expect(tb().running).toBe(false)
     expect(messages.find(m => m.type === 'snapshot').taskBoards).toEqual([])
     const res = await request(office.server.app).get('/tasks')
-    expect(res.body).toEqual({ dir: tasksDir, running: false, watching: 0, lastScanAt: null, boards: [] })
+    expect(res.body).toEqual({ dir: tasksDir, running: false, watching: 0, lastScanAt: null, teamsDir: office.server.TEAMS_DIR, teams: 0, boards: [] })
   })
 
   it('task_created is a known event: it creates the session, the rescan runs inside the request, Claude\'s history gets a line', async () => {

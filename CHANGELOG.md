@@ -2,6 +2,11 @@
 
 All notable changes to Claude Office. Numbers refer to pull requests.
 
+## Unreleased
+
+- Four more hook events (the installer and the plugin now register 23; re-run `npm run install-hooks`): `Elicitation` raises the session's hand while an MCP server asks you something (kind `elicitation`, *✋ github is asking you something*, a chime) and `ElicitationResult`, that MCP call finishing or the turn ending lowers it — only the server's name travels, never the question, its URL or your answer; `PermissionDenied` (auto mode refused a call) shows *🚫 denied: Bash (auto mode — …)* on the character that asked, the tool's name and the classifier's category only, never the command; `TeammateIdle` makes the server read the agent team's task list at once. `WorktreeCreate` is deliberately not registered (a command hook there replaces git's worktree creation and must print the path), nor `WorktreeRemove`, `FileChanged`, `ConfigChange` and `InstructionsLoaded` (nothing to draw). Shapes from the hooks reference; none could be fired here.
+- Agent teams on the whiteboard: a team's shared task list (`~/.claude/tasks/session-<8 chars of the session id>/`, where Claude Code moves the lead's list when it sets a team up) is a board of its own in the click-to-cycle, labelled *👥* and the team's name, with the members' names (read from `~/.claude/teams/<team>/config.json`, nothing else of it; `AGENT_OFFICE_TEAMS_DIR`) in its tooltip. Same token rule for the descriptions. Built from the agent-teams docs and the Claude Code 2.1.321 binary, not run against a live team.
+
 ## 1.1.2 — 2026-11-09
 
 - The tracker hook's Python now lives in its own file, `hooks/agent-tracker.py`, run by `agent-tracker.sh` as `python3 -I agent-tracker.py`. As a ~65 KB heredoc passed through `python3 -c` it hung Git Bash on Windows (a heredoc over 64 KiB deadlocks, found in #74), was over Windows' 32 KB command-line limit (#72), and could not be parsed by macOS bash 3.2 (#53). A test keeps it out of the wrapper and keeps the two small heredocs left there under 16 KB.

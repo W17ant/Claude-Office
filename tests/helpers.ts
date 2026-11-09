@@ -45,6 +45,7 @@ export async function loadOffice(opts: LoadOptions = {}): Promise<Office> {
   const extra = Object.entries({
     AGENT_OFFICE_REGISTRY_DIR: join(dir, 'registry'),
     AGENT_OFFICE_TASKS_DIR: join(dir, 'tasks'),
+    AGENT_OFFICE_TEAMS_DIR: join(dir, 'teams'),
     ...(opts.env ?? {}),
   })
   for (const [key, value] of extra) process.env[key] = value

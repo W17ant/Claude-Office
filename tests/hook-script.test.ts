@@ -973,14 +973,14 @@ describe('agent-tracker.sh: the main thread (session_* events)', () => {
     expect(runHook({ ...captured(C), hook_event_name: 'PostModelSwitch', from_model: 'x' })).toBeNull()
   })
 
-  it('Setup and InstructionsLoaded -> nothing, like every other event the office does not listen to', () => {
+  it('Setup and InstructionsLoaded -> nothing, like every other event the office does not listen to (a PermissionDenied without a tool name too)', () => {
     expect(runHook({ ...captured('149f6824-9a0a-4031-beff-0864614b9005'), hook_event_name: 'Setup', trigger: 'init' })).toBeNull()
     expect(runHook({ ...captured('10690f0a-fe94-4e15-9a2d-b59573025579'), hook_event_name: 'Setup', trigger: 'maintenance' })).toBeNull()
     expect(runHook({
       ...captured('7d77f597-b547-42f9-823a-50fc2ecdbf3b'), hook_event_name: 'InstructionsLoaded',
       file_path: `${HOOKCAP}/CLAUDE.md`, memory_type: 'Project', load_reason: 'session_start',
     })).toBeNull()
-    for (const hook_event_name of ['MessageDisplay', 'ConfigChange', 'UserPromptExpansion', 'PreModelSwitch', 'PermissionDenied', 'TeammateIdle', 'Elicitation', 'ElicitationResult', 'WorktreeCreate', 'WorktreeRemove', 'FileChanged', 'DirectoryAdded']) {
+    for (const hook_event_name of ['MessageDisplay', 'ConfigChange', 'UserPromptExpansion', 'PreModelSwitch', 'PermissionDenied', 'WorktreeCreate', 'WorktreeRemove', 'FileChanged', 'DirectoryAdded']) {
       expect(runHook({ ...captured(C), prompt_id: 'p', hook_event_name }), hook_event_name).toBeNull()
     }
   })
@@ -1008,6 +1008,82 @@ describe('agent-tracker.sh: the main thread (session_* events)', () => {
     expect(runHook({ hook_event_name: 'TaskCreated', task_id: '1', task_subject: 'no session' })).toBeNull()
   })
 
+  // Elicitation / ElicitationResult / PermissionDenied / TeammateIdle: shapes
+  // from the hooks reference (https://code.claude.com/docs/en/hooks), never
+  // fired here. Each must print nothing but the event: on these, stdout would
+  // answer the MCP question, replace the user's answer, or stop a teammate.
+  it('Elicitation -> session_needs_you {kind: elicitation, summary: the server}; never the question, the URL or the schema', () => {
+    const form = runHook({
+      ...captured(C), prompt_id: 'p', hook_event_name: 'Elicitation',
+      mcp_server_name: 'my-mcp-server', message: 'Please provide your credentials', mode: 'form',
+      requested_schema: { type: 'object', properties: { username: { type: 'string', title: 'Username' } } },
+    })
+    expect(form).toEqual({ type: 'session_needs_you', kind: 'elicitation', summary: 'my-mcp-server', promptId: 'p', ...forwarded(C) })
+    const url = runHook({
+      ...captured(C), hook_event_name: 'Elicitation', mcp_server_name: 'auth-server', message: 'Please authenticate',
+      mode: 'url', url: 'https://auth.example.com/login?state=s3cr3t', elicitation_id: 'e1',
+    })
+    expect(url).toEqual({ type: 'session_needs_you', kind: 'elicitation', summary: 'auth-server', ...forwarded(C) })
+    for (const secret of ['credentials', 'Username', 'authenticate', 's3cr3t', 'example.com']) {
+      expect(JSON.stringify([form, url])).not.toContain(secret)
+    }
+    // Inside a subagent the worker that asked travels; a nameless server is still a hand
+    expect(runHook({ ...captured(C), hook_event_name: 'Elicitation', agent_id: 'a1b2', agent_type: 'Explore', mcp_server_name: `  long\n${'s'.repeat(200)}` }))
+      .toMatchObject({ kind: 'elicitation', agentId: 'a1b2', summary: `long ${'s'.repeat(75)}` })
+    expect(runHook({ ...captured(C), hook_event_name: 'Elicitation' })).toMatchObject({ kind: 'elicitation', summary: 'MCP server' })
+    expect(runHook({ hook_event_name: 'Elicitation', mcp_server_name: 'x', message: 'no session' })).toBeNull()
+  })
+
+  it('ElicitationResult -> session_elicitation_done {server, elicitationAction}; never the content the user typed', () => {
+    const done = runHook({
+      ...captured(C), hook_event_name: 'ElicitationResult', mcp_server_name: 'my-mcp-server',
+      action: 'accept', content: { username: 'alice', password: 'hunter2' }, mode: 'form',
+    })
+    expect(done).toEqual({ type: 'session_elicitation_done', server: 'my-mcp-server', elicitationAction: 'accept', ...forwarded(C) })
+    expect(JSON.stringify(done)).not.toMatch(/alice|hunter2/)
+    expect(runHook({ ...captured(C), hook_event_name: 'ElicitationResult', mcp_server_name: 's', action: 'cancel' })?.elicitationAction).toBe('cancel')
+    expect(runHook({ ...captured(C), hook_event_name: 'ElicitationResult', mcp_server_name: 's', action: 'decline' })?.elicitationAction).toBe('decline')
+    // An action outside the three is left out, the hand still comes down
+    expect(runHook({ ...captured(C), hook_event_name: 'ElicitationResult', mcp_server_name: 's', action: 'sudo' })).toEqual({ type: 'session_elicitation_done', server: 's', ...forwarded(C) })
+  })
+
+  it('PermissionDenied -> a failed, denied agent_working with the tool name and the bracketed category; never the command', () => {
+    const tool_input = { command: 'rm -rf /tmp/build', description: 'Clean build directory' }
+    const main = runHook({
+      ...captured(C), permission_mode: 'auto', hook_event_name: 'PermissionDenied',
+      tool_name: 'Bash', tool_input, tool_use_id: 'toolu_01ABC123', reason: '[Irreversible Local Destruction]',
+    })
+    expect(main).toEqual({
+      type: 'agent_working', status: 'denied: Bash (auto mode — Irreversible Local Destruction)', failed: true, denied: true, tool: 'Bash', ...forwarded(C),
+    })
+    expect(JSON.stringify(main)).not.toMatch(/rm -rf|Clean build/)
+    // A free-form reason could quote the command: only the bracketed category form travels
+    expect(runHook({ ...captured(C), hook_event_name: 'PermissionDenied', tool_name: 'Bash', tool_input, reason: 'would run rm -rf /tmp/build' })?.status)
+      .toBe('denied: Bash (auto mode)')
+    // Inside a subagent: the worker that asked; an MCP tool is denied, not an mcp_call
+    expect(runHook({ ...captured(C), hook_event_name: 'PermissionDenied', agent_id: 'w1', agent_type: 'Explore', tool_name: 'mcp__github__merge_pull_request', tool_input: {}, mcp_server: 'github' }))
+      .toMatchObject({ type: 'agent_working', denied: true, agentId: 'w1', agentType: 'Explore', tool: 'mcp__github__merge_pull_request' })
+  })
+
+  it('TeammateIdle -> teammate_idle {name, agentId?} (the team board is read again)', () => {
+    expect(runHook({ ...captured(C), hook_event_name: 'TeammateIdle', teammate_name: 'researcher', team_name: 'session-a1b2c3d4' }))
+      .toEqual({ type: 'teammate_idle', name: 'researcher', ...forwarded(C) })
+    expect(runHook({ ...captured(C), hook_event_name: 'TeammateIdle', teammate_name: 'tester', agent_id: 'tester@session-a1b2c3d4' }))
+      .toMatchObject({ type: 'teammate_idle', name: 'tester', agentId: 'tester@session-a1b2c3d4' })
+  })
+
+  it('WorktreeCreate / WorktreeRemove / FileChanged / ConfigChange / InstructionsLoaded print nothing (and are not registered)', () => {
+    for (const payload of [
+      { hook_event_name: 'WorktreeCreate', name: 'feature-auth' },
+      { hook_event_name: 'WorktreeRemove', worktree_path: '/x/.claude/worktrees/feature-auth' },
+      { hook_event_name: 'FileChanged', file_path: '/x/.env' },
+      { hook_event_name: 'ConfigChange', source: 'user_settings' },
+      { hook_event_name: 'InstructionsLoaded', file_path: '/x/CLAUDE.md' },
+    ]) {
+      expect(runHook({ ...captured(C), ...payload }), payload.hook_event_name).toBeNull()
+    }
+  })
+
   it('every main-thread event without a session id prints nothing', () => {
     for (const payload of [
       { hook_event_name: 'UserPromptSubmit', prompt: 'hello', prompt_id: 'p' },
@@ -1021,6 +1097,9 @@ describe('agent-tracker.sh: the main thread (session_* events)', () => {
       { hook_event_name: 'CwdChanged', old_cwd: '/a', new_cwd: '/b' },
       { hook_event_name: 'PostModelSwitch', from_model: 'a', to_model: 'b', source: 'command' },
       { hook_event_name: 'PostToolUse', tool_name: 'Bash', tool_input: {}, tool_response: 'ok' },
+      { hook_event_name: 'Elicitation', mcp_server_name: 'm', message: 'q' },
+      { hook_event_name: 'ElicitationResult', mcp_server_name: 'm', action: 'accept' },
+      { hook_event_name: 'TeammateIdle', teammate_name: 'researcher' },
     ]) {
       expect(runHook(payload), payload.hook_event_name).toBeNull()
     }

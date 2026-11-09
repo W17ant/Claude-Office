@@ -585,6 +585,10 @@ const REGISTRY_DIR = process.env.AGENT_OFFICE_REGISTRY_DIR || join(CLAUDE_DIR, '
 // ...and each session's task list (server/tasks.js); tests point
 // AGENT_OFFICE_TASKS_DIR at a temp dir
 const TASKS_DIR = process.env.AGENT_OFFICE_TASKS_DIR || join(CLAUDE_DIR, 'tasks')
+// ...and each agent team's config (members, lead session), whose shared task
+// list lives under TASKS_DIR/<team name>; tests point AGENT_OFFICE_TEAMS_DIR
+// at a temp dir
+const TEAMS_DIR = process.env.AGENT_OFFICE_TEAMS_DIR || join(CLAUDE_DIR, 'teams')
 
 /** @type {Map<string, ReturnType<typeof setTimeout>>} sessionId -> timer that forgets an ended session */
 const sessionTimers = new Map()
@@ -621,7 +625,11 @@ const SESSION_FORGET_MS = 60_000
 // ---------------------------------------------------------------------------
 
 const MAIN_STATES = new Set(['working', 'waiting', 'idle', 'needs-you', 'error', 'compacting'])
-const NEEDS_YOU_KINDS = new Set(['permission', 'idle', 'quota', 'agent-input'])
+// elicitation: an MCP server asked the user something (Elicitation hook); the
+// wait carries the server's name as `summary`, never the question itself
+const NEEDS_YOU_KINDS = new Set(['permission', 'idle', 'quota', 'agent-input', 'elicitation'])
+// ElicitationResult's `action`: what the user did with the MCP server's question
+const ELICITATION_ACTIONS = new Set(['accept', 'decline', 'cancel'])
 // Needs-you timing:
 // - a wait is applied and announced only after NEEDS_YOU_DEBOUNCE_MS: in a
 //   headless (-p) session a PermissionRequest is auto-denied and its
@@ -740,6 +748,7 @@ function setMainState(session, state, reason, now = Date.now()) {
 /** The label a needs-you wait gets in the log. */
 function needsYouLabel(wait) {
   if (wait.kind === 'permission') return `permission: ${[wait.toolName, wait.summary].filter(Boolean).join(' ') || wait.message || 'tool call'}`
+  if (wait.kind === 'elicitation') return `elicitation: ${wait.summary ?? 'MCP server'} is asking`
   return `${wait.kind}${wait.notificationType ? ` / ${wait.notificationType}` : ''}${wait.message ? `: ${wait.message}` : ''}`
 }
 
@@ -816,6 +825,10 @@ function mainWorking(session, status, now = Date.now()) {
   if (main.state === 'needs-you' && main.needsYou?.kind === 'permission') {
     if (now - main.needsYou.since < PERMISSION_RACE_MS || callOf(main.needsYou).agentId) return false
   }
+  // Why: an MCP question blocks only the MCP call that asked; other calls of
+  // the same batch keep running beside it. Its answer (ElicitationResult),
+  // that call's completion (mcp_done) or a turn boundary lowers it instead.
+  if (main.state === 'needs-you' && main.needsYou?.kind === 'elicitation') return false
   delete main.needsYou
   delete main.error
   delete main.beforeCompact
@@ -844,6 +857,37 @@ function lowerPermissionHand(session, answers, what, to) {
   setMainState(session, back, what)
   saveAgents()
   return mainEvent(session, 'permission answered')
+}
+
+/**
+ * An MCP server name as Claude Code puts it into a tool name (mcp__<name>__<tool>):
+ * every character outside [A-Za-z0-9_-] becomes `_`. Elicitation names the
+ * server as configured, mcp_done as the tool name has it; both go through this.
+ */
+function mcpNameKey(name) {
+  return String(name ?? '').replace(/[^A-Za-z0-9_-]/g, '_')
+}
+
+/**
+ * The MCP server `server` is done asking (ElicitationResult) or its call
+ * finished (mcp_done): an elicitation hand it raised comes down, a parked one
+ * is withdrawn. `server` undefined matches any server. The hand goes back to
+ * working — the MCP call that asked carries on. Returns the session_main
+ * broadcast when the raised hand came down, else null.
+ */
+function lowerElicitationHand(session, server, what) {
+  const matches = w => w && w.kind === 'elicitation' && (server === undefined || mcpNameKey(w.summary) === mcpNameKey(server))
+  const pending = pendingNeedsYou.get(session.id)
+  if (pending && matches(pending.wait)) {
+    cancelPendingNeedsYou(session.id)
+    console.log(`[main] ${sessionName(session)}: needs-you withdrawn before it was shown (${needsYouLabel(pending.wait)}; ${what})`)
+  }
+  const main = mainOf(session)
+  if (main.state !== 'needs-you' || !matches(main.needsYou)) return null
+  delete main.needsYou
+  setMainState(session, 'working', what)
+  saveAgents()
+  return mainEvent(session, 'question answered')
 }
 
 /**
@@ -1291,6 +1335,10 @@ const KNOWN_EVENT_TYPES = new Set([
   // TaskCreated / TaskCompleted: the task board looks at the session's list now (server/tasks.js)
   'task_created',
   'task_completed',
+  // ElicitationResult: the MCP question was answered (an Elicitation is a session_needs_you)
+  'session_elicitation_done',
+  // TeammateIdle: an agent-team teammate went idle; the team's board is read again (server/tasks.js)
+  'teammate_idle',
 ])
 
 const MAX_STRING_LEN = 200
@@ -1703,6 +1751,7 @@ const tasks = mountTasks(app, {
   sessions,
   broadcast,
   tasksDir: TASKS_DIR,
+  teamsDir: TEAMS_DIR,
   hasToken: req => tokenMatches(bearerToken(req)),
 })
 
@@ -1772,6 +1821,11 @@ app.get('/roster', (_req, res) => {
  *   { type: "session_cwd",       cwd, project, oldCwd? }                           (CwdChanged)
  *   { type: "session_model",     model, fromModel?, switchSource? }                (PostModelSwitch)
  *   { type: "task_created" | "task_completed", taskId, subject }        (TaskCreated, TaskCompleted)
+ *   { type: "session_needs_you", kind: "elicitation", summary: <MCP server>, agentId? }   (Elicitation)
+ *   { type: "session_elicitation_done", server, elicitationAction? }   (ElicitationResult)
+ *   { type: "agent_working", status: "denied: <tool> (auto mode…)", failed, denied, tool, agentId? }
+ *                                                           (PermissionDenied)
+ *   { type: "teammate_idle", name, agentId? }                          (TeammateIdle)
  * A foreground agent's agent_completed may add tokens, durationMs, toolUses, model.
  *
  * What a Bash call meant (see Signals): agent_working (PreToolUse,
@@ -1810,6 +1864,10 @@ app.post('/event', requireToken, (req, res) => {
     subagentId: clampString(body.subagentId),
     parentId: clampString(body.parentId),
     failed: body.failed === true || undefined,
+    // PermissionDenied: auto mode refused the call (a failed agent_working that says so)
+    denied: body.denied === true || undefined,
+    // ElicitationResult: what the user did with an MCP server's question (enum only)
+    elicitationAction: ELICITATION_ACTIONS.has(body.elicitationAction) ? body.elicitationAction : undefined,
     agentType:  clampString(body.agentType),
     role:       clampString(body.role),
     name:       clampString(body.name),
@@ -2840,6 +2898,7 @@ function processEvent(body) {
           agentId: id,
           status: body.status,
           ...(body.failed ? { failed: true } : {}),
+          ...(body.denied ? { denied: true } : {}),
           ...(agent.sessionId ? { sessionId: agent.sessionId } : {}),
           timestamp: Date.now(),
         }
@@ -2866,6 +2925,7 @@ function processEvent(body) {
         agentId: undefined,
         status: body.status,
         ...(body.failed ? { failed: true } : {}),
+        ...(body.denied ? { denied: true } : {}),
         ...(session ? { sessionId: session.id, project: session.project } : {}),
         timestamp: Date.now(),
       }
@@ -2975,6 +3035,13 @@ function processEvent(body) {
       // mcp__<server>__<tool>) was granted, exactly as for any other tool
       if (session && body.tool) {
         const lowered = toolDone(session, { toolName: `mcp__${body.server}__${body.tool}`, callKey: body.callKey, agentId: body.agentId })
+        if (lowered) broadcast(lowered)
+      }
+      // Why: the call an MCP server asked from has returned, so the question
+      // is settled — even when no ElicitationResult came (another hook
+      // answered the Elicitation for the user, or the call failed)
+      if (session && body.server) {
+        const lowered = lowerElicitationHand(session, body.server, `${body.server} call done`)
         if (lowered) broadcast(lowered)
       }
       return { type: 'mcp_done', server: body.server, ...(session ? { sessionId: session.id } : {}), timestamp: Date.now() }
@@ -3155,7 +3222,10 @@ function processEvent(body) {
         ...(body.promptId ? { promptId: body.promptId } : {}),
         ...(body.toolName ? { toolName: body.toolName } : {}),
         ...(body.summary ? { summary: body.summary } : {}),
-        ...(body.message ? { message: body.message } : {}),
+        // Why: an MCP question's text is the server's own words (it may ask
+        // for a credential); the hook never sends it, and should anything
+        // else post one it is dropped here, so no view ever carries it
+        ...(body.message && body.kind !== 'elicitation' ? { message: body.message } : {}),
         ...(body.notificationType ? { notificationType: body.notificationType } : {}),
       }
       // Which call asked (see "Which call a permission wait belongs to")
@@ -3302,6 +3372,32 @@ function processEvent(body) {
       const label = `task ${body.type === 'task_created' ? 'created' : 'completed'}: ${body.subject || `#${body.taskId ?? '?'}`}`
       recordActivity(mainActivityId(session.id), { kind: 'status', text: label })
       console.log(`[tasks] ${sessionName(session)}: ${logText(label, 100)}`)
+      saveAgents()
+      return null
+    }
+
+    case 'session_elicitation_done': {
+      // ElicitationResult: the user answered, declined or dismissed the MCP
+      // server's question in the terminal. Only that server's hand comes
+      // down (an unnamed server matches any); the answer itself never travels.
+      const session = touchSession(body)
+      if (!session) return null
+      const verb = { accept: 'answered', decline: 'declined', cancel: 'cancelled' }[body.elicitationAction] ?? 'done'
+      const what = `${body.server || 'MCP server'} question ${verb}`
+      recordActivity(mainActivityId(session.id), { kind: 'status', text: what })
+      const lowered = lowerElicitationHand(session, body.server || undefined, what)
+      if (lowered) return lowered
+      saveAgents()
+      return null
+    }
+
+    case 'teammate_idle': {
+      // TeammateIdle: an agent-team teammate finished its turn. Nothing to
+      // draw on its own — POST /event has server/tasks.js read the team's
+      // task list now (a teammate usually goes idle right after finishing a task)
+      const session = touchSession(body)
+      if (!session) return null
+      recordActivity(mainActivityId(session.id), { kind: 'status', text: `teammate ${body.name || '?'} idle` })
       saveAgents()
       return null
     }
@@ -3483,7 +3579,10 @@ function withoutMainText(event) {
  *
  * Kept: agent records and their status lines, the completion line of
  * agent_completed (it is the office's open `done:` chat line too), a
- * needs-you's tool name, one-line summary and notification message, an API
+ * needs-you's tool name, one-line summary and notification message (for an
+ * MCP question, kind `elicitation`, the summary is the server's name and
+ * that is all: the hook never forwards the question, its URL or the user's
+ * answer, so there is nothing to strip), an API
  * error line, permission_extended / _resolved, meters, health, chat lines,
  * task_board (subjects, activeForms and states, as open as an agent's task on
  * GET /agents; a task's description never travels, see server/tasks.js).
@@ -3756,6 +3855,7 @@ export {
   REGISTRY_DIR,
   tasks,
   TASKS_DIR,
+  TEAMS_DIR,
   pendingNeedsYou,
   permissions,
   settings,
