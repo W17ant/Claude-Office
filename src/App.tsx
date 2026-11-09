@@ -5,6 +5,7 @@ import './styles/incident.css'
 import './styles/meters.css'
 import SlackChat, { ChatMessage, getAvatarSrc } from './components/SlackChat'
 import Character from './components/Character'
+import ResilientImg from './components/ResilientImg'
 import FurnitureRenderer from './components/FurnitureRenderer'
 import SessionStrip from './components/SessionStrip'
 import Meters from './components/Meters'
@@ -1513,7 +1514,7 @@ const App: React.FC = () => {
             const host = agents.find(a => a.role === angela.role)
             if (!host) return null
             return (
-              <img
+              <ResilientImg
                 src={angela.catSprite}
                 alt="cat"
                 className="angela-cat"
@@ -1550,7 +1551,7 @@ const App: React.FC = () => {
                   pointerEvents: 'none',
                 }}
               >
-                <img
+                <ResilientImg
                   src={bossEffect}
                   alt="interaction"
                   style={{ height: 32, width: 'auto', imageRendering: 'pixelated' }}

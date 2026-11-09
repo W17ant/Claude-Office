@@ -1,4 +1,5 @@
 import React from 'react'
+import ResilientImg from './ResilientImg'
 import { FurnitureItem } from '../rooms'
 import { ASSETS } from '../assets'
 
@@ -80,7 +81,7 @@ const FurnitureRenderer: React.FC<FurnitureRendererProps> = ({ items, onItemClic
             title={item.label || (clickable ? 'Click to interact' : undefined)}
             onClick={clickable && onItemClick ? () => onItemClick(item.id) : undefined}
           >
-            <img
+            <ResilientImg
               src={url}
               alt={item.label || item.type}
               style={{
