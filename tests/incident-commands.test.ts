@@ -63,7 +63,7 @@ describe('POST /chat — /incident and /all-clear', () => {
     await a.next(m => m.type === 'snapshot')
     await b.next(m => m.type === 'snapshot')
 
-    const res = await request(office.server.app).post('/chat').send({ sender: 'Boss', text: '/incident' })
+    const res = await request(office.server.app).post('/chat').set('Authorization', `Bearer ${office.server.AUTH_TOKEN}`).send({ sender: 'Boss', text: '/incident' })
     expect(res.status).toBe(200)
     expect(res.body).toEqual({ ok: true })
 
@@ -88,7 +88,7 @@ describe('POST /chat — /incident and /all-clear', () => {
     clients.push(a.ws)
     await a.next(m => m.type === 'snapshot')
 
-    const res = await request(office.server.app).post('/chat').send({ sender: 'Boss', text: '/all-clear' })
+    const res = await request(office.server.app).post('/chat').set('Authorization', `Bearer ${office.server.AUTH_TOKEN}`).send({ sender: 'Boss', text: '/all-clear' })
     expect(res.status).toBe(200)
 
     const change = await a.next(m => m.type === 'variant_change')
@@ -98,7 +98,7 @@ describe('POST /chat — /incident and /all-clear', () => {
   })
 
   it('/help lists both commands', async () => {
-    await request(office.server.app).post('/chat').send({ sender: 'Boss', text: '/help' })
+    await request(office.server.app).post('/chat').set('Authorization', `Bearer ${office.server.AUTH_TOKEN}`).send({ sender: 'Boss', text: '/help' })
     const chat = await request(office.server.app).get('/chat')
     const help = chat.body.messages.at(-1).text as string
     expect(help).toContain('/incident')
@@ -109,7 +109,7 @@ describe('POST /chat — /incident and /all-clear', () => {
     // Only the usual runtime files: no incident state file appears after the commands above
     const files = readdirSync(office.dir)
     expect(files.some(f => /incident|variant/i.test(f))).toBe(false)
-    const status = await request(office.server.app).post('/chat').send({ sender: 'Boss', text: '/status' })
+    const status = await request(office.server.app).post('/chat').set('Authorization', `Bearer ${office.server.AUTH_TOKEN}`).send({ sender: 'Boss', text: '/status' })
     expect(status.status).toBe(200)
     const chat = await request(office.server.app).get('/chat')
     expect(chat.body.messages.at(-1).text).toContain('0 agents active')

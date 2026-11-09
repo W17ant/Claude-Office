@@ -27,6 +27,7 @@ import {
 } from './officeReducer'
 import { BOSS_ROLE } from './config'
 import { officeHttpBase, officeWsUrl } from './serverUrl'
+import { getOfficeToken } from './officeToken'
 import { pickEvent } from './events'
 import { getInteraction } from './interactions'
 import {
@@ -1386,7 +1387,10 @@ const App: React.FC = () => {
     if (isSimMode) return
     fetch(`${officeHttpBase()}/chat`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${getOfficeToken() ?? ''}`,
+      },
       body: JSON.stringify({ sender: bossCfg.title, text }),
     }).catch(() => {})
   }, [addMsg])

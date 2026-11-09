@@ -316,7 +316,7 @@ describe('the transcript stays behind the token', () => {
     office.server.processEvent({ type: 'agent_spawned', ...ALPHA, agent: gp('agent-a1', 'Count etc') })
     office.server.processEvent({ type: 'session_prompt', ...ALPHA, promptId: 'p-1', text: 'count /etc please' })
     office.server.processEvent({ type: 'session_turn_end', ...ALPHA, promptId: 'p-1', text: '/etc has 154 entries.', backgroundTasks: [], crons: 0 })
-    await request(office.server.app).post('/chat').send({ sender: 'Antony', text: 'nice' })
+    await request(office.server.app).post('/chat').set('Authorization', `Bearer ${office.server.AUTH_TOKEN}`).send({ sender: 'Antony', text: 'nice' })
     await postAuthed(office.server, '/chat/reply', { sender: 'Reviewer', role: 'code-reviewer', recipient: 'Agent', text: 'ping' })
   })
   afterAll(() => removeOffice(office))
@@ -1144,7 +1144,7 @@ describe('POST /event body limit', () => {
     expect(huge.status).toBe(413)
     expect(huge.body).toEqual({ error: 'Request body too large' })
 
-    const chat = await request(office.server.app).post('/chat').send({ sender: 'x', text: 'y'.repeat(20_000) })
+    const chat = await request(office.server.app).post('/chat').set('Authorization', `Bearer ${office.server.AUTH_TOKEN}`).send({ sender: 'x', text: 'y'.repeat(20_000) })
     expect(chat.status).toBe(413)
     const settings = await postAuthed(office.server, '/settings', { logPrompts: 'summary', pad: 'z'.repeat(20_000) })
     expect(settings.status).toBe(413)

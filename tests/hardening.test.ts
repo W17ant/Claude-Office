@@ -145,12 +145,13 @@ describe('bearer token on routes that act as an agent or destroy state (C05, C06
   })
   const officeApp = () => office.server.app
 
-  it('keeps every GET, a plain chat line, the typing indicator and the pause toggle open', async () => {
+  it('keeps every GET, while chat writes require the office token', async () => {
     for (const path of ['/health', '/chat', '/agents', '/roster', '/sessions', '/settings', '/a2a/agents', '/.well-known/agent-card.json', '/chat/cron-state']) {
       const res = await request(office.server.app).get(path)
       expect(res.status, path).toBe(200)
     }
-    expect((await request(office.server.app).post('/chat').send({ sender: 'Boss', text: 'hello office' })).status).toBe(200)
+    expect((await request(office.server.app).post('/chat').send({ sender: 'Boss', text: 'hello office' })).status).toBe(401)
+    expect((await postAuthed(office.server, '/chat', { sender: 'Boss', text: 'hello office' })).status).toBe(200)
     expect((await request(office.server.app).post('/chat/typing').send({ sender: 'Boss' })).status).toBe(200)
     const paused = await request(office.server.app).post('/chat/cron-state').send({ paused: true })
     expect(paused.status).toBe(200)
@@ -164,20 +165,18 @@ describe('POST /chat slash commands (C05)', () => {
   afterAll(() => removeOffice(office))
 
   it('/clear needs the token: refused with 401, nothing deleted, and the chat is told why', async () => {
-    await request(office.server.app).post('/chat').send({ sender: 'Boss', text: 'secret: deploy keys in vault' })
-    await request(office.server.app).post('/chat').send({ sender: 'Boss', text: 'second message' })
+    await postAuthed(office.server, '/chat', { sender: 'Boss', text: 'secret: deploy keys in vault' })
+    await postAuthed(office.server, '/chat', { sender: 'Boss', text: 'second message' })
 
     const res = await request(office.server.app).post('/chat').send({ sender: 'attacker', text: '/clear' })
     expect(res.status).toBe(401)
-    expect(res.body).toEqual({ error: '/clear needs the office auth token' })
+    expect(res.body).toEqual({ error: 'Unauthorized' })
 
     const chat = await request(office.server.app).get('/chat')
     const texts = chat.body.messages.map((m: any) => m.text)
     expect(texts).toContain('secret: deploy keys in vault')
     expect(texts).toContain('second message')
     expect(texts).not.toContain('/clear')
-    // The person at the chat panel sees why nothing happened
-    expect(chat.body.messages.at(-1)).toMatchObject({ sender: 'system', is_system: 1, text: expect.stringContaining('/clear needs the office auth token') })
   })
 
   it('/clear with the token wipes the history', async () => {
@@ -187,9 +186,9 @@ describe('POST /chat slash commands (C05)', () => {
     expect(chat.body.messages.map((m: any) => m.text)).toEqual(['/clear', '🧹 Chat cleared'])
   })
 
-  it('read-only and incident commands stay open, and /help says /clear needs the token', async () => {
+  it('read-only and incident commands require the token, and /help says /clear needs the token', async () => {
     for (const text of ['/status', '/agents', '/incident', '/all-clear', '/help']) {
-      const res = await request(office.server.app).post('/chat').send({ sender: 'Boss', text })
+      const res = await postAuthed(office.server, '/chat', { sender: 'Boss', text })
       expect(res.status, text).toBe(200)
     }
     const chat = await request(office.server.app).get('/chat')
@@ -435,7 +434,7 @@ describe('runtime files are private (C17)', () => {
     chmodSync(join(office.dir, 'last-chat'), 0o644)
     expect(mode(join(office.dir, 'last-chat'))).toBe(0o644)
 
-    await request(office.server.app).post('/chat').send({ sender: 'Boss', text: 'hello' })
+    await postAuthed(office.server, '/chat', { sender: 'Boss', text: 'hello' })
     await postAuthed(office.server, '/chat/reply', { sender: 'Reviewer', recipient: 'Debugger', text: 'for your eyes only' })
     await request(office.server.app).post('/chat/cron-state').send({ paused: false })
 
@@ -460,14 +459,14 @@ describe('errors are JSON without stack traces or paths (C18)', () => {
   })
 
   it('malformed JSON is a 400', async () => {
-    const res = await request(office.server.app).post('/chat').set('Content-Type', 'application/json').send('{"sender": "x", "text": ')
+    const res = await request(office.server.app).post('/chat').set('Authorization', `Bearer ${office.server.AUTH_TOKEN}`).set('Content-Type', 'application/json').send('{"sender": "x", "text": ')
     expect(res.status).toBe(400)
     expect(res.headers['content-type']).toMatch(/application\/json/)
     expect(res.body).toEqual({ error: 'Malformed JSON body' })
   })
 
   it('a body over the 10kb limit is a 413', async () => {
-    const res = await request(office.server.app).post('/chat').send({ sender: 'x', text: 'y'.repeat(20_000) })
+    const res = await postAuthed(office.server, '/chat', { sender: 'x', text: 'y'.repeat(20_000) })
     expect(res.status).toBe(413)
     expect(res.body).toEqual({ error: 'Request body too large' })
   })
@@ -501,7 +500,7 @@ describe('message ids and reactions (C38, C39)', () => {
   let messageId: number
   beforeAll(async () => {
     office = await loadOffice()
-    await request(office.server.app).post('/chat').send({ sender: 'Boss', text: 'react to this' })
+    await postAuthed(office.server, '/chat', { sender: 'Boss', text: 'react to this' })
     const chat = await request(office.server.app).get('/chat')
     messageId = chat.body.messages[0].id
   })

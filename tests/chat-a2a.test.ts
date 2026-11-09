@@ -313,7 +313,7 @@ describe('POST /chat (office UI)', () => {
   afterAll(() => removeOffice(office))
 
   it('stores the message and writes last-chat under the runtime dir', async () => {
-    const res = await request(office.server.app).post('/chat').send({ sender: 'Boss', text: 'hello office' })
+    const res = await request(office.server.app).post('/chat').set('Authorization', `Bearer ${office.server.AUTH_TOKEN}`).send({ sender: 'Boss', text: 'hello office' })
     expect(res.status).toBe(200)
     expect(existsSync(join(office.dir, 'last-chat'))).toBe(true)
     expect(JSON.parse(readFileSync(join(office.dir, 'last-chat'), 'utf8'))).toMatchObject({ sender: 'Boss', text: 'hello office' })
@@ -323,7 +323,7 @@ describe('POST /chat (office UI)', () => {
   })
 
   it('answers slash commands with a system message', async () => {
-    const res = await request(office.server.app).post('/chat').send({ sender: 'Boss', text: '/status' })
+    const res = await request(office.server.app).post('/chat').set('Authorization', `Bearer ${office.server.AUTH_TOKEN}`).send({ sender: 'Boss', text: '/status' })
     expect(res.status).toBe(200)
     const chat = await request(office.server.app).get('/chat')
     expect(chat.body.messages.at(-1)).toMatchObject({ sender: 'system', is_system: 1, text: expect.stringContaining('0 agents active') })

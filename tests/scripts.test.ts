@@ -170,7 +170,7 @@ function fakePids(w: WatcherWorld, which: 'claude' | 'sleep'): number[] {
 }
 
 const say = (w: WatcherWorld, text: string, sender = 'Antony') =>
-  request(w.office.server.app).post('/chat').send({ sender, text })
+  request(w.office.server.app).post('/chat').set('Authorization', `Bearer ${w.office.server.AUTH_TOKEN}`).send({ sender, text })
 
 const FAKE_REPLY = 'On it, checking the error logs now'
 /** Rows the watcher posted (announcements and directed messages carry an agent role too, but not this text). */
@@ -527,7 +527,7 @@ describe('chat-post.py', () => {
   it('/clear wipes the chat history, as the README documents: a slash command goes to POST /chat with the token', async () => {
     const { office: o, post, texts } = await office(true)
     try {
-      await request(o.server.app).post('/chat').send({ sender: 'Antony', text: 'my secret prompt' })
+      await request(o.server.app).post('/chat').set('Authorization', `Bearer ${o.server.AUTH_TOKEN}`).send({ sender: 'Antony', text: 'my secret prompt' })
       expect(await texts()).toContain('my secret prompt')
 
       const res = await post('/clear')
@@ -542,13 +542,11 @@ describe('chat-post.py', () => {
   it('a refused command exits 1 with the server\'s reason and deletes nothing; a plain line still posts as Claude', async () => {
     const { office: o, post, texts } = await office(false)
     try {
-      await request(o.server.app).post('/chat').send({ sender: 'Antony', text: 'keep me' })
+      await request(o.server.app).post('/chat').set('Authorization', `Bearer ${o.server.AUTH_TOKEN}`).send({ sender: 'Antony', text: 'keep me' })
       const res = await post('/clear')
       expect(res.code).toBe(1)
-      expect(res.out).toContain('Failed: HTTP 401: /clear needs the office auth token')
+      expect(res.out).toContain('Failed: HTTP 401: Unauthorized')
       expect(await texts()).toContain('keep me')
-      // The panel's line names the command that works
-      expect((await texts()).at(-1)).toContain('python3 scripts/chat-post.py /clear')
     } finally {
       removeOffice(o)
     }

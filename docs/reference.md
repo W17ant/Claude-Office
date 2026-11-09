@@ -447,9 +447,9 @@ requires the token, conversation text requires it, and the rest stay open:
 
 | | Routes | Why |
 |---|---|---|
-| **Token required** (bearer **or** a valid request signature) | `POST /event`, `POST /status`, `/chat/reply`, `/a2a`, `/chat/inbox/read`, `/chat/seen`, `/chat/react`, `/chat/video-mode`, `GET /permission/:id` (the hook's long-poll for a decision), and `POST /chat` for a destructive slash command (`/clear`) | Speaks for an agent, writes another agent's inbox, feeds the meters, learns how a permission was decided, or wipes history. The hook and status line authenticate here by **signing** (below); the scripts send the bearer token |
+| **Token required** (bearer **or** a valid request signature) | `POST /event`, `POST /status`, `/chat`, `/chat/reply`, `/a2a`, `/chat/inbox/read`, `/chat/seen`, `/chat/react`, `/chat/video-mode`, `GET /permission/:id` (the hook's long-poll for a decision) | Speaks for an agent, accepts conversation input, writes another agent's inbox, feeds the meters, learns how a permission was decided, or wipes history. The hook and status line authenticate here by **signing** (below); the page and scripts send the bearer token |
 | **UI token or token** | `POST /permission/:id` (answer a permission dialog), `POST /settings` | The two things the office page itself may change. The server mints a second secret per process, the UI token, and hands it out in one place only: the WebSocket snapshot of a connection that presented the office token. Nobody without the token file can obtain it. It lives in memory, changes on every restart and is compared in constant time |
-| **Open** | every other `GET`, `POST /chat` (a plain line a person typed, and the read-only `/status` · `/agents` · `/help` · `/incident` · `/all-clear` commands), `POST /chat/typing`, `POST /chat/cron-state` | The worst these do is read what the read-only office shows or post a chat line |
+| **Open** | every other `GET` (with sensitive conversation fields filtered without the token), the read-only `/status` · `/agents` · `/help` · `/incident` · `/all-clear` commands, `POST /chat/typing`, `POST /chat/cron-state` | These do not accept conversation text or act as an agent |
 | **Open, but the conversation needs the token** | `GET /chat`, `GET /sessions`, `GET /permissions`, `GET /signals`, the WebSocket | Without the token: no chat rows with `msg_type` `prompt` / `reply`, no `main.lastPrompt` / `main.lastReply`, no permission `detail` / `suggestions`, no signal `command` / `error` / `detail`, and the WebSocket is read-only as above. With it (the office page, the office scripts), they are included |
 | **Open, but the descriptions need the token** | `GET /tasks` (the task boards) | Anyone on loopback gets each session's task subjects, *activeForm*s, states, blockers and owners — as open as an agent's task on `GET /agents`. A task's description is longer text written from the conversation: only a token holder gets it. The `task_board` broadcasts and the snapshot's `taskBoards` never carry it, so a read-only WebSocket gets them unchanged |
 | **Open, but the transcript needs the UI token or the token** | `GET /agents/:id` (the inspector card) | Anyone on loopback gets the card's history, tool counts and stats — tool names and status lines, what `GET /agents` and `GET /sessions` already show. The transcript tail (what the agent said, the commands it ran) and a session Claude's last prompt and reply go only to the office page, which sends the UI token, or a token holder; anyone else gets `transcriptAvailable: false` with the reason `needs the office token`. A wrong token counts as none. With a token the tail still follows `logPrompts` |
@@ -477,6 +477,13 @@ requires the token, conversation text requires it, and the rest stay open:
   process umask (often `0644`), and a dir the installer or `start-office.sh`
   made first stays `0755`, so the server tightens both — and any already-loose
   `chat.db*` — on every start, repairing an older install.
+- The chat AI watcher authenticates its read with the office token and never
+  includes local persona files or development context in Claude prompts. Chat
+  text is delimited and marked as untrusted content so it cannot override the
+  prompt's privacy instructions.
+- Electron packaging fails closed unless `BETTER_SQLITE3_PREBUILD_SHA256` is
+  set to the expected 64-character SHA-256 digest. The downloaded native
+  `better_sqlite3.node` is hashed before the package is accepted.
 - **Your prompts and Claude's replies are stored locally**, in `~/.agent-office/chat.db`
   (mode `0600`) and in `agents.json`, at the level `logPrompts` sets:
   `summary` (the default) keeps the first 200 characters of each, `full` keeps up

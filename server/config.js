@@ -120,7 +120,7 @@ export function readHost(env = process.env, log = console) {
   }
   log?.error?.(
     `[config] AGENT_OFFICE_HOST=${JSON.stringify(raw)} refused: the office binds loopback only ` +
-    `(127.0.0.1 or localhost). Every GET, POST /chat and the WebSocket are open on loopback by design ` +
+    `(127.0.0.1 or localhost). Every GET and the WebSocket are loopback-only; ` +
     `(the office page has no token), so a non-loopback bind would expose your prompts, Claude's replies and ` +
     `the agents' tasks to the network; the UI token work would have to cover every route first. Binding ${DEFAULT_HOST}.`,
   )

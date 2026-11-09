@@ -78,19 +78,17 @@ const UI_DEV_PORT = readUiPort()
 // link the server prints at start (see "The office link" below) and
 // presents it when it opens the WebSocket. Everything that acts *as an
 // agent*, answers for the person or destroys state needs it, and so does
-// conversation text; reads of what the office shows, a person's plain chat
-// line (POST /chat), the typing indicator and the chat-monitor pause toggle
-// stay open.
+// conversation text; reads of what the office shows, the typing indicator and
+// the chat-monitor pause toggle stay open.
 //
 //   token required   POST /event, /chat/reply, /a2a, /chat/inbox/read,
 //                    /chat/seen, /chat/react, /chat/video-mode,
 //                    GET /permission/:id (the hook's long-poll),
-//                    and POST /chat for a destructive slash command (/clear)
+//                    POST /chat
 //   UI token or token  POST /permission/:id (answer a permission dialog) and
 //                    POST /settings — the two things the office page itself
 //                    may change; see UI_TOKEN below
-//   open             every GET, POST /chat (plain lines + read-only /status,
-//                    /agents, /help and the incident toggles), /chat/typing,
+//   open             every GET, /chat/typing,
 //                    POST /chat/cron-state (the UI's pause button); the
 //                    WebSocket without the token (read-only, see below)
 //
@@ -1956,9 +1954,8 @@ function handleSlashCommand(cmd) {
   }
 }
 
-// Slash commands that destroy state need the office token. POST /chat itself
-// is open because the office UI (a person typing) has no token — but so does
-// any other local process, and it must not be able to truncate the chat.
+// Every chat write needs the office token so another local process cannot
+// inject text into the prompt consumed by the Claude watcher.
 const PRIVILEGED_COMMANDS = new Set(['/clear'])
 
 // ---------------------------------------------------------------------------
@@ -1967,10 +1964,9 @@ const PRIVILEGED_COMMANDS = new Set(['/clear'])
 
 /**
  * POST /chat — receives a message typed in the office Slack panel
- * No auth required for a plain line or a read-only slash command (comes from
- * the UI, not hooks); a privileged command (/clear) needs the bearer token.
+ * The UI and local scripts authenticate with the office bearer token.
  */
-app.post('/chat', (req, res) => {
+app.post('/chat', requireToken, (req, res) => {
   const { sender, text } = req.body ?? {}
   if (!sender || !text) {
     return res.status(400).json({ error: 'Missing sender or text' })

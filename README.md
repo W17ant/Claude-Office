@@ -307,9 +307,10 @@ Claude-Office/
 ## Security
 
 - Server binds to `127.0.0.1` only — not exposed to the network
-- Agent events, permission answers and wiping the chat need the auth token in `~/.agent-office/auth-token` (`0600` permissions); typing in the chat doesn't
+- Agent events, chat messages, permission answers and wiping the chat need the auth token in `~/.agent-office/auth-token` (`0600` permissions)
 - The office page gets the token from the link the start script opens; without it the office is read-only
 - Hook requests are signed, so the token never appears on a command line
+- Packaged native SQLite binaries require an explicit SHA-256 digest via `BETTER_SQLITE3_PREBUILD_SHA256`
 
 The full model is in the [reference](docs/reference.md#security).
 

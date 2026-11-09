@@ -15,11 +15,14 @@
  */
 
 const { spawnSync } = require('child_process')
+const { createHash } = require('crypto')
 const fs = require('fs')
 const path = require('path')
 const { Arch } = require('electron-builder')
 
 const MODULE = 'better-sqlite3'
+const NATIVE_BINARY = path.join('build', 'Release', 'better_sqlite3.node')
+const SHA256_PATTERN = /^[0-9a-f]{64}$/i
 
 module.exports = async function afterPack(context) {
   const { packager, appOutDir, arch } = context
@@ -32,6 +35,10 @@ module.exports = async function afterPack(context) {
   const moduleDir = path.join(packager.getResourcesDir(appOutDir), 'app', 'node_modules', MODULE)
   if (!fs.existsSync(path.join(moduleDir, 'package.json'))) {
     throw new Error(`[after-pack] ${MODULE} not found at ${moduleDir} — is "asar" off and ${MODULE} a production dependency?`)
+  }
+  const expectedSha256 = process.env.BETTER_SQLITE3_PREBUILD_SHA256
+  if (!SHA256_PATTERN.test(expectedSha256 || '')) {
+    throw new Error(`[after-pack] BETTER_SQLITE3_PREBUILD_SHA256 must be a 64-character SHA-256 digest; refusing an unverified native binary`)
   }
 
   console.log(`  • after-pack  fetching ${MODULE} prebuilt for electron@${electronVersion} ${archName} into ${path.relative(process.cwd(), moduleDir)}`)
@@ -49,5 +56,14 @@ module.exports = async function afterPack(context) {
   )
   if (result.status !== 0) {
     throw new Error(`[after-pack] prebuild-install failed for ${MODULE} (electron@${electronVersion} ${archName}, exit ${result.status})`)
+  }
+
+  const nativeBinary = path.join(moduleDir, NATIVE_BINARY)
+  if (!fs.existsSync(nativeBinary)) {
+    throw new Error(`[after-pack] ${MODULE} native binary was not produced at ${nativeBinary}`)
+  }
+  const actualSha256 = createHash('sha256').update(fs.readFileSync(nativeBinary)).digest('hex')
+  if (actualSha256.toLowerCase() !== expectedSha256.toLowerCase()) {
+    throw new Error(`[after-pack] ${MODULE} native binary SHA-256 mismatch; expected ${expectedSha256}, got ${actualSha256}`)
   }
 }
