@@ -638,6 +638,18 @@ describe('agent-tracker.sh: every tool call is activity', () => {
     expect(runHook({ hook_event_name: 'PostToolUse', tool_name: 'WebFetch', tool_input: {}, tool_response: 'page' })).toBeNull()
   })
 
+  it('PostToolUse TaskStop -> session_tool_done carrying the stopped id as taskId (task_id, or shell_id on older versions); no id, no taskId', () => {
+    const session = { session_id: 's1', cwd: '/x/proj', transcript_path: '/t.jsonl', prompt_id: 'p' }
+    expect(runHook({ ...session, hook_event_name: 'PostToolUse', tool_name: 'TaskStop', tool_input: { task_id: 'ac5ff55b850b4fecf' }, tool_response: { message: 'stopped' } }))
+      .toMatchObject({ type: 'session_tool_done', toolName: 'TaskStop', taskId: 'ac5ff55b850b4fecf', sessionId: 's1' })
+    expect(runHook({ ...session, hook_event_name: 'PostToolUse', tool_name: 'TaskStop', tool_input: { shell_id: 'b8x2k' }, tool_response: 'ok' }))
+      .toMatchObject({ taskId: 'b8x2k' })
+    expect(runHook({ ...session, hook_event_name: 'PostToolUse', tool_name: 'TaskStop', tool_input: {}, tool_response: 'ok' }))
+      .not.toHaveProperty('taskId')
+    expect(runHook({ ...session, hook_event_name: 'PostToolUse', tool_name: 'Bash', tool_input: { task_id: 'ac5ff55b850b4fecf', command: 'ls' }, tool_response: 'ok' }))
+      .not.toHaveProperty('taskId')
+  })
+
   it('callKey: the PermissionRequest and the PostToolUse of one call carry the same key; another call of that tool (git status beside git push) another one', () => {
     const session = { session_id: 's1', cwd: '/x/proj', transcript_path: '/t.jsonl', prompt_id: 'p', permission_mode: 'default' }
     const push = { command: 'git push origin main', description: 'Push' }

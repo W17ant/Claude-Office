@@ -1766,8 +1766,9 @@ app.get('/roster', (_req, res) => {
  *                                                           (PermissionRequest, Notification)
  *   { type: "session_error",     error, detail }                                   (StopFailure)
  *   { type: "session_compact",   phase: "pre" | "post", trigger }                  (Pre/PostCompact)
- *   { type: "session_tool_done", toolName?, callKey? | batch: true, count; agentId? }
- *                                                           (PostToolUse / PostToolBatch; agentId inside a worker)
+ *   { type: "session_tool_done", toolName?, callKey? | batch: true, count; agentId?, taskId? }
+ *                                                           (PostToolUse / PostToolBatch; agentId inside a worker;
+ *                                                            taskId: what a TaskStop stopped, completes that agent)
  *   { type: "session_cwd",       cwd, project, oldCwd? }                           (CwdChanged)
  *   { type: "session_model",     model, fromModel?, switchSource? }                (PostModelSwitch)
  *   { type: "task_created" | "task_completed", taskId, subject }        (TaskCreated, TaskCompleted)
@@ -3177,6 +3178,16 @@ function processEvent(body) {
       // A worker's call is activity of that worker too
       const workerId = lookupAgentId(body.agentId)
       if (workerId && activeAgents.get(workerId).state !== 'completed') activeAgents.get(workerId).lastActivityAt = Date.now()
+      // Why: TaskStop on a background agent fires no SubagentStop, so the
+      // stop itself walks the agent out. Only an agent the office knows is
+      // touched; a stopped background shell's id names none and says nothing.
+      if (body.toolName === 'TaskStop' && body.taskId) {
+        const stoppedId = lookupAgentId(body.taskId)
+        const stopped = stoppedId ? activeAgents.get(stoppedId) : null
+        if (stopped && !stopped.server && stopped.state !== 'completed') {
+          broadcast(processEvent({ type: 'agent_completed', agentId: body.taskId, result: 'stopped' }))
+        }
+      }
       return toolDone(session, { toolName: body.toolName, callKey: body.callKey, agentId: body.agentId, batch: body.batch, count: body.count })
     }
 

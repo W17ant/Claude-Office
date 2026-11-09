@@ -47,7 +47,9 @@
  *     name, nameSource, status, kind, version, startedAt, statusUpdatedAt })
  *     and announced with session_registry, nothing more: the hooks are the
  *     truth for its main state and the registry never overwrites it (save the
- *     closed dialog below); losing the entry just drops `registry`
+ *     closed dialog below); losing the entry drops `registry`, and when the
+ *     pid that wrote it is dead too the session ends (session_ended, reason
+ *     "exited"), since a dead process never sends SessionEnd
  *   - the first hook event from an unhooked session flips it to hooked with
  *     the same id (server/index.js, touchSession / session_started)
  *   - a status change of an attached entry is also reported to
@@ -460,16 +462,48 @@ export function mountRegistry(app, {
         endSession(session, 'exited', t)
         broadcast(toEvent(session, 'session_ended'))
       } else if (session.registry) {
-        // The hooks keep reporting this session; it just lost its registry entry
-        const before = session.registry.status
-        delete session.registry
-        log(`[registry] - ${label(prev)}: gone (hooked session stays)`)
-        if (session.state === 'active') {
-          broadcast(toEvent(session, 'session_registry'))
-          if (before) onStatusChange(session, before, undefined, undefined, t)
-        }
+        hookedEntryGone(session, prev, t)
       }
     }
+
+    // Why: a hooked session restored from agents.json keeps the `registry` it
+    // had when the server stopped, but `known` starts empty, so the loop above
+    // never sees its entry go. Left alone, that stale `registry` would also
+    // shield it from the stale sweep forever (a terminal killed while the
+    // office was down).
+    for (const session of Array.from(sessions.values())) {
+      if (session.hooked === false || session.state !== 'active' || !session.registry || seen.has(session.id)) continue
+      hookedEntryGone(session, session.registry, t)
+    }
+  }
+
+  /** Whether `entry`'s pid is dead or now another process's; no usable pid is "can't tell" (false). */
+  function processGone(entry) {
+    const pid = entry?.pid
+    if (!Number.isInteger(pid) || pid <= 0) return false
+    return !alive(pid) || !sameProcess(entry, startOf(pid))
+  }
+
+  /**
+   * A hooked session lost its registry entry. Why: a dead process sends no
+   * SessionEnd (terminal closed, kill -9), so when the pid that wrote the entry
+   * is gone the session ends here, its agents with it. A live pid without its
+   * file (cleaned up by hand, the id moved on a /clear) keeps the session:
+   * the hooks are still its truth and the stale sweep applies again.
+   */
+  function hookedEntryGone(session, entry, t) {
+    const before = session.registry.status
+    delete session.registry
+    if (session.state !== 'active') return
+    if (processGone(entry)) {
+      log(`[registry] - ${label(entry)}: gone, process exited (hooked session ends)`)
+      endSession(session, 'exited', t)
+      broadcast(toEvent(session, 'session_ended'))
+      return
+    }
+    log(`[registry] - ${label(entry)}: gone (hooked session stays)`)
+    broadcast(toEvent(session, 'session_registry'))
+    if (before) onStatusChange(session, before, undefined, undefined, t)
   }
 
   function safeScan() {
