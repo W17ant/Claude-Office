@@ -2,7 +2,7 @@
 
 ## Status
 
-Run with `npm test` (Vitest, Node environment, `tests/`). CI (`.github/workflows/ci.yml`) runs `tsc --noEmit` and `npm test` on pushes to `main` and on pull requests.
+Run with `npm test` (Vitest, Node environment, `tests/`). CI (`.github/workflows/ci.yml`) runs `tsc --noEmit` and `npm test` on pushes to `main` and on pull requests. Its `hook-smoke` job also runs the real `hooks/agent-tracker.sh` end to end on Windows (Git Bash, an autocrlf checkout) and macOS (`/bin/bash` 3.2) against a stub office (`tests/hook-smoke.mjs`; run it locally with `node tests/hook-smoke.mjs`): it fails on CRLF hook files, a hang, a non-zero exit, stderr output, or no event reaching the office.
 
 **Covered now**
 

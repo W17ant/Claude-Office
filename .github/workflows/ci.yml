@@ -54,3 +54,57 @@ jobs:
         # Every sprite and room the code can ask for exists in public/, and
         # public/ stays under its size budget (scripts/check-assets.mjs)
         run: npm run check-assets
+
+  hook-smoke:
+    # The hook is the one piece every user runs, and three of its bugs were
+    # only visible off Linux: bash 3.2 on macOS could not parse it (#53),
+    # Git Bash on Windows hung on its 64 KiB heredoc (#74), and Windows
+    # checkouts turned it into CRLF (#72). The vitest suite needs POSIX
+    # signals and fake binaries, so here the real hook runs end to end
+    # against a stub office instead (tests/hook-smoke.mjs, Node built-ins
+    # only: no npm ci).
+    name: hook on ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Check out the way Git for Windows does by default
+        # Why: core.autocrlf=true is the Git for Windows installer default,
+        # so this is the checkout a Windows user gets; .gitattributes must
+        # keep the hooks LF through it
+        if: runner.os == 'Windows'
+        run: git config --global core.autocrlf true
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/setup-python@v5
+        if: runner.os == 'Windows'
+        with:
+          python-version: '3.12'
+
+      - name: Make python3 resolve on Windows
+        # Why: the hook calls `python3`, and the python.org / setup-python
+        # install only ships python.exe
+        if: runner.os == 'Windows'
+        shell: bash
+        run: cp "$(cygpath -u "$pythonLocation")/python.exe" "$(cygpath -u "$pythonLocation")/python3.exe"
+
+      - name: Run the hook end to end
+        # Windows: Git Bash (not WSL's bash.exe, which `bash` can resolve to
+        # from Node). macOS: /bin/bash, the 3.2 that Apple ships.
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = Windows ]; then
+            HOOK_BASH="$(cygpath -w "$(command -v bash)")"
+          else
+            HOOK_BASH=/bin/bash
+          fi
+          export HOOK_BASH
+          "$HOOK_BASH" --version | head -1
+          node tests/hook-smoke.mjs

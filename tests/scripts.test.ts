@@ -624,6 +624,10 @@ describe('start-office.sh', () => {
     fakeBin(bin, 'curl', 'exit 0')
     fakeBin(bin, 'uname', 'echo Linux')
     fakeBin(bin, 'xdg-open', `${LOG_ARGS} >> "$OPEN_LOG"; exit 0`)
+    // Why: open-office.mjs picks its opener from Node's process.platform, not
+    // from `uname`, so on macOS it runs `open`. Without this fake the real
+    // /usr/bin/open launched a browser and the log was never written (#52).
+    fakeBin(bin, 'open', `${LOG_ARGS} >> "$OPEN_LOG"; exit 0`)
     const openLog = join(home, 'open.jsonl')
     try {
       const proc = run('bash', [START], {
