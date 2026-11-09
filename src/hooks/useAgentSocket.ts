@@ -16,7 +16,8 @@
  *  - Reports its own open/close to onEvent as `connection` actions, and the
  *    snapshot's `health` as a `health` event, so the office reducer (not this
  *    hook) owns the connection state the status strip shows
- *  - Presents the office token (src/officeToken.ts) as a subprotocol on every
+ *  - Presents the office token (src/officeToken.ts) — or, on a phone-mode
+ *    viewer page, the viewer key (src/viewerKey.ts) — as a subprotocol on every
  *    (re)connect, read afresh each time, and exposes the server's verdict as
  *    `trusted`: without the token the server sends the office read-only (no
  *    conversation text, no UI token), and the page says so
@@ -28,7 +29,16 @@ import type { SessionStatus, MeterTotals } from '../meters'
 import type { TaskBoardInfo } from '../taskBoard'
 import { projectFromCwd } from '../mainState'
 import { officeHttpBase, officeWsUrl } from '../serverUrl'
-import { officeWsProtocols } from '../officeToken'
+import { getViewerKey, mayCarryOfficeToken, pageWsProtocols } from '../viewerKey'
+
+/**
+ * The subprotocols for this attempt, read afresh: a viewer page offers its
+ * viewer key, a page that may hold the office token offers that, any other
+ * page (plain HTTP off loopback) offers neither (src/viewerKey.ts).
+ */
+function socketProtocols(): string[] {
+  return pageWsProtocols({ viewerKey: getViewerKey(), safe: mayCarryOfficeToken(window.location) })
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -181,6 +191,8 @@ export function useAgentSocket(options: AgentSocketOptions = {}): AgentSocketRes
   // Roster fetch (runs once on mount; refreshes after reconnect)
   // ---------------------------------------------------------------------------
   const fetchRoster = useCallback(async () => {
+    // A viewer page calls no API route (the LAN listener answers 404); its snapshot carries the roster
+    if (getViewerKey()) return
     try {
       const res = await fetch(`${officeHttpBase()}/roster`, { signal: AbortSignal.timeout(2000) })
       if (!res.ok) return
@@ -348,7 +360,7 @@ export function useAgentSocket(options: AgentSocketOptions = {}): AgentSocketRes
     try {
       // The token is read at each attempt: one captured in another tab since
       // the last try (a new link after a rotation) is used at once
-      ws = new WebSocket(url, officeWsProtocols())
+      ws = new WebSocket(url, socketProtocols())
     } catch {
       // WebSocket constructor itself threw — schedule retry
       scheduleReconnect()

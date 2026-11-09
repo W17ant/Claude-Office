@@ -1,0 +1,60 @@
+/* viewer.css - phone mode's full-screen stage (src/components/ViewerStage.tsx) */
+
+.viewer-wrapper {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #0a0a0f;
+  overflow: hidden;
+  font-family: 'JetBrains Mono', monospace;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  /* Why: a stray swipe must not scroll, zoom or pull-to-refresh the mounted phone */
+  touch-action: none;
+  overscroll-behavior: none;
+}
+
+.viewer-stage {
+  position: relative;
+  flex: none;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.viewer-scaler {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+}
+
+.viewer-status,
+.viewer-rotate-hint {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 10px;
+  border-radius: 10px;
+  background: rgba(20, 20, 26, 0.85);
+  color: #c9cbd1;
+  font-size: 11px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.viewer-status {
+  top: max(8px, env(safe-area-inset-top));
+  color: #f0b44c;
+}
+
+.viewer-rotate-hint {
+  display: none;
+  bottom: max(16px, env(safe-area-inset-bottom));
+}
+
+@media (orientation: portrait) {
+  .viewer-rotate-hint { display: block; }
+}

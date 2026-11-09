@@ -2,6 +2,10 @@
 
 All notable changes to Claude Office. Numbers refer to pull requests.
 
+## Unreleased
+
+- Phone mode: watch the office on a phone mounted next to the monitor. `npm run lan` opens a second, watch-only listener on this machine's private LAN address (port 3335) and prints the phone link with a QR code; the page shows the scene alone, scaled to the screen. That listener serves only the built UI (every API route is a 404), needs its own viewer key (`~/.agent-office/lan-viewer-key`, `npm run lan -- --rotate`), never accepts the office token, and strips everything that names your work from what it sends (`redactForLan`). `AGENT_OFFICE_ALLOWED_HOSTS` lets `tailscale serve` reach the loopback server for full control over HTTPS, and `npm run open -- --host <name>` prints that link. The QR code comes from the encoder vendored in `qrcode-terminal` (a new dependency with no dependencies of its own). See docs/reference.md › Phone mode.
+
 ## 1.1.2 — 2026-11-09
 
 - The tracker hook's Python now lives in its own file, `hooks/agent-tracker.py`, run by `agent-tracker.sh` as `python3 -I agent-tracker.py`. As a ~65 KB heredoc passed through `python3 -c` it hung Git Bash on Windows (a heredoc over 64 KiB deadlocks, found in #74), was over Windows' 32 KB command-line limit (#72), and could not be parsed by macOS bash 3.2 (#53). A test keeps it out of the wrapper and keeps the two small heredocs left there under 16 KB.
