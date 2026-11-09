@@ -14,6 +14,7 @@ import {
   pageWsProtocols, resetViewerKeyMemory, viewerWsProtocols,
 } from '../src/viewerKey'
 import { sameOriginWsUrl, officeWsUrl } from '../src/serverUrl'
+import { officeAuthHeaders } from '../src/officeAuth'
 import { STAGE_H, STAGE_W, stageScale } from '../src/components/ViewerStage'
 import { WS_VIEWER_PROTOCOL_PREFIX as SERVER_PREFIX } from '../server/lan.js'
 
@@ -97,6 +98,34 @@ describe('the viewer page talks back to where it came from', () => {
     expect(sameOriginWsUrl({ ...lanPage, host: '192.168.1.23:3333', port: '3333' })).toBe('ws://192.168.1.23:3333/ws')
     // ...where the office page would have dialled the loopback server instead
     expect(officeWsUrl({ ...lanPage, host: '192.168.1.23:3333', port: '3333' }, { dev: false })).toBe('ws://127.0.0.1:3334/ws')
+  })
+})
+
+describe('officeAuthHeaders: a page served through an HTTPS proxy name sends a token', () => {
+  const proxied = { protocol: 'https:', hostname: 'my-mac.tail1234.ts.net' }
+  const UI = 'ef'.repeat(24)
+  it('nothing on loopback or on the LAN page, whatever the page holds', () => {
+    expect(officeAuthHeaders({ loc: { protocol: 'http:', hostname: '127.0.0.1' }, uiToken: UI, officeToken: TOKEN })).toEqual({})
+    expect(officeAuthHeaders({ loc: { protocol: 'http:', hostname: '192.168.1.23' }, uiToken: UI, officeToken: TOKEN })).toEqual({})
+  })
+  it('the UI token once known; before it, the office token on reads only', () => {
+    expect(officeAuthHeaders({ loc: proxied, uiToken: UI, officeToken: TOKEN })).toEqual({ Authorization: `Bearer ${UI}` })
+    expect(officeAuthHeaders({ loc: proxied, method: 'POST', uiToken: UI, officeToken: TOKEN })).toEqual({ Authorization: `Bearer ${UI}` })
+    expect(officeAuthHeaders({ loc: proxied, uiToken: null, officeToken: TOKEN })).toEqual({ Authorization: `Bearer ${TOKEN}` })
+    expect(officeAuthHeaders({ loc: proxied, method: 'POST', uiToken: null, officeToken: TOKEN })).toEqual({})
+    expect(officeAuthHeaders({ loc: proxied, uiToken: null, officeToken: null })).toEqual({})
+  })
+  it('every fetch in src/ goes through it (or the UI token)', async () => {
+    const { readFileSync, readdirSync } = await import('node:fs')
+    const { join } = await import('node:path')
+    const files = ['src', 'src/components', 'src/hooks'].flatMap(d => readdirSync(d).filter(f => /\.tsx?$/.test(f)).map(f => join(d, f)))
+    for (const file of files) {
+      // Code only: comments mention fetch( in examples
+      const src = readFileSync(file, 'utf8').split('\n').filter(l => !/^\s*(\*|\/\/|\/\*)/.test(l)).join('\n')
+      if (!/\b(fetch|fetchImpl)\(/.test(src)) continue
+      // Each file that fetches the office names its auth: officeAuthHeaders or the UI token
+      expect(/officeAuthHeaders|Bearer \$\{uiToken\}/.test(src), file).toBe(true)
+    }
   })
 })
 

@@ -330,7 +330,7 @@ Everything is optional; the defaults are the office as described above. Set thes
 | `AGENT_OFFICE_LAN` | off | server (`npm run lan` sets it) | `1` opens phone mode's **watch-only** second listener on this machine's private Wi-Fi address — see [Phone mode](#phone-mode). The loopback listener is unchanged |
 | `AGENT_OFFICE_LAN_HOST` | the first private (RFC 1918) IPv4 of this machine | server | The LAN listener's address. It must itself be a `10.x`, `172.16–31.x` or `192.168.x` address: `0.0.0.0`, loopback, public addresses and names are refused with the reason logged, and LAN mode stays off |
 | `AGENT_OFFICE_LAN_PORT` | `3335` | server | The LAN listener's port |
-| `AGENT_OFFICE_ALLOWED_HOSTS` | none | server, `npm run open -- --host` (a hint only) | Comma-separated host names (`my-mac.tail1234.ts.net`, optionally `:port`) a local HTTPS proxy such as `tailscale serve` reaches the office by: the loopback listener's Host guard accepts them and the origin allowlist accepts `https://<name>[:port]`. Host names only — a wildcard, scheme, path or IP address is logged and ignored. See [Phone mode](#phone-mode) |
+| `AGENT_OFFICE_ALLOWED_HOSTS` | none | server, `npm run open -- --host` (a hint only) | Comma-separated host names (`my-mac.tail1234.ts.net`, optionally `:port`) a local HTTPS proxy such as `tailscale serve` reaches the office by: the loopback listener's Host guard accepts them and the origin allowlist accepts `https://<name>[:port]`. Through such a name every route but the static UI needs a token, and the WebSocket the office token. Host names only — a wildcard, scheme, path or IP address is logged and ignored. Never with `tailscale funnel`. See [Phone mode](#phone-mode) |
 | `AGENT_OFFICE_UI_PORT` | `3333` | `start-office.sh`, `stop-office.sh`, the server's origin allowlist | The Vite dev server's port (`start-office.sh` runs `vite --port`); `npm run dev` always uses 3333 |
 | `AGENT_OFFICE_HOME` | `~/.agent-office` | server, hook, status line, scripts | The runtime dir: auth token, `agents.json`, `chat.db`, inbox files, pid files |
 | `AGENT_OFFICE_EVENT_URL` | `http://localhost:$AGENT_OFFICE_PORT/event` | hook (`agent-tracker.sh`) | The full event URL; wins over `AGENT_OFFICE_PORT` |
@@ -569,11 +569,14 @@ for `start-office.sh` or any other launcher). The loopback listener on
 with a QR code of it when the output is a terminal. Scan it with the phone's
 camera. The page takes the key out of the address bar, keeps it in that
 browser's storage for that address, and from then on shows the **phone
-layout**: the office scene alone, scaled to fill the screen (landscape is the
-expected orientation; in portrait the room fits the width and a hint says to
-turn the phone), with no chat, meters, permission cards, settings or
-inspector — nothing that needs the office token or calls an API route. Open
-`http://<lan ip>:3335/#viewer=off` to forget the key in that browser.
+layout**: the office scene alone, the whole room scaled to fit inside the
+screen's safe area and centred — in portrait (the usual way a phone sits on
+a mount) it spans the width, in landscape the height — with no title bar,
+chat, meters, permission cards, settings or inspector: nothing that needs the
+office token or calls an API route, and nothing to scroll. Any page the LAN
+listener serves gets this layout; opened without its `#viewer=` part it says
+so instead of connecting. Open `http://<lan ip>:3335/#viewer=off` to forget
+the key in that browser.
 
 **The viewer key** is a second secret, 32 random bytes in
 `~/.agent-office/lan-viewer-key` (`0600`, kept across restarts with the same
@@ -658,19 +661,40 @@ What changes: the loopback listener's Host guard also accepts
 `my-mac.tail1234.ts.net` (or `name:port` exactly as listed), and the origin
 allowlist accepts `https://my-mac.tail1234.ts.net`. Entries must be plain
 host names with at least one dot — wildcards, schemes, paths and IP
-addresses are logged and ignored. Nothing else changes: trust still needs the
-office token, which crosses the tailnet only inside Tailscale's HTTPS.
+addresses are logged and ignored.
+
+**Through that name nothing is open.** Every request through the proxy
+arrives from `127.0.0.1`, so on loopback's rules "any local process" would
+mean every device your tailnet lets reach this machine. A request whose
+`Host` is an `AGENT_OFFICE_ALLOWED_HOSTS` name therefore needs the office
+token or the UI token as `Authorization: Bearer` for every route — the open
+`GET`s (`/agents`, `/sessions`, `/tasks`, `/config`, `/health`, ...) and
+`POST /chat` included — and gets a `401` without one; only the built UI's
+static files load without it, so the page can start and read `#token=`. Its
+WebSocket needs the office token and is refused with `1008` without it:
+there is no read-only view through the proxy. The office page sends the
+header itself when it was served over HTTPS from such a name (the UI token
+once the WebSocket handed it over; the office token before that, on reads
+only — a `POST` never carries the file token, so `/clear` typed in the chat
+stays refused as on loopback). Requests with a loopback `Host` work exactly
+as before. The office token crosses the tailnet only inside Tailscale's HTTPS.
+
+**Use `tailscale serve`, never `tailscale funnel`.** Funnel publishes the
+proxy on the internet. Tailscale marks each request Funnel relays with
+`Tailscale-Funnel-Request: ?1` and strips that header from anything a
+client sends (`addTailscaleIdentityHeaders` in `ipn/ipnlocal/serve.go`), so
+the office refuses every request carrying it — `403`, or a `1008` close —
+with a log line, whatever its `Host` or token. Treat that as a last line, not
+a reason to try: a mistyped command should never be what stands between the
+internet and your office.
 
 `tailscale serve` forwards the browser's own `Host` header to the backend (it
 sets the outgoing `Host` to the incoming one for a TCP backend, and adds
-`X-Forwarded-*` and `Tailscale-User-*` headers) — checked against
-`ipn/ipnlocal/serve.go` in Tailscale's source, not against a live tailnet.
-Every request through the proxy arrives from `127.0.0.1`, so to the office
-it is local: **every device your tailnet ACLs let reach this machine on 443
-gets what any local process gets** — the read-only office and the open
-routes (`GET /agents` with agent tasks, a plain `POST /chat` line). Keep the
-tailnet to your own devices, or restrict port 443 on this machine with an
-ACL, and do not use `tailscale funnel`, which would put it on the internet.
+`X-Forwarded-*` and, for tailnet users, `Tailscale-User-*` headers) — checked
+against `ipn/ipnlocal/serve.go` in Tailscale's source, and exercised here
+through a stand-in HTTPS proxy that does the same, not against a live
+tailnet. Keep the tailnet to your own devices, or restrict port 443 on this
+machine with an ACL.
 
 ## Roadmap
 

@@ -4,6 +4,7 @@ import { getSpritePath, useTheme, toggleTheme, getTheme, themedDisplayName } fro
 import IncidentBadge from './IncidentBadge'
 import { postSetting } from '../permissions'
 import { officeHttpBase } from '../serverUrl'
+import { officeAuthHeaders } from '../officeAuth'
 
 export function getAvatarSrc(role: string, agentId?: string): string {
   const charBase = ROLE_TO_CHAR[role] ?? 'employee-3'
@@ -108,7 +109,7 @@ const SlackChat: React.FC<SlackChatProps> = ({ messages, muted, volume, onToggle
   const [logPrompts, setLogPrompts] = useState<string | null>(null)
   const [answerHere, setAnswerHere] = useState<boolean | null>(null)
   useEffect(() => {
-    fetch(SETTINGS_URL, { signal: AbortSignal.timeout(2000) })
+    fetch(SETTINGS_URL, { signal: AbortSignal.timeout(2000), headers: officeAuthHeaders() })
       .then(r => (r.ok ? r.json() : null))
       .then(d => {
         if (d && typeof d.logPrompts === 'string') setLogPrompts(d.logPrompts)
@@ -132,7 +133,7 @@ const SlackChat: React.FC<SlackChatProps> = ({ messages, muted, volume, onToggle
 
   // Load initial state from server
   useEffect(() => {
-    fetch(`${officeHttpBase()}/chat/cron-state`)
+    fetch(`${officeHttpBase()}/chat/cron-state`, { headers: officeAuthHeaders() })
       .then(r => r.json())
       .then(d => setCronPaused(!!d.paused))
       .catch(() => {})
@@ -144,7 +145,7 @@ const SlackChat: React.FC<SlackChatProps> = ({ messages, muted, volume, onToggle
     // Update the state file via a simple POST
     fetch(`${officeHttpBase()}/chat/cron-state`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...officeAuthHeaders({ method: 'POST' }) },
       body: JSON.stringify({ paused: newState }),
     }).catch(() => {})
   }, [cronPaused])

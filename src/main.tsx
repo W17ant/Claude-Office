@@ -1,6 +1,7 @@
 // First: the office token / viewer key leave the address bar before App is
 // even evaluated (src/pageAuth.ts says why the order matters)
 import { pageViewerKey as viewerKey } from './pageAuth'
+import { mayCarryOfficeToken } from './viewerKey'
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
@@ -23,6 +24,6 @@ function render() {
 // rejects the latter. A viewer page skips it: GET /config is an API route,
 // which the LAN listener answers 404 — the bundled boss is drawn instead.
 const params = new URLSearchParams(window.location.search)
-const standalone = params.has('sim') || params.has('video') || !!viewerKey
+const standalone = params.has('sim') || params.has('video') || !!viewerKey || !mayCarryOfficeToken(window.location)
 const ready = standalone ? Promise.resolve(null) : loadRuntimeConfig()
 ready.then(render, render)

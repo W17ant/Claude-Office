@@ -28,6 +28,8 @@ import {
 import { BOSS_ROLE } from './config'
 import { officeHttpBase, officeWsUrl, sameOriginWsUrl } from './serverUrl'
 import { pageViewerKey } from './pageAuth'
+import { officeAuthHeaders } from './officeAuth'
+import { mayCarryOfficeToken } from './viewerKey'
 import ViewerStage from './components/ViewerStage'
 import { pickEvent } from './events'
 import { getInteraction } from './interactions'
@@ -56,7 +58,13 @@ const isVideoMode = params.has('video')
 // main.tsx). It shows the scene alone (ViewerStage), mounts nothing that
 // calls an API route or needs trust — chat input, permission buttons,
 // settings pills, the AI toggle, the inspector — and talks to the listener it came from.
-const isViewerMode = !isSimMode && pageViewerKey !== null
+// A page served over plain HTTP from a non-loopback address can only be the
+// LAN listener's, so it gets the phone layout too, even without a key (the
+// link opened without its #viewer= part): it says how to fix that instead of
+// drawing the desktop window, which no phone screen fits.
+const isLanPage = !mayCarryOfficeToken(window.location)
+const isViewerMode = !isSimMode && (pageViewerKey !== null || isLanPage)
+const VIEWER_NOTICE = pageViewerKey === null ? 'no viewer key: open the phone link from npm run lan (scan its QR code)' : undefined
 // Why: allow ?theme=office on demo/sim URLs to preload Dunder Mifflin mode
 import { setTheme as _setTheme } from './theme'
 if (params.get('theme') === 'office') { _setTheme('office') }
@@ -1394,7 +1402,8 @@ const App: React.FC = () => {
     if (isSimMode || isViewerMode) return
     fetch(`${officeHttpBase()}/chat`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      // The UI token through an HTTPS proxy name (never the file token on a POST: src/officeAuth.ts)
+      headers: { 'Content-Type': 'application/json', ...officeAuthHeaders({ method: 'POST' }) },
       body: JSON.stringify({ sender: bossCfg.title, text }),
     }).catch(() => {})
   }, [addMsg])
@@ -1556,7 +1565,7 @@ const App: React.FC = () => {
         </div>
   )
 
-  if (isViewerMode) return <ViewerStage connected={connected}>{scene}</ViewerStage>
+  if (isViewerMode) return <ViewerStage connected={connected} notice={VIEWER_NOTICE}>{scene}</ViewerStage>
 
   return (
     <div className="app-wrapper">

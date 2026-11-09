@@ -417,6 +417,42 @@ function requireUi(req, res, next) {
 }
 
 // ---------------------------------------------------------------------------
+// Remote hosts — the loopback listener reached through an HTTPS proxy name
+//
+// On loopback the open routes (GET /agents, /sessions, /tasks, POST /chat, ...)
+// are open to any local process by design. Behind `tailscale serve` every
+// request also arrives from 127.0.0.1, but "local" would then mean every
+// device the tailnet lets reach this machine. So a request whose Host is an
+// AGENT_OFFICE_ALLOWED_HOSTS name (not a loopback name) needs the office
+// token or the UI token as a bearer for everything but the built UI's static
+// files, and its WebSocket needs the office token (no read-only tier: that
+// still carries agent tasks and status lines). The office page sends the
+// header itself when it was served that way (src/officeAuth.ts).
+//
+// Tailscale Funnel would put the proxy on the internet. `tailscale serve`
+// marks a Funnel request with `Tailscale-Funnel-Request: ?1` and strips any
+// copy a client sent (ipn/ipnlocal/serve.go, addTailscaleIdentityHeaders),
+// so its presence is a reliable marker: such requests are refused outright,
+// on any Host. No legitimate local client sends it.
+// ---------------------------------------------------------------------------
+
+/** True for a request Tailscale Funnel relayed from the internet. */
+function isFunnelRequest(req) {
+  return req.headers['tailscale-funnel-request'] !== undefined
+}
+
+/** True when the Host is an AGENT_OFFICE_ALLOWED_HOSTS name rather than a loopback one. */
+function isRemoteHost(hostHeader) {
+  return !LOOPBACK_HOSTS.has(hostName(hostHeader)) && allowedHostMatches(hostHeader, ALLOWED_HOSTS)
+}
+
+/** A remote request carries the office token or the UI token as a bearer. */
+function remoteAuthed(req) {
+  const supplied = bearerToken(req)
+  return uiTokenMatches(supplied) || tokenMatches(supplied)
+}
+
+// ---------------------------------------------------------------------------
 // Built UI
 //
 // `vite build` writes the React app, plus everything in public/, to dist/.
@@ -429,6 +465,9 @@ function requireUi(req, res, next) {
 
 const UI_DIR = process.env.AGENT_OFFICE_UI_DIR || join(__dirname, '..', 'dist')
 const UI_AVAILABLE = existsSync(join(UI_DIR, 'index.html'))
+// The built UI's files alone, for a request through a proxy name without a
+// token (see "Remote hosts"): what it does not hold falls to a 401, never to a route
+const remoteStatic = UI_AVAILABLE ? express.static(UI_DIR, { dotfiles: 'ignore', redirect: false }) : null
 
 // ---------------------------------------------------------------------------
 // office.config.json
@@ -1624,6 +1663,22 @@ app.use((req, res, next) => {
     return res.status(421).json({ error: 'Forbidden host' })
   }
   next()
+})
+
+// Behind an HTTPS proxy name (AGENT_OFFICE_ALLOWED_HOSTS): see "Remote hosts"
+// below. Tailscale Funnel first — never served, whatever the Host
+app.use((req, res, next) => {
+  if (isFunnelRequest(req)) {
+    console.warn(`[security] Refused a Tailscale Funnel request (${req.method} ${req.path}): Funnel is not supported, use tailscale serve`)
+    return res.status(403).json({ error: 'Tailscale Funnel is not supported: use tailscale serve (tailnet only)' })
+  }
+  if (!isRemoteHost(req.headers.host)) return next()
+  if (remoteAuthed(req)) return next()
+  // Only the built UI's files go without a token; anything they do not hold is a 401
+  if (remoteStatic && (req.method === 'GET' || req.method === 'HEAD')) {
+    return remoteStatic(req, res, () => unauthorized(res, { error: 'Unauthorized: this office answers its proxy name only with a token' }))
+  }
+  unauthorized(res, { error: 'Unauthorized: this office answers its proxy name only with a token' })
 })
 
 app.use((req, res, next) => (req.path === '/event' ? eventJsonBody : jsonBody)(req, res, next))
@@ -3565,7 +3620,19 @@ wss.on('connection', (ws, req) => {
     return
   }
 
+  if (isFunnelRequest(req)) {
+    console.warn('[security] Refused a Tailscale Funnel WebSocket: Funnel is not supported, use tailscale serve')
+    ws.close(1008, 'Tailscale Funnel is not supported')
+    return
+  }
+
   const trusted = tokenMatches(wsTokenFrom(req))
+  // Through a proxy name the office token is required: no read-only tier (see "Remote hosts")
+  if (!trusted && isRemoteHost(req.headers.host)) {
+    console.warn(`[ws] Rejected a connection through ${req.headers.host} without the office token`)
+    ws.close(1008, 'Office token required')
+    return
+  }
   if (trusted) trustedClients.add(ws)
   const ip = req.socket.remoteAddress ?? 'unknown'
   console.log(`[ws] Client connected from ${ip}, ${trusted ? 'trusted' : 'read-only (no office token)'} (total: ${wss.clients.size})`)
@@ -4135,6 +4202,7 @@ export {
   VIEWER_KEY_FILE,
   ALLOWED_HOSTS,
   isAllowedHost,
+  isRemoteHost,
   officeLink,
   ANSWER_MARKER_FILE,
   PORT,

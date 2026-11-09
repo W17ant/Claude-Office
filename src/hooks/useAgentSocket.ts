@@ -30,6 +30,7 @@ import type { TaskBoardInfo } from '../taskBoard'
 import { projectFromCwd } from '../mainState'
 import { officeHttpBase, officeWsUrl } from '../serverUrl'
 import { getViewerKey, mayCarryOfficeToken, pageWsProtocols } from '../viewerKey'
+import { officeAuthHeaders } from '../officeAuth'
 
 /**
  * The subprotocols for this attempt, read afresh: a viewer page offers its
@@ -191,10 +192,11 @@ export function useAgentSocket(options: AgentSocketOptions = {}): AgentSocketRes
   // Roster fetch (runs once on mount; refreshes after reconnect)
   // ---------------------------------------------------------------------------
   const fetchRoster = useCallback(async () => {
-    // A viewer page calls no API route (the LAN listener answers 404); its snapshot carries the roster
-    if (getViewerKey()) return
+    // A viewer page, or any page from the LAN listener, calls no API route
+    // (it answers them 404); the snapshot carries the roster
+    if (getViewerKey() || !mayCarryOfficeToken(window.location)) return
     try {
-      const res = await fetch(`${officeHttpBase()}/roster`, { signal: AbortSignal.timeout(2000) })
+      const res = await fetch(`${officeHttpBase()}/roster`, { signal: AbortSignal.timeout(2000), headers: officeAuthHeaders() })
       if (!res.ok) return
       const data = await res.json()
       if (mountedRef.current && Array.isArray(data.mcpServers)) {

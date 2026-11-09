@@ -536,9 +536,20 @@ describe('the viewer key file across restarts', () => {
 describe('AGENT_OFFICE_ALLOWED_HOSTS: the loopback guard behind tailscale serve', () => {
   let office: Office
   let port: number
+  let uiDir: string
+  const NAME = 'my-mac.tail1234.ts.net'
+  const ORIGIN = `https://${NAME}`
+  const bearer = () => `Bearer ${office.server.AUTH_TOKEN}`
 
   beforeAll(async () => {
-    office = await loadOffice({ env: { AGENT_OFFICE_ALLOWED_HOSTS: 'my-mac.tail1234.ts.net,*.ts.net,https://bad.ts.net,100.64.0.1,good.example.com:8443' } })
+    uiDir = mkdtempSync(join(tmpdir(), 'agent-office-ts-ui-'))
+    mkdirSync(join(uiDir, 'sprites'), { recursive: true })
+    writeFileSync(join(uiDir, 'index.html'), INDEX_HTML)
+    writeFileSync(join(uiDir, 'sprites', 'a.png'), 'png')
+    office = await loadOffice({ env: {
+      AGENT_OFFICE_ALLOWED_HOSTS: `${NAME},*.ts.net,https://bad.ts.net,100.64.0.1,good.example.com:8443`,
+      AGENT_OFFICE_UI_DIR: uiDir,
+    } })
     port = await listen(office.server.httpServer)
   })
 
@@ -546,40 +557,84 @@ describe('AGENT_OFFICE_ALLOWED_HOSTS: the loopback guard behind tailscale serve'
     await new Promise<void>(res => office.server.wss.close(() => res()))
     await new Promise<void>(res => office.server.httpServer.close(() => res()))
     removeOffice(office)
+    rmSync(uiDir, { recursive: true, force: true })
   })
 
   it('keeps only the valid entries', () => {
-    expect(office.server.ALLOWED_HOSTS).toEqual([{ host: 'my-mac.tail1234.ts.net', port: null }, { host: 'good.example.com', port: 8443 }])
+    expect(office.server.ALLOWED_HOSTS).toEqual([{ host: NAME, port: null }, { host: 'good.example.com', port: 8443 }])
+    expect(office.server.isRemoteHost(NAME)).toBe(true)
+    expect(office.server.isRemoteHost('127.0.0.1:3334')).toBe(false)
   })
 
-  it('accepts the configured names as Host, and their https origins', async () => {
+  it('accepts the configured names as Host, and their https origins, with a token', async () => {
     const app = office.server.app
-    expect((await request(app).get('/health').set('Host', 'my-mac.tail1234.ts.net')).status).toBe(200)
-    expect((await request(app).get('/health').set('Host', 'good.example.com:8443')).status).toBe(200)
-    expect((await request(app).get('/health').set('Host', 'my-mac.tail1234.ts.net').set('Origin', 'https://my-mac.tail1234.ts.net')).status).toBe(200)
-    expect((await request(app).get('/health').set('Host', 'good.example.com:8443').set('Origin', 'https://good.example.com:8443')).status).toBe(200)
-    expect(office.server.isAllowedOrigin('https://my-mac.tail1234.ts.net')).toBe(true)
+    expect((await request(app).get('/health').set('Host', NAME).set('Authorization', bearer())).status).toBe(200)
+    expect((await request(app).get('/health').set('Host', 'good.example.com:8443').set('Authorization', bearer())).status).toBe(200)
+    expect((await request(app).get('/health').set('Host', NAME).set('Origin', ORIGIN).set('Authorization', bearer())).status).toBe(200)
+    expect((await request(app).get('/health').set('Host', 'good.example.com:8443').set('Origin', 'https://good.example.com:8443').set('Authorization', bearer())).status).toBe(200)
+    // The UI token (what the page holds after its snapshot) opens them too
+    expect((await request(app).get('/agents').set('Host', NAME).set('Authorization', `Bearer ${office.server.UI_TOKEN}`)).status).toBe(200)
+    expect(office.server.isAllowedOrigin(ORIGIN)).toBe(true)
+  })
+
+  it('through the proxy name every route but the static UI needs a token (401)', async () => {
+    const app = office.server.app
+    for (const path of ['/health', '/agents', '/sessions', '/roster', '/config', '/chat', '/signals', '/tasks', '/registry', '/settings', '/permissions', '/chat/cron-state', '/status', '/.well-known/agent-card.json', '/nope']) {
+      expect((await request(app).get(path).set('Host', NAME)).status, `GET ${path}`).toBe(401)
+      expect((await request(app).get(path).set('Host', NAME).set('Authorization', 'Bearer wrong')).status, `GET ${path} wrong`).toBe(401)
+    }
+    const line = await request(app).post('/chat').set('Host', NAME).set('Origin', ORIGIN).send({ sender: 'x', text: 'hi from the tailnet' })
+    expect(line.status).toBe(401)
+    expect((await request(app).post('/chat/typing').set('Host', NAME).send({ sender: 'x' })).status).toBe(401)
+    expect((await request(app).options('/chat').set('Host', NAME)).status).toBe(401)
+    // The built UI's files load without one, so the page can start and read #token=
+    expect((await request(app).get('/').set('Host', NAME)).text).toBe(INDEX_HTML)
+    expect((await request(app).get('/sprites/a.png').set('Host', NAME)).status).toBe(200)
+    // With the token the same routes answer
+    expect((await request(app).get('/agents').set('Host', NAME).set('Authorization', bearer())).status).toBe(200)
+    expect((await request(app).post('/chat').set('Host', NAME).set('Origin', ORIGIN).set('Authorization', `Bearer ${office.server.UI_TOKEN}`).send({ sender: 'x', text: 'hi' })).status).toBe(200)
+  })
+
+  it('loopback is unchanged: the open routes stay open there', async () => {
+    const app = office.server.app
+    for (const path of ['/health', '/agents', '/sessions', '/roster', '/config', '/tasks']) {
+      expect((await request(app).get(path)).status, path).toBe(200)
+    }
+    expect((await request(app).post('/chat/typing').send({ sender: 'x' })).status).toBe(200)
+  })
+
+  it('refuses Tailscale Funnel requests outright, on any Host', async () => {
+    const app = office.server.app
+    expect((await request(app).get('/').set('Host', NAME).set('Tailscale-Funnel-Request', '?1')).status).toBe(403)
+    expect((await request(app).get('/health').set('Host', NAME).set('Tailscale-Funnel-Request', '?1').set('Authorization', bearer())).status).toBe(403)
+    expect((await request(app).get('/health').set('Tailscale-Funnel-Request', '?1')).status).toBe(403)
   })
 
   it('still refuses everything else', async () => {
     const app = office.server.app
-    for (const host of ['evil.ts.net', 'bad.ts.net', '100.64.0.1', 'my-mac.tail1234.ts.net:3334', 'good.example.com', 'my-mac.tail1234.ts.net.evil.com']) {
-      expect((await request(app).get('/health').set('Host', host)).status, host).toBe(421)
+    for (const host of ['evil.ts.net', 'bad.ts.net', '100.64.0.1', `${NAME}:3334`, 'good.example.com', `${NAME}.evil.com`]) {
+      expect((await request(app).get('/health').set('Host', host).set('Authorization', bearer())).status, host).toBe(421)
     }
-    for (const origin of ['http://my-mac.tail1234.ts.net', 'https://evil.ts.net', 'https://my-mac.tail1234.ts.net:444', 'https://good.example.com']) {
-      expect((await request(app).get('/health').set('Host', 'my-mac.tail1234.ts.net').set('Origin', origin)).status, origin).toBe(403)
+    for (const origin of [`http://${NAME}`, 'https://evil.ts.net', `${ORIGIN}:444`, 'https://good.example.com']) {
+      expect((await request(app).get('/health').set('Host', NAME).set('Origin', origin).set('Authorization', bearer())).status, origin).toBe(403)
     }
   })
 
-  it('the WebSocket follows the same guard, and trust still needs the office token', async () => {
+  it('the WebSocket through the proxy name needs the office token; no read-only tier there', async () => {
     const url = `ws://127.0.0.1:${port}/ws`
-    const ok = (await openWs(url, ['agent-office'], { Host: 'my-mac.tail1234.ts.net', Origin: 'https://my-mac.tail1234.ts.net' })).client!
-    expect(ok.messages[0]).toEqual({ type: 'auth', trusted: false })
-    ok.ws.terminate()
-    const trusted = (await openWs(url, officeProtocols(office.server), { Host: 'my-mac.tail1234.ts.net', Origin: 'https://my-mac.tail1234.ts.net' })).client!
+    const headers = { Host: NAME, Origin: ORIGIN }
+    expect((await openWs(url, ['agent-office'], headers)).code).toBe(1008)
+    expect((await openWs(url, ['agent-office', `agent-office.token.${'0'.repeat(64)}`], headers)).code).toBe(1008)
+    expect((await openWs(url, ['agent-office', `agent-office.token.${office.server.UI_TOKEN}`], headers)).code).toBe(1008)
+    expect((await openWs(url, officeProtocols(office.server), { ...headers, 'Tailscale-Funnel-Request': '?1' })).code).toBe(1008)
+    const trusted = (await openWs(url, officeProtocols(office.server), headers)).client!
     expect(trusted.messages[0]).toEqual({ type: 'auth', trusted: true })
     trusted.ws.terminate()
     expect((await openWs(url, ['agent-office'], { Host: 'evil.ts.net' })).code).toBe(1008)
-    expect((await openWs(url, ['agent-office'], { Host: 'my-mac.tail1234.ts.net', Origin: 'https://evil.ts.net' })).code).toBe(1008)
+    expect((await openWs(url, officeProtocols(office.server), { Host: NAME, Origin: 'https://evil.ts.net' })).code).toBe(1008)
+    // Loopback keeps its read-only tier
+    const local = (await openWs(url, ['agent-office'])).client!
+    expect(local.messages[0]).toEqual({ type: 'auth', trusted: false })
+    local.ws.terminate()
   })
 })
