@@ -289,10 +289,31 @@ describe('TaskStop (session_tool_done with taskId)', () => {
     expect(office.server.activeAgents.get('agent-toolu_bg').state).not.toBe('completed')
   })
 
+  it('a TaskStop in another session never completes this session\'s agent', async () => {
+    const other = { sessionId: 'ts-other', project: 'proj', cwd: '/x/proj' }
+    office.server.processEvent({ type: 'session_started', ...other, source: 'startup' })
+    await postEvent(office.server, { type: 'session_tool_done', ...other, toolName: 'TaskStop', taskId: 'ac5ff55b850b4fecf' })
+    expect(office.server.activeAgents.get('agent-toolu_bg').state).not.toBe('completed')
+  })
+
+  it('a TaskStop naming an MCP server worker leaves it to mcp_done', async () => {
+    await postEvent(office.server, { type: 'mcp_call', ...where, server: 'github', tool: 'get_me' })
+    const worker: any = Array.from(office.server.activeAgents.values()).find((a: any) => a.server === 'github')
+    await postEvent(office.server, { type: 'session_tool_done', ...where, toolName: 'TaskStop', taskId: worker.id })
+    expect(office.server.activeAgents.get(worker.id).state).not.toBe('completed')
+  })
+
   it('stopping the agent by its subagent id walks it out (TaskStop fires no SubagentStop)', async () => {
     const res = await postEvent(office.server, { type: 'session_tool_done', ...where, toolName: 'TaskStop', taskId: 'ac5ff55b850b4fecf' })
     expect(res.status).toBe(200)
     expect(office.server.activeAgents.get('agent-toolu_bg')).toMatchObject({ state: 'completed' })
+  })
+
+  it('a second TaskStop, or a late SubagentStop, for the walked-out agent changes nothing', async () => {
+    const before = { ...office.server.activeAgents.get('agent-toolu_bg') }
+    await postEvent(office.server, { type: 'session_tool_done', ...where, toolName: 'TaskStop', taskId: 'ac5ff55b850b4fecf' })
+    await postEvent(office.server, { type: 'agent_completed', ...where, agentId: 'ac5ff55b850b4fecf', result: 'late' })
+    expect(office.server.activeAgents.get('agent-toolu_bg')).toMatchObject({ state: 'completed', completedAt: before.completedAt })
   })
 })
 

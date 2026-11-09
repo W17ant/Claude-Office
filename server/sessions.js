@@ -304,10 +304,16 @@ export function readRegistry(dir, { alive = pidAlive, cache = null, startOf = pr
   return Array.from(bySession.values()).sort((a, b) => (a.startedAt ?? 0) - (b.startedAt ?? 0))
 }
 
-/** The part of an entry that travels on a session record as `registry`. */
+/**
+ * The part of an entry that travels on a session record as `registry`.
+ * Why procStart is kept: a session restored from agents.json is checked
+ * against this copy (the file itself may be gone), and without procStart
+ * sameProcess falls back to startedAt with a few seconds of slack, which a
+ * clock step after Claude Code started can defeat, ending a live session.
+ */
 export function registryInfo(entry) {
   const info = { pid: entry.pid }
-  for (const key of ['name', 'nameSource', 'status', 'kind', 'version', 'startedAt', 'statusUpdatedAt']) {
+  for (const key of ['name', 'nameSource', 'status', 'kind', 'version', 'startedAt', 'statusUpdatedAt', 'procStart']) {
     if (entry[key] !== undefined) info[key] = entry[key]
   }
   return info
@@ -495,13 +501,16 @@ export function mountRegistry(app, {
     const before = session.registry.status
     delete session.registry
     if (session.state !== 'active') return
+    // Why: a restored `registry` (registryInfo) carries no sessionId, so a
+    // nameless one would log as "undefined"
+    const who = label({ ...entry, sessionId: session.id })
     if (processGone(entry)) {
-      log(`[registry] - ${label(entry)}: gone, process exited (hooked session ends)`)
+      log(`[registry] - ${who}: gone, process exited (hooked session ends)`)
       endSession(session, 'exited', t)
       broadcast(toEvent(session, 'session_ended'))
       return
     }
-    log(`[registry] - ${label(entry)}: gone (hooked session stays)`)
+    log(`[registry] - ${who}: gone (hooked session stays)`)
     broadcast(toEvent(session, 'session_registry'))
     if (before) onStatusChange(session, before, undefined, undefined, t)
   }

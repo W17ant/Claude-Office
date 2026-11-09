@@ -11,7 +11,7 @@
 
 import { execFileSync, spawn, spawnSync } from 'node:child_process'
 import { createHash, createHmac } from 'node:crypto'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -1048,14 +1048,14 @@ describe('agent-tracker.sh: the bash wrapper', () => {
   const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 
   /** Run the script on a payload; resolve with its stdout/status and what curl was given (the POST is backgrounded). */
-  async function runScript(payload: unknown, extraEnv: Record<string, string> = {}) {
+  async function runScript(payload: unknown, extraEnv: Record<string, string> = {}, script = TRACKER) {
     rmSync(log, { force: true })
     const env: Record<string, string | undefined> = { ...process.env, PATH: `${bin}:${process.env.PATH}`, AGENT_OFFICE_HOME: officeHome, FAKE_CURL_LOG: log }
     // The caller's own office settings must not leak into the script under test
     delete env.AGENT_OFFICE_EVENT_URL
     delete env.AGENT_OFFICE_PORT
     Object.assign(env, extraEnv)
-    const res = spawnSync('bash', [TRACKER], {
+    const res = spawnSync('bash', [script], {
       input: typeof payload === 'string' ? payload : JSON.stringify(payload),
       encoding: 'utf8',
       maxBuffer: 16 * 1024 * 1024,
@@ -1073,6 +1073,18 @@ describe('agent-tracker.sh: the bash wrapper', () => {
   }
 
   const session = { session_id: 's-wrap', cwd: '/home/me/proj', transcript_path: '/t/s-wrap.jsonl' }
+
+  it('run through a chain of relative symlinks in a directory with a space, it still finds agent-tracker.py and posts', async () => {
+    // ~/bin/hook.sh -> ../links/mid.sh -> <checkout>/hooks/agent-tracker.sh
+    const links = join(dir, 'my links')
+    mkdirSync(join(links, 'bin'), { recursive: true })
+    symlinkSync(TRACKER, join(links, 'mid.sh'))
+    symlinkSync('../mid.sh', join(links, 'bin', 'hook.sh'))
+    const run = await runScript({ ...session, prompt_id: 'p-link', hook_event_name: 'UserPromptSubmit', prompt: 'via a link' }, { CDPATH: '/tmp' }, join(links, 'bin', 'hook.sh'))
+    expect(run.stderr).toBe('')
+    expect(run.status).toBe(0)
+    expect(run.body).toMatchObject({ type: 'session_prompt', text: 'via a link' })
+  })
 
   it('UserPromptSubmit: nothing on stdout, exit 0, the session_prompt goes to curl as one JSON body on stdin, never argv', async () => {
     const run = await runScript({ ...session, prompt_id: 'p1', hook_event_name: 'UserPromptSubmit', prompt: 'fix the bug' })

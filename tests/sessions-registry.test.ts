@@ -301,6 +301,7 @@ describe('registry entry -> session record', () => {
       registry: {
         pid: process.pid, name: 'claude-office-75', nameSource: 'derived', status: 'busy', kind: 'interactive',
         version: '2.1.300', startedAt: 1792021300048, statusUpdatedAt: 1792024878689,
+        procStart: entry().procStart,
       },
       main: { state: 'working', since: 1792024878689, waitingOn: 0 },
     })
@@ -341,6 +342,7 @@ const G = '99999999-7777-4777-8777-777777777777'
 const H = '88888888-8888-4888-8888-888888888888'
 const I = '77777777-9999-4999-8999-999999999999'
 const J = '66666666-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+const K = '55555555-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
 
 describe('the registry roster in the office', () => {
   let office: Office
@@ -515,7 +517,7 @@ describe('the registry roster in the office', () => {
     const rec = session(B)
     expect(rec.hooked).toBe(true)
     expect(rec.source).toBe('startup')
-    expect(rec.registry).toEqual({ pid: process.ppid, name: 'beta-2c', nameSource: 'derived', status: 'idle', kind: 'interactive', version: '2.1.300', startedAt: 1792021300048, statusUpdatedAt: 1792024878689 })
+    expect(rec.registry).toEqual({ pid: process.ppid, name: 'beta-2c', nameSource: 'derived', status: 'idle', kind: 'interactive', version: '2.1.300', startedAt: 1792021300048, statusUpdatedAt: 1792024878689, procStart: processStart(process.ppid)?.procStart ?? '365' })
     expect(rec.main.state).toBe('working')                       // the hooks are the truth
     expect(rec.main.lastPrompt).toBe('go')
 
@@ -577,6 +579,24 @@ describe('the registry roster in the office', () => {
     reg().scan()
     expect(session(J)).toMatchObject({ state: 'ended', reason: 'exited' })
     expect(await fresh()).toEqual([expect.objectContaining({ type: 'session_ended', sessionId: J, reason: 'exited' })])
+  })
+
+  it('a restored `registry` is checked by its procStart: a live pid now held by another process ends the session; its own process stays even when startedAt is off (a clock step)', async () => {
+    const where = { sessionId: K, project: 'lambda', cwd: '/home/me/lambda' }
+    const own = processStart(process.ppid)?.procStart
+    await postEvent(office.server, { type: 'session_started', ...where, source: 'startup' })
+    // Its own process: the startedAt fallback alone would call this pid reused
+    // (the process "started" an hour after the session), procStart says it is the same
+    session(K).registry = { pid: process.ppid, name: 'lambda-0a', status: 'busy', startedAt: Date.now() - 3_600_000 * 24 * 365, procStart: own }
+    reg().scan()
+    expect(session(K)).toMatchObject({ state: 'active' })
+    await fresh()
+
+    // The pid is alive but another process holds it now: its procStart differs
+    session(K).registry = { pid: process.ppid, name: 'lambda-0a', status: 'busy', procStart: '99999999' }
+    reg().scan()
+    expect(session(K)).toMatchObject({ state: 'ended', reason: 'exited' })
+    expect(await fresh()).toEqual([expect.objectContaining({ type: 'session_ended', sessionId: K, reason: 'exited' })])
   })
 
   it('a hooked session that loses its registry entry while its process still runs just loses `registry` and stays active', async () => {

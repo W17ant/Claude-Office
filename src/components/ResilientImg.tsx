@@ -24,6 +24,16 @@ const ResilientImg: React.FC<React.ImgHTMLAttributes<HTMLImageElement> & { src: 
   // time, so clearing `failed` alone would never make the browser ask again.
   // Bumping the key remounts the element, which fetches the picture afresh.
   const [reloads, setReloads] = useState(0)
+  // Why: a failure belongs to the picture that failed. Kept across a src
+  // change (a character turning), it came back when the old src did, showed
+  // the other direction's sprite and, with the retries used up, never asked
+  // for the right one again. Reset during render (React's "adjust state when
+  // a prop changes"), so not even one frame uses the stale failure.
+  const [forSrc, setForSrc] = useState(src)
+  if (forSrc !== src) {
+    setForSrc(src)
+    setFailed(null)
+  }
   const tries = failed?.src === src ? failed.tries : 0
   const shown = tries > 0 && good.current && good.current !== src ? good.current : src
 
