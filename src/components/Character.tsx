@@ -7,6 +7,7 @@ import { getEffect } from '../agentManager'
 import { ROLE_TO_CHAR, BOSS_ROLE } from '../config'
 import { getSpritePath, useTheme } from '../theme'
 import { useVariant } from '../incident'
+import { useWalkFrames, walkFrame } from '../walk'
 import { isMainAgent, isHardNeedsYou, needsYouBadge, needsYouShort } from '../mainState'
 
 export { ROLE_TO_CHAR }
@@ -88,6 +89,7 @@ const OPPOSITE: Record<SpriteDirection, SpriteDirection> = {
 
 const Character: React.FC<CharacterProps> = ({ agent, idleDurationMs = 0, zIndex, isTyping, showProject, onClick, inspected }) => {
   const prevPosRef = useRef({ x: agent.position.x, y: agent.position.y })
+  const lastMoveRef = useRef(0) // when this character last changed position (ms)
   const directionRef = useRef<SpriteDirection>(agent.spriteFacing ?? 'front-right')
   const [turnedAround, setTurnedAround] = useState(false)
 
@@ -110,7 +112,17 @@ const Character: React.FC<CharacterProps> = ({ agent, idleDurationMs = 0, zIndex
   const dx = agent.position.x - prevPosRef.current.x
   const dy = agent.position.y - prevPosRef.current.y
 
-  if (isMoving && (Math.abs(dx) > 0.005 || Math.abs(dy) > 0.005)) {
+  // Why the position, not the state: coffee breaks and new hires count as
+  // "moving" while standing still; only a position change means legs move.
+  // Why a remembered time, not this render's delta: React renders twice in
+  // development (StrictMode), and the second pass sees no delta because the
+  // first just updated prevPosRef; 250 ms (~15 animation frames) also bridges
+  // a frame where the walker happens not to advance.
+  const moved = isMoving && (Math.abs(dx) > 0.005 || Math.abs(dy) > 0.005)
+  const now = Date.now()
+  if (moved) lastMoveRef.current = now
+  const stepping = isMoving && now - lastMoveRef.current < 250
+  if (moved) {
     directionRef.current = getDirectionFromDelta(dx, dy)
   } else if (!isMoving && agent.spriteFacing) {
     // At a spot — use the spot's facing direction (or opposite if turned around)
@@ -156,7 +168,9 @@ const Character: React.FC<CharacterProps> = ({ agent, idleDurationMs = 0, zIndex
   const animState = getAnimState(agent.state)
   const charBase = getCharBase(agent.role)
   const theme = useTheme() // Why: re-render on theme toggle so sprite path updates
-  const spriteSrc = getSpritePath(agent.id, agent.role, charBase, directionRef.current)
+  useWalkFrames() // Why: re-render when this sprite's stride frames turn out to exist
+  // While walking, the legs move: stand, stride, stand, stride (src/walk.ts)
+  const spriteSrc = walkFrame(getSpritePath(agent.id, agent.role, charBase, directionRef.current), stepping, now)
   void theme
   const variant = useVariant() // Why: re-render when incident mode flips so the failure bubble shows/hides
   void variant

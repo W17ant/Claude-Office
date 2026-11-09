@@ -2,6 +2,10 @@
 
 All notable changes to Claude Office. Numbers refer to pull requests.
 
+## Unreleased
+
+- Characters walk instead of gliding: while one moves it steps through a stand, stride, stand, stride cycle (`src/walk.ts`). Stride frames are optional `-walk1.webp` / `-walk2.webp` files beside each sprite; Claude, the boss and three of the cast have them so far, and a sprite without them glides as before.
+
 ## 1.1.2 — 2026-11-09
 
 - The tracker hook's Python now lives in its own file, `hooks/agent-tracker.py`, run by `agent-tracker.sh` as `python3 -I agent-tracker.py`. As a ~65 KB heredoc passed through `python3 -c` it hung Git Bash on Windows (a heredoc over 64 KiB deadlocks, found in #74), was over Windows' 32 KB command-line limit (#72), and could not be parsed by macOS bash 3.2 (#53). A test keeps it out of the wrapper and keeps the two small heredocs left there under 16 KB.

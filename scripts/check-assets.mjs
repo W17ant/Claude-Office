@@ -69,6 +69,8 @@ const KNOWN_DYNAMIC = new Set([
   '*/*-*.png',                          // theme.ts getSpritePath (P1, P2)
   '/sprites/characters/*-*.png',        // PlacementHelper.tsx (P1)
   '/sprites/office/cats/*.png',         // theme.ts getAngelaCat, OFFICE_CATS_PATHS (P3)
+  '*-walk1.webp',                       // walk.ts walkFramePaths: name.png -> name-walk1.webp (P6)
+  '*-walk2.webp',                       // walk.ts walkFramePaths: name.png -> name-walk2.webp (P6)
 ])
 
 /** Art the code names but nobody has drawn: the unbuilt rooms in src/rooms.ts. */
@@ -234,6 +236,13 @@ if (!existsSync(publicDir)) {
 
 const files = walk(publicDir).map(f => ({ rel: toPosix(relative(publicDir, f)), bytes: statSync(f).size }))
 const present = new Set(files.map(f => f.rel))
+// P6 — walk-cycle frames (src/walk.ts): `<name>-walk1.webp` / `-walk2.webp`
+// beside a `<name>.png` sprite. Optional: present ones are referenced through
+// their sprite, missing ones are not listed (most sprites have none yet).
+for (const f of files) {
+  const m = /^(.*)-walk[12]\.webp$/.exec(f.rel)
+  if (m && (required.has(`${m[1]}.png`) || present.has(`${m[1]}.png`))) ref(optional, f.rel, `P6 walk frame of ${m[1]}.png`)
+}
 const totalBytes = files.reduce((n, f) => n + f.bytes, 0)
 
 const missing = [...required].filter(([rel]) => !present.has(rel) && !PLANNED.has(rel))
