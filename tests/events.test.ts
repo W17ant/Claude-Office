@@ -267,6 +267,35 @@ describe('agent_completed', () => {
   })
 })
 
+describe('TaskStop (session_tool_done with taskId)', () => {
+  let office: Office
+  const where = { sessionId: 'ts-session', project: 'proj', cwd: '/x/proj' }
+  beforeAll(async () => {
+    office = await loadOffice()
+    office.server.processEvent({ type: 'session_started', ...where, source: 'startup' })
+    office.server.processEvent({ type: 'agent_spawned', ...where, agent: { id: 'agent-toolu_bg', name: 'Agent', role: 'general-purpose', task: 'Long job', agentType: 'general-purpose', background: true } })
+    office.server.processEvent({ type: 'agent_linked', ...where, agentId: 'agent-toolu_bg', subagentId: 'ac5ff55b850b4fecf' })
+  })
+  afterAll(() => removeOffice(office))
+
+  it('a stopped background shell (an id no agent has) completes nothing', async () => {
+    const res = await postEvent(office.server, { type: 'session_tool_done', ...where, toolName: 'TaskStop', taskId: 'b8x2k' })
+    expect(res.status).toBe(200)
+    expect(office.server.activeAgents.get('agent-toolu_bg').state).not.toBe('completed')
+  })
+
+  it('a taskId on any other tool completes nothing', async () => {
+    await postEvent(office.server, { type: 'session_tool_done', ...where, toolName: 'Bash', taskId: 'ac5ff55b850b4fecf' })
+    expect(office.server.activeAgents.get('agent-toolu_bg').state).not.toBe('completed')
+  })
+
+  it('stopping the agent by its subagent id walks it out (TaskStop fires no SubagentStop)', async () => {
+    const res = await postEvent(office.server, { type: 'session_tool_done', ...where, toolName: 'TaskStop', taskId: 'ac5ff55b850b4fecf' })
+    expect(res.status).toBe(200)
+    expect(office.server.activeAgents.get('agent-toolu_bg')).toMatchObject({ state: 'completed' })
+  })
+})
+
 describe('mcp_call and mcp_done', () => {
   let office: Office
   beforeAll(async () => { office = await loadOffice() })

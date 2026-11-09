@@ -62,7 +62,8 @@
 # Background agents (run_in_background): the Agent tool returns straight away
 # with status "async_launched", so PostToolUse only links the office agent to
 # the subagent's agentId. The agent leaves on SubagentStop (or a
-# SubagentHandback tool call, on Claude Code versions that have one).
+# SubagentHandback tool call, on Claude Code versions that have one), or on
+# the PostToolUse of a TaskStop that names it (taskId on session_tool_done).
 # Tool calls made inside a subagent carry that subagent's agent_id, which is
 # forwarded so the server knows which office agent is doing the work.
 #
@@ -1440,6 +1441,16 @@ if hook_event == 'PostToolUseFailure':
 # sent (no session id) they go out alone as a `signal` event.
 if hook_event == 'PostToolUse':
     done = with_signals({'type': 'session_tool_done', 'toolName': str(tool_name)[:80], 'callKey': call_key(tool_name, d.get('tool_input'))})
+    # Why: a background agent stopped with TaskStop gets no SubagentStop and no
+    # SubagentHandback, so this call is the only word that it is gone. Its
+    # task_id is the agentId of the launch result (shell_id on older versions);
+    # the server completes the agent it names, and a background shell's id
+    # names none.
+    if tool_name == 'TaskStop':
+        stop_inp = d.get('tool_input') if isinstance(d.get('tool_input'), dict) else {}
+        stopped = stop_inp.get('task_id') or stop_inp.get('shell_id')
+        if isinstance(stopped, str) and stopped:
+            done['taskId'] = stopped[:40]
     if sub_agent_id:
         done['agentId'] = str(sub_agent_id)
     if SESSION.get('sessionId'):

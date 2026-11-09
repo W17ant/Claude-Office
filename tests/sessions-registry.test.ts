@@ -339,6 +339,8 @@ const E = 'eeeeeeee-5555-4555-8555-555555555555'
 const F = 'ffffffff-6666-4666-8666-666666666666'
 const G = '99999999-7777-4777-8777-777777777777'
 const H = '88888888-8888-4888-8888-888888888888'
+const I = '77777777-9999-4999-8999-999999999999'
+const J = '66666666-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 
 describe('the registry roster in the office', () => {
   let office: Office
@@ -535,7 +537,49 @@ describe('the registry roster in the office', () => {
     expect(await fresh()).toEqual([expect.objectContaining({ type: 'session_registry', sessionId: B, hooked: true })])
   })
 
-  it('a hooked session that loses its registry entry just loses `registry` and stays active', async () => {
+  it('a hooked session whose process died (terminal killed, no SessionEnd) ends with reason exited, and its agents clock out', async () => {
+    const child = liveChild()
+    children.push(child)
+    const where = { sessionId: I, project: 'iota', cwd: '/home/me/iota' }
+    await postEvent(office.server, { type: 'session_started', ...where, source: 'startup' })
+    await postEvent(office.server, { type: 'agent_spawned', ...where, agent: { id: 'agent-iota', name: 'Agent', role: 'general-purpose', task: 'long job', background: true } })
+    writeEntry(regDir, { pid: child.pid, sessionId: I, cwd: '/home/me/iota', name: 'iota-01', status: 'busy' })
+    reg().scan()
+    expect(session(I)).toMatchObject({ state: 'active', hooked: true, registry: { pid: child.pid } })
+    await fresh()
+
+    // kill -9 leaves the file behind; the dead pid is what counts
+    await killAndReap(child)
+    reg().scan()
+    expect(session(I)).toMatchObject({ state: 'ended', reason: 'exited' })
+    expect(session(I)).not.toHaveProperty('registry')
+    expect(office.server.activeAgents.get('agent-iota').state).toBe('completed')
+    const events = await fresh()
+    expect(events).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'agent_completed', agentId: 'agent-iota', result: 'session ended' }),
+      expect.objectContaining({ type: 'session_ended', sessionId: I, hooked: true, reason: 'exited' }),
+    ]))
+    unlinkSync(join(regDir, `${child.pid}.json`))
+    reg().scan()
+  })
+
+  it('a hooked session restored with a `registry` this server never saw (agents.json after a restart): a dead pid ends it, a live one only drops `registry`', async () => {
+    const where = { sessionId: J, project: 'kappa', cwd: '/home/me/kappa' }
+    await postEvent(office.server, { type: 'session_started', ...where, source: 'startup' })
+    // What loadAgents brings back: the presence it had when the server stopped
+    session(J).registry = { pid: process.ppid, name: 'kappa-0a', status: 'busy' }
+    reg().scan()
+    expect(session(J)).toMatchObject({ state: 'active' })
+    expect(session(J)).not.toHaveProperty('registry')       // the stale sweep applies again
+    await fresh()
+
+    session(J).registry = { pid: deadPid(), name: 'kappa-0a', status: 'busy' }
+    reg().scan()
+    expect(session(J)).toMatchObject({ state: 'ended', reason: 'exited' })
+    expect(await fresh()).toEqual([expect.objectContaining({ type: 'session_ended', sessionId: J, reason: 'exited' })])
+  })
+
+  it('a hooked session that loses its registry entry while its process still runs just loses `registry` and stays active', async () => {
     unlinkSync(join(regDir, `${process.ppid}.json`))
     reg().scan()
     expect(session(B)).toMatchObject({ state: 'active', hooked: true, main: { state: 'working' } })
