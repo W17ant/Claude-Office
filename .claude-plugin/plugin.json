@@ -1,7 +1,7 @@
 {
   "name": "agent-office",
   "displayName": "Agent Office",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Pixel-art office that visualises Claude Code agents. Registers the hooks that forward subagent, MCP and session activity to the office server on port 3334.",
   "author": {
     "name": "W17ant",
