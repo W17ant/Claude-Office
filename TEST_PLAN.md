@@ -10,7 +10,7 @@ Run with `npm test` (Vitest, Node environment, `tests/`). CI (`.github/workflows
 - Agent persistence — `agents.json` written on change, restored on a fresh import of the same runtime dir, stale entries dropped (`AGENT_OFFICE_STALE_MINUTES`) — `tests/persistence.test.ts`
 - Chat + A2A — `POST /chat/reply` (recipient, `@Name` mention, self-message, loop budget `AGENT_OFFICE_A2A_LIMIT`), `GET /chat?recipient=`, unread + `POST /chat/inbox/read`, inbox files, `GET /.well-known/agent-card.json`, `GET /a2a/agents`, `POST /a2a` (`message/send` + JSON-RPC errors), `POST /chat` + slash commands — `tests/chat-a2a.test.ts`
 - WebSocket — snapshot on connect, broadcast to all clients, origin rejection — `tests/websocket.test.ts`
-- `hooks/agent-tracker.sh` — Python section run against real Claude Code 2.1.x payloads — `tests/hook-script.test.ts`
+- `hooks/agent-tracker.py` (run by `hooks/agent-tracker.sh`) against real Claude Code 2.1.x payloads — `tests/hook-script.test.ts`
 - `hooks/install-hooks.sh` — fresh install, upgrade from PostToolUse-only, idempotent re-run — `tests/install-hooks.test.ts`
 
 **Still planned** (see modules below): `chat-db.js` unit tests, all `src/` modules (jsdom + Testing Library), `useAgentSocket` reconnect logic, React components, Playwright E2E, coverage thresholds.

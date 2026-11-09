@@ -295,6 +295,7 @@ Claude-Office/
 │   └── chat-db.js          # SQLite wrapper
 ├── hooks/                  # Claude Code hooks
 │   ├── agent-tracker.sh    # Forwards events to the server
+│   ├── agent-tracker.py    # Turns a hook payload into the office event
 │   ├── status-line.sh      # Feeds the meters
 │   └── install-hooks.sh    # npm run install-hooks
 ├── scripts/                # start / stop / doctor / chat watcher

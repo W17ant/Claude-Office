@@ -19,8 +19,11 @@ import { afterAll, describe, expect, it } from 'vitest'
 
 const TRACKER = fileURLToPath(new URL('../hooks/agent-tracker.sh', import.meta.url))
 
-const PYTHON = execFileSync('awk', ["/<<'PYEOF'/{f=1;next} /^PYEOF$/{f=0} f", TRACKER], { encoding: 'utf8' })
-if (!PYTHON.includes('hook_event_name')) throw new Error('could not extract the Python section from agent-tracker.sh')
+// The hook's Python lives next to the wrapper (agent-tracker.py); the tests run
+// that file the way the wrapper does, and hand its source to the signals driver
+const TRACKER_PY = fileURLToPath(new URL('../hooks/agent-tracker.py', import.meta.url))
+const PYTHON = readFileSync(TRACKER_PY, 'utf8')
+if (!PYTHON.includes('hook_event_name')) throw new Error('could not read the Python from agent-tracker.py')
 
 // The Python looks for $AGENT_OFFICE_HOME/answer-permissions (the server keeps
 // that marker in step with its answerPermissions setting): point it at an
@@ -38,7 +41,7 @@ afterAll(() => rmSync(NO_MARKER_HOME, { recursive: true, force: true }))
  * (sed -n), so the empty line there is harmless.
  */
 function runHookLines(payload: unknown, env: Record<string, string> = {}): string[] {
-  const out = execFileSync('python3', ['-I', '-c', PYTHON], {
+  const out = execFileSync('python3', ['-I', TRACKER_PY], {
     input: typeof payload === 'string' ? payload : JSON.stringify(payload),
     encoding: 'utf8',
     env: { ...process.env, AGENT_OFFICE_HOME: NO_MARKER_HOME, ...env },
@@ -75,6 +78,17 @@ describe('agent-tracker.sh: parses under the system bash', () => {
     const r = spawnSync('/bin/bash', ['-n', TRACKER], { encoding: 'utf8' })
     expect(r.stderr).toBe('')
     expect(r.status).toBe(0)
+  })
+  // Why: Git Bash on Windows deadlocks on a heredoc over 64 KiB (#74) and a
+  // native Windows command line stops at 32 KB, so the big Python must stay in
+  // agent-tracker.py, and whatever is still inlined in the wrapper stays small.
+  it('keeps the event Python out of the wrapper, and every heredoc left in it well under 64 KiB', () => {
+    const sh = readFileSync(TRACKER, 'utf8')
+    expect(sh).not.toContain('hook_event_name = ')
+    expect(sh).toContain('python3 -I "$TRACKER_PY"')
+    const blocks = Array.from(sh.matchAll(/<<'([A-Z_]+)'[^\n]*\n([\s\S]*?)\n\1\n/g))
+    expect(blocks.map(b => b[1])).toEqual(['PYSIGN', 'PYREPLY'])
+    for (const [, name, body] of blocks) expect(Buffer.byteLength(body), name).toBeLessThan(16 * 1024)
   })
 })
 
