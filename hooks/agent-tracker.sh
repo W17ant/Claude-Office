@@ -110,7 +110,7 @@ fi
 # big tool_response (a 300 KB file read is routine) is over the ~128 KiB
 # single-argument limit and would fail the exec with E2BIG. No shell
 # variables are interpolated into the Python source.
-PY=$(cat <<'PYEOF'
+IFS= read -r -d '' PY <<'PYEOF' || true
 import json, sys, os, re, hashlib
 
 try:
@@ -1479,7 +1479,6 @@ if hook_event == 'PreToolUse':
 
 sys.exit(0)
 PYEOF
-)
 
 # -I: ignore PYTHON* env vars and the user site, and keep the cwd (the
 # project Claude is working in) off sys.path. The token and the event URL go
@@ -1512,7 +1511,7 @@ EOF
 # beyond replaying that exact request within the window — the token itself
 # never appears. No token (no file): nothing is printed and the request goes
 # out unsigned (the server answers 401, which the caller ignores).
-PY_SIGN=$(cat <<'PYSIGN'
+IFS= read -r -d '' PY_SIGN <<'PYSIGN' || true
 import os, sys, time, hashlib
 token = os.environ.get('OFFICE_TOKEN', '')
 if not token:
@@ -1541,7 +1540,6 @@ msg = (method + '\n' + path + '\n' + ts + '\n').encode() + body
 sig = _hmac_sha256_hex(token.encode(), msg)
 sys.stdout.write(ts + '\x1f' + sig)
 PYSIGN
-)
 
 # Emit the two signing headers for a request, or nothing when there is no
 # token. $1 method, $2 full URL; the body is read from stdin.
@@ -1563,7 +1561,7 @@ EOF
 # separated by the unit separator, which JSON never contains unescaped. The
 # token, the request's nonce and the dialog's own suggestions arrive through
 # the environment, never argv; the permission id is a public argument.
-PY_REPLY=$(cat <<'PYREPLY'
+IFS= read -r -d '' PY_REPLY <<'PYREPLY' || true
 import json, os, sys, time, hmac, hashlib
 try:
     r = json.loads(sys.stdin.read() or '{}')
@@ -1611,7 +1609,6 @@ elif mode == 'poll':
                 out = json.dumps({'hookSpecificOutput': {'hookEventName': 'PermissionRequest', 'decision': dec}})
     print('\x1f'.join([status, '1' if late else '0', out]))
 PYREPLY
-)
 
 # PermissionRequest the office may answer: POST in the foreground, then poll
 # the pending permission until it is decided here (print the hook output we
