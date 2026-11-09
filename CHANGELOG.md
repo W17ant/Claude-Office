@@ -2,6 +2,13 @@
 
 All notable changes to Claude Office. Numbers refer to pull requests.
 
+## Unreleased
+
+- `npx @w17ant/agent-office` runs the office without a checkout, once the package is on npm: `start` (the default) serves the built UI and the server from the package on one port and opens the office link; `--detach`, `open`, `stop`, `install-hooks`, `uninstall-hooks`, `doctor`, `--port`, `--version` and `--help` are there too (`cli/agent-office.mjs`, see the reference's *Run it with npx*). `agent-office` was already taken on npm, so the package is scoped.
+  `install-hooks` copies the hook scripts to `~/.agent-office/hooks/` and points `settings.json` there, not at npm's npx cache, which npm can clean at any time and which would then fail every hook. `uninstall-hooks` takes the copy away again.
+- `package.json` has a `files` list (about 48 MB and 256 files, most of it sprites), a `bin`, `engines` (Node 20+, 22+ recommended: `better-sqlite3` 12.10+ has no prebuilt binary for Node 20) and a `prepublishOnly` build. `react`, `react-dom` and `concurrently` move to `devDependencies`, since the built UI bundles React, so an npx install no longer downloads them. The desktop app keeps the name `agent-office` (`build.extraMetadata`).
+- `npm run doctor` takes the fix commands and the hooks directory as options, so the npx `doctor` names `npx` commands and checks the copied hooks. The installer prints the npx start command when the CLI runs it.
+
 ## 1.1.2 — 2026-11-09
 
 - The tracker hook's Python now lives in its own file, `hooks/agent-tracker.py`, run by `agent-tracker.sh` as `python3 -I agent-tracker.py`. As a ~65 KB heredoc passed through `python3 -c` it hung Git Bash on Windows (a heredoc over 64 KiB deadlocks, found in #74), was over Windows' 32 KB command-line limit (#72), and could not be parsed by macOS bash 3.2 (#53). A test keeps it out of the wrapper and keeps the two small heredocs left there under 16 KB.

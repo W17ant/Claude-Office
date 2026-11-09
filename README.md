@@ -177,6 +177,15 @@ bash scripts/stop-office.sh
 
 Now spawn agents in Claude Code and watch them appear in the office.
 
+**No checkout** (after the first npm release, Node 22+):
+
+```bash
+npx @w17ant/agent-office install-hooks   # connect Claude Code (once)
+npx @w17ant/agent-office                 # start the office and open it; Ctrl+C stops it
+```
+
+`doctor`, `stop`, `uninstall-hooks` and `--detach` work the same way; see [Run it with npx](docs/reference.md#run-it-with-npx).
+
 - **Rather have an app?** Grab the installer for Mac, Windows or Linux from [Releases](https://github.com/W17ant/Claude-Office/releases).
 - **Nothing showing up?** `npm run doctor` checks the whole setup and tells you what's missing.
 - **Want it gone?** `npm run uninstall-hooks` takes the hooks back out.

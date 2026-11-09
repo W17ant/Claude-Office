@@ -5,6 +5,7 @@ Everything the [README](../README.md) leaves out: how the hooks work, every sett
 - [Connect Claude Code](#connect-claude-code)
 - [Platform support](#platform-support)
 - [The start/stop scripts](#the-startstop-scripts)
+- [Run it with npx](#run-it-with-npx)
 - [Running tests](#running-tests)
 - [Auto-permissions](#auto-permissions)
 - [Payroll, electricity and memory](#payroll-electricity-and-memory)
@@ -195,6 +196,28 @@ Requirements everywhere: Node 22 (what CI runs; `better-sqlite3` is a native mod
 `start-office.sh` starts the server, Vite and the chat AI watcher, each in its own process group, and records their pids in `~/.agent-office/server.pid`, `vite.pid` and `chat-watcher.pid`. `stop-office.sh` stops exactly those processes — a browser holding a WebSocket to `:3334`, the Electron app or an unrelated Vite on `:3333` are never touched. If you started the server some other way, `bash scripts/stop-office.sh --force` additionally kills whatever is *listening* on the office ports. Ctrl+C in `start-office.sh` stops everything it started; on a box without `open`/`xdg-open` it prints the URL instead of aborting.
 
 The chat AI watcher (`scripts/chat-ai-watcher.sh`, log in `~/.agent-office/chat-ai.log`) only answers messages a person typed in the office chat — its own replies, the agents' `starting:`/`done:` announcements, agent-to-agent messages and `/commands` are never answered — and runs `claude -p` with `--max-turns 1 --model claude-haiku-5-5 --safe-mode --strict-mcp-config --tools "" --no-session-persistence` under a timeout, so a reply never fires the office's own hooks or loads your project's MCP servers. Knobs (all optional): `CHAT_AI_MODEL`, `CHAT_AI_TIMEOUT` (seconds, default 60), `CHAT_AI_MAX_REPLIES_PER_MIN` (default 5), `CHAT_AI_POLL_INTERVAL` (default 8). Every script honours `AGENT_OFFICE_HOME` (state dir) and `AGENT_OFFICE_PORT` (default 3334); `start-office.sh`/`stop-office.sh` also take `AGENT_OFFICE_UI_PORT` (default 3333). The server, the hook, the status line, the page and the desktop app read the same `AGENT_OFFICE_PORT`, so one export moves the whole office — see [Configuration](#configuration).
+
+## Run it with npx
+
+*After the first npm release.* The package is `@w17ant/agent-office` (the plain name `agent-office` belongs to another project on npm); its command is `agent-office` (`cli/agent-office.mjs`):
+
+```bash
+npx @w17ant/agent-office install-hooks   # hooks + status line in ~/.claude/settings.json (--no-status-line | --status-line-only)
+npx @w17ant/agent-office                 # = start: serve the office on :3334 and open it; Ctrl+C stops it
+npx @w17ant/agent-office start --detach  # in the background (log in ~/.agent-office/server.log, 0600)
+npx @w17ant/agent-office open            # open it in another browser (--print: just print the link)
+npx @w17ant/agent-office stop            # stop it (--force: whatever listens on the office ports)
+npx @w17ant/agent-office doctor          # the same checks as npm run doctor, with npx fix commands
+npx @w17ant/agent-office uninstall-hooks
+```
+
+`--port <n>` on any command sets `AGENT_OFFICE_PORT` for it; `AGENT_OFFICE_HOME` and `CLAUDE_CONFIG_DIR` are honoured as everywhere else. `start` serves the `dist/` built into the package from the office server's own port — no Vite, no checkout — writes `~/.agent-office/server.pid` the way `start-office.sh` does (so `stop`, and `stop-office.sh`, stop it), and prints and opens the office link the way `npm run open` does. If an office already answers on the port it only opens the link (after the token proof `npm run open` makes). The chat AI watcher is not started; it stays a checkout feature (`start-office.sh`). The boss character comes from `~/.agent-office/office.config.json` (`$AGENT_OFFICE_HOME`) rather than a file next to `package.json`, which in an npx install is in npm's cache.
+
+**Where the hooks live.** npx unpacks the package into `~/.npm/_npx/<hash>/`, which npm may clean at any time and which a newer version replaces with another directory. A hook command pointing there would turn into a hook error on every Claude Code tool call the day the cache goes. So `install-hooks` copies the hook scripts (`agent-tracker.sh`, `agent-tracker.py`, `status-line.sh`, `install-hooks.sh`, `hooks.json`) to `~/.agent-office/hooks/` — the office's own state dir, next to the token and `chat.db` — and runs the installer from that copy, so `settings.json` names `~/.agent-office/hooks/agent-tracker.sh`. Each file is written to a temp name and renamed into place, so a hook firing mid-update never reads half a script. Re-running `install-hooks` from a newer version refreshes the copy; `uninstall-hooks` removes the entries and then the copy (a partial `--no-status-line` / `--status-line-only` uninstall keeps it, since what is left still runs it). Run from a git checkout (`node cli/agent-office.mjs install-hooks`), the hooks stay in the checkout, exactly as with `npm run install-hooks`. Either way the installer's rule for "ours" (a path ending in `hooks/agent-tracker.sh`) is unchanged, so switching between a checkout install and the npx one repoints the entries rather than adding a second set.
+
+**Install size and Node.** The package is about 48 MB (256 files; nearly all of it is the sprites and rooms in `dist/`) and pulls in `express`, `ws` and `better-sqlite3` (about 105 packages; 65 MB on disk with the package itself); from a local tarball with a cold npm cache the install took 5 s on macOS arm64. `better-sqlite3` is native: on Node 22, 24 and 26 npm downloads a prebuilt binary for macOS (arm64 and x64) and Linux (x64, arm64, musl). Node 20 is end-of-life and `better-sqlite3` 12.10 and later ship no prebuild for it, so on Node 20 npm compiles it from source, which takes a minute or so and needs `python3` and a C++ toolchain (Xcode command-line tools, `build-essential`). Use Node 22 or newer. The hooks still need `bash`, `python3` and `curl`; Windows is not covered (use WSL).
+
+**Publishing** (maintainer): `npm publish` runs `prepublishOnly` (`npm run build`: `tsc` and `vite build`, so `dist/` is fresh) and ships only what `files` in `package.json` lists: `cli/`, `server/`, `dist/`, `hooks/`, the three scripts the CLI runs (`open-office.mjs`, `doctor.mjs`, `stop-office.sh`), `electron/helpers.cjs` (the token helpers `open-office.mjs` uses) and `NOTICE.md`. `npm pack --dry-run` lists them; `npm pack` alone does not build, so run `npm run build` first when packing by hand. Publishing needs an npm account that owns the `@w17ant` scope (`publishConfig.access` is `public`, which a scoped package needs). The desktop build keeps its old name: `build.extraMetadata.name` is `agent-office`, so the installers and the app's data folders do not move.
 
 ## Running tests
 
@@ -532,5 +555,5 @@ requires the token, conversation text requires it, and the rest stay open:
 Open and planned work lives in [GitHub issues](https://github.com/W17ant/Claude-Office/issues). Next up, roughly in order:
 
 - **OS notification** when a permission wait starts, now that the office can answer the dialog itself (`notify.sh` already covers macOS and Linux; the server only calls it for chat mentions and failed agents today)
-- **`npx` one-liner** to start the office without a checkout
+- **`npx` one-liner** to start the office without a checkout: built (`cli/agent-office.mjs`, see [Run it with npx](#run-it-with-npx)), waiting on the first npm release
 - **Spooky Sprint**, a seasonal variant on the incident-mode axis — art-gated

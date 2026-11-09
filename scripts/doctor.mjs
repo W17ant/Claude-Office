@@ -42,7 +42,9 @@ import { fileURLToPath } from 'node:url'
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const TRACKER_NAME = 'agent-tracker.sh'
 const STATUS_NAME = 'status-line.sh'
-// better-sqlite3 12 (package.json) ships builds for Node 20.x and up
+// better-sqlite3 12 (package.json) runs on Node 20.x and up. Its prebuilt
+// binaries cover 20 only up to 12.9; from 12.10 Node 20 builds from source
+// (needs python3 + a C++ toolchain), 22 and newer still download a prebuild
 export const MIN_NODE_MAJOR = 20
 export const DEFAULT_PORT = 3334
 const PLUGIN_NAME = 'agent-office'
@@ -51,6 +53,11 @@ export const PASS = 'PASS'
 export const WARN = 'WARN'
 export const FAIL = 'FAIL'
 
+/**
+ * The fix commands a checkout's report names. cli/agent-office.mjs passes its
+ * own set (npx ...) through runDoctor's `commands` option; `dev` may be null
+ * there (no Vite in a published package), and the notes then leave it out.
+ */
 export const COMMANDS = {
   install:   'npm run install-hooks',
   hooksOnly: 'bash hooks/install-hooks.sh --no-status-line',
@@ -62,6 +69,9 @@ export const COMMANDS = {
   start:     'npm run build && npm run server',
   startAlt:  'bash scripts/start-office.sh',
   dev:       'npm run dev',
+  open:      'npm run open',
+  restoreHooks: 'git pull (or reinstall the plugin) to bring it back',
+  distMissing: 'npm run build for the one-port page, or npm run dev for the Vite dev server on :3333',
 }
 
 // ---------------------------------------------------------------------------
@@ -265,32 +275,32 @@ function safeReaddir(dir) {
 }
 
 /** The hook lines: settings.json hooks and/or the plugin. */
-export function checkHooks({ settingsPath, settings, settingsState, events, tracker, home, configDir, fallback }) {
+export function checkHooks({ settingsPath, settings, settingsState, events, tracker, home, configDir, fallback, commands: C = COMMANDS }) {
   const out = []
   const hooks = inspectHooks(settings, { events, tracker, home })
   const plugin = inspectPlugin(settings, configDir)
   const n = events.length
 
-  if (settingsState?.error) out.push(result(FAIL, `settings: ${settingsPath} is not valid JSON (${settingsState.error}) — Claude Code ignores it; fix it, then ${COMMANDS.install}`))
+  if (settingsState?.error) out.push(result(FAIL, `settings: ${settingsPath} is not valid JSON (${settingsState.error}) — Claude Code ignores it; fix it, then ${C.install}`))
 
   if (hooks.any) {
     const where = hooks.paths.length === 1 ? hooks.paths[0] : `${hooks.paths.length} different paths`
     if (hooks.dead.length) {
       out.push(result(FAIL, `hooks: ${n - hooks.missing.length}/${n} events registered in ${settingsPath}, but they run a file that does not exist: ${hooks.dead.join(', ')}`,
-        `Claude Code reports a hook error on every tool call and the office hears nothing — ${COMMANDS.install} repoints them at this checkout`))
+        `Claude Code reports a hook error on every tool call and the office hears nothing — ${C.install} repoints them at this checkout`))
     } else if (hooks.missing.length) {
       out.push(result(WARN, `hooks: ${hooks.registered.length}/${n} events run ${where} (missing: ${hooks.missing.join(', ')})`,
-        `an older install — ${COMMANDS.install} adds the rest`))
+        `an older install — ${C.install} adds the rest`))
     } else {
       out.push(result(PASS, `hooks: ${n}/${n} events run ${where}`))
     }
     if (hooks.foreign.length) {
       out.push(result(WARN, `hooks: ${hooks.foreign.join(', ')} is not this checkout's hooks/${TRACKER_NAME} (${tracker})`,
-        `fine if that clone is the one you mean to use; ${COMMANDS.install} here repoints them`))
+        `fine if that clone is the one you mean to use; ${C.install} here repoints them`))
     }
     if (hooks.duplicated.length) {
       out.push(result(WARN, `hooks: registered twice for ${hooks.duplicated.join(', ')} — every agent arrives twice`,
-        `${COMMANDS.install} drops the duplicate`))
+        `${C.install} drops the duplicate`))
     }
   }
 
@@ -298,19 +308,19 @@ export function checkHooks({ settingsPath, settings, settingsState, events, trac
     const copy = plugin.copies[0]
     if (hooks.any) {
       out.push(result(WARN, `plugin ${plugin.enabledKey} is installed as well (${copy.source}) — plugin hooks merge with the settings hooks, so every agent arrives twice`,
-        `keep one: ${COMMANDS.uninstallHooks} takes the installer's hooks out and keeps the status line (the meters), or ${COMMANDS.unplugin}`))
+        `keep one: ${C.uninstallHooks} takes the installer's hooks out and keeps the status line (the meters), or ${C.unplugin}`))
     } else {
       out.push(result(PASS, `plugin ${plugin.enabledKey}: enabled, hooks run ${copy.tracker}`))
     }
   } else if (plugin.enabledKey) {
     out.push(result(hooks.any ? WARN : FAIL, `plugin ${plugin.enabledKey} is enabled in ${settingsPath} but no installed copy was found under ${join(configDir, 'plugins')}`,
-      `${COMMANDS.plugin}`))
+      `${C.plugin}`))
   } else if (!hooks.any) {
     const notes = [
       plugin.disabledKey ? `the plugin ${plugin.disabledKey} is installed but disabled: claude plugin enable ${plugin.disabledKey}` : null,
-      !plugin.disabledKey && plugin.copies.length ? `a plugin copy exists at ${plugin.copies[0].dir} but is not enabled: ${COMMANDS.plugin}` : null,
-      fallback?.any ? `they are in ${fallback.path} — but CLAUDE_CONFIG_DIR is set, so Claude Code reads ${settingsPath}; ${COMMANDS.install} with CLAUDE_CONFIG_DIR set writes them there (CLAUDE_CONFIG_DIR= ${COMMANDS.uninstall} takes the old ones out)` : null,
-      `${COMMANDS.install} registers them (or install the plugin: ${COMMANDS.plugin})`,
+      !plugin.disabledKey && plugin.copies.length ? `a plugin copy exists at ${plugin.copies[0].dir} but is not enabled: ${C.plugin}` : null,
+      fallback?.any ? `they are in ${fallback.path} — but CLAUDE_CONFIG_DIR is set, so Claude Code reads ${settingsPath}; ${C.install} with CLAUDE_CONFIG_DIR set writes them there (CLAUDE_CONFIG_DIR= ${C.uninstall} takes the old ones out)` : null,
+      `${C.install} registers them (or install the plugin: ${C.plugin})`,
     ]
     const what = settingsState?.missing ? `${settingsPath} does not exist` : `nothing in ${settingsPath} runs hooks/${TRACKER_NAME}`
     out.push(result(FAIL, `hooks: not installed — ${what}, and no agent-office plugin is enabled`, ...notes))
@@ -320,10 +330,10 @@ export function checkHooks({ settingsPath, settings, settingsState, events, trac
 }
 
 /** The status line: statusLine + subagentStatusLine running hooks/status-line.sh. */
-export function checkStatusLine({ settings, statusScript, home, pluginOnly }) {
+export function checkStatusLine({ settings, statusScript, home, pluginOnly, commands: C = COMMANDS }) {
   const s = settings && typeof settings === 'object' ? settings : {}
   // Next to the plugin the full installer would register every hook a second time
-  const fix = pluginOnly ? COMMANDS.statusLine : COMMANDS.install
+  const fix = pluginOnly ? C.statusLine : C.install
   const entry = (key) => {
     const cur = s[key]
     const raw = cur && typeof cur === 'object' ? scriptPathIn(cur.command, STATUS_NAME) : null
@@ -346,10 +356,10 @@ export function checkStatusLine({ settings, statusScript, home, pluginOnly }) {
   }
   if (pluginOnly) {
     return result(WARN, 'status line: not registered — a plugin cannot set statusLine, so the payroll / electricity / memory meters stay hidden',
-      `${COMMANDS.statusLine} from a clone adds it and nothing else (the hooks stay with the plugin; ${COMMANDS.install} would register them a second time)`)
+      `${C.statusLine} from a clone adds it and nothing else (the hooks stay with the plugin; ${C.install} would register them a second time)`)
   }
   return result(WARN, 'status line: not registered — the payroll / electricity / memory meters stay hidden',
-    main.other ? `${COMMANDS.install} adds it and chains the one you have (${main.other})` : `${COMMANDS.install} adds it`)
+    main.other ? `${C.install} adds it and chains the one you have (${main.other})` : `${C.install} adds it`)
 }
 
 export function checkTools(names = ['python3', 'bash', 'curl'], path = process.env.PATH) {
@@ -361,7 +371,7 @@ export function checkTools(names = ['python3', 'bash', 'curl'], path = process.e
 }
 
 /** GET /health: is the server up, has it seen hooks. */
-export async function checkServer({ port = DEFAULT_PORT, fetchImpl = globalThis.fetch, timeoutMs = 2000, now = Date.now() } = {}) {
+export async function checkServer({ port = DEFAULT_PORT, fetchImpl = globalThis.fetch, timeoutMs = 2000, now = Date.now(), commands: C = COMMANDS } = {}) {
   const url = `http://127.0.0.1:${port}/health`
   let body
   try {
@@ -370,7 +380,7 @@ export async function checkServer({ port = DEFAULT_PORT, fetchImpl = globalThis.
     body = await res.json()
   } catch {
     return {
-      results: [result(WARN, `server: nothing answers on ${url} — the office server is not running`, `start it: ${COMMANDS.start}  (or ${COMMANDS.startAlt})`)],
+      results: [result(WARN, `server: nothing answers on ${url} — the office server is not running`, `start it: ${C.start}  (or ${C.startAlt})`)],
       up: false,
     }
   }
@@ -381,7 +391,7 @@ export async function checkServer({ port = DEFAULT_PORT, fetchImpl = globalThis.
   const version = body.version ? `v${body.version}` : '(version unknown — older server)'
   const up = typeof body.uptimeMs === 'number' ? `, up ${formatSpan(body.uptimeMs)}` : ''
   out.push(result(PASS, `server: ${version}${up} on :${port} — ${body.sessions ?? '?'} session(s), ${body.agents ?? 0} agent(s), ${body.clients ?? 0} office window(s) connected`,
-    body.clients === 0 ? `no office window is connected: npm run open opens it with the office token (or the link the server printed; npm run open -- --dev for Vite on :3333 under ${COMMANDS.dev})` : null))
+    body.clients === 0 ? `no office window is connected: ${C.open} opens it with the office token (or the link the server printed${C.dev ? `; ${C.open} -- --dev for Vite on :3333 under ${C.dev}` : ''})` : null))
   if (typeof body.hooksSeen !== 'number') {
     out.push(result(WARN, 'server: this server predates hook counting — restart it from this checkout to see whether hooks arrive'))
   } else if (body.hooksSeen > 0) {
@@ -391,7 +401,7 @@ export async function checkServer({ port = DEFAULT_PORT, fetchImpl = globalThis.
       'run a tool in Claude Code and re-check; if nothing arrives, see the hooks line above'))
   }
   if (body.uiAvailable === false) {
-    out.push(result(WARN, `server: UI not built — http://127.0.0.1:${port}/ is a 404; ${COMMANDS.start} serves it there, or ${COMMANDS.dev} for Vite on :3333`))
+    out.push(result(WARN, `server: UI not built — http://127.0.0.1:${port}/ is a 404; ${C.start} serves it there${C.dev ? `, or ${C.dev} for Vite on :3333` : ''}`))
   }
   return { results: out, up: true, body }
 }
@@ -415,10 +425,10 @@ export function checkToken({ officeHome, serverUp }) {
   return result(PASS, `token: ${file} (0600)`)
 }
 
-export function checkDist({ root, port = DEFAULT_PORT }) {
+export function checkDist({ root, port = DEFAULT_PORT, commands: C = COMMANDS }) {
   const index = join(root, 'dist', 'index.html')
   if (existsSync(index)) return result(PASS, `dist/: built — the server serves it at http://127.0.0.1:${port}/`)
-  return result(WARN, 'dist/: not built — npm run build for the one-port page, or npm run dev for the Vite dev server on :3333')
+  return result(WARN, `dist/: not built — ${C.distMissing}`)
 }
 
 // Why these: the files bash or python3 runs straight from the checkout (the
@@ -430,13 +440,15 @@ const LF_FILES = ['hooks/agent-tracker.sh', 'hooks/agent-tracker.py', 'hooks/ins
  * The hook's own files in `root`: agent-tracker.py present, and LF_FILES free
  * of CRLF. Returns one result line.
  */
-export function checkHookFiles({ root }) {
-  if (!existsSync(join(root, 'hooks', 'agent-tracker.py'))) {
-    return result(FAIL, `hook files: ${join(root, 'hooks', 'agent-tracker.py')} is missing — agent-tracker.sh runs it, so every event is dropped`, 'git pull (or reinstall the plugin) to bring it back')
+export function checkHookFiles({ root, hooksDir = join(root, 'hooks'), commands: C = COMMANDS }) {
+  if (!existsSync(join(hooksDir, 'agent-tracker.py'))) {
+    return result(FAIL, `hook files: ${join(hooksDir, 'agent-tracker.py')} is missing — agent-tracker.sh runs it, so every event is dropped`, C.restoreHooks)
   }
   const crlf = LF_FILES.filter(f => {
     try {
-      return readFileSync(join(root, f), 'latin1').includes('\r')
+      // Why: the hooks/ files are read where Claude Code runs them, which is a
+      // copy outside the package for an npx install (cli/agent-office.mjs)
+      return readFileSync(f.startsWith('hooks/') ? join(hooksDir, f.slice('hooks/'.length)) : join(root, f), 'latin1').includes('\r')
     } catch {
       return false
     }
@@ -457,7 +469,10 @@ export function checkHookFiles({ root }) {
 
 /**
  * Run every check. Options override the environment (tests): home, configDir,
- * officeHome, port, root, path, fetchImpl, nodeVersion.
+ * officeHome, port, root, path, fetchImpl, nodeVersion. `hooksDir` is where
+ * the hook scripts Claude Code should run live (default <root>/hooks; the npx
+ * CLI's stable copy otherwise) and `commands` the fix commands to name
+ * (default COMMANDS).
  */
 export async function runDoctor(opts = {}) {
   const env = opts.env ?? process.env
@@ -467,8 +482,10 @@ export async function runDoctor(opts = {}) {
   const officeHome = opts.officeHome ?? env.AGENT_OFFICE_HOME ?? join(home, '.agent-office')
   const port = Number(opts.port ?? env.AGENT_OFFICE_PORT) || DEFAULT_PORT
   const root = opts.root ?? ROOT
-  const tracker = join(root, 'hooks', TRACKER_NAME)
-  const statusScript = join(root, 'hooks', STATUS_NAME)
+  const hooksDir = opts.hooksDir ?? join(root, 'hooks')
+  const commands = opts.commands ?? COMMANDS
+  const tracker = join(hooksDir, TRACKER_NAME)
+  const statusScript = join(hooksDir, STATUS_NAME)
   const settingsPath = join(configDir, 'settings.json')
   const events = expectedEvents(root)
 
@@ -484,20 +501,23 @@ export async function runDoctor(opts = {}) {
 
   const results = []
   results.push(checkNode(opts.nodeVersion))
-  const hooks = checkHooks({ settingsPath, settings, settingsState, events, tracker, home, configDir, fallback })
+  const hooks = checkHooks({ settingsPath, settings, settingsState, events, tracker, home, configDir, fallback, commands })
   results.push(...hooks.results)
-  results.push(checkStatusLine({ settings, statusScript, home, pluginOnly: hooks.plugin.found && !hooks.hooks.any }))
+  results.push(checkStatusLine({ settings, statusScript, home, pluginOnly: hooks.plugin.found && !hooks.hooks.any, commands }))
   results.push(...checkTools(undefined, opts.path ?? env.PATH))
-  const server = await checkServer({ port, fetchImpl: opts.fetchImpl, timeoutMs: opts.timeoutMs })
+  const server = await checkServer({ port, fetchImpl: opts.fetchImpl, timeoutMs: opts.timeoutMs, commands })
   results.push(...server.results)
   results.push(checkToken({ officeHome, serverUp: server.up }))
-  results.push(checkDist({ root, port }))
-  results.push(checkHookFiles({ root }))
+  results.push(checkDist({ root, port, commands }))
+  // Why the fallback: before the npx CLI's first install-hooks there is no
+  // copy yet; the package's own hooks/ are what that install will copy, and
+  // the hooks line above already says nothing is installed
+  results.push(checkHookFiles({ root, hooksDir: existsSync(hooksDir) ? hooksDir : join(root, 'hooks'), commands }))
 
   return {
     results,
     ok: !results.some(r => r.level === FAIL),
-    context: { home, configDir, settingsPath, officeHome, port, root, tracker, events },
+    context: { home, configDir, settingsPath, officeHome, port, root, tracker, events, commands },
   }
 }
 
@@ -505,6 +525,7 @@ const ANSI = { [PASS]: '\x1b[32m', [WARN]: '\x1b[33m', [FAIL]: '\x1b[31m', dim: 
 
 /** The report as lines; colour only when asked. */
 export function formatReport({ results, ok, context }, { color = false } = {}) {
+  const C = context.commands ?? COMMANDS
   const c = (code, text) => (color ? `${ANSI[code]}${text}${ANSI.reset}` : text)
   const lines = [c('bold', 'Agent Office doctor'), c('dim', `  ${context.root}  ·  settings ${context.settingsPath}  ·  port ${context.port}`), '']
   for (const r of results) {
@@ -516,15 +537,16 @@ export function formatReport({ results, ok, context }, { color = false } = {}) {
   lines.push('')
   lines.push(`  ${counts[PASS]} passed, ${counts[WARN]} warning(s), ${counts[FAIL]} failed${ok ? '' : c(FAIL, ' — fix the FAIL lines above')}`)
   lines.push('')
-  lines.push(c('bold', 'Commands') + c('dim', `  (from ${context.root})`))
+  // Why: the npm-run commands only work from inside the checkout; the npx set works anywhere
+  lines.push(c('bold', 'Commands') + c('dim', C === COMMANDS ? `  (from ${context.root})` : ''))
   const rows = [
-    ['install / repair hooks + status line', COMMANDS.install],
-    ['hooks only', COMMANDS.hooksOnly],
-    ['status line only (next to the plugin)', COMMANDS.statusLine],
-    ['uninstall what the installer added', COMMANDS.uninstall],
-    ['plugin instead of the installer', COMMANDS.plugin],
-    ['uninstall the plugin', COMMANDS.unplugin],
-    ['start the office', `${COMMANDS.start}    # or: ${COMMANDS.startAlt}`],
+    ['install / repair hooks + status line', C.install],
+    ['hooks only', C.hooksOnly],
+    ['status line only (next to the plugin)', C.statusLine],
+    ['uninstall what the installer added', C.uninstall],
+    ['plugin instead of the installer', C.plugin],
+    ['uninstall the plugin', C.unplugin],
+    ['start the office', `${C.start}    # or: ${C.startAlt}`],
   ]
   const width = Math.max(...rows.map(([k]) => k.length))
   for (const [k, v] of rows) lines.push(`  ${k.padEnd(width)}  ${v}`)
