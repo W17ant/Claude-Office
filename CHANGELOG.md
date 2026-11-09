@@ -5,6 +5,7 @@ All notable changes to Claude Office. Numbers refer to pull requests.
 ## Unreleased
 
 - Prod Is Down has its own art now: a rotating red beacon over the door, the wall TV showing a ROLLBACK status page, an incident timeline written over the kanban board, and pizza boxes piling up on the counter the longer the incident runs (one, three, then a leaning six). The incident board is laid exactly over the wall board's writing surface.
+- During an incident each kind of agent grabs a prop: the on-call DevOps engineer's pager, the boss's megaphone, a fire extinguisher for the debugger, a magnifying glass for reviewers and security, the tester's canary in its cage, and a stopwatch for performance.
 
 ## 1.1.2 — 2026-11-09
 

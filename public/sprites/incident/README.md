@@ -19,5 +19,6 @@ surface is, so re-measure it if the board art changes).
 | `pizza-tower-2.png` | 300x400 | 6 boxes, leaning (30 min+) | hidden |
 
 Transparent PNG, same palette and outline style as `public/sprites/office/props/`.
-Per-role incident props (pager, megaphone, canary cage, ...) are a later
-follow-up and need a `props/` folder plus a role map in `src/incidentAssets.ts`.
+Per-role props live in `props/` (96x96 each): the role map is ROLE_PROP in
+`src/incidentAssets.ts`, and `.char-prop` in `src/styles/incident.css` places
+them at the character's hand.
