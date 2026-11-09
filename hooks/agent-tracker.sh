@@ -110,7 +110,20 @@ fi
 # an environment variable or an argument: a PostToolUse carrying a big
 # tool_response (a 300 KB file read is routine) is over the ~128 KiB
 # single-argument limit and would fail the exec with E2BIG.
-TRACKER_PY="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/agent-tracker.py"
+# Why the link loop: a hook symlinked somewhere else by hand would otherwise
+# look for the .py next to the link and silently drop every event. BSD/macOS
+# readlink has no -f, so each hop is resolved by hand (relative targets are
+# relative to the link's directory); 40 hops is the kernel's own ELOOP limit,
+# so a link cycle cannot hang the hook. CDPATH= keeps `cd` from printing.
+TRACKER_SRC="${BASH_SOURCE[0]}"
+hops=0
+while [ -L "$TRACKER_SRC" ] && [ "$hops" -lt 40 ]; do
+    link_dir="$(CDPATH= cd -P -- "$(dirname -- "$TRACKER_SRC")" && pwd)"
+    TRACKER_SRC="$(readlink -- "$TRACKER_SRC")"
+    case "$TRACKER_SRC" in /*) ;; *) TRACKER_SRC="$link_dir/$TRACKER_SRC" ;; esac
+    hops=$((hops + 1))
+done
+TRACKER_PY="$(CDPATH= cd -P -- "$(dirname -- "$TRACKER_SRC")" && pwd)/agent-tracker.py"
 
 # -I: ignore PYTHON* env vars and the user site, and keep the cwd (the
 # project Claude is working in) off sys.path. The token and the event URL go

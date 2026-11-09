@@ -24,6 +24,10 @@
  *                whether a hook has reached it since it started
  *   token        $AGENT_OFFICE_HOME/auth-token exists and is mode 0600
  *   dist         the UI is built (npm run build); else Vite on :3333 is the way in
+ *   hook files   hooks/agent-tracker.py sits next to agent-tracker.sh (the .sh
+ *                runs it; without it every event is dropped silently), and the
+ *                scripts bash runs have LF endings: a Windows clone made before
+ *                .gitattributes keeps CRLF in files that have not changed since
  *
  * `runDoctor(opts)` is exported and returns the results without printing, so
  * tests/doctor.test.ts drives it against temp directories; the tests also
@@ -417,6 +421,36 @@ export function checkDist({ root, port = DEFAULT_PORT }) {
   return result(WARN, 'dist/: not built — npm run build for the one-port page, or npm run dev for the Vite dev server on :3333')
 }
 
+// Why these: the files bash or python3 runs straight from the checkout (the
+// hook, its Python, the installer, the status line, the start/stop scripts).
+// A CR in any of them is a `$'\r': command not found` the user never sees.
+const LF_FILES = ['hooks/agent-tracker.sh', 'hooks/agent-tracker.py', 'hooks/install-hooks.sh', 'hooks/status-line.sh', 'scripts/start-office.sh', 'scripts/stop-office.sh']
+
+/**
+ * The hook's own files in `root`: agent-tracker.py present, and LF_FILES free
+ * of CRLF. Returns one result line.
+ */
+export function checkHookFiles({ root }) {
+  if (!existsSync(join(root, 'hooks', 'agent-tracker.py'))) {
+    return result(FAIL, `hook files: ${join(root, 'hooks', 'agent-tracker.py')} is missing — agent-tracker.sh runs it, so every event is dropped`, 'git pull (or reinstall the plugin) to bring it back')
+  }
+  const crlf = LF_FILES.filter(f => {
+    try {
+      return readFileSync(join(root, f), 'latin1').includes('\r')
+    } catch {
+      return false
+    }
+  })
+  if (crlf.length) {
+    // Why delete then check out: git leaves an unchanged file alone, so only a
+    // fresh checkout applies .gitattributes' eol=lf; touching just these files
+    // keeps the user's other work
+    const files = crlf.map(f => `"${f}"`).join(' ')
+    return result(FAIL, `hook files: CRLF line endings in ${crlf.join(', ')} — bash cannot run them`, `cd "${root}" && rm ${files} && git checkout -- ${files}`)
+  }
+  return result(PASS, 'hook files: agent-tracker.py present, LF line endings')
+}
+
 // ---------------------------------------------------------------------------
 // Run
 // ---------------------------------------------------------------------------
@@ -458,6 +492,7 @@ export async function runDoctor(opts = {}) {
   results.push(...server.results)
   results.push(checkToken({ officeHome, serverUp: server.up }))
   results.push(checkDist({ root, port }))
+  results.push(checkHookFiles({ root }))
 
   return {
     results,

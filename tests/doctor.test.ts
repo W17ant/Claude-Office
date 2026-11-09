@@ -13,7 +13,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { listen, loadOffice, postEvent, removeOffice, type Office } from './helpers'
-import { runDoctor, checkNode, scriptPathIn, shellWords, inspectPlugin, COMMANDS, PASS, WARN, FAIL } from '../scripts/doctor.mjs'
+import { runDoctor, checkHookFiles, checkNode, scriptPathIn, shellWords, inspectPlugin, COMMANDS, PASS, WARN, FAIL } from '../scripts/doctor.mjs'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const DOCTOR = join(ROOT, 'scripts', 'doctor.mjs')
@@ -361,6 +361,37 @@ describe('runDoctor', () => {
     writeFileSync(join(root, 'dist', 'index.html'), '<!doctype html>')
     const built = (await runDoctor(await base(home, { root }))) as Report
     expect(line(built, 'dist/:')?.level).toBe(PASS)
+  })
+})
+
+describe('doctor: hook files', () => {
+  /** A root holding the hook files, LF unless told otherwise. */
+  function rootWith({ py = true, crlf = [] as string[] } = {}) {
+    const root = tmp('doctor-hookfiles-')
+    mkdirSync(join(root, 'hooks'))
+    mkdirSync(join(root, 'scripts'))
+    for (const f of ['hooks/agent-tracker.sh', 'hooks/install-hooks.sh', 'hooks/status-line.sh', 'scripts/start-office.sh', 'scripts/stop-office.sh', ...(py ? ['hooks/agent-tracker.py'] : [])]) {
+      writeFileSync(join(root, f), crlf.includes(f) ? '#!/bin/bash\r\necho hi\r\n' : '#!/bin/bash\necho hi\n')
+    }
+    return root
+  }
+
+  it('passes this checkout: the .py is next to the .sh and everything is LF', () => {
+    expect(checkHookFiles({ root: ROOT })).toMatchObject({ level: PASS })
+  })
+
+  it('fails when agent-tracker.py is missing (every event would be dropped)', () => {
+    const r = checkHookFiles({ root: rootWith({ py: false }) })
+    expect(r.level).toBe(FAIL)
+    expect(r.title).toContain('agent-tracker.py is missing')
+  })
+
+  it('fails on CRLF and names only those files in a fix that leaves the rest of the clone alone', () => {
+    const root = rootWith({ crlf: ['hooks/status-line.sh', 'scripts/start-office.sh'] })
+    const r = checkHookFiles({ root })
+    expect(r.level).toBe(FAIL)
+    expect(r.title).toContain('hooks/status-line.sh, scripts/start-office.sh')
+    expect(r.notes[0]).toBe(`cd "${root}" && rm "hooks/status-line.sh" "scripts/start-office.sh" && git checkout -- "hooks/status-line.sh" "scripts/start-office.sh"`)
   })
 })
 

@@ -3184,7 +3184,10 @@ function processEvent(body) {
       if (body.toolName === 'TaskStop' && body.taskId) {
         const stoppedId = lookupAgentId(body.taskId)
         const stopped = stoppedId ? activeAgents.get(stoppedId) : null
-        if (stopped && !stopped.server && stopped.state !== 'completed') {
+        // Why: Claude Code can only stop its own session's tasks, so an agent
+        // of another session is never the one meant (defence in depth: ids
+        // are random, but nothing else ties taskId to this session)
+        if (stopped && !stopped.server && stopped.state !== 'completed' && sameSession(stopped.sessionId, session.id)) {
           broadcast(processEvent({ type: 'agent_completed', agentId: body.taskId, result: 'stopped' }))
         }
       }
