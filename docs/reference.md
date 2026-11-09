@@ -225,11 +225,11 @@ Dated, Bedrock and Vertex spellings of an id count as the id. The reading refres
 
 ## Christmas
 
-From 1 December to 6 January the office decorates itself: tinsel, fairy lights and snow outside in all four rooms (day and night, both themes), Christmas trees in the plant pots, garlands and a mug on every desk, Claude as an elf and the boss in a Santa suit. `?season=christmas` turns it on any day (a demo, a screenshot), `?season=none` keeps it off in December; the date is judged once per page load.
+From 1 December to 6 January the office decorates itself: tinsel, fairy lights and snow outside in all four rooms (day and night, both themes), Christmas trees in the plant pots, garlands and a mug on every desk, and a Santa hat on everyone. The hat is one sprite (`public/sprites/effects/santa-hat.png`) placed on each character's head as measured from that sprite's own pixels (`src/hat.ts`: the top of the hair, and the head's width 8% of the sprite's height below it), so the whole cast, the Dunder Mifflin cast and a custom boss sprite all get one with no per-sprite numbers. `?season=christmas` turns it on any day (a demo, a screenshot), `?season=none` keeps it off in December; the date is judged once per page load.
 
 ![The office at Christmas](images/christmas.jpg)
 
-Each festive image is an optional copy saved next to the one it replaces, `<name>-xmas.webp` beside `<name>.png` (`src/season.ts`): until a copy exists the normal art shows, so festive art can be added one file at a time with no code change — a custom boss sprite, say, gets a Santa suit by dropping `<sprite>-<direction>-xmas.webp` beside it. WebP, not PNG, because at quality 90 a room is ~200 KB instead of ~2 MB, which keeps `public/` inside its size budget; `npm run check-assets` counts a copy as referenced through its original. Copies must keep the original's canvas size and anchor (a character's feet, a desk's footprint) exactly, or the sprite shifts in the office.
+Each festive image is an optional copy saved next to the one it replaces, `<name>-xmas.webp` beside `<name>.png` (`src/season.ts`): until a copy exists the normal art shows, so festive art can be added one file at a time with no code change. WebP, not PNG, because at quality 90 a room is ~200 KB instead of ~2 MB, which keeps `public/` inside its size budget; `npm run check-assets` counts a copy as referenced through its original. Copies must keep the original's canvas size and anchor (a character's feet, a desk's footprint) exactly, or the sprite shifts in the office.
 
 ## Incident mode — "Prod Is Down"
 
