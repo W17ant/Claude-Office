@@ -1,10 +1,14 @@
 # Incident mode art slots
 
-Incident mode ("Prod Is Down") ships with existing art. Drop the real PNGs
-here and the office picks them up on the next load, no code change needed.
-The slot table lives in `src/incidentAssets.ts`; this is the file list.
+All seven slots are drawn (generated with ChatGPT from the existing culture
+art, then fitted to these canvas sizes). Replace a PNG here and the office
+picks it up on the next load, no code change needed; delete one and its
+fallback below comes back. The slot table lives in `src/incidentAssets.ts`;
+the incident board's placement over the wall board is INCIDENT_BOARD in
+`src/components/IncidentLayer.tsx` (it depends on where this PNG's writing
+surface is, so re-measure it if the board art changes).
 
-| File | Size (px) | Used for | Until it exists |
+| File | Size (px) | Used for | Fallback if deleted |
 |---|---|---|---|
 | `beacon-0.png` | 200x200 | rotating beacon, frame A (lens dark), above the door | `effects/fire.png` |
 | `beacon-1.png` | 200x200 | beacon frame B (lens lit) | `effects/fire.png` |

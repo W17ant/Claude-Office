@@ -18,7 +18,7 @@
 import React, { useEffect, useSyncExternalStore } from 'react'
 import { useIncident, daysSinceLastIncident, shouldPlayAlarm } from '../incident'
 import {
-  incidentAssetUrl, probeIncidentAssets, subscribeIncidentAssets, type IncidentAssetName,
+  INCIDENT_ASSETS, incidentAssetUrl, probeIncidentAssets, subscribeIncidentAssets, type IncidentAssetName,
 } from '../incidentAssets'
 
 /** Live asset URL for a slot (re-renders when a probe confirms the real art). */
@@ -30,7 +30,16 @@ function useIncidentAsset(name: IncidentAssetName): string | null {
 const DOOR_BEACON = { x: 69, y: 21 }      // wall above the door frame
 const TV_SCREEN   = { x: 90.5, y: 36.5 }  // the wall TV (hotspot 'tv-monitor' is just below)
 const DAYS_SIGN   = { x: 6.6, y: 30.5 }   // the small sign baked into the left wall
-const KANBAN      = { x: 80, y: 42 }      // hotspot 'kanban-board'
+
+// Why these numbers: the incident board PNG (606x686) is laid over the wall
+// board so its writing surface lands on BOARD_RECT (src/taskBoard.ts: left
+// 74.85 %, top 26.1 %, 10.6 % wide, skewed 23.1 deg). In the PNG the surface
+// spans x 38-552 (514 px) with its top-left corner at (38, 66), so the image is
+// 10.6 * 606 / 514 = 12.5 % of the room wide, its left edge 38/606 of that
+// (0.78 %) before the surface, its top 66/686 of its height (1.82 % of the
+// room) above it. The drawing's board leans 19.6 deg, not the wall's 23.1, so
+// the extra 3.5 deg is added as a skew around the surface's top-left corner.
+const INCIDENT_BOARD = { left: 74.07, top: 24.28, width: 12.5, originX: 6.27, originY: 9.62, skewDeg: 3.5 }
 const COUNTER     = { x: 80, y: 54 }      // coffee counter, next to the machine
 
 const DaysSinceSign: React.FC<{ days: number; incident: boolean }> = ({ days, incident }) => {
@@ -93,14 +102,21 @@ const IncidentLayer: React.FC = () => {
           {screen && (
             <div className="incident-tv" style={{ left: `${TV_SCREEN.x}%`, top: `${TV_SCREEN.y}%` }} title="Status page: ROLLBACK">
               <img src={screen} alt="Rollback in progress" draggable={false} />
-              <span className="incident-tv-label">ROLLBACK</span>
+              {/* Why: the placeholder (the deploy screen) needs the word; the real status-screen art already says ROLLBACK */}
+              {screen !== INCIDENT_ASSETS.statusScreen.intended && <span className="incident-tv-label">ROLLBACK</span>}
             </div>
           )}
 
           {/* Slots that stay empty until the real art is drawn */}
           {board && (
             <img className="incident-board" src={board} alt="Incident timeline" draggable={false}
-              style={{ left: `${KANBAN.x}%`, top: `${KANBAN.y}%` }} />
+              style={{
+                left: `${INCIDENT_BOARD.left}%`,
+                top: `${INCIDENT_BOARD.top}%`,
+                width: `${INCIDENT_BOARD.width}%`,
+                transformOrigin: `${INCIDENT_BOARD.originX}% ${INCIDENT_BOARD.originY}%`,
+                transform: `skewY(${INCIDENT_BOARD.skewDeg}deg)`,
+              }} />
           )}
           {pizza && (
             <img className="incident-pizza" src={pizza} alt="Incident pizza" draggable={false}

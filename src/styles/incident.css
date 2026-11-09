@@ -126,9 +126,9 @@
 
 /* Art slots that stay empty until the real PNGs land (see incidentAssets.ts) */
 .incident-board {
+  /* Placed and sized inline over the wall board (INCIDENT_BOARD in IncidentLayer.tsx) */
   position: absolute;
-  width: 9%;
-  transform: translate(-50%, -50%);
+  height: auto;
   z-index: 101;
   pointer-events: none;
   image-rendering: pixelated;
