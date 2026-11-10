@@ -126,9 +126,9 @@
 
 /* Art slots that stay empty until the real PNGs land (see incidentAssets.ts) */
 .incident-board {
+  /* Placed and sized inline over the wall board (INCIDENT_BOARD in IncidentLayer.tsx) */
   position: absolute;
-  width: 9%;
-  transform: translate(-50%, -50%);
+  height: auto;
   z-index: 101;
   pointer-events: none;
   image-rendering: pixelated;
@@ -224,3 +224,22 @@
   .room-alarm { display: none; }
   .incident-beacon img.frame-b { opacity: 0; }
 }
+
+/* A role's incident prop (src/incidentAssets.ts INCIDENT_PROPS), held at hand
+   height on the side the character faces. Why 58 % / 26 %: the sprites are only
+   ~37 px wide, so a third of that (tried first) drew a 12 px speck; 58 % reads
+   as a held object, and 26 % from the bottom is level with the hands. */
+.char-prop {
+  position: absolute;
+  width: 58%;
+  left: 52%;
+  bottom: 26%;
+  z-index: 1;
+  pointer-events: none;
+  image-rendering: pixelated;
+}
+.char-prop.mirrored {
+  left: -10%;
+  transform: scaleX(-1);
+}
+
