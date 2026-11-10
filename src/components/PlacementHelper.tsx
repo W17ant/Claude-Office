@@ -1,13 +1,15 @@
-import React, { useState, useRef, useCallback } from 'react'
-import { ASSETS } from '../assets'
-import { ROOMS } from '../rooms'
-
 /**
- * PlacementHelper — visual tool for positioning sprites AND mapping zones on a room background.
+ * PlacementHelper - visual tool (/?helper) for positioning sprites and mapping zones on a room's background.
+ *
+ * Works on any room: pick it in the toolbar or open `/?helper&room=<id>`
+ * (main-office, corridor, meeting-room, server-room, lunch-room). A room
+ * whose art is not drawn yet shows the code-drawn placeholder
+ * (RoomBackdrop), so a provisional layout can be placed before the art and
+ * re-placed over it afterwards.
  *
  * Modes:
  *  - "furniture": place sprites (desks, plants, coffee machine, etc.)
- *  - "door":      mark door/connection hotspots
+ *  - "door":      mark door/connection hotspots (in the corridor, say which room each leads to)
  *  - "spot":      mark agent spots (where characters can stand/sit)
  *  - "entry":     mark the room entry point
  *
@@ -15,26 +17,35 @@ import { ROOMS } from '../rooms'
  *  - Left-click: place item / marker
  *  - Drag: reposition placed items
  *  - Right-click: remove item
- *  - Export: generates rooms.ts-compatible JSON
+ *  - Export: generates the rooms.ts text for the room (src/placementExport.ts)
  */
 
-type PlacementMode = 'furniture' | 'door' | 'spot' | 'entry' | 'floor' | 'waypoint'
-type SpotType = 'desk' | 'meeting-seat' | 'lounge' | 'standing' | 'water' | 'coffee'
+import React, { useState, useRef, useCallback } from 'react'
+import { ASSETS } from '../assets'
+import { ROOMS, ROOM_IDS, OFFICE_ROOM, HUB_ROOM, type RoomId } from '../rooms'
+import { DRAWN_ROOMS } from '../roomAccess'
+import RoomBackdrop from './RoomBackdrop'
+import {
+  exportRoomLayout, helperRoom, doorTargets, doorTargetLabel,
+  type PlacementMode, type SpotType, type SpriteFacingDir, type PlacedItem, type EditableWaypoint, type DoorTarget,
+} from '../placementExport'
 
-type SpriteFacingDir = 'front-left' | 'front-right' | 'rear-left' | 'rear-right'
 const DIRECTIONS: SpriteFacingDir[] = ['front-left', 'front-right', 'rear-left', 'rear-right']
 
-interface PlacedItem {
-  id: string
-  mode: PlacementMode
-  assetKey?: string   // for furniture
-  label?: string      // for doors/waypoints
-  spotType?: SpotType // for spots
-  spriteFacing?: SpriteFacingDir // for spots
-  waypointConnections?: string[] // for waypoints — ids of connected waypoints
-  x: number           // percentage (0-100)
-  y: number
-}
+/** What the canvas shows behind the markers */
+type Backdrop = 'day' | 'night' | 'placeholder'
+
+// Why a blank 4800 x 3584 image and not no image: the canvas takes its size
+// from the picture (the room's aspect ratio, clamped to the window), so the
+// placeholder needs something of the picture's size under it to lay out the same.
+const SIZER = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4800' height='3584'/%3E"
+
+/** The backdrop a room opens on: its art when it has some, the placeholder otherwise */
+const defaultBackdrop = (room: RoomId): Backdrop => (DRAWN_ROOMS.includes(room) ? 'day' : 'placeholder')
+
+/** A room's waypoints as the route editor holds them (copies, so edits never touch rooms.ts's own) */
+const waypointsOf = (room: RoomId): EditableWaypoint[] =>
+  (ROOMS[room].waypoints ?? []).map(wp => ({ ...wp, connections: [...wp.connections] }))
 
 const AVAILABLE_SPRITES = Object.entries(ASSETS).filter(
   ([, a]) => a.category !== 'character' && a.category !== 'room' && a.category !== 'effect'
@@ -49,21 +60,18 @@ const SPOT_COLORS: Record<SpotType, string> = {
   'coffee': '#795548',
 }
 
-// Editable waypoint for the route editor
-interface EditableWaypoint {
-  id: string
-  x: number
-  y: number
-  connections: string[]
-}
-
 const PlacementHelper: React.FC = () => {
-  const [bgImage, setBgImage] = useState('/rooms/office-day.png')
+  // The room being placed: `?room=` picks it, the toolbar changes it
+  const [room, setRoom] = useState<RoomId>(() => helperRoom(window.location.search))
+  const [backdrop, setBackdrop] = useState<Backdrop>(() => defaultBackdrop(helperRoom(window.location.search)))
+  // Why: a room's art can be asked for before its files are in public/rooms;
+  // the placeholder stands in rather than a broken picture
+  const [artMissing, setArtMissing] = useState(false)
   const [placed, setPlaced] = useState<PlacedItem[]>([])
   const [selectedAsset, setSelectedAsset] = useState<string | null>(null)
   const [mode, setMode] = useState<PlacementMode>('furniture')
   const [spotType, setSpotType] = useState<SpotType>('desk')
-  const [doorLabel, setDoorLabel] = useState('Main Office')
+  const [doorTarget, setDoorTarget] = useState<DoorTarget>(() => doorTargets(helperRoom(window.location.search))[0])
   const [spotFacing, setSpotFacing] = useState<SpriteFacingDir>('front-right')
   const [spotDirOverrides, setSpotDirOverrides] = useState<Record<string, SpriteFacingDir>>({})
   const [dragging, setDragging] = useState<string | null>(null)
@@ -73,10 +81,7 @@ const PlacementHelper: React.FC = () => {
   const [history, setHistory] = useState<PlacedItem[][]>([[]])
 
   // Waypoint editor state — loaded from rooms.ts on init
-  const [waypoints, setWaypoints] = useState<EditableWaypoint[]>(() => {
-    const room = ROOMS['main-office']
-    return (room.waypoints ?? []).map(wp => ({ ...wp, connections: [...wp.connections] }))
-  })
+  const [waypoints, setWaypoints] = useState<EditableWaypoint[]>(() => waypointsOf(helperRoom(window.location.search)))
   const [selectedWp, setSelectedWp] = useState<string | null>(null)
   const [draggingWp, setDraggingWp] = useState<string | null>(null)
   const wpNextId = useRef(1)
@@ -154,7 +159,7 @@ const PlacementHelper: React.FC = () => {
     }
 
     if (mode === 'furniture') item.assetKey = selectedAsset!
-    if (mode === 'door') item.label = doorLabel
+    if (mode === 'door') { item.doorTarget = doorTarget; item.label = doorTargetLabel(doorTarget) }
     if (mode === 'spot') { item.spotType = spotType; item.spriteFacing = spotFacing }
     if (mode === 'entry') item.label = 'Entry'
 
@@ -182,7 +187,7 @@ const PlacementHelper: React.FC = () => {
     }
 
     updatePlaced(prev => [...prev, item])
-  }, [selectedAsset, dragging, mode, spotType, doorLabel])
+  }, [selectedAsset, dragging, mode, spotType, doorTarget])
 
   const handleDragStart = useCallback((itemId: string, e: React.MouseEvent) => {
     e.stopPropagation()
@@ -218,64 +223,30 @@ const PlacementHelper: React.FC = () => {
     updatePlaced(prev => prev.filter(p => p.id !== itemId))
   }, [updatePlaced])
 
-  // Generate rooms.ts compatible output
-  const generateJson = () => {
-    const furniture = placed.filter(p => p.mode === 'furniture')
-    const doors = placed.filter(p => p.mode === 'door')
-    const spots = placed.filter(p => p.mode === 'spot')
-    const entry = placed.find(p => p.mode === 'entry')
+  // Generate rooms.ts compatible output (src/placementExport.ts)
+  const generateJson = () => exportRoomLayout(room, placed, waypoints)
 
-    const lines: string[] = []
-
-    if (furniture.length) {
-      lines.push('    furniture: [')
-      furniture.forEach(p => {
-        lines.push(`      { id: '${p.id}', type: '${p.assetKey}', sprite: '${p.assetKey}', x: ${p.x}, y: ${p.y}, label: '${p.assetKey}' },`)
-      })
-      lines.push('    ],')
-    }
-
-    if (doors.length) {
-      lines.push('    connections: [')
-      doors.forEach(p => {
-        lines.push(`      { toRoom: 'TODO', position: { x: ${p.x}, y: ${p.y} }, label: '${p.label}' },`)
-      })
-      lines.push('    ],')
-    }
-
-    if (spots.length) {
-      lines.push('    agentSpots: [')
-      spots.forEach((p, i) => {
-        lines.push(`      { id: 'spot-${i + 1}', type: '${p.spotType}', x: ${p.x}, y: ${p.y}, facing: 'down', spriteFacing: '${p.spriteFacing ?? 'front-right'}' },`)
-      })
-      lines.push('    ],')
-    }
-
-    if (entry) {
-      lines.push(`    entryPoint: { x: ${entry.x}, y: ${entry.y} },`)
-    }
-
-    const floor = placed.filter(p => p.mode === 'floor')
-    if (floor.length >= 3) {
-      lines.push('    walkableArea: [')
-      floor.forEach(p => {
-        lines.push(`      { x: ${p.x}, y: ${p.y} },`)
-      })
-      lines.push('    ],')
-    }
-
-    if (waypoints.length > 0) {
-      lines.push('    waypoints: [')
-      waypoints.forEach(wp => {
-        const conns = wp.connections.map(c => `'${c}'`).join(', ')
-        const pad = ' '.repeat(Math.max(0, 18 - wp.id.length))
-        lines.push(`      { id: '${wp.id}',${pad}x: ${wp.x}, y: ${wp.y}, connections: [${conns}] },`)
-      })
-      lines.push('    ],')
-    }
-
-    return lines.join('\n')
+  // Why everything is cleared: placed items, routes and facing overrides are
+  // positions on one room's picture and mean nothing on another's
+  const changeRoom = (next: RoomId) => {
+    setRoom(next)
+    setBackdrop(defaultBackdrop(next))
+    setArtMissing(false)
+    setPlaced([])
+    setHistory([[]])
+    setWaypoints(waypointsOf(next))
+    setSelectedWp(null)
+    setConnectingFrom(null)
+    setSpotDirOverrides({})
+    setDoorTarget(doorTargets(next)[0])
   }
+
+  // The picture under the markers. The office's two are named here in full
+  // (scripts/check-assets.mjs reads them); the other rooms' come from rooms.ts.
+  const art = room === OFFICE_ROOM
+    ? { day: '/rooms/office-day.png', night: '/rooms/office-night.png' }
+    : ROOMS[room].background
+  const showPlaceholder = backdrop === 'placeholder' || artMissing
 
   // Ctrl+Z / Cmd+Z to undo
   React.useEffect(() => {
@@ -316,15 +287,33 @@ const PlacementHelper: React.FC = () => {
           fontSize: 10,
           flexWrap: 'wrap',
         }}>
-          <span style={{ color: '#666' }}>BG:</span>
+          <span style={{ color: '#666' }}>Room:</span>
           <select
-            value={bgImage}
-            onChange={e => setBgImage(e.target.value)}
+            value={room}
+            onChange={e => changeRoom(e.target.value as RoomId)}
+            aria-label="Room to place"
             style={{ background: '#222', color: '#ddd', border: '1px solid #444', padding: '2px 4px', fontSize: 10 }}
           >
-            <option value="/rooms/office-day.png">Office Day</option>
-            <option value="/rooms/office-night.png">Office Night</option>
+            {ROOM_IDS.map(id => <option key={id} value={id}>{ROOMS[id].name}</option>)}
           </select>
+
+          <span style={{ color: '#666' }}>BG:</span>
+          <select
+            value={backdrop}
+            onChange={e => { setBackdrop(e.target.value as Backdrop); setArtMissing(false) }}
+            aria-label="Background"
+            style={{ background: '#222', color: '#ddd', border: '1px solid #444', padding: '2px 4px', fontSize: 10 }}
+          >
+            {/* The office has had its art from the start, so it has no placeholder */}
+            {room !== OFFICE_ROOM && <option value="placeholder">Placeholder</option>}
+            <option value="day">Day</option>
+            <option value="night">Night</option>
+          </select>
+          {artMissing && (
+            <span style={{ color: '#e0a030', fontSize: 9 }} title={art[backdrop === 'night' ? 'night' : 'day']}>
+              art not found, showing the placeholder
+            </span>
+          )}
 
           <div style={{ width: 1, height: 16, background: '#333', margin: '0 4px' }} />
 
@@ -363,14 +352,19 @@ const PlacementHelper: React.FC = () => {
             </select>
           )}
 
-          {mode === 'door' && (
-            <input
-              value={doorLabel}
-              onChange={e => setDoorLabel(e.target.value)}
-              placeholder="Door label"
-              style={{ background: '#222', color: '#ddd', border: '1px solid #444', padding: '2px 6px', fontSize: 10, width: 100 }}
-            />
-          )}
+          {/* Why a choice only in the corridor: every other room's one door leads to the corridor */}
+          {mode === 'door' && (room === HUB_ROOM ? (
+            <select
+              value={doorTarget}
+              onChange={e => setDoorTarget(e.target.value as DoorTarget)}
+              aria-label="Where the door leads"
+              style={{ background: '#222', color: '#ddd', border: '1px solid #444', padding: '2px 4px', fontSize: 10 }}
+            >
+              {doorTargets(room).map(t => <option key={t} value={t}>to {doorTargetLabel(t)}</option>)}
+            </select>
+          ) : (
+            <span style={{ color: '#888', fontSize: 9 }}>to {doorTargetLabel(HUB_ROOM)}</span>
+          ))}
 
           <div style={{ flex: 1 }} />
 
@@ -452,19 +446,22 @@ const PlacementHelper: React.FC = () => {
           >
             <img
               ref={imgRef}
-              src={bgImage}
+              src={showPlaceholder ? SIZER : art[backdrop === 'night' ? 'night' : 'day']}
               alt="Room background"
+              onError={() => { if (!showPlaceholder) setArtMissing(true) }}
               style={{ width: '100%', height: '100%', display: 'block' }}
               draggable={false}
             />
+            {/* drawn = none: the helper wants the placeholder itself, whatever art exists */}
+            {showPlaceholder && <RoomBackdrop room={room} theme="default" night={0} drawn={[]} />}
 
           {/* Existing room data overlay (read-only from rooms.ts) */}
           {(() => {
-            const room = ROOMS['main-office']
+            const roomDef = ROOMS[room]
             return (
               <>
                 {/* Furniture from rooms.ts */}
-                {room.furniture.map(item => {
+                {roomDef.furniture.map(item => {
                   const asset = ASSETS[item.sprite]
                   if (!asset) return null
                   return (
@@ -493,7 +490,7 @@ const PlacementHelper: React.FC = () => {
                 {!hideCharacters && (() => {
                   const charNames = ['Me-1', 'dev-1', 'employee-1', 'dev-2', 'employee-2', 'security-audit-1', 'employee-3', 'Frontend-dev-1', 'explore-1', 'dev-1', 'employee-1', 'dev-2', 'employee-2', 'employee-3', 'Frontend-dev-1', 'security-audit-1']
                   const spotColors: Record<string, string> = { desk: '#3498db', standing: '#2ecc71', water: '#00bcd4', coffee: '#795548', 'meeting-seat': '#9b59b6', lounge: '#e67e22', filing: '#ff9800', printer: '#607d8b', door: '#e74c3c' }
-                  return room.agentSpots.map((spot, i) => {
+                  return roomDef.agentSpots.map((spot, i) => {
                     const color = spotColors[spot.type] ?? '#888'
                     const charBase = charNames[i % charNames.length]
                     const dir = spotDirOverrides[spot.id] ?? spot.spriteFacing ?? 'front-right'
@@ -580,7 +577,7 @@ const PlacementHelper: React.FC = () => {
                   })
                 })()}
                 {/* Door from rooms.ts */}
-                {room.connections.map(conn => (
+                {roomDef.connections.map(conn => (
                   <div
                     key={`existing-door-${conn.toRoom}`}
                     style={{
@@ -607,6 +604,34 @@ const PlacementHelper: React.FC = () => {
                     }}>
                       D
                     </div>
+                  </div>
+                ))}
+                {/* Landmarks from rooms.ts: the front door and the manager's nameplate door */}
+                {(roomDef.landmarks ?? []).map(mark => (
+                  <div
+                    key={`existing-landmark-${mark.id}`}
+                    title={mark.label}
+                    style={{
+                      position: 'absolute',
+                      left: `${mark.x}%`,
+                      top: `${mark.y}%`,
+                      transform: 'translate(-50%, -50%)',
+                      zIndex: 90,
+                      pointerEvents: 'none',
+                      width: 14,
+                      height: 14,
+                      borderRadius: '50%',
+                      background: '#8a8f98',
+                      opacity: 0.6,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: 7,
+                      fontWeight: 'bold',
+                      color: '#fff',
+                    }}
+                  >
+                    L
                   </div>
                 ))}
               </>

@@ -43,7 +43,8 @@
  * of KNOWN_DYNAMIC fails the check: model it here before relying on it.
  *
  * PLANNED lists paths the code names for art that is not drawn yet (the
- * unbuilt rooms in src/rooms.ts). They are reported, not fatal; delete an
+ * corridor, meeting room, server room and lunch room of src/rooms.ts, closed
+ * until drawn: src/roomAccess.ts). They are reported, not fatal; delete an
  * entry once its file lands. KEPT lists files no code references but the
  * README tells people to use; they are not reported as unreferenced.
  *
@@ -79,17 +80,30 @@ const KNOWN_DYNAMIC = new Set([
   '*-walk*.webp',                       // walk.ts walkFramePaths: name.png -> name-walk1..4.webp (P6)
 ])
 
-/** Art the code names but nobody has drawn: the unbuilt rooms in src/rooms.ts. */
+/**
+ * Art the code names but nobody has drawn: the four rooms beside the office
+ * in src/rooms.ts. Each has a day and a night picture, and both again for the
+ * Dunder Mifflin theme (-dm), named like the office's own four. When a room's
+ * art lands, delete its four lines here and add the room to DRAWN_ROOMS in
+ * src/roomAccess.ts: from then on a missing file of it fails this check.
+ */
 const PLANNED = new Set([
-  'rooms/ceo-office.png',
-  'rooms/meeting-room.png',
-  'rooms/kitchen-cafeteria.png',
-  'rooms/server-room.png',
-  'rooms/lobby-reception.png',
-  'rooms/nap-wellness-room.png',
-  'rooms/rooftop-terrace.png',
-  'rooms/gym-fitness-room.png',
-  'rooms/parking-garage.png',
+  'rooms/corridor-day.png',
+  'rooms/corridor-night.png',
+  'rooms/corridor-day-dm.png',
+  'rooms/corridor-night-dm.png',
+  'rooms/meeting-room-day.png',
+  'rooms/meeting-room-night.png',
+  'rooms/meeting-room-day-dm.png',
+  'rooms/meeting-room-night-dm.png',
+  'rooms/server-room-day.png',
+  'rooms/server-room-night.png',
+  'rooms/server-room-day-dm.png',
+  'rooms/server-room-night-dm.png',
+  'rooms/lunch-room-day.png',
+  'rooms/lunch-room-night.png',
+  'rooms/lunch-room-day-dm.png',
+  'rooms/lunch-room-night-dm.png',
 ])
 
 /** Unreferenced on purpose: templates the README has people upload to draw a character. */

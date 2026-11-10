@@ -31,6 +31,9 @@ export interface Agent {
   room: RoomId              // which room the agent is currently in
   assignedRoom: RoomId      // where their desk is
   assignedSpotId?: string   // which spot they're assigned to
+  // Why a second spot: a visitor to another room (src/roomTransfer.ts) keeps its
+  // own desk reserved, so the way back can never find it taken
+  visitSpotId?: string      // the seat it holds in another room while it is away from its own
   task?: string
   statusText?: string
   spriteFacing?: 'front-left' | 'front-right' | 'rear-left' | 'rear-right'
@@ -241,7 +244,10 @@ export interface SnapshotAgent {
   unread?: number
   sessionId?: string
   project?: string
+  /** An MCP call in flight (server/index.js tracks one record per call): the server called... */
   server?: string
+  /** ...and the tool called on it */
+  tool?: string
 }
 
 /**

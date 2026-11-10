@@ -12,6 +12,7 @@ Run with `npm test` (Vitest, Node environment, `tests/`). CI (`.github/workflows
 - WebSocket — snapshot on connect, broadcast to all clients, origin rejection — `tests/websocket.test.ts`
 - `hooks/agent-tracker.py` (run by `hooks/agent-tracker.sh`) against real Claude Code 2.1.x payloads — `tests/hook-script.test.ts`
 - `hooks/install-hooks.sh` — fresh install, upgrade from PostToolUse-only, idempotent re-run — `tests/install-hooks.test.ts`
+- Rooms — the star of five places, `findRoomPath`, the provisional layouts (every door, spot and waypoint on the floor), open/closed (`DRAWN_ROOMS`, `?rooms=all`) and the room rules — `tests/rooms.test.ts`; the reducer with rooms open and closed (nothing changes with none open, the front door, office → server room leg by leg, MCP workers, the meeting room and its hysteresis, a full room, completing mid-transfer, lunch breaks, the boss hand-over) — `tests/roomTransfer.test.ts`; the floor plan's model and the placement helper's export — `tests/roomSwitcher.test.ts`
 
 **Still planned** (see modules below): `chat-db.js` unit tests, all `src/` modules (jsdom + Testing Library), `useAgentSocket` reconnect logic, React components, Playwright E2E, coverage thresholds.
 
@@ -697,3 +698,41 @@ App is stable after 30s in sim mode (?sim) — no console errors
 - **`chat-db.js`** hard-codes the DB path to `~/.agent-office/chat.db`. To make it testable without touching the real file, extract the path to a parameter or environment variable (`AGENT_OFFICE_DB_PATH`).
 - **`config.ts`** uses a top-level `await import()` which is valid ESM but means tests must provide `office.config.json` or mock the import. Vitest's module mocking handles this cleanly.
 - **`App.tsx`** is a 900-line component. The animation loop (requestAnimationFrame via setInterval) and heavy use of refs make it hard to unit test directly. Focus component tests on the sub-components and integration/E2E for App-level behaviour.
+
+---
+
+## Manual checks: rooms
+
+The rooms' logic is covered by `tests/rooms.test.ts`, `tests/roomTransfer.test.ts` and `tests/roomSwitcher.test.ts`. What a test cannot see is how it looks; check these by eye, in both themes (`&theme=office`) and by day and night.
+
+**No room open (today, until the art lands)** — `127.0.0.1:3333?sim` and the live office
+
+- [ ] The office looks and behaves as before: no floor plan anywhere, agents come and go by the office door, MCP calls show no character.
+- [ ] `/?helper` opens on the office with its art, and its export is what it was.
+
+**Preview** — `127.0.0.1:3333?sim&rooms=all`
+
+- [ ] The floor plan sits in the bottom-left corner of the stage, clear of the status strip and the chat, with Office, Meeting, Server and Lunch standing on a Corridor strip, and the office ringed.
+- [ ] New agents appear in the corridor (pick it on the plan) at the front door on the left, walk to the office door, and appear at the office's door a moment later. Leavers do the reverse and vanish at the front door.
+- [ ] Within about half a minute two server workers stand at racks in the server room with their call as status; they leave about 30 s after their last call.
+- [ ] Within about 15 s of the demo's three workers sitting down they get up, cross the corridor and sit at the meeting table; they go back when two of them have left.
+- [ ] A worker on a break walks to the lunch room's machine or cooler and back; the boss's break stays in the office.
+- [ ] Nobody walks through a wall or stands on a door for long in any room; in the corridor people walk visibly faster.
+- [ ] Each placeholder shows its room's name, its door (and where it leads), and in the corridor the front door and the manager's nameplate door.
+- [ ] With another room in view the desk screens, wall props, task board, advent calendar (`&season=christmas`) and incident layer are not drawn, and they are back, up to date, when the office is in view again.
+- [ ] `/incident` in the live office with `?rooms=all`: the red tint and beacon show only in the office; the plan marks the office with a red ×.
+- [ ] A pending permission (live, `?rooms=all`): after about 10 s that session's Claude walks to the meeting room and the plan shows an amber ! there. The stage does not switch by itself.
+- [ ] Keyboard: Tab reaches the plan, the arrow keys move between rooms, Enter or Space shows one, and the focus ring is visible in both themes.
+- [ ] `prefers-reduced-motion`: the plan's marks do not pulse.
+- [ ] Desktop compact mode: the plan fits and does not cover the characters' status.
+- [ ] Phone view (`npm run lan`): the office only, no plan; agents in other rooms are simply not shown.
+
+**Placing a layout** — `127.0.0.1:3333?helper&room=meeting-room` (and `corridor`, `server-room`, `lunch-room`)
+
+- [ ] The room opens on its placeholder with its current door, spots, floor and waypoints loaded; the Room and BG selects switch room and background.
+- [ ] A door placed in a side room exports with `toRoom: 'corridor'`; in the corridor the door's target can be chosen, and the front door and the manager's door export under `landmarks`.
+
+**When a room's art lands**
+
+- [ ] Its four files are in `public/rooms/`, its id is in `DRAWN_ROOMS`, its entries are gone from `PLANNED`, and `npm run check-assets` passes.
+- [ ] The layout has been re-placed over the art and `provisional: true` removed; nobody sits beside a chair or walks across a table.

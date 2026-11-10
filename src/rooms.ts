@@ -1,19 +1,35 @@
-// ===== ROOM DEFINITIONS =====
-// Each room is an empty shell with positions for furniture placement
-// Furniture items are placed on a grid within each room
+/**
+ * rooms.ts - the office's rooms: where the doors, desks, seats and walking routes are.
+ *
+ * Five places in a star. The corridor is the hub: the office's one door leads
+ * to it and every other room has one door onto it, so any room change is
+ * "own door -> corridor -> their door" (findRoomPath). People join and leave
+ * the building through the corridor's front door.
+ *
+ *   main-office    desk work (the only room with art today)
+ *   corridor       the hub; front door / lift; the manager's nameplate door is
+ *                  decoration only (no room behind it, the boss sits in the office)
+ *   meeting-room   a session's agents when it runs several at once or waits on you
+ *   server-room    MCP server workers
+ *   lunch-room     long-idle agents and coffee / water breaks
+ *
+ * Which room an agent belongs in is decided in src/roomRules.ts; whether a
+ * room can be used at all (its art exists, or ?rooms=all) in src/roomAccess.ts;
+ * the walk between rooms in src/roomTransfer.ts.
+ *
+ * Positions are percentages (0-100) of the room picture, which is 4800 x 3584
+ * for every room. The four new rooms' layouts are PROVISIONAL: they were
+ * placed by hand against the code-drawn placeholder (src/components/
+ * RoomBackdrop.tsx) so the preview works, and are to be re-placed with
+ * /?helper once each room's art is drawn (docs/reference.md, "Rooms").
+ */
 
 export type RoomId =
   | 'main-office'
-  | 'manager-office'
-  | 'ceo-office'
+  | 'corridor'
   | 'meeting-room'
-  | 'kitchen'
   | 'server-room'
-  | 'lobby'
-  | 'nap-room'
-  | 'rooftop'
-  | 'gym'
-  | 'parking'
+  | 'lunch-room'
 
 export interface Waypoint {
   id: string
@@ -54,12 +70,30 @@ export interface AgentSpot {
   zIndex?: number  // explicit z-index override (for agents behind desks)
 }
 
+/**
+ * Something the room's picture shows that is not a way into another room:
+ * the corridor's front door (where people join and leave the building) and
+ * the manager's nameplate door (decoration; nobody walks through it).
+ */
+export interface RoomLandmark {
+  id: string
+  kind: 'front-door' | 'decor-door'
+  label: string
+  x: number
+  y: number
+}
+
 export interface Room {
   id: RoomId
   name: string
   description: string
   background: {
     day: string       // path to empty room background
+    night: string
+  }
+  /** The same two pictures for the Dunder Mifflin theme (the office's own live in src/theme.ts) */
+  backgroundDm?: {
+    day: string
     night: string
   }
   width: number       // room dimensions in px (rendered)
@@ -71,7 +105,24 @@ export interface Room {
   walkableArea?: { x: number; y: number }[]  // polygon defining where agents can walk
   ambience?: string   // ambient sound loop
   waypoints?: Waypoint[]  // named walkable nodes for pathfinding
+  /** Doors and the like that lead nowhere in the model (see RoomLandmark) */
+  landmarks?: RoomLandmark[]
+  /** true while the layout was placed without art: re-place it with /?helper when the art lands */
+  provisional?: boolean
 }
+
+/** The room every other room opens onto */
+export const HUB_ROOM: RoomId = 'corridor'
+/** Where everyone has a desk; the room shown by default */
+export const OFFICE_ROOM: RoomId = 'main-office'
+
+// Why one door position for the three side rooms: until their art exists the
+// placeholder draws each as the same plain box, and a shared door keeps the
+// provisional layouts easy to check against each other.
+const SIDE_DOOR = { x: 18, y: 50 }
+// Why this rectangle: it is the floor the placeholder draws (back wall above
+// y = 50), leaving a margin so a sprite's head and name tag stay on the picture.
+const SIDE_FLOOR = [{ x: 8, y: 50 }, { x: 92, y: 50 }, { x: 92, y: 88 }, { x: 8, y: 88 }]
 
 // ===== ROOM DEFINITIONS =====
 
@@ -121,7 +172,8 @@ export const ROOMS: Record<RoomId, Room> = {
       { id: 'tv-monitor', type: 'hotspot', sprite: 'hotspot', x: 90, y: 42, interactive: true, label: 'Dashboard' },
     ],
     connections: [
-      { toRoom: 'manager-office', position: { x: 67.5, y: 48.9 }, label: "Manager's Office", exitFacing: 'rear-right', entryFacing: 'front-right' },
+      // The office's one door: it leads to the corridor, and through it to every other room
+      { toRoom: 'corridor', position: { x: 67.5, y: 48.9 }, label: 'Corridor', exitFacing: 'rear-right', entryFacing: 'front-right' },
     ],
     agentSpots: [
       // Desk spots
@@ -239,236 +291,190 @@ export const ROOMS: Record<RoomId, Room> = {
     ],
   },
 
-  'manager-office': {
-    id: 'manager-office',
-    name: "Manager's Office",
-    description: 'Where the manager briefs agents and reviews work. Connected to main Claude terminal.',
+  // PROVISIONAL (no art yet): a long hallway seen from the front. The four
+  // room doors and the manager's nameplate door are in the back wall, left to
+  // right; the front door / lift is in the left end wall. The office is the
+  // door nearest the front door because that is the walk nearly every
+  // newcomer and leaver makes.
+  'corridor': {
+    id: 'corridor',
+    name: 'Corridor',
+    description: 'The hallway every room opens onto. In by the front door, out the same way.',
     background: {
-      day: '/rooms/ceo-office.png',
-      night: '/rooms/ceo-office.png',
+      day: '/rooms/corridor-day.png',
+      night: '/rooms/corridor-night.png',
     },
-    width: 600,
-    height: 450,
+    backgroundDm: {
+      day: '/rooms/corridor-day-dm.png',
+      night: '/rooms/corridor-night-dm.png',
+    },
+    width: 800,
+    height: 600,
     furniture: [],
     connections: [
-      { toRoom: 'main-office', position: { x: 50, y: 95 }, label: 'Main Office' },
+      { toRoom: 'main-office', position: { x: 22, y: 50 }, label: 'Office', exitFacing: 'rear-right', entryFacing: 'front-right' },
+      { toRoom: 'meeting-room', position: { x: 40, y: 50 }, label: 'Meeting Room', exitFacing: 'rear-right', entryFacing: 'front-right' },
+      { toRoom: 'server-room', position: { x: 70, y: 50 }, label: 'Server Room', exitFacing: 'rear-right', entryFacing: 'front-right' },
+      { toRoom: 'lunch-room', position: { x: 86, y: 50 }, label: 'Lunch Room', exitFacing: 'rear-right', entryFacing: 'front-right' },
     ],
-    agentSpots: [
-      { id: 'mgr-spot', type: 'desk', x: 50, y: 40, facing: 'down' },
-      { id: 'visitor-1', type: 'standing', x: 35, y: 65, facing: 'up' },
-      { id: 'visitor-2', type: 'standing', x: 65, y: 65, facing: 'up' },
+    landmarks: [
+      { id: 'front-door', kind: 'front-door', label: 'Front door / lift', x: 6, y: 60 },
+      { id: 'manager-door', kind: 'decor-door', label: 'Manager', x: 55, y: 50 },
     ],
-    entryPoint: { x: 50, y: 90 },
+    // Nobody is stationed in the corridor: it is only walked through
+    agentSpots: [],
+    // The front door: where newcomers appear and leavers are last seen
+    entryPoint: { x: 6, y: 60 },
+    walkableArea: [{ x: 3, y: 50 }, { x: 97, y: 50 }, { x: 97, y: 70 }, { x: 3, y: 70 }],
+    waypoints: [
+      { id: 'W-corr-front',   x: 6,  y: 60, connections: ['W-corr-office'] },
+      { id: 'W-corr-office',  x: 22, y: 50, connections: ['W-corr-front', 'W-corr-meeting'] },
+      { id: 'W-corr-meeting', x: 40, y: 50, connections: ['W-corr-office', 'W-corr-server'] },
+      { id: 'W-corr-server',  x: 70, y: 50, connections: ['W-corr-meeting', 'W-corr-lunch'] },
+      { id: 'W-corr-lunch',   x: 86, y: 50, connections: ['W-corr-server'] },
+    ],
+    provisional: true,
   },
 
-  'ceo-office': {
-    id: 'ceo-office',
-    name: 'CEO Office',
-    description: 'Corner office with city views. Bloomberg terminal and whiskey shelf.',
-    background: {
-      day: '/rooms/ceo-office.png',
-      night: '/rooms/ceo-office.png',
-    },
-    width: 600,
-    height: 450,
-    furniture: [
-    ],
-    connections: [
-      { toRoom: 'main-office', position: { x: 50, y: 95 }, label: 'Main Office' },
-    ],
-    agentSpots: [
-      { id: 'ceo-spot', type: 'desk', x: 50, y: 45, facing: 'down' },
-    ],
-    entryPoint: { x: 50, y: 90 },
-  },
-
+  // PROVISIONAL (no art yet): one long table across the middle, four seats
+  // behind it (facing the viewer) and four in front (backs to the viewer).
+  // Eight seats: a session's Claude and seven workers; more stay at their desks.
   'meeting-room': {
     id: 'meeting-room',
     name: 'Meeting Room',
-    description: 'Glass-walled room for standups, planning, and heated architecture debates.',
+    description: 'Where a session gathers when it runs several agents at once, or waits on you.',
     background: {
-      day: '/rooms/meeting-room.png',
-      night: '/rooms/meeting-room.png',
+      day: '/rooms/meeting-room-day.png',
+      night: '/rooms/meeting-room-night.png',
     },
-    width: 600,
-    height: 450,
-    furniture: [
-    ],
+    backgroundDm: {
+      day: '/rooms/meeting-room-day-dm.png',
+      night: '/rooms/meeting-room-night-dm.png',
+    },
+    width: 800,
+    height: 600,
+    furniture: [],
     connections: [
-      { toRoom: 'main-office', position: { x: 95, y: 50 }, label: 'Main Office' },
+      { toRoom: 'corridor', position: SIDE_DOOR, label: 'Corridor', exitFacing: 'rear-right', entryFacing: 'front-right' },
     ],
     agentSpots: [
-      { id: 'seat-1', type: 'meeting-seat', x: 30, y: 40, facing: 'right' },
-      { id: 'seat-2', type: 'meeting-seat', x: 30, y: 55, facing: 'right' },
-      { id: 'seat-3', type: 'meeting-seat', x: 70, y: 40, facing: 'left' },
-      { id: 'seat-4', type: 'meeting-seat', x: 70, y: 55, facing: 'left' },
-      { id: 'presenter', type: 'standing', x: 50, y: 25, facing: 'down' },
+      // Behind the table (drawn before it)
+      { id: 'meet-1', type: 'meeting-seat', x: 38, y: 62, facing: 'down', spriteFacing: 'front-right', zIndex: 40 },
+      { id: 'meet-2', type: 'meeting-seat', x: 50, y: 62, facing: 'down', spriteFacing: 'front-right', zIndex: 40 },
+      { id: 'meet-3', type: 'meeting-seat', x: 62, y: 62, facing: 'down', spriteFacing: 'front-left', zIndex: 40 },
+      { id: 'meet-4', type: 'meeting-seat', x: 74, y: 62, facing: 'down', spriteFacing: 'front-left', zIndex: 40 },
+      // In front of the table
+      { id: 'meet-5', type: 'meeting-seat', x: 38, y: 80, facing: 'up', spriteFacing: 'rear-right', zIndex: 90 },
+      { id: 'meet-6', type: 'meeting-seat', x: 50, y: 80, facing: 'up', spriteFacing: 'rear-right', zIndex: 90 },
+      { id: 'meet-7', type: 'meeting-seat', x: 62, y: 80, facing: 'up', spriteFacing: 'rear-left', zIndex: 90 },
+      { id: 'meet-8', type: 'meeting-seat', x: 74, y: 80, facing: 'up', spriteFacing: 'rear-left', zIndex: 90 },
     ],
-    entryPoint: { x: 90, y: 50 },
+    entryPoint: SIDE_DOOR,
+    walkableArea: SIDE_FLOOR,
+    waypoints: [
+      { id: 'W-meet-door',  x: 18, y: 50, connections: ['W-meet-back', 'W-meet-front'] },
+      // The two aisles either side of the table: nobody walks across it
+      { id: 'W-meet-back',  x: 28, y: 58, connections: ['W-meet-door'] },
+      { id: 'W-meet-front', x: 26, y: 84, connections: ['W-meet-door'] },
+    ],
+    provisional: true,
   },
 
-  'kitchen': {
-    id: 'kitchen',
-    name: 'Kitchen',
-    description: 'Espresso machine, kombucha on tap, and a fridge full of La Croix.',
-    background: {
-      day: '/rooms/kitchen-cafeteria.png',
-      night: '/rooms/kitchen-cafeteria.png',
-    },
-    width: 600,
-    height: 450,
-    furniture: [
-    ],
-    connections: [
-      { toRoom: 'main-office', position: { x: 5, y: 50 }, label: 'Main Office' },
-      { toRoom: 'rooftop', position: { x: 50, y: 5 }, label: 'Rooftop' },
-    ],
-    agentSpots: [
-      { id: 'coffee-spot', type: 'standing', x: 30, y: 35, facing: 'up' },
-      { id: 'lunch-1', type: 'meeting-seat', x: 35, y: 65, facing: 'right' },
-      { id: 'lunch-2', type: 'meeting-seat', x: 65, y: 65, facing: 'left' },
-      { id: 'snack-spot', type: 'standing', x: 15, y: 35, facing: 'up' },
-    ],
-    entryPoint: { x: 10, y: 50 },
-  },
-
+  // PROVISIONAL (no art yet): a row of six racks along the back wall, one
+  // standing place in front of each. One MCP server worker per rack.
   'server-room': {
     id: 'server-room',
     name: 'Server Room',
-    description: 'Cold. Loud. Blinking lights. Where deployments happen.',
+    description: 'Racks, blinking lights and the MCP servers the sessions call.',
     background: {
-      day: '/rooms/server-room.png',
-      night: '/rooms/server-room.png',
+      day: '/rooms/server-room-day.png',
+      night: '/rooms/server-room-night.png',
     },
-    width: 500,
-    height: 400,
-    furniture: [
-    ],
+    backgroundDm: {
+      day: '/rooms/server-room-day-dm.png',
+      night: '/rooms/server-room-night-dm.png',
+    },
+    width: 800,
+    height: 600,
+    furniture: [],
     connections: [
-      { toRoom: 'main-office', position: { x: 50, y: 95 }, label: 'Main Office' },
+      { toRoom: 'corridor', position: SIDE_DOOR, label: 'Corridor', exitFacing: 'rear-right', entryFacing: 'front-right' },
     ],
     agentSpots: [
-      { id: 'server-spot-1', type: 'standing', x: 35, y: 60, facing: 'up' },
-      { id: 'server-spot-2', type: 'standing', x: 65, y: 60, facing: 'up' },
+      { id: 'srv-1', type: 'standing', x: 34, y: 60, facing: 'up', spriteFacing: 'rear-right' },
+      { id: 'srv-2', type: 'standing', x: 44, y: 60, facing: 'up', spriteFacing: 'rear-right' },
+      { id: 'srv-3', type: 'standing', x: 54, y: 60, facing: 'up', spriteFacing: 'rear-right' },
+      { id: 'srv-4', type: 'standing', x: 64, y: 60, facing: 'up', spriteFacing: 'rear-left' },
+      { id: 'srv-5', type: 'standing', x: 74, y: 60, facing: 'up', spriteFacing: 'rear-left' },
+      { id: 'srv-6', type: 'standing', x: 84, y: 60, facing: 'up', spriteFacing: 'rear-left' },
     ],
-    entryPoint: { x: 50, y: 90 },
-    ambience: 'server-hum',
+    entryPoint: SIDE_DOOR,
+    walkableArea: SIDE_FLOOR,
+    waypoints: [
+      { id: 'W-srv-door',  x: 18, y: 50, connections: ['W-srv-aisle'] },
+      // The aisle in front of the racks
+      { id: 'W-srv-aisle', x: 26, y: 64, connections: ['W-srv-door'] },
+    ],
+    provisional: true,
   },
 
-  'lobby': {
-    id: 'lobby',
-    name: 'Lobby',
-    description: 'Where new hires arrive. Swag wall. Pile of Amazon packages.',
+  // PROVISIONAL (no art yet): a counter along the back wall on the right with
+  // the coffee machine and the water cooler, and two tables with three seats
+  // each. Today's "kitchen", renamed.
+  'lunch-room': {
+    id: 'lunch-room',
+    name: 'Lunch Room',
+    description: 'Coffee, water and somewhere to sit when there is nothing to do.',
     background: {
-      day: '/rooms/lobby-reception.png',
-      night: '/rooms/lobby-reception.png',
+      day: '/rooms/lunch-room-day.png',
+      night: '/rooms/lunch-room-night.png',
     },
-    width: 600,
-    height: 450,
-    furniture: [
-    ],
+    backgroundDm: {
+      day: '/rooms/lunch-room-day-dm.png',
+      night: '/rooms/lunch-room-night-dm.png',
+    },
+    width: 800,
+    height: 600,
+    furniture: [],
     connections: [
-      { toRoom: 'main-office', position: { x: 50, y: 5 }, label: 'Main Office' },
-      { toRoom: 'parking', position: { x: 50, y: 95 }, label: 'Parking' },
+      { toRoom: 'corridor', position: SIDE_DOOR, label: 'Corridor', exitFacing: 'rear-right', entryFacing: 'front-right' },
     ],
     agentSpots: [
-      { id: 'reception-spot', type: 'desk', x: 50, y: 40, facing: 'down' },
-      { id: 'waiting-1', type: 'lounge', x: 25, y: 70, facing: 'right' },
-      { id: 'waiting-2', type: 'lounge', x: 35, y: 70, facing: 'right' },
+      // At the counter
+      { id: 'lunch-coffee', type: 'coffee', x: 66, y: 56, facing: 'up', spriteFacing: 'rear-right' },
+      { id: 'lunch-water', type: 'water', x: 82, y: 56, facing: 'up', spriteFacing: 'rear-left' },
+      // Left table
+      { id: 'lunch-1', type: 'lounge', x: 30, y: 68, facing: 'down', spriteFacing: 'front-right', zIndex: 50 },
+      { id: 'lunch-2', type: 'lounge', x: 42, y: 68, facing: 'down', spriteFacing: 'front-left', zIndex: 50 },
+      { id: 'lunch-3', type: 'lounge', x: 36, y: 82, facing: 'up', spriteFacing: 'rear-right', zIndex: 90 },
+      // Right table
+      { id: 'lunch-4', type: 'lounge', x: 60, y: 72, facing: 'down', spriteFacing: 'front-right', zIndex: 55 },
+      { id: 'lunch-5', type: 'lounge', x: 72, y: 72, facing: 'down', spriteFacing: 'front-left', zIndex: 55 },
+      { id: 'lunch-6', type: 'lounge', x: 66, y: 84, facing: 'up', spriteFacing: 'rear-left', zIndex: 90 },
     ],
-    entryPoint: { x: 50, y: 90 },
-  },
-
-  'nap-room': {
-    id: 'nap-room',
-    name: 'Wellness Room',
-    description: 'Sleep pods, meditation cushions, and a Himalayan salt lamp.',
-    background: {
-      day: '/rooms/nap-wellness-room.png',
-      night: '/rooms/nap-wellness-room.png',
-    },
-    width: 500,
-    height: 400,
-    furniture: [
+    entryPoint: SIDE_DOOR,
+    walkableArea: SIDE_FLOOR,
+    waypoints: [
+      { id: 'W-lunch-door',    x: 18, y: 50, connections: ['W-lunch-counter', 'W-lunch-tables'] },
+      { id: 'W-lunch-counter', x: 50, y: 56, connections: ['W-lunch-door'] },
+      { id: 'W-lunch-tables',  x: 22, y: 76, connections: ['W-lunch-door'] },
     ],
-    connections: [
-      { toRoom: 'main-office', position: { x: 50, y: 95 }, label: 'Main Office' },
-    ],
-    agentSpots: [
-      { id: 'nap-1', type: 'lounge', x: 25, y: 40, facing: 'down' },
-      { id: 'nap-2', type: 'lounge', x: 50, y: 40, facing: 'down' },
-      { id: 'nap-3', type: 'lounge', x: 75, y: 40, facing: 'down' },
-    ],
-    entryPoint: { x: 50, y: 90 },
-  },
-
-  'rooftop': {
-    id: 'rooftop',
-    name: 'Rooftop Terrace',
-    description: 'Friday drinks, BBQ, and pretending to have work-life balance.',
-    background: {
-      day: '/rooms/rooftop-terrace.png',
-      night: '/rooms/rooftop-terrace.png',
-    },
-    width: 700,
-    height: 500,
-    furniture: [
-    ],
-    connections: [
-      { toRoom: 'kitchen', position: { x: 50, y: 95 }, label: 'Kitchen' },
-    ],
-    agentSpots: [
-      { id: 'roof-1', type: 'lounge', x: 25, y: 50, facing: 'down' },
-      { id: 'roof-2', type: 'lounge', x: 65, y: 50, facing: 'down' },
-      { id: 'roof-3', type: 'lounge', x: 40, y: 75, facing: 'right' },
-    ],
-    entryPoint: { x: 50, y: 90 },
-  },
-
-  'gym': {
-    id: 'gym',
-    name: 'Gym',
-    description: 'A Peloton, some dumbbells, and a mirror for flexing your PRs.',
-    background: {
-      day: '/rooms/gym-fitness-room.png',
-      night: '/rooms/gym-fitness-room.png',
-    },
-    width: 500,
-    height: 400,
-    furniture: [
-    ],
-    connections: [
-      { toRoom: 'main-office', position: { x: 50, y: 95 }, label: 'Main Office' },
-    ],
-    agentSpots: [
-      { id: 'gym-1', type: 'standing', x: 25, y: 45, facing: 'down' },
-      { id: 'gym-2', type: 'standing', x: 75, y: 45, facing: 'down' },
-    ],
-    entryPoint: { x: 50, y: 90 },
-  },
-
-  'parking': {
-    id: 'parking',
-    name: 'Parking Garage',
-    description: 'Teslas, e-scooters, and reserved spots nobody respects.',
-    background: {
-      day: '/rooms/parking-garage.png',
-      night: '/rooms/parking-garage.png',
-    },
-    width: 700,
-    height: 500,
-    furniture: [
-    ],
-    connections: [
-      { toRoom: 'lobby', position: { x: 50, y: 5 }, label: 'Lobby' },
-    ],
-    agentSpots: [],
-    entryPoint: { x: 50, y: 10 },
+    provisional: true,
   },
 }
 
+/** Every room, in the order the floor plan lists them */
+export const ROOM_IDS = Object.keys(ROOMS) as RoomId[]
+
 // ===== ROOM NAVIGATION =====
-// Find path between rooms using BFS
+
+/**
+ * The rooms to pass through from one room to another, both ends included
+ * (breadth-first over the doors, so the shortest way).
+ * @param from the room to start in
+ * @param to the room to reach
+ * @returns the route, `[from]` when the two are the same or no door leads there
+ */
 export function findRoomPath(from: RoomId, to: RoomId): RoomId[] {
   if (from === to) return [from]
 
@@ -492,12 +498,33 @@ export function findRoomPath(from: RoomId, to: RoomId): RoomId[] {
   return [from] // no path found, stay put
 }
 
-// Get all rooms connected to a given room
+/**
+ * The rooms a room's doors lead to.
+ * @param roomId the room to stand in
+ * @returns the rooms next door
+ */
 export function getConnectedRooms(roomId: RoomId): RoomId[] {
   return ROOMS[roomId].connections.map(c => c.toRoom)
 }
 
-// Get a free agent spot in a room
+/**
+ * Where in `roomId` the door to `toRoom` is.
+ * @param roomId the room to stand in
+ * @param toRoom the room behind the door
+ * @returns the door's position, or null when no door of this room leads there
+ */
+export function doorTo(roomId: RoomId, toRoom: RoomId): { x: number; y: number } | null {
+  const conn = ROOMS[roomId].connections.find(c => c.toRoom === toRoom)
+  return conn ? { x: conn.position.x, y: conn.position.y } : null
+}
+
+/**
+ * A free agent spot in a room, in the order the room lists them.
+ * @param roomId the room to look in
+ * @param occupiedSpotIds spots somebody already holds
+ * @param type only spots of this kind (any kind when omitted)
+ * @returns the first free spot, or null when the room is full
+ */
 export function getFreeSpot(
   roomId: RoomId,
   occupiedSpotIds: Set<string>,
@@ -510,6 +537,21 @@ export function getFreeSpot(
 
   for (const spot of spots) {
     if (!occupiedSpotIds.has(spot.id)) return spot
+  }
+  return null
+}
+
+/**
+ * Look a spot up by id in any room. Spot ids are unique across the building
+ * (tests/rooms.test.ts), so the id alone says which room it is in.
+ * @param spotId the spot's id
+ * @returns the spot and its room, or null for an unknown id
+ */
+export function findSpot(spotId: string | undefined): { room: RoomId; spot: AgentSpot } | null {
+  if (!spotId) return null
+  for (const id of ROOM_IDS) {
+    const spot = ROOMS[id].agentSpots.find(s => s.id === spotId)
+    if (spot) return { room: id, spot }
   }
   return null
 }
