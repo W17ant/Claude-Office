@@ -81,6 +81,15 @@ export function officeHttpBase(loc: PageLocation = pageLocation(), env: BuildEnv
   return `http://127.0.0.1:${configuredServerPort(env)}`
 }
 
+/**
+ * The /ws of the very host:port that served the page, dev server or not: a
+ * phone-mode viewer page (src/viewerKey.ts) talks only to the LAN listener
+ * it came from.
+ */
+export function sameOriginWsUrl(loc: PageLocation = pageLocation()): string {
+  return `${loc.protocol === 'https:' ? 'wss' : 'ws'}://${loc.host}/ws`
+}
+
 /** The WebSocket URL: wss when the page is https, ws otherwise. */
 export function officeWsUrl(loc: PageLocation = pageLocation(), env: BuildEnv = buildEnv()): string {
   if (!isDevServerPage(loc, env)) return `${loc.protocol === 'https:' ? 'wss' : 'ws'}://${loc.host}/ws`

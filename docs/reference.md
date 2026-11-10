@@ -327,6 +327,10 @@ Everything is optional; the defaults are the office as described above. Set thes
 |---|---|---|---|
 | `AGENT_OFFICE_PORT` | `3334` | server, hook, status line, office scripts, `npm run doctor`, Vite dev (proxy and page), desktop app and tray | The office server's port. Not a port (letters, `0`, `70000`)? The server warns and uses 3334, as do Vite and the desktop app; the shell hooks and scripts use the value as given, so fix it rather than rely on that. The page served by the server needs nothing: it talks to the origin it was loaded from |
 | `AGENT_OFFICE_HOST` | `127.0.0.1` | server | The bind address, **IPv4 loopback only**: `127.0.0.1` or `localhost`, and both bind `127.0.0.1` (`localhost` is not left to the resolver, which may answer `::1`). `::1` is refused too, with the reason logged: the office scripts, `npm run doctor`, the desktop app and `/agent-office:office` all dial `127.0.0.1`, which a server on `[::1]` alone would refuse. Anything else (`0.0.0.0`, a LAN address) is refused with the reason logged and the server binds `127.0.0.1` — see [Security](#security) |
+| `AGENT_OFFICE_LAN` | off | server (`npm run lan` sets it) | `1` opens phone mode's **watch-only** second listener on this machine's private Wi-Fi address — see [Phone mode](#phone-mode). The loopback listener is unchanged |
+| `AGENT_OFFICE_LAN_HOST` | the first private (RFC 1918) IPv4 of this machine | server | The LAN listener's address. It must itself be a `10.x`, `172.16–31.x` or `192.168.x` address: `0.0.0.0`, loopback, public addresses and names are refused with the reason logged, and LAN mode stays off |
+| `AGENT_OFFICE_LAN_PORT` | `3335` | server | The LAN listener's port |
+| `AGENT_OFFICE_ALLOWED_HOSTS` | none | server, `npm run open -- --host` (a hint only) | Comma-separated host names (`my-mac.tail1234.ts.net`, optionally `:port`) a local HTTPS proxy such as `tailscale serve` reaches the office by: the loopback listener's Host guard accepts them and the origin allowlist accepts `https://<name>[:port]`. Through such a name every route but the static UI needs a token, and the WebSocket the office token. Host names only — a wildcard, scheme, path or IP address is logged and ignored. Never with `tailscale funnel`. See [Phone mode](#phone-mode) |
 | `AGENT_OFFICE_UI_PORT` | `3333` | `start-office.sh`, `stop-office.sh`, the server's origin allowlist | The Vite dev server's port (`start-office.sh` runs `vite --port`); `npm run dev` always uses 3333 |
 | `AGENT_OFFICE_HOME` | `~/.agent-office` | server, hook, status line, scripts | The runtime dir: auth token, `agents.json`, `chat.db`, inbox files, pid files |
 | `AGENT_OFFICE_EVENT_URL` | `http://localhost:$AGENT_OFFICE_PORT/event` | hook (`agent-tracker.sh`) | The full event URL; wins over `AGENT_OFFICE_PORT` |
@@ -342,8 +346,12 @@ Everything is optional; the defaults are the office as described above. Set thes
 
 The server always binds `127.0.0.1` (IPv4 loopback): `AGENT_OFFICE_HOST` may
 spell it `127.0.0.1` or `localhost`, both of which bind `127.0.0.1`, and `::1`
-and anything else are refused with the reason and `127.0.0.1` bound. So it is
-never on the network. The threat it defends against is therefore what else
+and anything else are refused with the reason and `127.0.0.1` bound. So, unless
+you opt into [phone mode](#phone-mode), it is never on the network. (Phone
+mode adds two opt-in exceptions, each with its own rules below: a separate
+watch-only listener on your LAN address, and host names a local HTTPS proxy
+may use to reach the loopback listener. Neither changes anything in this
+section for the loopback listener itself.) The threat it defends against is therefore what else
 runs on the same machine: a malicious npm dependency, or another local user on
 a shared host. Loopback is not user-isolated — any local process can reach the
 port, open the WebSocket and send any `Origin` or `Host` header it likes
@@ -356,7 +364,9 @@ port, open the WebSocket and send any `Origin` or `Host` header it likes
 - **DNS-rebinding pages** — which reach `127.0.0.1` on a GET that carries no
   `Origin` — are kept out by a **Host-header guard**: the first middleware (and
   the WebSocket handler) serve a request only when its `Host` names a loopback
-  host (`localhost`, `127.0.0.1` or `[::1]`, any port); anything else is `421`
+  host (`localhost`, `127.0.0.1` or `[::1]`, any port) — or, when you set it,
+  an `AGENT_OFFICE_ALLOWED_HOSTS` name with exactly its port, whose
+  `https://` origin the allowlist then accepts too; anything else is `421`
   / a `1008` close. A rebinding page's `Host` is still its own domain, so it
   can no longer read the pending command lines, cwds, titles or agent tasks on
   the open GETs.
@@ -372,6 +382,10 @@ A non-loopback bind is refused on purpose, not merely unsupported: the
 read-only view and every open `GET` would hand every agent's task and status
 line to the network, and the token travels in clear HTTP.
 `AGENT_OFFICE_HOST=0.0.0.0` therefore logs that reason and binds `127.0.0.1`.
+Phone mode's LAN listener is the answer to "but I want to see it on my
+phone": a *second* listener that serves no API route, never accepts the
+office token, and carries a stream with that task and status text taken out
+([Phone mode](#phone-mode)).
 
 **The office link.** When the server starts it prints, to its own output only,
 
@@ -526,6 +540,178 @@ requires the token, conversation text requires it, and the rest stay open:
   200 characters per entry, `full` 2000. The rest is the office's purpose, it
   is localhost only, and anything on the machine can already read
   `~/.claude/settings.json`.
+
+## Phone mode
+
+Watch the office on a phone mounted next to your monitor. Two ways, both off
+unless you turn them on; pick one.
+
+### Watch-only over Wi-Fi: `npm run lan`
+
+```
+npm run build              # once: the LAN listener serves the built UI
+npm run lan                # the office, plus the phone link and its QR code
+npm run lan -- --rotate    # the same with a new viewer key (old phone links stop working)
+```
+
+`npm run lan` is `npm run server` with `AGENT_OFFICE_LAN=1` (set that yourself
+for `start-office.sh` or any other launcher). The loopback listener on
+`127.0.0.1:3334` is exactly as before; next to it the server opens a
+**second listener on this machine's private LAN address** — the first
+`10.x` / `172.16–31.x` / `192.168.x` IPv4 of a non-internal interface, or
+`AGENT_OFFICE_LAN_HOST`; never `0.0.0.0` — on port 3335
+(`AGENT_OFFICE_LAN_PORT`), and prints, to its own output only,
+
+```
+  Phone (watch-only, this network): http://192.168.1.23:3335/#viewer=<viewer key>
+```
+
+with a QR code of it when the output is a terminal. Scan it with the phone's
+camera. The page takes the key out of the address bar, keeps it in that
+browser's storage for that address, and from then on shows the **phone
+layout**: the office scene alone, the whole room scaled to fit inside the
+screen's safe area and centred — in portrait (the usual way a phone sits on
+a mount) it spans the width, in landscape the height — with no title bar,
+chat, meters, permission cards, settings or inspector: nothing that needs the
+office token or calls an API route, and nothing to scroll. Any page the LAN
+listener serves gets this layout; opened without its `#viewer=` part it says
+so instead of connecting. Open `http://<lan ip>:3335/#viewer=off` to forget
+the key in that browser.
+
+**The viewer key** is a second secret, 32 random bytes in
+`~/.agent-office/lan-viewer-key` (`0600`, kept across restarts with the same
+trust checks as the token file, replaced when they fail, never the office
+token). It opens the LAN listener's WebSocket and nothing else. `npm run lan
+-- --rotate` deletes it before starting, so that start mints a new one; an
+office already running keeps the old key until it restarts.
+
+**What the LAN listener allows.** It is its own server with its own Express
+app and WebSocket server; it shares no route with the loopback listener.
+
+- Every request must carry `Host: <lan ip>:<lan port>` exactly (a
+  DNS-rebinding page, another name, another port: `421`, or a `1008` close on
+  the WebSocket), and an `Origin`, when sent, must be
+  `http://<lan ip>:<lan port>` (`403` / `1008`).
+- HTTP: `GET` / `HEAD` of the built UI's files (the page, its scripts,
+  `/sprites`, `/rooms`). **Every API route is a 404** — `/event`, `/chat`,
+  `/settings`, `/permission`, `/agents`, `/sessions`, `/tasks`, `/a2a`,
+  `/.well-known`, `/health`, `/config` and the rest, any method, with or
+  without a token. So a phone can never post a chat line, answer a
+  permission dialog or change a setting. (The page therefore draws the boss
+  from the bundle, not from `GET /config`.)
+- The WebSocket `/ws` needs the viewer key as the subprotocol
+  `agent-office.viewer.<key>` (constant-time compare); no key or a wrong one
+  is a `1008` close. **The office token is never accepted there** — it would
+  cross the Wi-Fi in clear — and a LAN connection is never trusted and never
+  gets the UI token. The page itself never stores or offers the office token
+  when it was served over plain HTTP from a non-loopback address. At most 8
+  viewers at a time.
+
+**What a phone sees** is a stricter tier than the read-only view
+(`redactForLan` in `server/index.js`, an allowlist per record and per event
+type, so a field added later stays off the Wi-Fi until someone lists it, and
+an event type nobody classified is not sent): agents (name, role, state,
+timings, session), sessions (state, model, counts), a raised hand with its
+kind and tool name, an API error's one-word kind, permission dialogs' tool and
+deadline, signals' kind and exit code, task boards as post-it states and
+counts, health, incident mode, and chat rows as metadata with empty text (so
+a directed message still flies between desks). Taken out, on top of what the
+read-only view already drops: agent task text and status lines, results and
+errors; session cwds, project names, titles and transcript paths; every chat
+message's text, system rows included; a needs-you's summary and notification
+message; a permission's summary and the project / cwd / title on it; a
+signal's target, branch, detail and error; task subjects and *activeForm*s;
+background tasks' descriptions; the registry's session name. The meters
+(`session_status` / `agent_status`: cost, context, model, workers' status
+lines) are not sent at all. Project names go too: a directory name is often a
+client or a product codename, and the scene does not need it.
+
+**What this does not protect.** The LAN listener speaks plain HTTP. Anyone who
+can read your Wi-Fi traffic (an open network, or anyone holding a shared
+WPA2-PSK who captures the handshake) sees what the phone sees and can read the
+viewer key from the WebSocket handshake — and with it watch the same
+stripped scene. That is why the tier is what it is, and why the key opens
+nothing else. Use it on a network you trust, rotate the key if you doubt it,
+and stop `npm run lan` (use `npm run server`) when you do not need it. A
+malicious web page on the phone or any other device cannot use the key it
+does not have, and its WebSocket carries its own `Origin`, which is refused.
+
+### Full control through Tailscale
+
+To see and drive the whole office from a phone — chat, permission cards,
+everything — through [Tailscale](https://tailscale.com), without binding any
+LAN address: Tailscale's HTTPS proxy forwards to the loopback listener, and
+the office accepts its host name.
+
+```
+tailscale serve --bg --https=443 http://127.0.0.1:3334
+AGENT_OFFICE_ALLOWED_HOSTS=my-mac.tail1234.ts.net npm run server
+npm run open -- --host my-mac.tail1234.ts.net
+```
+
+(`tailscale status` or the admin console shows your machine's name; HTTPS
+certificates must be enabled for the tailnet.) The last command checks that
+the office on `127.0.0.1` is yours, then prints
+`https://my-mac.tail1234.ts.net/#token=<the office token>` — and a QR code of
+it on a terminal — without opening anything. Open it on the phone once; the
+page keeps the token as on the desktop and connects back over `wss://` to the
+same name.
+
+What changes: the loopback listener's Host guard also accepts
+`my-mac.tail1234.ts.net` (or `name:port` exactly as listed), and the origin
+allowlist accepts `https://my-mac.tail1234.ts.net`. Entries must be plain
+host names with at least one dot — wildcards, schemes, paths and IP
+addresses are logged and ignored.
+
+**Through the proxy nothing is open.** Every request through the proxy
+arrives from `127.0.0.1`, so on loopback's rules "any local process" would
+mean every device your tailnet lets reach this machine. And the `Host` alone
+cannot tell a proxied request apart: `tailscale serve` routes by the TLS
+name and forwards the client's `Host` unchanged, so a tailnet device could
+send `Host: localhost`. So a request counts as proxied when its `Host` is an
+`AGENT_OFFICE_ALLOWED_HOSTS` name, **or** it carries a header a reverse
+proxy adds — `X-Forwarded-For`, `X-Forwarded-Host`, `X-Forwarded-Proto`,
+`Forwarded`, `Tailscale-User-*` — **or** its peer address is not loopback.
+That is reliable for `tailscale serve`: its proxy (Go's
+`httputil.ReverseProxy` in Rewrite mode) first deletes any client-sent
+`Forwarded` / `X-Forwarded-*`, then always sets `X-Forwarded-Host` and
+`X-Forwarded-For` (and `X-Forwarded-Proto` over HTTPS) on every request it
+relays, tagged and shared nodes included; the `Tailscale-User-*` identity
+headers are set only for tailnet users with a login, so they are extra
+markers, not the key (checked in `ipn/ipnlocal/serve.go` and
+`net/http/httputil/reverseproxy.go`). This holds whether or not
+`AGENT_OFFICE_ALLOWED_HOSTS` is set, so a `tailscale serve` pointed at the
+office without it gets nothing open either (the Host guard refuses its name
+anyway). A proxied request needs the office
+token or the UI token as `Authorization: Bearer` for every route — the open
+`GET`s (`/agents`, `/sessions`, `/tasks`, `/config`, `/health`, ...) and
+`POST /chat` included — and gets a `401` without one; only the built UI's
+static files load without it, so the page can start and read `#token=`. Its
+WebSocket needs the office token and is refused with `1008` without it:
+there is no read-only view through the proxy. The office page sends the
+header itself when it was served over HTTPS from such a name (the UI token
+once the WebSocket handed it over; the office token before that, on reads
+only — a `POST` never carries the file token, so `/clear` typed in the chat
+stays refused as on loopback). A request from loopback with a loopback
+`Host` and none of those headers — the hook, the scripts, the desktop app,
+a browser on this machine — works exactly as before. The office token crosses the tailnet only inside Tailscale's HTTPS.
+
+**Use `tailscale serve`, never `tailscale funnel`.** Funnel publishes the
+proxy on the internet. Tailscale marks each request Funnel relays with
+`Tailscale-Funnel-Request: ?1` and strips that header from anything a
+client sends (`addTailscaleIdentityHeaders` in `ipn/ipnlocal/serve.go`), so
+the office refuses every request carrying it — `403`, or a `1008` close —
+with a log line, whatever its `Host` or token. Treat that as a last line, not
+a reason to try: a mistyped command should never be what stands between the
+internet and your office.
+
+`tailscale serve` forwards the browser's own `Host` header to the backend (it
+sets the outgoing `Host` to the incoming one for a TCP backend, and adds
+`X-Forwarded-*` and, for tailnet users, `Tailscale-User-*` headers) — checked
+against `ipn/ipnlocal/serve.go` in Tailscale's source, and exercised here
+through a stand-in HTTPS proxy that does the same, not against a live
+tailnet. Keep the tailnet to your own devices, or restrict port 443 on this
+machine with an ACL.
 
 ## Roadmap
 

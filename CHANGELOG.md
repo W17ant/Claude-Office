@@ -6,6 +6,7 @@ All notable changes to Claude Office. Numbers refer to pull requests.
 
 - Prod Is Down has its own art now: a rotating red beacon over the door, the wall TV showing a ROLLBACK status page, an incident timeline written over the kanban board, and pizza boxes piling up on the counter the longer the incident runs (one, three, then a leaning six). The incident board is laid exactly over the wall board's writing surface.
 - During an incident each kind of agent grabs a prop: the on-call DevOps engineer's pager, the boss's megaphone, a fire extinguisher for the debugger, a magnifying glass for reviewers and security, the tester's canary in its cage, and a stopwatch for performance.
+- Phone mode: watch the office on a phone mounted next to the monitor. `npm run lan` opens a second, watch-only listener on this machine's private LAN address (port 3335) and prints the phone link with a QR code; the page shows the scene alone, scaled to the screen. That listener serves only the built UI (every API route is a 404), needs its own viewer key (`~/.agent-office/lan-viewer-key`, `npm run lan -- --rotate`), never accepts the office token, and strips everything that names your work from what it sends (`redactForLan`). `AGENT_OFFICE_ALLOWED_HOSTS` lets `tailscale serve` reach the loopback server for full control over HTTPS, and `npm run open -- --host <name>` prints that link. The QR code comes from the encoder vendored in `qrcode-terminal` (a new dependency with no dependencies of its own). See docs/reference.md › Phone mode.
 
 ## 1.1.2 — 2026-11-09
 

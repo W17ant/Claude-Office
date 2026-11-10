@@ -163,6 +163,32 @@ describe('npm run open (scripts/open-office.mjs)', () => {
     }
   })
 
+  it('--host prints the https link for a tailscale serve name and opens nothing', async () => {
+    const out = sink()
+    const err = sink()
+    const env = envFor({ AGENT_OFFICE_ALLOWED_HOSTS: 'my-mac.tail1234.ts.net' })
+    expect(await openOffice({ env, host: 'my-mac.tail1234.ts.net', out, err })).toBe(0)
+    expect(out.text).toBe(`Agent Office (through my-mac.tail1234.ts.net): https://my-mac.tail1234.ts.net/#token=${office.server.AUTH_TOKEN}\n`)
+    expect(err.text).not.toContain('AGENT_OFFICE_ALLOWED_HOSTS')
+    expect(existsSync(join(home, REDIRECT_FILE_NAME))).toBe(false)
+    // A name this shell does not list gets a reminder; a port is kept
+    const out2 = sink()
+    const err2 = sink()
+    expect(await openOffice({ env: envFor(), host: 'office.example.com:8443', out: out2, err: err2 })).toBe(0)
+    expect(out2.text).toContain('https://office.example.com:8443/#token=')
+    expect(err2.text).toContain('AGENT_OFFICE_ALLOWED_HOSTS=office.example.com:8443')
+  })
+
+  it('--host refuses anything but a host name, without printing the token', async () => {
+    for (const bad of ['https://my-mac.ts.net', '*.ts.net', '100.64.0.1', '']) {
+      const out = sink()
+      const err = sink()
+      expect(await openOffice({ env: envFor(), host: bad, out, err }), bad).toBe(1)
+      expect(out.text).toBe('')
+      expect(err.text).not.toContain(office.server.AUTH_TOKEN)
+    }
+  })
+
   it('--dev points at the Vite dev server instead', async () => {
     const out = sink()
     expect(await openOffice({ env: envFor({ AGENT_OFFICE_UI_PORT: '3998' }), dev: true, print: true, out, err: sink() })).toBe(0)
