@@ -23,6 +23,7 @@
     "electron": "electron .",
     "start": "npm run dev:electron",
     "server": "node server/index.js",
+    "lan": "node scripts/lan.mjs",
     "open": "node scripts/open-office.mjs",
     "rotate-token": "node scripts/rotate-token.mjs",
     "test": "vitest run",
@@ -38,6 +39,7 @@
     "better-sqlite3": "^12.8.0",
     "concurrently": "^8.2.2",
     "express": "^4.19.2",
+    "qrcode-terminal": "0.12.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "ws": "^8.18.0"

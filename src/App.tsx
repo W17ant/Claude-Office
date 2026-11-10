@@ -1,3 +1,4 @@
+import { currentSeason, useSeasonArt } from './season'
 import React, { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from 'react'
 import './styles/office.css'
 import './styles/rooms.css'
@@ -7,6 +8,7 @@ import SlackChat, { ChatMessage, getAvatarSrc } from './components/SlackChat'
 import Character from './components/Character'
 import ResilientImg from './components/ResilientImg'
 import FurnitureRenderer from './components/FurnitureRenderer'
+import AdventCalendar from './components/AdventCalendar'
 import { DESK_GEOMETRY, deskScreens, previewScreens, type DeskScreen } from './screens'
 import RoomLife from './components/RoomLife'
 import { filingOpen, printJob, tvMode, waterBusy, type LastSignal } from './roomLife'
@@ -16,6 +18,8 @@ import AgentCard from './components/AgentCard'
 import PermissionCards from './components/PermissionCard'
 import { isPermissionEvent, reducePermissions, setUiToken, type PermissionAction, type PermissionCardState } from './permissions'
 import StatusStrip from './components/StatusStrip'
+import SettingsPanel from './components/SettingsPanel'
+import { readSound, saveVolume, saveMuted, readDayNightMode, saveDayNightMode, type DayNightMode } from './settings'
 import { Agent, AGENT_CONFIGS } from './types'
 import { getCurrentPhase, getPhaseLabel, type DayPhase } from './daylight'
 import { useAgentSocket } from './hooks/useAgentSocket'
@@ -29,7 +33,11 @@ import {
   type OfficeState, type OfficeAction, type OfficeEffect, type OfficeEnv,
 } from './officeReducer'
 import { BOSS_ROLE } from './config'
-import { officeHttpBase, officeWsUrl } from './serverUrl'
+import { officeHttpBase, officeWsUrl, sameOriginWsUrl } from './serverUrl'
+import { pageViewerKey } from './pageAuth'
+import { officeAuthHeaders } from './officeAuth'
+import { mayCarryOfficeToken } from './viewerKey'
+import ViewerStage from './components/ViewerStage'
 import { pickEvent } from './events'
 import { getInteraction } from './interactions'
 import {
@@ -53,9 +61,27 @@ const params = new URLSearchParams(window.location.search)
 const isHelperMode = params.has('helper')
 const isSimMode = params.has('sim') || params.has('video')
 const isVideoMode = params.has('video')
+// Phone mode: the page holds a viewer key (src/viewerKey.ts, captured in
+// main.tsx). It shows the scene alone (ViewerStage), mounts nothing that
+// calls an API route or needs trust — chat input, permission buttons,
+// settings pills, the AI toggle, the inspector — and talks to the listener it came from.
+// A page served over plain HTTP from a non-loopback address can only be the
+// LAN listener's, so it gets the phone layout too, even without a key (the
+// link opened without its #viewer= part): it says how to fix that instead of
+// drawing the desktop window, which no phone screen fits.
+const isLanPage = !mayCarryOfficeToken(window.location)
+const isViewerMode = !isSimMode && (pageViewerKey !== null || isLanPage)
+const VIEWER_NOTICE = pageViewerKey === null ? 'no viewer key: open the phone link from npm run lan (scan its QR code)' : undefined
 // Why: allow ?theme=office on demo/sim URLs to preload Dunder Mifflin mode
 import { setTheme as _setTheme } from './theme'
 if (params.get('theme') === 'office') { _setTheme('office') }
+// Why at module load: the ambient hum starts on mount and must start at the
+// remembered level (or stay off when the last visit muted it) — src/settings.ts
+{
+  const sound = readSound()
+  sfx.setVolume(sound.volume)
+  if (sound.muted) sfx.toggleMute()
+}
 // Why: ?variant=incident pins incident mode on (auto-exit off) for screenshots
 if (params.get('variant') === 'incident') { pinIncidentFromUrl() }
 
@@ -255,6 +281,7 @@ const OFFICE_SIM_CHATTER = [
 const App: React.FC = () => {
   // All hooks must be at the top — before any conditional returns.
   const theme = useTheme() // Why: re-render rooms + agents when /the-office toggles
+  useSeasonArt() // Why: re-render when a festive room or avatar file turns out to exist
   const variant = useVariant() // Why: forced night + incident overlays while prod is down
   // The office state machine (src/officeReducer.ts) lives in a ref that every
   // mutation path (server events, the animation tick, sim scripts, random
@@ -299,9 +326,14 @@ const App: React.FC = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [chatTypingUser, setChatTypingUser] = useState<string | null>(null)
   const [lastSeenId, setLastSeenId] = useState<number | null>(null)
-  const [muted, setMuted] = useState(false)
+  const [muted, setMuted] = useState(sfx.isMuted())
   const [dayPhase, setDayPhase] = useState<DayPhase>(getCurrentPhase())
-  const [dayNightMode, setDayNightMode] = useState<'auto' | 'day' | 'night'>('auto')
+  const [dayNightMode, setDayNightMode] = useState<DayNightMode>(readDayNightMode)
+  useEffect(() => { saveDayNightMode(dayNightMode) }, [dayNightMode])
+  // The Settings panel (the gear in the title bar)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const gearRef = useRef<HTMLButtonElement>(null)
+  const closeSettings = useCallback(() => setSettingsOpen(false), [])
 
   // Compressed day cycle: 10 min = 24 hours
   // nightOpacity: 0 = full day, 1 = full night
@@ -722,7 +754,7 @@ const App: React.FC = () => {
   // WebSocket connection
   // ---------------------------------------------------------------------------
 
-  const { sessions, trusted } = useAgentSocket({ onEvent: handleEvent, url: officeWsUrl(), disabled: isSimMode })
+  const { sessions, trusted, connected } = useAgentSocket({ onEvent: handleEvent, url: isViewerMode ? sameOriginWsUrl() : officeWsUrl(), disabled: isSimMode })
   // The server showed this page the office read-only: no office token, or a
   // stale one (src/officeToken.ts). The cards and the chat stop offering
   // answers the server would refuse, and the status strip says how to fix it.
@@ -1389,12 +1421,16 @@ const App: React.FC = () => {
     const nowMuted = sfx.toggleMute()
     setMuted(nowMuted)
     setVolume(sfx.getVolume())
+    saveMuted(nowMuted)
   }, [])
 
   const handleVolumeChange = useCallback((v: number) => {
     sfx.setVolume(v)
     setVolume(v)
     setMuted(v === 0)
+    // Why both: dragging to 0 is a mute; the level to come back to is the last non-zero one
+    saveVolume(v)
+    saveMuted(v === 0)
   }, [])
 
   const handleSendMessage = useCallback((text: string) => {
@@ -1403,10 +1439,12 @@ const App: React.FC = () => {
     setAutoTypeText(undefined)
     // Send to server so Claude can read it. ?sim / ?video scripts stay local:
     // their scripted prompts must not reach chat.db or the AI watcher (C36).
-    if (isSimMode) return
+    // A viewer page has no chat input, and the LAN listener has no /chat.
+    if (isSimMode || isViewerMode) return
     fetch(`${officeHttpBase()}/chat`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      // The UI token through an HTTPS proxy name (never the file token on a POST: src/officeAuth.ts)
+      headers: { 'Content-Type': 'application/json', ...officeAuthHeaders({ method: 'POST' }) },
       body: JSON.stringify({ sender: bossCfg.title, text }),
     }).catch(() => {})
   }, [addMsg])
@@ -1457,28 +1495,8 @@ const App: React.FC = () => {
     )
   }
 
-  return (
-    <div className="app-wrapper">
-      <div className="title-bar">
-        <div className="title-bar-dot" style={{ background: '#ff5f57' }} />
-        <div className="title-bar-dot" style={{ background: '#febc2e' }} />
-        <div className="title-bar-dot" style={{ background: '#28c840' }} />
-        <span className="title-bar-text">{titlePrefix}{variant === 'incident' ? '🔥 PROD IS DOWN — AGENT OFFICE' : 'CLAUDE CODE — AGENT OFFICE'}</span>
-        <SessionStrip sessions={sessions} agents={agents} />
-        <button
-          className="title-bar-daynight"
-          onClick={() => setDayNightMode(prev =>
-            prev === 'auto' ? 'day' : prev === 'day' ? 'night' : 'auto'
-          )}
-          title={`Mode: ${dayNightMode}`}
-        >
-          {dayNightMode === 'auto' ? 'AUTO' : dayNightMode === 'day' ? 'DAY' : 'NIGHT'}
-        </button>
-        <span className="title-bar-phase">{getPhaseLabel(effectivePhase)}</span>
-      </div>
-
-      <div className="app-body">
-      <div className="office-view">
+  // The room itself: the desktop window's centre, or all a viewer page shows
+  const scene = (
         <div
           className={`room-container${flickering ? ' flickering' : ''}${variant === 'incident' ? ' incident' : ''}`}
           style={{
@@ -1503,6 +1521,8 @@ const App: React.FC = () => {
             }}
           />
 
+          {/* The advent calendar on the back wall, 1 December to 6 January */}
+          {currentSeason() === 'christmas' && <AdventCalendar />}
           {/* The wall props come alive: deploy TV, city windows, water cooler, bell, extinguisher */}
           <RoomLife
             tv={tvMode(agents, lastSignal, roomClock)}
@@ -1607,6 +1627,60 @@ const App: React.FC = () => {
           {/* Day/night overlay */}
           <div className={`day-overlay ${effectivePhase}`} />
         </div>
+  )
+
+  if (isViewerMode) return <ViewerStage connected={connected} notice={VIEWER_NOTICE}>{scene}</ViewerStage>
+
+  return (
+    <div className="app-wrapper">
+      <div className="title-bar">
+        <div className="title-bar-dot" style={{ background: '#ff5f57' }} />
+        <div className="title-bar-dot" style={{ background: '#febc2e' }} />
+        <div className="title-bar-dot" style={{ background: '#28c840' }} />
+        <span className="title-bar-text">{titlePrefix}{variant === 'incident' ? '🔥 PROD IS DOWN — AGENT OFFICE' : 'CLAUDE CODE — AGENT OFFICE'}</span>
+        <SessionStrip sessions={sessions} agents={agents} />
+        <button
+          className="title-bar-daynight"
+          onClick={() => setDayNightMode(prev =>
+            prev === 'auto' ? 'day' : prev === 'day' ? 'night' : 'auto'
+          )}
+          title={`Mode: ${dayNightMode}`}
+        >
+          {dayNightMode === 'auto' ? 'AUTO' : dayNightMode === 'day' ? 'DAY' : 'NIGHT'}
+        </button>
+        <span className="title-bar-phase">{getPhaseLabel(effectivePhase)}</span>
+        <button
+          ref={gearRef}
+          type="button"
+          className={`title-bar-gear${settingsOpen ? ' open' : ''}`}
+          onClick={() => setSettingsOpen(o => !o)}
+          aria-label="Settings"
+          aria-expanded={settingsOpen}
+          aria-haspopup="dialog"
+          title="Settings: theme, day/night, season, sound, server settings"
+          data-testid="settings-gear"
+        >
+          ⚙
+        </button>
+      </div>
+      {settingsOpen && (
+        <SettingsPanel
+          onClose={closeSettings}
+          anchor={gearRef}
+          dayNightMode={dayNightMode}
+          onDayNightMode={setDayNightMode}
+          volume={volume}
+          muted={muted}
+          onVolumeChange={handleVolumeChange}
+          onToggleMute={handleToggleMute}
+          readOnly={readOnly}
+          simMode={isSimMode}
+        />
+      )}
+
+      <div className="app-body">
+      <div className="office-view">
+        {scene}
       </div>
 
       <AgentCard agentId={inspectedId} agent={agents.find(a => a.id === inspectedId)} sessions={sessions} onClose={() => setInspectedId(null)} />

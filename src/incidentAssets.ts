@@ -74,6 +74,47 @@ export const INCIDENT_ASSETS = {
 export type IncidentAssetName = keyof typeof INCIDENT_ASSETS
 
 // ---------------------------------------------------------------------------
+// Per-role props: what each kind of agent grabs when prod goes down
+// ---------------------------------------------------------------------------
+
+/** The hand-held props, one PNG each (generated together, so they share a style). */
+export const INCIDENT_PROPS = {
+  pager: '/sprites/incident/props/pager.png',
+  megaphone: '/sprites/incident/props/megaphone.png',
+  extinguisher: '/sprites/incident/props/extinguisher.png',
+  magnifier: '/sprites/incident/props/magnifier.png',
+  canary: '/sprites/incident/props/canary.png',
+  stopwatch: '/sprites/incident/props/stopwatch.png',
+} as const
+
+// Why these pairings: the on-call engineer's pager goes off, the boss shouts
+// through a megaphone, whoever debugs puts the fire out, reviewers and security
+// hunt for the cause, the tester's canary is the first to notice, and
+// performance times the outage. Roles not listed (frontend, fullstack, the
+// session's own Claude) carry nothing.
+const ROLE_PROP: Record<string, keyof typeof INCIDENT_PROPS> = {
+  'devops-engineer': 'pager',
+  boss: 'megaphone',
+  debugger: 'extinguisher',
+  'general-purpose': 'extinguisher',
+  'code-reviewer': 'magnifier',
+  'architect-reviewer': 'magnifier',
+  'security-auditor': 'magnifier',
+  'test-engineer': 'canary',
+  'performance-engineer': 'stopwatch',
+}
+
+/**
+ * The prop an agent of `role` holds during an incident.
+ * @param role the agent's role key (src/config.ts ROLE_TO_CHAR keys, or 'boss')
+ * @returns the PNG path, or null for a role that carries nothing
+ */
+export function incidentPropFor(role: string): string | null {
+  const prop = ROLE_PROP[role]
+  return prop ? INCIDENT_PROPS[prop] : null
+}
+
+// ---------------------------------------------------------------------------
 // Runtime probe: does the intended file exist?
 // ---------------------------------------------------------------------------
 

@@ -927,6 +927,30 @@ describe("main-thread activity lands on the session's Claude", () => {
     expect(texts(failed.effects)).toEqual(['❌ running: npm test'])
   })
 
+  it('an auto-mode denial (PermissionDenied) is a failed call that says so: 🚫 on whoever asked, Claude or a worker', () => {
+    const office = sessionOffice(1)
+    const denied = reduceOffice(office, { type: 'agent_working', ...S1, status: 'denied: Bash (auto mode)', failed: true, denied: true }, env())
+    expect(claudeOf(denied.state, 's1')!.lastFailed).toBe(true)
+    expect(claudeOf(denied.state, 's1')!.statusText).toBe('denied: Bash (auto mode)')
+    expect(texts(denied.effects)).toEqual(['🚫 denied: Bash (auto mode)'])
+    const worker = reduceOffice(office, { type: 'agent_working', agentId: 'w1', status: 'denied: Write (auto mode)', denied: true }, env())
+    expect(agent(worker.state, 'w1')).toMatchObject({ statusText: 'denied: Write (auto mode)', lastFailed: true })
+    expect(texts(worker.effects)).toEqual(['🚫 denied: Write (auto mode)'])
+  })
+
+  it('an MCP question (elicitation) is a hard hand that a parallel main-thread tool call does not lower', () => {
+    const raised = reduceOffice(sessionOffice(), { type: 'session_needs_you', ...S1, kind: 'elicitation', summary: 'github' }, env())
+    expect(claudeOf(raised.state, 's1')!.statusText).toBe('✋ github is asking you something')
+    expect(sfx(raised.effects)).toEqual(['needsYou'])
+    const beside = reduceOffice(raised.state, { type: 'agent_working', ...S1, status: 'reading a.ts' }, env())
+    expect(claudeOf(beside.state, 's1')).toMatchObject({ mainState: 'needs-you', needsYou: { kind: 'elicitation', summary: 'github' } })
+    expect(texts(beside.effects)).toEqual(['⚡ reading a.ts'])
+    // The server's record coming down (ElicitationResult, the call's end) is what lowers it
+    const down = reduceOffice(beside.state, { type: 'session_main', ...S1, reason: 'question answered', main: { state: 'working', since: T0 } }, env())
+    expect(claudeOf(down.state, 's1')!.mainState).toBe('working')
+    expect(texts(down.effects)).toEqual(['✅ question answered'])
+  })
+
   it('without a sessionId (old hook) a worker shows it, or the only Claude when no worker is at work', () => {
     const withWorkers = sessionOffice(1)
     const r1 = reduceOffice(withWorkers, { type: 'agent_working', status: 'grep' }, env())

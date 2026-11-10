@@ -449,6 +449,18 @@
   display: block;
 }
 
+/* The sprite and what is worn on it (the December hat, src/hat.ts) move as one */
+.char-sprite-stack {
+  position: relative;
+}
+
+.char-hat {
+  position: absolute;
+  height: auto;
+  image-rendering: pixelated;
+  pointer-events: none;
+}
+
 /* Shadow under character */
 .char-shadow {
   position: absolute;
@@ -521,19 +533,19 @@
 }
 
 /* ===== CHARACTER STATES ===== */
-.character-wrapper.state-idle .char-sprite {
+.character-wrapper.state-idle .char-sprite-stack {
   animation: idleBob 3s ease-in-out infinite;
 }
-.character-wrapper.state-working .char-sprite {
+.character-wrapper.state-working .char-sprite-stack {
   animation: workShake 0.12s ease-in-out infinite alternate;
 }
-.character-wrapper.state-walking .char-sprite {
+.character-wrapper.state-walking .char-sprite-stack {
   animation: walkSway 0.6s ease-in-out infinite;
 }
-.character-wrapper.state-talking .char-sprite {
+.character-wrapper.state-talking .char-sprite-stack {
   animation: talkBob 0.6s ease-in-out infinite alternate;
 }
-.character-wrapper.state-coffee .char-sprite {
+.character-wrapper.state-coffee .char-sprite-stack {
   animation: idleBob 3.5s ease-in-out infinite;
 }
 .character-wrapper.state-new-hire {
@@ -1650,7 +1662,7 @@
 .slack-logprompts.off  { color: #6a6c70; }
 .slack-logprompts.full { color: #ffd166; }
 
-/* The chat's settings pills (prompt logging, answer permissions), on a row
+/* The chat's settings pills (prompt logging, answer permissions, notify), on a row
    of their own under the header so the header fits the 300 px panel */
 .slack-settings-row {
   display: flex;

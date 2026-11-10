@@ -137,7 +137,8 @@
   font-style: italic;
 }
 
-/* The chat-header toggle: may the office answer at all (settings.answerPermissions) */
+/* The chat-header toggles: may the office answer at all (settings.answerPermissions),
+   and does a wait raise a desktop notification (settings.notifyPermissions, .slack-notify-toggle) */
 .slack-answer-toggle {
   font-size: 8px;
   letter-spacing: 0.5px;
