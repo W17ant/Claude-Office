@@ -1,0 +1,282 @@
+/* ===== SETTINGS PANEL + TODAY POPOVER =====
+   src/components/SettingsPanel.tsx (the gear in the title bar) and
+   src/components/TodayPanel.tsx (the "today" button in the status strip).
+   Both float inside the 1056 x 682 app window, like the inspector card, in
+   the same dark chrome; colours are variables so a theme can restyle them. */
+
+:root {
+  --op-bg: rgba(14, 16, 19, 0.97);
+  --op-border: #2b2e33;
+  --op-fg: #e6e6e6;
+  --op-muted: #8b8d91;
+  --op-dim: #5a5d63;
+  --op-chip: #1d2024;
+  --op-chip-on: #3a2f22;
+  --op-accent: #e0b25c;
+  --op-ok: #2bac76;
+  --op-bad: #ff5f57;
+  --op-warn: #febc2e;
+}
+
+/* ---- shared popover chrome ---- */
+.office-popover {
+  position: absolute;
+  /* Why 1200: above the room's layers (the boss effect is 999) and the inspector card (1100) */
+  z-index: 1200;
+  background: var(--op-bg);
+  border: 1px solid var(--op-border);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.04);
+  color: var(--op-fg);
+  font: 10px/1.45 'JetBrains Mono', monospace;
+  padding: 8px 10px;
+  user-select: text;
+  -webkit-app-region: no-drag;
+}
+/* Why only when motion is welcome: a 120 ms fade-and-drop, none at all under reduced motion */
+@media (prefers-reduced-motion: no-preference) {
+  .office-popover { animation: popoverIn 0.12s ease-out both; }
+}
+@keyframes popoverIn {
+  from { opacity: 0; transform: translateY(-3px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.op-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.op-title {
+  font-size: 9px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--op-accent);
+}
+.op-close {
+  background: none;
+  border: none;
+  color: var(--op-muted);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+.op-close:hover { color: var(--op-fg); }
+.op-note { color: var(--op-muted); }
+.op-foot {
+  margin-top: 6px;
+  padding-top: 5px;
+  border-top: 1px solid var(--op-border);
+  color: var(--op-dim);
+  font-size: 9px;
+}
+.office-popover code {
+  font-family: inherit;
+  background: var(--op-chip);
+  border-radius: 3px;
+  padding: 0 3px;
+  color: var(--op-fg);
+}
+.office-popover button:focus-visible,
+.office-popover input:focus-visible {
+  outline: 1px solid var(--op-accent);
+  outline-offset: 1px;
+}
+
+/* ---- the gear in the title bar ---- */
+.title-bar-gear {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 10px;
+  line-height: 1;
+  color: #5a4a38;
+  padding: 2px 5px;
+  -webkit-app-region: no-drag;
+}
+.title-bar-gear:hover,
+.title-bar-gear.open {
+  background: rgba(255,255,255,0.1);
+  color: #8a7a58;
+}
+
+/* ---- Settings panel: under the gear, top right of the window ---- */
+.settings-panel {
+  top: 32px;
+  right: 8px;
+  width: 300px;
+  max-width: calc(100% - 16px);
+  max-height: calc(100% - 60px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #35363a transparent;
+}
+.sp-section + .sp-section {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--op-border);
+}
+.sp-section-title {
+  font-size: 8px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--op-dim);
+  margin-bottom: 4px;
+}
+.sp-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 22px;
+}
+.sp-label { color: var(--op-muted); white-space: nowrap; }
+.sp-note {
+  color: var(--op-dim);
+  font-size: 9px;
+  margin: 0 0 4px;
+}
+.sp-blocked { color: var(--op-warn); }
+.sp-foot { margin-top: 4px; }
+.sp-link {
+  background: none;
+  border: none;
+  font: inherit;
+  color: var(--op-accent);
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0;
+}
+
+.sp-segmented {
+  display: inline-flex;
+  border: 1px solid var(--op-border);
+  border-radius: 3px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.sp-segmented button {
+  background: var(--op-chip);
+  border: none;
+  border-left: 1px solid var(--op-border);
+  color: var(--op-muted);
+  font: inherit;
+  font-size: 9px;
+  padding: 2px 6px;
+  cursor: pointer;
+}
+.sp-segmented button:first-child { border-left: none; }
+.sp-segmented button:hover:not(:disabled) { color: var(--op-fg); }
+.sp-segmented button.on {
+  background: var(--op-chip-on);
+  color: var(--op-accent);
+}
+.sp-segmented button:disabled { cursor: not-allowed; opacity: 0.45; }
+
+.sp-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: none;
+  border: none;
+  font: inherit;
+  font-size: 9px;
+  color: var(--op-muted);
+  cursor: pointer;
+  padding: 0;
+}
+.sp-switch-track {
+  position: relative;
+  width: 22px;
+  height: 11px;
+  border-radius: 6px;
+  background: var(--op-chip);
+  border: 1px solid var(--op-border);
+  box-sizing: border-box;
+  flex-shrink: 0;
+}
+.sp-switch-thumb {
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--op-dim);
+}
+.sp-switch.on .sp-switch-track { background: rgba(43, 172, 118, 0.25); border-color: var(--op-ok); }
+/* Why 11 px: track 22 - 2 border - 7 thumb - 2 x 1 inset */
+.sp-switch.on .sp-switch-thumb { background: var(--op-ok); transform: translateX(11px); }
+.sp-switch.on .sp-switch-text { color: var(--op-ok); }
+.sp-switch-text { min-width: 18px; text-align: left; }
+.sp-switch:disabled { cursor: not-allowed; opacity: 0.45; }
+@media (prefers-reduced-motion: no-preference) {
+  .sp-switch-thumb { transition: transform 0.12s ease-out, background 0.12s; }
+}
+
+.sp-sound {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.sp-mute {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 11px;
+  padding: 0;
+}
+.sp-volume {
+  width: 90px;
+  accent-color: var(--op-accent);
+}
+.sp-value { color: var(--op-muted); width: 34px; text-align: right; }
+
+/* ---- the "today" button in the status strip ---- */
+.strip-today {
+  background: none;
+  border: 1px solid var(--strip-border);
+  border-radius: 3px;
+  color: var(--strip-fg);
+  font: inherit;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  padding: 0 5px;
+  height: 14px;
+  cursor: pointer;
+}
+.strip-today:hover,
+.strip-today.open {
+  color: var(--strip-needs-you);
+  border-color: var(--strip-dim);
+}
+
+/* ---- Today popover: above the strip, bottom right ---- */
+.today-panel {
+  bottom: 24px;
+  right: 8px;
+  width: 220px;
+  max-width: calc(100% - 16px);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .today-panel { animation-name: popoverUp; }
+}
+@keyframes popoverUp {
+  from { opacity: 0; transform: translateY(3px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.today-grid {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  column-gap: 12px;
+  row-gap: 1px;
+}
+.today-grid dt { color: var(--op-muted); }
+.today-grid dd { text-align: right; font-variant-numeric: tabular-nums; }
+.today-grid dd.tone-dim  { color: var(--op-dim); }
+.today-grid dd.tone-good { color: var(--op-ok); }
+.today-grid dd.tone-bad  { color: var(--op-bad); }

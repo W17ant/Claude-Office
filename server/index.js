@@ -15,6 +15,8 @@
  *   hook classified out of the sessions' Bash commands
  * - GET /tasks shows each session's task list, the board on the office's
  *   kanban whiteboard (server/tasks.js)
+ * - GET /recap?date=YYYY-MM-DD gives one day's counts — sessions, agents,
+ *   tasks, deploys, failures, pushes, incidents, payroll (server/recap.js)
  */
 
 import express from 'express'
@@ -41,6 +43,7 @@ import {
   readLanConfig, lanHostOk, lanOriginOk, viewerKeyFrom, viewerKeyMatches, viewerLink, renderQr,
   parseAllowedHosts, allowedHostMatches, allowedOriginMatches,
 } from './lan.js'
+import { createRecap, recapLine, isRecapDate, localDate } from './recap.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -1709,6 +1712,7 @@ function relaySignals(body, signals) {
       seq: ++signalSeq,
     }
     pushRing(signalRing, record)
+    noteRecap(() => recap.signal(record))
     if (body.sessionId) {
       if (!sessionSignals.has(body.sessionId)) sessionSignals.set(body.sessionId, [])
       pushRing(sessionSignals.get(body.sessionId), record)
@@ -1799,9 +1803,22 @@ app.use((req, res, next) => {
 
 app.options('*', (_req, res) => res.sendStatus(204))
 
+// The end-of-day recap (server/recap.js): per-day counts in chat.db, noted
+// from processEvent, relaySignals, the incident commands and POST /status
+const recap = createRecap(db)
+
+/**
+ * Run one recap note. Why the try/catch: the recap is a side tally — a full
+ * disk or a locked database must never change what an event, a signal or a
+ * status report does, so a failure is logged and dropped.
+ */
+function noteRecap(fn) {
+  try { fn() } catch (err) { console.warn(`[recap] not counted: ${err?.message ?? err}`) }
+}
+
 // Payroll / electricity / memory: POST /status + GET /status (server/status.js),
 // fed by the Claude Code status line and keyed by the same session ids as `sessions`
-const status = mountStatus(app, { requireToken, broadcast, staleMs: STALE_AGENT_MS, sessions })
+const status = mountStatus(app, { requireToken, broadcast, staleMs: STALE_AGENT_MS, sessions, onSessionStatus: (sessionId, cost) => noteRecap(() => recap.cost(sessionId, cost)) })
 
 /**
  * A permission was answered from the office: the session's hand comes down
@@ -2156,15 +2173,20 @@ function handleSlashCommand(cmd) {
     // Sent after the reply lines below so the office's own postmortem card lands
     // under the all-clear line rather than above it.
     case '/incident': {
+      noteRecap(() => recap.incident('declare'))
       setImmediate(() => broadcast({ type: 'variant_change', variant: 'incident', reason: 'manual', timestamp: Date.now() }))
       return '🔴 INCIDENT DECLARED — prod is down. Everyone to the war room. (/all-clear when it is over)'
     }
     case '/all-clear': {
+      noteRecap(() => recap.incident('resolved'))
       setImmediate(() => broadcast({ type: 'variant_change', variant: 'none', reason: 'manual', timestamp: Date.now() }))
       return '✅ ALL CLEAR — incident over. Postmortem at 10, blameless, bring pizza.'
     }
+    // Today's counts as one office-manager line (server/recap.js); numbers only
+    case '/recap':
+      return recapLine(recap.today())
     case '/help':
-      return '📋 Commands: /status — office stats, /agents — list agents, /incident — declare an incident, /all-clear — end it, /clear — wipe chat history (needs the auth token), /help — this message'
+      return '📋 Commands: /status — office stats, /agents — list agents, /recap — today so far, /incident — declare an incident, /all-clear — end it, /clear — wipe chat history (needs the auth token), /help — this message'
     default:
       return null
   }
@@ -2620,6 +2642,18 @@ app.get('/signals', (req, res) => {
 })
 
 /**
+ * GET /recap?date=YYYY-MM-DD — one day's counts from server/recap.js
+ * (default: today, in the server's local time). Numbers only — no session,
+ * agent or task names, no text — so it stays open like the other read-only
+ * GETs. A day with nothing noted answers zeros.
+ */
+app.get('/recap', (req, res) => {
+  const date = req.query.date === undefined ? localDate(Date.now()) : req.query.date
+  if (!isRecapDate(date)) return res.status(400).json({ error: 'date must be YYYY-MM-DD' })
+  res.json({ ...recap.get(date), today: date === localDate(Date.now()) })
+})
+
+/**
  * GET /settings — the office settings (see Settings above). Open.
  * POST /settings — change them: { logPrompts: "off" | "summary" | "full",
  * answerPermissions: boolean, notifyPermissions: boolean }. Needs the UI token (the office page) or the
@@ -2888,7 +2922,36 @@ app.post('/chat/cron-state', (req, res) => {
 // Event processing — normalise incoming hook payloads
 // ---------------------------------------------------------------------------
 
+/**
+ * Apply one office event (a hook event, or one the server makes itself: a
+ * stale sweep, a session's agents clocking out) and return what to
+ * broadcast, or null. The work is applyEvent's; this wrapper only lets the
+ * recap count what the event turned out to mean, so every caller — POST
+ * /event, the sweeps, the nested calls inside applyEvent — is counted the
+ * same way, and none of them behaves differently.
+ */
 function processEvent(body) {
+  const event = applyEvent(body)
+  noteRecap(() => recap.note(recapFacts(body, event)))
+  return event
+}
+
+/**
+ * What the recap counts from one processed event (see server/recap.js for
+ * each column's definition). Read after applyEvent, so "active" and
+ * "completed" are the office's own verdict, not the hook's say-so.
+ */
+function recapFacts(body, event) {
+  const facts = {}
+  const sid = typeof body?.sessionId === 'string' ? body.sessionId : null
+  if (sid && body.type !== 'session_ended' && sessions.get(sid)?.state === 'active') facts.session = sid
+  if (event?.type === 'agent_spawned' && event.agent?.id) facts.spawned = event.agent.id
+  if (event?.type === 'agent_completed' && activeAgents.get(event.agentId)?.state === 'completed') facts.completed = event.agentId
+  if (body?.type === 'task_completed' && sid && sessions.has(sid)) facts.task = `${sid}:${body.taskId || body.subject || ''}`
+  return facts
+}
+
+function applyEvent(body) {
   switch (body.type) {
     case 'agent_spawned': {
       const agent = body.agent ?? {}
@@ -4394,6 +4457,7 @@ export {
   settings,
   activity,
   processEvent,
+  recap,
   sendAgentMessage,
   sweepStale,
   broadcast,

@@ -14,6 +14,8 @@ import AgentCard from './components/AgentCard'
 import PermissionCards from './components/PermissionCard'
 import { isPermissionEvent, reducePermissions, setUiToken, type PermissionAction, type PermissionCardState } from './permissions'
 import StatusStrip from './components/StatusStrip'
+import SettingsPanel from './components/SettingsPanel'
+import { readSound, saveVolume, saveMuted, readDayNightMode, saveDayNightMode, type DayNightMode } from './settings'
 import { Agent, AGENT_CONFIGS } from './types'
 import { getCurrentPhase, getPhaseLabel, type DayPhase } from './daylight'
 import { useAgentSocket } from './hooks/useAgentSocket'
@@ -69,6 +71,13 @@ const VIEWER_NOTICE = pageViewerKey === null ? 'no viewer key: open the phone li
 // Why: allow ?theme=office on demo/sim URLs to preload Dunder Mifflin mode
 import { setTheme as _setTheme } from './theme'
 if (params.get('theme') === 'office') { _setTheme('office') }
+// Why at module load: the ambient hum starts on mount and must start at the
+// remembered level (or stay off when the last visit muted it) — src/settings.ts
+{
+  const sound = readSound()
+  sfx.setVolume(sound.volume)
+  if (sound.muted) sfx.toggleMute()
+}
 // Why: ?variant=incident pins incident mode on (auto-exit off) for screenshots
 if (params.get('variant') === 'incident') { pinIncidentFromUrl() }
 
@@ -307,9 +316,14 @@ const App: React.FC = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [chatTypingUser, setChatTypingUser] = useState<string | null>(null)
   const [lastSeenId, setLastSeenId] = useState<number | null>(null)
-  const [muted, setMuted] = useState(false)
+  const [muted, setMuted] = useState(sfx.isMuted())
   const [dayPhase, setDayPhase] = useState<DayPhase>(getCurrentPhase())
-  const [dayNightMode, setDayNightMode] = useState<'auto' | 'day' | 'night'>('auto')
+  const [dayNightMode, setDayNightMode] = useState<DayNightMode>(readDayNightMode)
+  useEffect(() => { saveDayNightMode(dayNightMode) }, [dayNightMode])
+  // The Settings panel (the gear in the title bar)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const gearRef = useRef<HTMLButtonElement>(null)
+  const closeSettings = useCallback(() => setSettingsOpen(false), [])
 
   // Compressed day cycle: 10 min = 24 hours
   // nightOpacity: 0 = full day, 1 = full night
@@ -1386,12 +1400,16 @@ const App: React.FC = () => {
     const nowMuted = sfx.toggleMute()
     setMuted(nowMuted)
     setVolume(sfx.getVolume())
+    saveMuted(nowMuted)
   }, [])
 
   const handleVolumeChange = useCallback((v: number) => {
     sfx.setVolume(v)
     setVolume(v)
     setMuted(v === 0)
+    // Why both: dragging to 0 is a mute; the level to come back to is the last non-zero one
+    saveVolume(v)
+    saveMuted(v === 0)
   }, [])
 
   const handleSendMessage = useCallback((text: string) => {
@@ -1587,7 +1605,34 @@ const App: React.FC = () => {
           {dayNightMode === 'auto' ? 'AUTO' : dayNightMode === 'day' ? 'DAY' : 'NIGHT'}
         </button>
         <span className="title-bar-phase">{getPhaseLabel(effectivePhase)}</span>
+        <button
+          ref={gearRef}
+          type="button"
+          className={`title-bar-gear${settingsOpen ? ' open' : ''}`}
+          onClick={() => setSettingsOpen(o => !o)}
+          aria-label="Settings"
+          aria-expanded={settingsOpen}
+          aria-haspopup="dialog"
+          title="Settings: theme, day/night, season, sound, server settings"
+          data-testid="settings-gear"
+        >
+          ⚙
+        </button>
       </div>
+      {settingsOpen && (
+        <SettingsPanel
+          onClose={closeSettings}
+          anchor={gearRef}
+          dayNightMode={dayNightMode}
+          onDayNightMode={setDayNightMode}
+          volume={volume}
+          muted={muted}
+          onVolumeChange={handleVolumeChange}
+          onToggleMute={handleToggleMute}
+          readOnly={readOnly}
+          simMode={isSimMode}
+        />
+      )}
 
       <div className="app-body">
       <div className="office-view">

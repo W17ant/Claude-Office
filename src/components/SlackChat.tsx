@@ -3,9 +3,8 @@ import React, { useEffect, useRef, useState, useCallback } from 'react'
 import { ROLE_TO_CHAR } from '../config'
 import { getSpritePath, useTheme, toggleTheme, getTheme, themedDisplayName } from '../theme'
 import IncidentBadge from './IncidentBadge'
-import { postSetting } from '../permissions'
 import { officeHttpBase } from '../serverUrl'
-import { officeAuthHeaders } from '../officeAuth'
+import { useServerSettings, setAnswerPermissions, setAiPaused, setNotifyPermissions } from '../serverSettings'
 
 export function getAvatarSrc(role: string, agentId?: string): string {
   const charBase = ROLE_TO_CHAR[role] ?? 'employee-3'
@@ -36,10 +35,10 @@ export interface ChatMessage {
 
 const EMOJI_PICKER = ['👍', '👎', '😊', '🎉', '😡', '🔥', '💯']
 
-// The server's prompt-logging level (GET /settings). How much of the
-// conversation is kept is changed from a terminal, with the office token, so
-// the chat header only shows the level and how to change it. Absent until
-// the route exists.
+// The server's prompt-logging level (GET /settings). The chat header only
+// shows the level; it is changed in the Settings panel (the gear in the title
+// bar, UI token) or from a terminal with the office token. Absent until the
+// route exists.
 const SETTINGS_URL = `${officeHttpBase()}/settings`
 const LOG_PROMPTS_WHAT: Record<string, string> = {
   off:     'state only — no prompt or reply text is stored, broadcast or shown',
@@ -49,7 +48,7 @@ const LOG_PROMPTS_WHAT: Record<string, string> = {
 function logPromptsHint(level: string): string {
   return [
     `Prompt logging: ${level} — ${LOG_PROMPTS_WHAT[level] ?? 'unknown level'}.`,
-    'A server setting (~/.agent-office/settings.json); change it with the office token:',
+    'A server setting (~/.agent-office/settings.json); change it in Settings (the gear in the title bar), or with the office token:',
     `curl -X POST ${SETTINGS_URL} -H "Authorization: Bearer $(cat ~/.agent-office/auth-token)" -H 'Content-Type: application/json' -d '{"logPrompts":"${level === 'off' ? 'summary' : 'off'}"}'`,
   ].join('\n')
 }
@@ -106,61 +105,27 @@ const SlackChat: React.FC<SlackChatProps> = ({ messages, muted, volume, onToggle
     setEmojiPickerMsgId(null)
   }, [onReaction])
 
-  // Prompt-logging level — read-only in the UI (see logPromptsHint); silent when the route is missing.
-  // The same GET /settings also says whether permission dialogs may be answered here.
-  const [logPrompts, setLogPrompts] = useState<string | null>(null)
-  const [answerHere, setAnswerHere] = useState<boolean | null>(null)
-  const [notifyHere, setNotifyHere] = useState<boolean | null>(null)
-  useEffect(() => {
-    fetch(SETTINGS_URL, { signal: AbortSignal.timeout(2000), headers: officeAuthHeaders() })
-      .then(r => (r.ok ? r.json() : null))
-      .then(d => {
-        if (d && typeof d.logPrompts === 'string') setLogPrompts(d.logPrompts)
-        if (d && typeof d.answerPermissions === 'boolean') setAnswerHere(d.answerPermissions)
-        if (d && typeof d.notifyPermissions === 'boolean') setNotifyHere(d.notifyPermissions)
-      })
-      .catch(() => {})
-  }, [])
+  // The server settings the header shows (src/serverSettings.ts), shared
+  // with the Settings panel so a change in either shows in both: the
+  // prompt-logging level (shown only), whether permission dialogs may be
+  // answered here (UI token), the OS notification on a permission wait and
+  // the AI chat monitor's pause.
+  const { logPrompts, answerPermissions: answerHere, notifyPermissions: notifyHere, aiPaused } = useServerSettings()
+  const cronPaused = aiPaused === true
 
-  // Answer permissions from the office (answerPermissions) — the one setting
-  // the page may change: POST /settings with the UI token from the snapshot
-  // (src/permissions.ts). Optimistic; put back if the server said no.
   const toggleAnswerHere = useCallback(() => {
     if (answerHere === null) return
-    const next = !answerHere
-    setAnswerHere(next)
-    postSetting({ answerPermissions: next }).then(ok => { if (!ok) setAnswerHere(answerHere) })
+    void setAnswerPermissions(!answerHere)
   }, [answerHere])
 
-  // An OS notification when a permission wait starts (notifyPermissions):
-  // the same optimistic POST /settings as the toggle above
+  // An OS notification when a permission wait starts (notifyPermissions)
   const toggleNotify = useCallback(() => {
     if (notifyHere === null) return
-    const next = !notifyHere
-    setNotifyHere(next)
-    postSetting({ notifyPermissions: next }).then(ok => { if (!ok) setNotifyHere(notifyHere) })
+    void setNotifyPermissions(!notifyHere)
   }, [notifyHere])
 
-  // Cron/chat-monitor pause toggle
-  const [cronPaused, setCronPaused] = useState(false)
-
-  // Load initial state from server
-  useEffect(() => {
-    fetch(`${officeHttpBase()}/chat/cron-state`, { headers: officeAuthHeaders() })
-      .then(r => r.json())
-      .then(d => setCronPaused(!!d.paused))
-      .catch(() => {})
-  }, [])
-
   const toggleCron = useCallback(() => {
-    const newState = !cronPaused
-    setCronPaused(newState)
-    // Update the state file via a simple POST
-    fetch(`${officeHttpBase()}/chat/cron-state`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...officeAuthHeaders({ method: 'POST' }) },
-      body: JSON.stringify({ paused: newState }),
-    }).catch(() => {})
+    void setAiPaused(!cronPaused)
   }, [cronPaused])
 
   // Auto-type effect for video mode
@@ -358,6 +323,7 @@ const SlackChat: React.FC<SlackChatProps> = ({ messages, muted, volume, onToggle
           <div className="slack-slash-hint">
             <span className="slack-slash-cmd">/status</span>
             <span className="slack-slash-cmd">/agents</span>
+            <span className="slack-slash-cmd">/recap</span>
             <span className="slack-slash-cmd">/help</span>
             <span className="slack-slash-cmd">/the-office</span>
             <span className="slack-slash-cmd">/incident</span>
