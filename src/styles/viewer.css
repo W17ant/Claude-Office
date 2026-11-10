@@ -1,0 +1,64 @@
+/* viewer.css - phone mode's full-screen stage (src/components/ViewerStage.tsx) */
+
+/* Why: the desktop page relies on body's fixed size; the phone page must own the whole screen */
+html:has(.viewer-wrapper),
+html:has(.viewer-wrapper) body {
+  height: 100%;
+  overflow: hidden;
+  background: #0a0a0f;
+  overscroll-behavior: none;
+}
+
+.viewer-wrapper {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  /* Why: 100dvh follows iOS Safari's collapsing toolbars; 100vh above is the fallback */
+  height: 100dvh;
+  box-sizing: border-box;
+  /* The room stays clear of the notch, the rounded corners and the home bar */
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #0a0a0f;
+  overflow: hidden;
+  font-family: 'JetBrains Mono', monospace;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  /* Why: a stray swipe must not scroll, zoom or pull-to-refresh the mounted phone */
+  touch-action: none;
+  overscroll-behavior: none;
+}
+
+.viewer-stage {
+  position: relative;
+  flex: none;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.viewer-scaler {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+}
+
+.viewer-status {
+  position: absolute;
+  left: 50%;
+  top: calc(env(safe-area-inset-top, 0px) + 12px);
+  transform: translateX(-50%);
+  max-width: calc(100% - 32px);
+  padding: 4px 10px;
+  border-radius: 10px;
+  background: rgba(20, 20, 26, 0.85);
+  color: #f0b44c;
+  font-size: 11px;
+  text-align: center;
+  pointer-events: none;
+}

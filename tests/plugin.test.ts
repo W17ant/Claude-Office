@@ -147,9 +147,16 @@ describe('hooks/hooks.json', () => {
     }
   })
 
-  it('registers exactly the 19 events the installer registers (workers, sessions, the main thread’s turn, the task list)', () => {
-    expect(INSTALLER_EVENTS).toHaveLength(19)
+  it('registers exactly the 23 events the installer registers (workers, sessions, the main thread’s turn, the task list, MCP questions, denials, teammates)', () => {
+    expect(INSTALLER_EVENTS).toHaveLength(23)
     expect(Object.keys(hooks).sort()).toEqual([...INSTALLER_EVENTS].sort())
+  })
+
+  it('never registers WorktreeCreate / WorktreeRemove: a command hook there replaces git worktree creation and must print the path', () => {
+    for (const event of ['WorktreeCreate', 'WorktreeRemove', 'FileChanged', 'ConfigChange', 'InstructionsLoaded']) {
+      expect(Object.keys(hooks), event).not.toContain(event)
+      expect(INSTALLER_EVENTS, event).not.toContain(event)
+    }
   })
 
   it('runs agent-tracker.sh through ${CLAUDE_PLUGIN_ROOT}, double-quoted, once per event', () => {
@@ -217,6 +224,12 @@ describe('hooks/hooks.json × agent-tracker.sh', () => {
     PostModelSwitch: { from_model: 'a', to_model: 'b', requested_model: 'b', source: 'command', context_tokens: 1 },
     TaskCreated: { task_id: '1', task_subject: 'Fix the parser', task_description: 'The parser drops trailing commas' },
     TaskCompleted: { task_id: '1', task_subject: 'Fix the parser' },
+    // Shapes from the hooks reference (never fired here). On these stdout would
+    // answer the question / replace the answer / keep a teammate working: silent
+    Elicitation: { mcp_server_name: 'github', message: 'Please provide your token', mode: 'form', requested_schema: { type: 'object', properties: { token: { type: 'string' } } } },
+    ElicitationResult: { mcp_server_name: 'github', action: 'accept', content: { token: 'secret' }, mode: 'form' },
+    PermissionDenied: { ...tool, permission_mode: 'auto', reason: '[Irreversible Local Destruction]' },
+    TeammateIdle: { teammate_name: 'researcher', team_name: 'session-a1b2c3d4' },
   }
 
   // An AGENT_OFFICE_HOME with no auth-token, so the script never finds a server to call

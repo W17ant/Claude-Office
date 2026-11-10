@@ -16,7 +16,10 @@
 #      doing: UserPromptSubmit (the prompt), Stop (the reply), PermissionRequest
 #      and Notification (waiting on you), StopFailure (API errors), PreCompact
 #      and PostCompact (compaction), PostToolBatch (a permission answered),
-#      CwdChanged (project tag follows a cd), PostModelSwitch (model)
+#      CwdChanged (project tag follows a cd), PostModelSwitch (model),
+#      TaskCreated and TaskCompleted (the task board), Elicitation and
+#      ElicitationResult (an MCP server asking you), PermissionDenied (auto
+#      mode refused a call) and TeammateIdle (an agent team's board)
 #      (--status-line-only skips this step)
 #   3. Registers status-line.sh as the statusLine (+ subagentStatusLine)
 #      command — the payroll / electricity / memory meters — chaining any
@@ -399,7 +402,7 @@ merge_failed() {
 # instead of crashing the install.
 # ---------------------------------------------------------------------------
 if [ "$HOOKS" = "1" ]; then
-echo -e "${CYAN}[...]${RESET} Registering the 19 hook events (tool calls, subagents, sessions, the main thread's turn, the task list)..."
+echo -e "${CYAN}[...]${RESET} Registering the 23 hook events (tool calls, subagents, sessions, the main thread's turn, the task list, MCP questions, auto-mode denials, teammates)..."
 
 python3 - "$SETTINGS_FILE" "$HOOK_COMMAND" "$TRACKER_SCRIPT" <<'PYEOF' || merge_failed
 import json, os, shlex, sys
@@ -421,6 +424,12 @@ EVENTS = (
     'PostToolBatch', 'CwdChanged', 'PostModelSwitch',
     # the task board: the session's task list changed (the office reads the list itself)
     'TaskCreated', 'TaskCompleted',
+    # an MCP server asking the user (hand up / down), auto mode refusing a call,
+    # an agent-team teammate going idle (its team's board is read again).
+    # Never WorktreeCreate: a command hook there replaces git's worktree
+    # creation and must print the path, so registering the tracker would break
+    # every worktree. FileChanged / ConfigChange / InstructionsLoaded draw nothing.
+    'Elicitation', 'ElicitationResult', 'PermissionDenied', 'TeammateIdle',
 )
 
 with open(settings_path, 'r') as f:

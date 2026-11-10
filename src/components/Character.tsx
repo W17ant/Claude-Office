@@ -1,3 +1,5 @@
+import { currentSeason, useSeasonArt } from '../season'
+import { HAT_SRC, useHeadAnchor, wearsOverlayHat } from '../hat'
 import React, { useRef, useState, useEffect } from 'react'
 import { Agent, AgentState } from '../types'
 import SpeechBubble from './SpeechBubble'
@@ -7,6 +9,8 @@ import { getEffect } from '../agentManager'
 import { ROLE_TO_CHAR, BOSS_ROLE } from '../config'
 import { getSpritePath, useTheme } from '../theme'
 import { useVariant } from '../incident'
+import { incidentPropFor } from '../incidentAssets'
+import { useWalkFrames, walkFrame } from '../walk'
 import { isMainAgent, isHardNeedsYou, needsYouBadge, needsYouShort } from '../mainState'
 
 export { ROLE_TO_CHAR }
@@ -88,6 +92,7 @@ const OPPOSITE: Record<SpriteDirection, SpriteDirection> = {
 
 const Character: React.FC<CharacterProps> = ({ agent, idleDurationMs = 0, zIndex, isTyping, showProject, onClick, inspected }) => {
   const prevPosRef = useRef({ x: agent.position.x, y: agent.position.y })
+  const lastMoveRef = useRef(0) // when this character last changed position (ms)
   const directionRef = useRef<SpriteDirection>(agent.spriteFacing ?? 'front-right')
   const [turnedAround, setTurnedAround] = useState(false)
 
@@ -110,7 +115,17 @@ const Character: React.FC<CharacterProps> = ({ agent, idleDurationMs = 0, zIndex
   const dx = agent.position.x - prevPosRef.current.x
   const dy = agent.position.y - prevPosRef.current.y
 
-  if (isMoving && (Math.abs(dx) > 0.005 || Math.abs(dy) > 0.005)) {
+  // Why the position, not the state: coffee breaks and new hires count as
+  // "moving" while standing still; only a position change means legs move.
+  // Why a remembered time, not this render's delta: React renders twice in
+  // development (StrictMode), and the second pass sees no delta because the
+  // first just updated prevPosRef; 250 ms (~15 animation frames) also bridges
+  // a frame where the walker happens not to advance.
+  const moved = isMoving && (Math.abs(dx) > 0.005 || Math.abs(dy) > 0.005)
+  const now = Date.now()
+  if (moved) lastMoveRef.current = now
+  const stepping = isMoving && now - lastMoveRef.current < 250
+  if (moved) {
     directionRef.current = getDirectionFromDelta(dx, dy)
   } else if (!isMoving && agent.spriteFacing) {
     // At a spot — use the spot's facing direction (or opposite if turned around)
@@ -156,10 +171,21 @@ const Character: React.FC<CharacterProps> = ({ agent, idleDurationMs = 0, zIndex
   const animState = getAnimState(agent.state)
   const charBase = getCharBase(agent.role)
   const theme = useTheme() // Why: re-render on theme toggle so sprite path updates
-  const spriteSrc = getSpritePath(agent.id, agent.role, charBase, directionRef.current)
+  useWalkFrames() // Why: re-render when this sprite's stride frames turn out to exist
+  useSeasonArt() // Why: re-render when this sprite's festive copy turns out to exist
+  const standingSrc = getSpritePath(agent.id, agent.role, charBase, directionRef.current)
+  // While walking, the legs move: a four-frame walk cycle (src/walk.ts)
+  const spriteSrc = walkFrame(standingSrc, stepping, now)
+  // In December everyone wears a Santa hat, placed on the head measured from
+  // the sprite itself (src/hat.ts), so every cast and custom sprite gets one.
+  // Who wears it (NO_HAT) is decided by the standing sprite's name, which a
+  // walk frame's name would not match; where it sits is measured on the frame
+  // actually drawn, so the hat bobs with the head through the walk cycle.
+  const head = useHeadAnchor(spriteSrc, currentSeason() === 'christmas' && wearsOverlayHat(standingSrc))
   void theme
   const variant = useVariant() // Why: re-render when incident mode flips so the failure bubble shows/hides
-  void variant
+  // Prod is down: each kind of agent grabs its prop (pager, megaphone, ...)
+  const prop = variant === 'incident' ? incidentPropFor(agent.role) : null
 
   // A session's Claude wears its main-thread state: a hand up while it waits on
   // you, a warning on an API error, a broom during a memory wipe, a glass of
@@ -241,22 +267,57 @@ const Character: React.FC<CharacterProps> = ({ agent, idleDurationMs = 0, zIndex
         data-agent-id={agent.id}
       >
         <div className="char-shadow" />
-        <ResilientImg
-          src={spriteSrc}
-          alt={agent.name}
-          className="char-sprite"
-          style={{
-            height: agent.id.startsWith('boss-') ? 85 : 78,
-            width: 'auto',
-            filter: `drop-shadow(0 0 1px ${agent.color}) drop-shadow(0 0 0.5px #000)`,
-            animationDelay: `${(agent.id.charCodeAt(0) * 0.37) % 3}s`,
-          }}
-          draggable={false}
-        />
+        {/* The sprite and anything worn on it bob together: the animation is on the stack */}
+        <div className="char-sprite-stack" style={{ animationDelay: `${(agent.id.charCodeAt(0) * 0.37) % 3}s` }}>
+          <ResilientImg
+            src={spriteSrc}
+            alt={agent.name}
+            className="char-sprite"
+            style={{
+              height: agent.id.startsWith('boss-') ? 85 : 78,
+              width: 'auto',
+              filter: `drop-shadow(0 0 1px ${agent.color}) drop-shadow(0 0 0.5px #000)`,
+            }}
+            draggable={false}
+          />
+          {head && (
+            <img
+              src={HAT_SRC}
+              alt=""
+              className="char-hat"
+              style={{
+                left: `${(head.x - (head.width * HAT_SCALE) / 2) * 100}%`,
+                width: `${head.width * HAT_SCALE * 100}%`,
+                bottom: `${(1 - head.top - HAT_SINK) * 100}%`,
+                // Why: the hat is drawn for a head turned to the viewer's left;
+                // a sprite facing right wears it mirrored so the tip trails behind
+                transform: directionRef.current.endsWith('right') ? 'scaleX(-1)' : undefined,
+              }}
+              draggable={false}
+            />
+          )}
+          {/* Prod is down: the prop this kind of agent grabs, held at the hand */}
+          {prop && (
+            <img
+              src={prop}
+              alt=""
+              className={`char-prop${directionRef.current.endsWith('right') ? ' mirrored' : ''}`}
+              draggable={false}
+            />
+          )}
+        </div>
       </div>
     </div>
   )
 }
+
+// Why 1.2: the fur band overhangs the head a little on each side, like a
+// real hat; tuned on all 30+ cast sprites (wider looked like a sombrero)
+const HAT_SCALE = 1.2
+// Why 0.13: the band sits 13% of the sprite's height below the top of the
+// hair, at the forehead, so the hat is worn rather than balanced on the hair
+// (less floated above the chibi heads' volume of hair)
+const HAT_SINK = 0.13
 
 // Why: the animation tick re-renders App up to 60 times a second while anyone
 // walks; an agent whose object did not change keeps its previous render

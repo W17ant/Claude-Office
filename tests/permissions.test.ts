@@ -506,9 +506,9 @@ describe('the answerPermissions setting and its marker file', () => {
 
     const off = await ui(office.server.UI_TOKEN, { answerPermissions: false })
     expect(off.status).toBe(200)
-    expect(off.body).toEqual({ ok: true, logPrompts: 'summary', answerPermissions: false })
+    expect(off.body).toEqual({ ok: true, logPrompts: 'summary', answerPermissions: false, notifyPermissions: true })
     expect(existsSync(marker)).toBe(false)
-    expect(JSON.parse(readFileSync(join(office.dir, 'settings.json'), 'utf8'))).toEqual({ logPrompts: 'summary', answerPermissions: false })
+    expect(JSON.parse(readFileSync(join(office.dir, 'settings.json'), 'utf8'))).toEqual({ logPrompts: 'summary', answerPermissions: false, notifyPermissions: true })
 
     // Off survives a restart: no marker is written at load
     const again = await loadOffice({ dir: office.dir })
@@ -516,7 +516,7 @@ describe('the answerPermissions setting and its marker file', () => {
     expect(existsSync(marker)).toBe(false)
     // The UI token still changes logPrompts too (the page may change both)
     const on = await request(again.server.app).post('/settings').set('Authorization', `Bearer ${again.server.UI_TOKEN}`).send({ answerPermissions: true, logPrompts: 'off' })
-    expect(on.body).toEqual({ ok: true, logPrompts: 'off', answerPermissions: true })
+    expect(on.body).toEqual({ ok: true, logPrompts: 'off', answerPermissions: true, notifyPermissions: true })
     expect(existsSync(marker)).toBe(true)
   })
 
