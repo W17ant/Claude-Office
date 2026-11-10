@@ -1,0 +1,241 @@
+/* room-switcher.css - the floor plan in the stage's corner (src/components/RoomSwitcher.tsx)
+   and the code-drawn placeholder for a room without art (src/components/RoomBackdrop.tsx).
+   Neither exists in the DOM while the office is the only open room. */
+
+/* ===== FLOOR PLAN =====
+   Laid over the bottom-left corner of the room column (.office-view), not of
+   the room picture: when the column is wider or taller than the picture the
+   plan sits in the letterbox and covers nothing. Sized in px, small enough
+   for the desktop's compact mode (a 302 px wide column): four boxes of 30 px. */
+
+.office-view.has-rooms {
+  position: relative;
+}
+
+.room-switcher {
+  /* Per-theme colours; the default theme is the dark pixel office */
+  --plan-bg: rgba(16, 14, 12, 0.88);
+  --plan-edge: #4a3a28;
+  --plan-room: #2a2520;
+  --plan-room-hover: #3a3128;
+  --plan-ink: #c9b68f;
+  --plan-current: #ffd27a;
+  --plan-needs-you: #ffb020;
+  --plan-trouble: #ff5f57;
+
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  /* Why 30: above the day overlay (20) and every character (their y, at most
+     100), below a speaking character's bubble (999) and the settings panel */
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--plan-edge);
+  border-radius: 4px;
+  background: var(--plan-bg);
+  font-family: 'JetBrains Mono', monospace;
+  user-select: none;
+}
+
+.room-switcher.theme-office {
+  --plan-bg: rgba(238, 234, 222, 0.92);
+  --plan-edge: #8f8a78;
+  --plan-room: #d8d2c0;
+  --plan-room-hover: #c8c1ac;
+  --plan-ink: #3d3a30;
+  --plan-current: #1f5fa8;
+  --plan-needs-you: #b86a00;
+  --plan-trouble: #c0241c;
+}
+
+.plan-row {
+  display: flex;
+  gap: 2px;
+}
+
+.plan-room {
+  position: relative;
+  box-sizing: border-box;
+  /* Why 30 x 26: a one-word name at 6 px and two rows of four 4 px dots */
+  width: 30px;
+  height: 26px;
+  padding: 1px 2px 2px;
+  border: 1px solid var(--plan-edge);
+  border-radius: 2px;
+  background: var(--plan-room);
+  color: var(--plan-ink);
+  font: inherit;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+/* The corridor: a strip under the boxes, as wide as the row of them */
+.plan-room.plan-hub {
+  width: 100%;
+  height: 12px;
+  flex-direction: row;
+  justify-content: flex-start;
+  gap: 4px;
+  padding: 0 3px;
+}
+
+.plan-room:hover {
+  background: var(--plan-room-hover);
+}
+
+.plan-room.current {
+  border-color: var(--plan-current);
+  box-shadow: inset 0 0 0 1px var(--plan-current);
+}
+
+.plan-room:focus-visible {
+  outline: 2px solid var(--plan-current);
+  outline-offset: 1px;
+}
+
+.plan-name {
+  font-size: 6px;
+  line-height: 8px;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+}
+
+.plan-dots {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-content: flex-start;
+  gap: 1px;
+  /* Four 4 px dots and three 1 px gaps to a row */
+  max-width: 19px;
+}
+
+.plan-hub .plan-dots {
+  max-width: none;
+  flex-wrap: nowrap;
+}
+
+.plan-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  /* Why an edge: an agent's own colour can be close to the box's */
+  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.55);
+}
+
+.plan-more {
+  font-size: 5px;
+  line-height: 4px;
+  font-style: normal;
+}
+
+/* The mark: a badge on the box's corner, and the box's own edge in its colour
+   so it is not carried by colour or by the badge alone */
+.plan-mark {
+  position: absolute;
+  top: -4px;
+  right: -3px;
+  min-width: 8px;
+  height: 8px;
+  border-radius: 4px;
+  font-size: 7px;
+  line-height: 8px;
+  font-weight: 700;
+  text-align: center;
+  color: #14110d;
+  background: var(--plan-needs-you);
+}
+
+.plan-room.mark-needs-you {
+  border-color: var(--plan-needs-you);
+}
+
+.plan-room.mark-needs-you .plan-mark {
+  animation: planMarkPulse 1.4s ease-in-out infinite;
+}
+
+.plan-room.mark-trouble {
+  border-color: var(--plan-trouble);
+}
+
+.plan-room.mark-trouble .plan-mark {
+  background: var(--plan-trouble);
+  color: #fff;
+}
+
+@keyframes planMarkPulse {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.35); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .plan-room { transition: none; }
+  .plan-room.mark-needs-you .plan-mark { animation: none; }
+}
+
+/* ===== PLACEHOLDER ROOM =====
+   An inline SVG filling .room-container, under the characters. */
+
+.room-placeholder {
+  --ph-void: #0d0c0b;
+  --ph-wall: #3a3028;
+  --ph-floor: #5a4a38;
+  --ph-line: #2a211a;
+  --ph-door: #7a5230;
+  --ph-front-door: #8a8f98;
+  --ph-furniture: #2f2a26;
+  --ph-seat: #46392c;
+  --ph-ink: #d9c7a0;
+  --ph-night: #05061c;
+
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.room-placeholder.theme-office {
+  --ph-void: #1c1b19;
+  --ph-wall: #cfc6ae;
+  --ph-floor: #7d8791;
+  --ph-line: #5d6670;
+  --ph-door: #8a6a48;
+  --ph-front-door: #9aa3ad;
+  --ph-furniture: #a59a82;
+  --ph-seat: #4f5a66;
+  --ph-ink: #2c2a25;
+}
+
+.ph-void { fill: var(--ph-void); }
+.ph-wall { fill: var(--ph-wall); }
+.ph-floor { fill: var(--ph-floor); }
+.ph-skirting { stroke: var(--ph-line); stroke-width: 2; }
+.ph-furniture { fill: var(--ph-furniture); stroke: var(--ph-line); stroke-width: 1; }
+.ph-seat { fill: var(--ph-seat); stroke: var(--ph-line); stroke-width: 1; }
+.ph-spot { fill: rgba(0, 0, 0, 0.28); }
+
+.ph-door rect { fill: var(--ph-door); stroke: var(--ph-line); stroke-width: 1.5; }
+.ph-front-door rect { fill: var(--ph-front-door); }
+/* The manager's door leads nowhere: drawn as a door, dashed so the preview says so */
+.ph-decor-door rect { stroke-dasharray: 4 3; }
+.ph-door .ph-plate { fill: #d8c27a; stroke: none; }
+.ph-door .ph-handle { fill: var(--ph-line); }
+
+.ph-title { fill: var(--ph-ink); font-size: 16px; letter-spacing: 4px; opacity: 0.85; }
+.ph-label { fill: var(--ph-ink); font-size: 8px; }
+.ph-note { fill: var(--ph-ink); font-size: 7px; opacity: 0.6; }
+/* Why 0.45 at full night: about what the office's night art loses against its day art */
+.ph-night { fill: var(--ph-night); fill-opacity: 0.45; pointer-events: none; transition: opacity 0.5s ease; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ph-night { transition: none; }
+}

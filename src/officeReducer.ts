@@ -38,7 +38,12 @@
  */
 
 import { Agent, AgentScene, OfficeEvent, Position, SignalEvent, SnapshotAgent, ServerHealth, SessionInfo, SessionMain, MainState, NeedsYou, AGENT_CONFIGS } from './types'
-import { ROOMS, AgentSpot } from './rooms'
+import { ROOMS, AgentSpot, HUB_ROOM, getFreeSpot, type RoomId } from './rooms'
+import {
+  beginTransfer, stepTransfer, settleTransfer, planRoomMoves, heldSpotIds, roomOf, inOffice,
+  FRONT_DOOR, type Transfer,
+} from './roomTransfer'
+import { LUNCH_ROOM, SERVER_ROOM } from './roomRules'
 import {
   mainId, isMainAgent, isFreeMain, isHardNeedsYou, needsYouLabel, agentStateFor,
   completionStats, summarise, projectFromCwd, countRunningTasks,
@@ -102,6 +107,16 @@ const A2A_ICONS: Record<string, string> = {
 }
 export const A2A_VISIT_MS = 6000
 
+/**
+ * How long an MCP server's worker stays at its rack after its last call.
+ * Why 30 s: MCP calls come in bursts (a query, a look at the result, the next
+ * query), and a worker that left after every call would spend the burst in
+ * the corridor. It is also MIN_VISIBLE_TIME: long enough to be noticed.
+ */
+export const MCP_LINGER_MS = 30_000
+/** Id prefix of an MCP server's worker: one per server name, however many sessions call it */
+export const MCP_WORKER_PREFIX = 'mcpw-'
+
 const SYSTEM_COLOR = '#8b8d91'
 
 // ---------------------------------------------------------------------------
@@ -125,6 +140,14 @@ export interface AgentMeta {
   beforeCompact?: MainState
   /** The boss: walking back to his desk from a hand-over (a new prompt may turn him round) */
   homeFromHandover?: boolean
+  /** Changing room right now (src/roomTransfer.ts); the ordinary walking code leaves the agent alone meanwhile */
+  transfer?: Transfer
+  /** The room the rules want it in and since when: it sets off once that has held for the rule's dwell */
+  wish?: { room: RoomId; since: number }
+  /** An MCP server worker: the sessions with a call to its server in flight */
+  mcpBusy?: string[]
+  /** An MCP server worker: when its last call finished (null while one is running); stamps its `mcp_worker_leave` */
+  mcpIdleSince?: number | null
 }
 
 /** An agent_working that arrived before the agent reached its desk (C13) */
@@ -178,8 +201,15 @@ export interface OfficeEnv {
   now: number
   /** true when driven by the real server; false under ?sim / ?video */
   live: boolean
-  computePath: (from: Position, to: Position) => Position[]
+  /** Waypoints between two points of one room (`room` defaults to the office) */
+  computePath: (from: Position, to: Position, room?: RoomId) => Position[]
   random: () => number
+  /**
+   * The rooms in use (src/roomAccess.ts). Absent means the office alone, and
+   * then nothing in here differs from the one-room office: every room branch
+   * below asks this first.
+   */
+  openRooms?: ReadonlySet<RoomId>
 }
 
 /** Internal actions the wiring schedules on the reducer's behalf */
@@ -198,6 +228,8 @@ export type OfficeAction =
   | SignalEvent
   /** A signal's scene has run its course (`until` guards against a newer scene) */
   | { type: 'scene_over'; agentId: string; until: number }
+  /** An MCP server worker has had nothing to do for MCP_LINGER_MS (`idleSince` guards against a call that came in since) */
+  | { type: 'mcp_worker_leave'; agentId: string; idleSince: number }
 
 export type SfxName = 'doorOpen' | 'typing' | 'celebration' | 'coffee' | 'alarm' | 'error' | 'powerDown' | 'notification' | 'needsYou'
 
@@ -251,11 +283,12 @@ function without<T>(record: Record<string, T>, id: string): Record<string, T> {
   return next
 }
 
-/** Spots held by agents who are still in the office (a leaver's desk is free) */
+/**
+ * Spots held by agents who are still in the building (a leaver's desk is
+ * free): their own desks, and the seats visitors hold in other rooms.
+ */
 function occupiedSpotIds(agents: Agent[]): Set<string> {
-  const ids = new Set<string>()
-  for (const a of agents) if (a.assignedSpotId && a.state !== 'completed') ids.add(a.assignedSpotId)
-  return ids
+  return heldSpotIds(agents)
 }
 
 /** The filing cabinet for browsing roles when it is free, otherwise the first free desk */
@@ -305,6 +338,28 @@ function walkTo(agent: Agent, target: Position, statusText: string, env: OfficeE
     statusText,
     pathQueue: env.computePath(agent.position, target),
   }
+}
+
+/** Whether the corridor is in use: then it, not the office door, is the way in and out of the building */
+function hasCorridor(env: OfficeEnv): boolean {
+  return env.openRooms?.has(HUB_ROOM) ?? false
+}
+
+/** Staff who never leave the office: the boss, and the decorative Claude of ?sim */
+function isPinned(agent: Agent): boolean {
+  return agent.id === BOSS_ID || agent.id === CLAUDE_ID
+}
+
+/**
+ * Put a freshly made agent at the corridor's front door, on its way to where
+ * it was headed (its desk, its rack, or its place in the lobby queue).
+ */
+function throughFrontDoor(agent: Agent, meta: AgentMeta, env: OfficeEnv): { agent: Agent; meta: AgentMeta } {
+  const arriving = beginTransfer(
+    { ...agent, room: HUB_ROOM, position: { ...FRONT_DOOR } },
+    agent.assignedRoom, agent.targetPosition, 'arrive', env,
+  )
+  return { agent: arriving.agent, meta: { ...meta, transfer: arriving.transfer } }
 }
 
 function pickOne<T>(items: T[], random: () => number): T {
@@ -479,6 +534,10 @@ function spawnAgent(state: OfficeState, raw: SpawnFields, env: OfficeEnv, announ
     effects.push({ kind: 'msg', sender: name, role, color: cfg.color, text: 'waiting for a desk...' })
   }
 
+  // Why: with a corridor the building's entrance is its front door, so a
+  // newcomer starts there and walks to the office (src/roomTransfer.ts)
+  if (hasCorridor(env)) ({ agent, meta } = throughFrontDoor(agent, meta, env))
+
   const pendingStatus = raw.status
     ? { ...state.pendingStatus, [id]: { status: raw.status, failed: false } }
     : state.pendingStatus
@@ -517,7 +576,7 @@ function completeAgent(
   }
   if (agent.assignedSpotId === 'spot-filing') effects.push({ kind: 'furniture', id: 'filing-1', state: 'closed' })
 
-  const leaving: Agent = {
+  let leaving: Agent = {
     ...agent,
     state: 'completed',
     targetPosition: { ...DOOR_TARGET },
@@ -525,15 +584,123 @@ function completeAgent(
     pathQueue: env.computePath(agent.position, DOOR_TARGET),
   }
   const prevMeta = state.meta[id] ?? newMeta(env.now)
+  let transfer: Transfer | undefined
+  if (hasCorridor(env)) {
+    // Out by the corridor's front door, from whichever room it is in; this
+    // replaces a room change it was in the middle of, and gives up its seat
+    const out = beginTransfer({ ...leaving, visitSpotId: undefined }, HUB_ROOM, FRONT_DOOR, 'leave', env)
+    leaving = out.agent
+    transfer = out.transfer
+  }
   return {
     state: {
       ...state,
       agents: state.agents.map(a => (a.id === id ? leaving : a)),
       lobby: state.lobby.filter(x => x !== id),
       pendingStatus: without(state.pendingStatus, id),
-      meta: { ...state.meta, [id]: { ...prevMeta, arrivedAtDeskAt: null, onBreak: false, breakStartedAt: null } },
+      meta: {
+        ...state.meta,
+        [id]: { ...prevMeta, arrivedAtDeskAt: null, onBreak: false, breakStartedAt: null, ...(transfer ? { wish: undefined, transfer } : {}) },
+      },
     },
     effects,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// MCP server workers (only while the server room is open)
+// ---------------------------------------------------------------------------
+
+/**
+ * The id of the worker that stands for an MCP server in the server room.
+ * @param server the MCP server's name, as the hook reports it
+ * @returns the worker's agent id
+ */
+export function mcpWorkerId(server: string): string {
+  return `${MCP_WORKER_PREFIX}${server}`
+}
+
+/**
+ * A call to an MCP server started. With the server room open, that server's
+ * worker is at a rack while calls are running: the first call brings it in by
+ * the front door, later ones (from any session) update its status line. With
+ * the room closed, or every rack taken, the call has no character, as before
+ * rooms existed. No chat line: the call is the session's Claude at work, and
+ * the server has already recorded it there.
+ * @param state the office
+ * @param server the MCP server called
+ * @param tool the tool called on it, when known
+ * @param sessionId the calling session, when known
+ * @param env the reducer's environment
+ * @returns the office with the worker in it (or unchanged)
+ */
+function mcpCall(state: OfficeState, server: string, tool: string | undefined, sessionId: string | undefined, env: OfficeEnv): OfficeResult {
+  if (!env.openRooms?.has(SERVER_ROOM)) return { state, effects: [] }
+  const id = mcpWorkerId(server)
+  const status = tool ? `${server}.${tool}` : server
+  // Why a key per session: the server clears a session's calls to one MCP
+  // together (one mcp_done), so that is the unit the worker counts in
+  const key = sessionId ?? ''
+  const existing = state.agents.find(a => a.id === id)
+
+  if (existing && existing.state !== 'completed') {
+    const m = state.meta[id] ?? newMeta(env.now)
+    const busy = m.mcpBusy?.includes(key) ? m.mcpBusy : [...(m.mcpBusy ?? []), key]
+    const meta = { ...state.meta, [id]: { ...m, mcpBusy: busy, mcpIdleSince: null } }
+    // At its rack: the line shows now. Still walking in: on arrival, like any status (C13)
+    if (existing.state === 'working') {
+      return { state: { ...state, meta, agents: state.agents.map(a => (a.id === id ? { ...a, statusText: status } : a)) }, effects: [] }
+    }
+    return { state: { ...state, meta, pendingStatus: { ...state.pendingStatus, [id]: { status, failed: false } } }, effects: [] }
+  }
+
+  // One caught on its way out comes back in by the front door, as a resumed session's Claude does
+  const others = existing ? state.agents.filter(a => a.id !== id) : state.agents
+  const rack = getFreeSpot(SERVER_ROOM, occupiedSpotIds(others), 'standing')
+  if (!rack) return { state, effects: [] }
+  const base = createAgent({ id, name: AGENT_CONFIGS[server]?.title ?? server, role: server, task: `MCP · ${server}`, spot: rack, hiredAt: env.now })
+  const arriving = throughFrontDoor(
+    { ...base, type: 'mcp', assignedRoom: SERVER_ROOM },
+    { ...newMeta(env.now), mcpBusy: [key], mcpIdleSince: null },
+    env,
+  )
+  return {
+    state: {
+      ...state,
+      agents: [...others, arriving.agent],
+      meta: { ...state.meta, [id]: arriving.meta },
+      pendingStatus: { ...state.pendingStatus, [id]: { status, failed: false } },
+    },
+    effects: [{ kind: 'sfx', sfx: 'doorOpen' }],
+  }
+}
+
+/**
+ * A session's calls to an MCP server finished (no session: all of them, as
+ * the server's own bookkeeping does). When none is left the worker stands by
+ * for MCP_LINGER_MS and then clocks out, unless another call comes first.
+ * @param state the office
+ * @param server the MCP server
+ * @param sessionId the session whose calls finished, when known
+ * @param env the reducer's environment
+ * @returns the office, with the worker's leave scheduled when it fell idle
+ */
+function mcpDone(state: OfficeState, server: string, sessionId: string | undefined, env: OfficeEnv): OfficeResult {
+  const id = mcpWorkerId(server)
+  const worker = state.agents.find(a => a.id === id)
+  const m = state.meta[id]
+  if (!worker || worker.state === 'completed' || !m || !m.mcpBusy?.length) return { state, effects: [] }
+  const busy = sessionId ? m.mcpBusy.filter(k => k !== sessionId) : []
+  if (busy.length > 0) return { state: { ...state, meta: { ...state.meta, [id]: { ...m, mcpBusy: busy } } }, effects: [] }
+  return {
+    state: {
+      ...state,
+      meta: { ...state.meta, [id]: { ...m, mcpBusy: [], mcpIdleSince: env.now } },
+      agents: state.agents.map(a => (a.id === id && a.state === 'working' ? { ...a, statusText: 'standing by' } : a)),
+      // A status still queued for its arrival is the call that just finished
+      pendingStatus: without(state.pendingStatus, id),
+    },
+    effects: [{ kind: 'schedule', action: { type: 'mcp_worker_leave', agentId: id, idleSince: env.now }, delayMs: MCP_LINGER_MS }],
   }
 }
 
@@ -693,6 +860,11 @@ function bossHandover(state: OfficeState, claude: Agent, bubble: string, env: Of
   const free = boss && (boss.state === 'working' || boss.state === 'idle' || boss.state === 'walking-to-manager' || boss.state === 'talking-to-manager'
     || walkingHomeFromHandover(state, boss))
   if (!boss || !free || !claude.assignedSpotId) return { state, effects: [] }
+  // Why: the hand-over happens at Claude's desk. One sitting in another room
+  // (or on its way to or from it) is not there to take it. A prompt ends the
+  // idle spell or the wait on the user that took it there, so it walks back by
+  // itself; a team meeting keeps it until the team shrinks (src/roomRules.ts)
+  if (claude.visitSpotId || claude.state === 'changing-room') return { state, effects: [] }
   const seq = state.handoverSeq + 1
   const spot = { x: claude.deskPosition.x + 4, y: claude.deskPosition.y + 2 }
   const effects: OfficeEffect[] = [{ kind: 'schedule', action: { type: 'handover_over', seq }, delayMs: HANDOVER_MAX_MS }]
@@ -925,7 +1097,7 @@ function reduceEvent(state: OfficeState, action: OfficeAction, env: OfficeEnv): 
       // worker will do; failing that, the only Claude in the office.
       const origin = { project: action.project, cwd: action.cwd }
       if (action.sessionId) return mainThreadWorking(action.sessionId, statusMsg, failed, origin, icon)
-      const workers = state.agents.filter(a => a.state === 'working' && a.id !== BOSS_ID && !isMainAgent(a))
+      const workers = state.agents.filter(a => a.state === 'working' && a.id !== BOSS_ID && !isMainAgent(a) && a.type !== 'mcp')
       if (workers.length === 0) {
         const mains = state.agents.filter(a => isMainAgent(a) && a.state !== 'completed')
         if (mains.length === 1 && mains[0].sessionId) return mainThreadWorking(mains[0].sessionId, statusMsg, failed, origin, icon)
@@ -965,7 +1137,19 @@ function reduceEvent(state: OfficeState, action: OfficeAction, env: OfficeEnv): 
 
       // 1. Agents that completed or timed out while we were disconnected (C35).
       //    The sessions' Claudes are reconciled against the session list below.
+      //    An MCP server's worker is not an agent the server lists: it is
+      //    reconciled against the calls in flight (the entries with `server`).
+      const callsInFlight = (action.activeAgents ?? []).filter(e => e && e.server && e.state !== 'completed')
       for (const a of state.agents) {
+        if (a.type === 'mcp') {
+          // A call we believe is running that the server no longer lists has finished
+          if (a.state !== 'completed' && (state.meta[a.id]?.mcpBusy?.length ?? 0) > 0 && !callsInFlight.some(e => e.server === a.role)) {
+            const r = mcpDone(cur, a.role, undefined, env)
+            cur = r.state
+            effects.push(...r.effects)
+          }
+          continue
+        }
         if (a.id === BOSS_ID || a.id === CLAUDE_ID || isMainAgent(a) || a.state === 'completed' || byId.has(a.id)) continue
         const r = completeAgent(cur, a.id, 'clocked out while we were away', env, true)
         cur = r.state
@@ -1039,15 +1223,23 @@ function reduceEvent(state: OfficeState, action: OfficeAction, env: OfficeEnv): 
         cur = r.state
         effects.push(...r.effects)
       }
+
+      // 5. MCP calls in flight: their servers' workers (a no-op while the server room is closed)
+      for (const e of callsInFlight) {
+        const r = mcpCall(cur, e.server!, e.tool, e.sessionId, env)
+        cur = r.state
+        effects.push(...r.effects)
+      }
       return { state: cur, effects }
     }
 
     // ── MCP call started / finished ────────────────────────────────────────
     case 'mcp_call': {
       const id = action.agentId ?? action.agent?.id
-      if (!id) return none
-      const agent = state.agents.find(a => a.id === id)
-      if (!agent) return none
+      const agent = id ? state.agents.find(a => a.id === id) : undefined
+      // The server names each call `mcp-<server>-<ts>`, which is nobody in the
+      // office: with the server room open the call goes to that server's worker
+      if (!agent) return action.server ? mcpCall(state, action.server, action.tool, action.sessionId, env) : none
       const server = action.server ?? ''
       const tool = action.tool ?? ''
       return {
@@ -1058,7 +1250,7 @@ function reduceEvent(state: OfficeState, action: OfficeAction, env: OfficeEnv): 
 
     case 'mcp_done': {
       const id = action.agentId ?? action.agent?.id
-      if (!id) return none
+      if (!id) return action.server ? mcpDone(state, action.server, action.sessionId, env) : none
       return { state: { ...state, agents: state.agents.map(a => (a.id === id ? { ...a, statusText: action.result ?? 'done' } : a)) }, effects: [] }
     }
 
@@ -1118,7 +1310,7 @@ function reduceEvent(state: OfficeState, action: OfficeAction, env: OfficeEnv): 
         msgSender = c.title; msgRole = role; msgColor = c.color
       } else {
         // Attribute to a working agent or fall back to Claude
-        const workers = state.agents.filter(a => a.id !== BOSS_ID && a.role !== CLAUDE_ROLE && a.state === 'working')
+        const workers = state.agents.filter(a => a.id !== BOSS_ID && a.role !== CLAUDE_ROLE && a.state === 'working' && a.type !== 'mcp')
         if (workers.length > 0) {
           const w = pickOne(workers, env.random)
           msgSender = w.name; msgRole = w.role; msgColor = cfgFor(w.role).color
@@ -1145,7 +1337,9 @@ function reduceEvent(state: OfficeState, action: OfficeAction, env: OfficeEnv): 
       effects.push({ kind: 'msg', sender: msgSender, role: msgRole, color: msgColor, text: `${icon} → @${toAgent?.name ?? recipient}: ${text}`, id: action.id })
 
       // Only a seated sender gets up; one walking in, out or waiting stays on course
-      if (!fromAgent || !toAgent || fromAgent.id === toAgent.id || fromAgent.id === BOSS_ID || fromAgent.state !== 'working') {
+      // ...and only within the office: nobody crosses the corridor for a quick word
+      if (!fromAgent || !toAgent || fromAgent.id === toAgent.id || fromAgent.id === BOSS_ID || fromAgent.state !== 'working'
+        || !inOffice(fromAgent) || !inOffice(toAgent)) {
         return { state: base, effects }
       }
       const visitSpot = { x: toAgent.deskPosition.x + 4, y: toAgent.deskPosition.y + 2 }
@@ -1418,6 +1612,13 @@ function reduceEvent(state: OfficeState, action: OfficeAction, env: OfficeEnv): 
     case 'signal':
       return reduceSignal(state, action, env)
 
+    // ── An MCP server's worker has stood idle long enough: it clocks out ───
+    case 'mcp_worker_leave': {
+      // A call that came in since (or a later idle spell with its own timer) keeps it
+      if (state.meta[action.agentId]?.mcpIdleSince !== action.idleSince) return none
+      return completeAgent(state, action.agentId, 'standing down', env, true)
+    }
+
     case 'scene_over': {
       const agent = state.agents.find(a => a.id === action.agentId)
       if (!agent || agent.scene?.until !== action.until) return none
@@ -1464,9 +1665,29 @@ export function stepOffice(state: OfficeState, dt: number, env: OfficeEnv): Step
     changed = true
   }
 
+  // Seats claimed in the lunch room this frame, so two agents setting off on
+  // a break in the same frame cannot be given the same one (filled on first use)
+  let lunchTaken: Set<string> | null = null
+
   const next = state.agents.map(agent => {
     const m = meta[agent.id] ?? newMeta(now)
     if (!meta[agent.id]) meta = { ...meta, [agent.id]: m }
+
+    // Changing room: the transfer owns the walk (to the door, along the
+    // corridor, to the seat) until it is over; see src/roomTransfer.ts
+    if (m.transfer) {
+      const stepped = stepTransfer(agent, m.transfer, dt, env)
+      if (stepped.agent === agent && stepped.transfer === m.transfer) return agent
+      if (stepped.transfer) {
+        if (stepped.transfer !== m.transfer) setMeta(agent.id, { transfer: stepped.transfer })
+        changed = true
+        return stepped.agent
+      }
+      const settled = settleTransfer(stepped.agent, m.transfer.why, pendingStatus[agent.id], now)
+      if (settled.usedPending) pendingStatus = without(pendingStatus, agent.id)
+      setMeta(agent.id, { ...settled.meta, transfer: undefined })
+      return settled.agent
+    }
 
     // Walk toward the first waypoint in the queue, or straight to the
     // final targetPosition once the queue is empty
@@ -1520,6 +1741,12 @@ export function stepOffice(state: OfficeState, dt: number, env: OfficeEnv): Step
               effects.push({ kind: 'furniture', id: 'filing-1', state: 'open' })
             }
             updated = { ...agent, position }
+          } else if (now - (m.breakStartedAt ?? now) >= BREAK_DURATION && agent.visitSpotId) {
+            // The break was in the lunch room: give the seat up and walk back
+            // through the corridor (the office's coffee machine was never on)
+            const back = beginTransfer({ ...agent, position, visitSpotId: undefined }, agent.assignedRoom, agent.deskPosition, 'return', env)
+            setMeta(agent.id, { onBreak: false, breakStartedAt: null, transfer: back.transfer })
+            updated = { ...back.agent, state: 'changing-room', statusText: workMessage() }
           } else if (now - (m.breakStartedAt ?? now) >= BREAK_DURATION) {
             setMeta(agent.id, { onBreak: false, breakStartedAt: null, arrivedAtDeskAt: now })
             effects.push({ kind: 'furniture', id: 'coffee', state: 'off' }, { kind: 'furniture', id: 'filing-1', state: 'closed' })
@@ -1540,12 +1767,34 @@ export function stepOffice(state: OfficeState, dt: number, env: OfficeEnv): Step
     // Random coffee / water break for anyone who has sat at their desk a while.
     // A session's Claude never wanders off mid-turn (it dozes at its desk between turns instead).
     const cur = meta[agent.id]
-    if (updated.state === 'working' && !isMainAgent(updated) && cur.arrivedAtDeskAt !== null && !cur.onBreak && COFFEE_SPOT !== null) {
+    // Why inOffice: the break spots below are the office's, so only someone at
+    // their own office desk sets off (never a visitor elsewhere or a server worker)
+    if (updated.state === 'working' && !isMainAgent(updated) && cur.arrivedAtDeskAt !== null && !cur.onBreak && COFFEE_SPOT !== null && inOffice(updated)) {
       if (now - cur.arrivedAtDeskAt >= BREAK_MIN_DESK_TIME && env.random() < BREAK_CHANCE_PER_SEC * (dt / 60)) {
         const useWater = env.random() < 0.35 && WATER_SPOTS.length > 0
+        const isBoss = updated.id === BOSS_ID
+        // With the lunch room open the break is taken there: at its machine
+        // or cooler when that is free, else at a table. The boss keeps his
+        // Red Bull at the office machine, and a full lunch room sends
+        // everyone there too, exactly as while the room is closed.
+        let lunchSpot: AgentSpot | null = null
+        if (!isBoss && env.openRooms?.has(LUNCH_ROOM)) {
+          lunchTaken ??= heldSpotIds(state.agents)
+          lunchSpot = getFreeSpot(LUNCH_ROOM, lunchTaken, useWater ? 'water' : 'coffee') ?? getFreeSpot(LUNCH_ROOM, lunchTaken, 'lounge')
+        }
+        if (lunchSpot) {
+          lunchTaken!.add(lunchSpot.id)
+          const lunchMsg = useWater ? waterMessage() : coffeeMessage()
+          effects.push(
+            { kind: 'msg', sender: updated.name, role: updated.role, color: cfgFor(updated.role).color, text: `${useWater ? '💧' : '☕'} ${lunchMsg}` },
+            { kind: 'sfx', sfx: 'coffee' },
+          )
+          const out = beginTransfer({ ...updated, visitSpotId: lunchSpot.id }, LUNCH_ROOM, { x: lunchSpot.x, y: lunchSpot.y }, 'break', env)
+          setMeta(agent.id, { onBreak: false, arrivedAtDeskAt: null, transfer: out.transfer })
+          return { ...out.agent, state: 'changing-room' as const, statusText: lunchMsg }
+        }
         const breakSpot = useWater ? pickOne(WATER_SPOTS, env.random) : COFFEE_SPOT
         setMeta(agent.id, { onBreak: false, arrivedAtDeskAt: null })
-        const isBoss = updated.id === BOSS_ID
         const breakMsg = useWater ? waterMessage() : (isBoss ? 'grabbing a Red Bull' : coffeeMessage())
         const breakIcon = isBoss ? '🥫' : (useWater ? '💧' : '☕')
         effects.push(
@@ -1567,11 +1816,16 @@ export function stepOffice(state: OfficeState, dt: number, env: OfficeEnv): Step
     return updated
   })
 
-  // Prune leavers at the door (never the permanent staff)
+  // Prune leavers at the door (never the permanent staff). With a corridor
+  // the door is its front door; one still crossing the office towards the
+  // corridor is not gone when it reaches the office door.
   const kept: Agent[] = []
   const removed: Agent[] = []
   for (const a of next) {
-    const gone = a.state === 'completed' && a.id !== BOSS_ID && a.id !== CLAUDE_ID && near(a.position, DOOR_TARGET, ARRIVAL_THRESHOLD * 2)
+    const atExit = roomOf(a) === HUB_ROOM
+      ? near(a.position, FRONT_DOOR, ARRIVAL_THRESHOLD * 2)
+      : !meta[a.id]?.transfer && near(a.position, DOOR_TARGET, ARRIVAL_THRESHOLD * 2)
+    const gone = a.state === 'completed' && a.id !== BOSS_ID && a.id !== CLAUDE_ID && atExit
     if (gone) removed.push(a)
     else kept.push(a)
   }
@@ -1591,6 +1845,8 @@ export function stepOffice(state: OfficeState, dt: number, env: OfficeEnv): Step
     const waiterId = lobby[0]
     const idx = kept.findIndex(a => a.id === waiterId)
     if (idx < 0 || kept[idx].state !== 'waiting') { lobby = lobby.slice(1); changed = true; continue }
+    // Still coming down the corridor: it is seated once it is in the office
+    if (meta[waiterId]?.transfer) break
     const spot = pickSpot(kept, kept[idx].role)
     if (!spot) break
     const desk = { x: spot.x, y: spot.y }
@@ -1609,8 +1865,13 @@ export function stepOffice(state: OfficeState, dt: number, env: OfficeEnv): Step
     changed = true
   }
 
+  // Who belongs in which room (src/roomRules.ts); nothing to plan while the
+  // office is the only room there is
+  const planned = planRoomMoves(kept, meta, env, isPinned)
+  if (planned.changed) changed = true
+
   if (!changed) return { state, effects, changed: false }
-  return { state: { ...state, agents: kept, lobby, pendingStatus, meta }, effects, changed: true }
+  return { state: { ...state, agents: planned.agents, lobby, pendingStatus, meta: planned.meta }, effects, changed: true }
 }
 
 // ---------------------------------------------------------------------------
@@ -1631,7 +1892,8 @@ export function stepOffice(state: OfficeState, dt: number, env: OfficeEnv): Step
 export function moveAgentsForEvent(agents: Agent[], target: Position, statusText: string, env: OfficeEnv): { agents: Agent[]; movedIds: string[] } {
   const movedIds: string[] = []
   const next = agents.map(a => {
-    const seated = a.state === 'working' || a.state === 'idle'
+    // Why inOffice: the event happens in the office; someone in another room does not hear it
+    const seated = (a.state === 'working' || a.state === 'idle') && inOffice(a)
     const decorative = a.id === BOSS_ID || a.id === CLAUDE_ID || (isMainAgent(a) && isFreeMain(a))
     if (!seated || (env.live && !decorative)) return a
     movedIds.push(a.id)
@@ -1709,6 +1971,6 @@ export function checkErrand(boss: Agent | undefined, walkTo: Position, elapsedMs
 /** The one agent a single-agent event (printer jam) sends somewhere: never the boss, never a live worker or a Claude mid-turn */
 export function pickSingleEventAgent(agents: Agent[], env: OfficeEnv): Agent | null {
   const candidates = agents.filter(a =>
-    a.id !== BOSS_ID && (a.state === 'working' || a.state === 'idle') && (!env.live || a.id === CLAUDE_ID || (isMainAgent(a) && isFreeMain(a))))
+    a.id !== BOSS_ID && (a.state === 'working' || a.state === 'idle') && inOffice(a) && (!env.live || a.id === CLAUDE_ID || (isMainAgent(a) && isFreeMain(a))))
   return candidates.length > 0 ? pickOne(candidates, env.random) : null
 }

@@ -52,6 +52,13 @@ import {
 import IncidentLayer from './components/IncidentLayer'
 import TaskBoard from './components/TaskBoard'
 import { dispatchTaskBoards } from './taskBoard'
+import RoomBackdrop from './components/RoomBackdrop'
+import RoomSwitcher from './components/RoomSwitcher'
+import { ROOMS, OFFICE_ROOM, findSpot, type RoomId } from './rooms'
+import { openRoomSet, previewAllRooms } from './roomAccess'
+import { roomOf } from './roomTransfer'
+import { switcherModel, viewableRoom } from './roomSwitcher'
+import { startRoomsDemo } from './roomsDemo'
 
 // ---------------------------------------------------------------------------
 // Placement helper — loaded via ?helper query param
@@ -84,6 +91,13 @@ if (params.get('theme') === 'office') { _setTheme('office') }
 }
 // Why: ?variant=incident pins incident mode on (auto-exit off) for screenshots
 if (params.get('variant') === 'incident') { pinIncidentFromUrl() }
+// The rooms in use (src/roomAccess.ts): the office, plus every room whose art
+// is drawn, or all of them under ?rooms=all (a preview with placeholders).
+// Why decided once at load: who walks where must not change under a running office.
+const OPEN_ROOMS = openRoomSet(undefined, previewAllRooms(window.location.search))
+// Why undefined with only the office open: the reducer then takes none of its
+// room branches and the office behaves exactly as it did as one room
+const ROOMS_IN_USE = OPEN_ROOMS.size > 1 ? OPEN_ROOMS : undefined
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -109,14 +123,19 @@ const PREVIEW_DESKS = MAIN_ROOM.furniture
   .map(f => ({ id: f.id, front: DESK_GEOMETRY[f.sprite].screens.length > 0 }))
 
 /**
- * Compute a pathQueue from one position to another using the main-office
- * waypoint graph.  Returns an array of intermediate {x,y} steps — the agent
- * should walk through each in order, then continue straight to targetPosition.
+ * Compute a pathQueue from one position to another using a room's waypoint
+ * graph (the main office's unless the walk is in another room).  Returns an
+ * array of intermediate {x,y} steps — the agent should walk through each in
+ * order, then continue straight to targetPosition.
  */
 function computePath(
   from: { x: number; y: number },
   to: { x: number; y: number },
+  room: RoomId = OFFICE_ROOM,
 ): { x: number; y: number }[] {
+  // Why no warning for another room: the corridor has no waypoints on purpose
+  // (it is one straight strip), so an empty graph there is not a mistake
+  if (room !== OFFICE_ROOM) return findWaypointPath(from.x, from.y, to.x, to.y, ROOMS[room].waypoints ?? [])
   if (MAIN_WAYPOINTS.length === 0) {
     console.warn('[pathfinding] No waypoints loaded!')
     return []
@@ -697,7 +716,7 @@ const App: React.FC = () => {
 
   // Everything impure the reducer needs; ?sim / ?video have no server, so the
   // office itself plays the server's part (lifecycle chat lines, all-move events)
-  const officeEnv = useCallback((): OfficeEnv => ({ now: Date.now(), live: !isSimMode, computePath, random: Math.random }), [])
+  const officeEnv = useCallback((): OfficeEnv => ({ now: Date.now(), live: !isSimMode, computePath, random: Math.random, openRooms: ROOMS_IN_USE }), [])
 
   // Permission dialogs waiting on the office (src/permissions.ts): their own
   // state beside the office reducer — a card is not a character. The
@@ -760,6 +779,24 @@ const App: React.FC = () => {
   // answers the server would refuse, and the status strip says how to fix it.
   const readOnly = !isSimMode && trusted === false
   const activeSessionCount = sessions.filter(s => s.state === 'active').length
+
+  // ---------------------------------------------------------------------------
+  // Rooms — the stage shows one room at a time (src/roomSwitcher.ts)
+  // ---------------------------------------------------------------------------
+
+  // Why it starts in the office and only the user changes it: the plan's
+  // marks say where something needs you; the stage never jumps by itself
+  const [pickedRoom, setPickedRoom] = useState<RoomId>(OFFICE_ROOM)
+  const viewRoom = viewableRoom(pickedRoom, OPEN_ROOMS)
+  const officeInView = viewRoom === OFFICE_ROOM
+
+  // ?sim: MCP calls and a three-worker session, so the server room
+  // and the meeting room have somebody in them too (src/roomsDemo.ts)
+  useEffect(() => {
+    if (!isSimMode || isVideoMode || !ROOMS_IN_USE) return
+    return startRoomsDemo(handleEvent)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // ---------------------------------------------------------------------------
   // Simulation loop — spawns/completes fake agents (only in ?sim mode)
@@ -1459,10 +1496,14 @@ const App: React.FC = () => {
   // What each desk's monitors show (src/screens.ts). Why the string key: agents
   // change every walking frame, but the screens only when someone's mode does,
   // and the memoised furniture must not re-render on every step
-  const deskScreensKey = JSON.stringify(previewScreens(PREVIEW_DESKS) ?? deskScreens(agents, typingAgents))
+  // Why officeAgents: these props are the office's, and somebody standing in
+  // another room at the same percent of its picture is not at a desk or the
+  // cooler here. The same array as `agents` while the office is the only room.
+  const officeAgents = ROOMS_IN_USE ? agents.filter(a => roomOf(a) === OFFICE_ROOM) : agents
+  const deskScreensKey = JSON.stringify(previewScreens(PREVIEW_DESKS) ?? deskScreens(officeAgents, typingAgents))
   const deskScreenModes = useMemo(() => JSON.parse(deskScreensKey) as Record<string, DeskScreen>, [deskScreensKey])
   // The room's props (src/roomLife.ts): the filing cabinet opens while an agent reads files
-  const filesOpen = filingOpen(agents)
+  const filesOpen = filingOpen(officeAgents)
   // Why memoised: a fresh object each render would re-render every furniture sprite
   const printedPage = useMemo(() => printJob(lastSignal), [lastSignal])
   // Why: a new items array every frame would re-render all 24 furniture sprites
@@ -1498,7 +1539,7 @@ const App: React.FC = () => {
   // The room itself: the desktop window's centre, or all a viewer page shows
   const scene = (
         <div
-          className={`room-container${flickering ? ' flickering' : ''}${variant === 'incident' ? ' incident' : ''}`}
+          className={`room-container${flickering ? ' flickering' : ''}${variant === 'incident' && officeInView ? ' incident' : ''}`}
           style={{
             aspectRatio: '4800/3584',
             width: '100%',
@@ -1506,46 +1547,63 @@ const App: React.FC = () => {
             position: 'relative',
           }}
         >
+          {/* Another room in view: its picture, or the placeholder drawn in code (?rooms=all) */}
+          {!officeInView && (
+            <RoomBackdrop
+              room={viewRoom}
+              theme={theme}
+              night={forcedNight ? 1 : dayNightMode === 'auto' ? nightOpacity : dayNightMode === 'night' ? 1 : 0}
+            />
+          )}
+
           {/* Room backgrounds — both rendered, night crossfades via opacity. Theme swaps source art. */}
-          <div
+          {officeInView && <div
             key={`day-${theme}`}
             className="room-background"
             style={{ backgroundImage: `url(${getRoomImage('day')})` }}
-          />
-          <div
+          />}
+          {officeInView && <div
             key={`night-${theme}`}
             className="room-background room-background-night"
             style={{
               backgroundImage: `url(${getRoomImage('night')})`,
               opacity: forcedNight ? 1 : dayNightMode === 'auto' ? nightOpacity : dayNightMode === 'night' ? 1 : 0,
             }}
-          />
+          />}
 
+          {/* Why officeInView on each of these: the desk screens, the wall props, the
+              advent calendar, the task board and the incident layer are drawn onto the
+              office's picture. Their state lives in App and in their stores, so it
+              keeps running while another room is on the stage. */}
           {/* The advent calendar on the back wall, 1 December to 6 January */}
-          {currentSeason() === 'christmas' && <AdventCalendar />}
+          {officeInView && currentSeason() === 'christmas' && <AdventCalendar />}
           {/* The wall props come alive: deploy TV, city windows, water cooler, bell, extinguisher */}
-          <RoomLife
+          {officeInView && <RoomLife
             tv={tvMode(agents, lastSignal, roomClock)}
             night={forcedNight ? 1 : dayNightMode === 'auto' ? nightOpacity : dayNightMode === 'night' ? 1 : 0}
             incident={variant === 'incident'}
-            waterBusy={waterBusy(agents, WATER_SPOTS)}
+            waterBusy={waterBusy(officeAgents, WATER_SPOTS)}
             bellKey={(officeRef.current?.handoverSeq ?? 0) + bellRings}
             dayImage={getRoomImage('day')}
             nightImage={getRoomImage('night')}
-          />
+          />}
 
           {/* Furniture — apply interactive state overrides */}
-          <FurnitureRenderer onItemClick={handleFurnitureClick} items={furnitureItems} screens={deskScreenModes} printJob={printedPage} />
+          {officeInView && <FurnitureRenderer onItemClick={handleFurnitureClick} items={furnitureItems} screens={deskScreenModes} printJob={printedPage} />}
+          {/* Another room's furniture: drawn as listed in src/rooms.ts (nothing in it is clickable yet) */}
+          {!officeInView && <FurnitureRenderer items={ROOMS[viewRoom].furniture} />}
 
           {/* The session's real task list on the kanban whiteboard (nothing drawn while no session has tasks) */}
-          <TaskBoard sessions={sessions} night={forcedNight ? 1 : dayNightMode === 'auto' ? nightOpacity : dayNightMode === 'night' ? 1 : 0} onActivate={() => handleFurnitureClick('kanban-board')} />
+          {officeInView && <TaskBoard sessions={sessions} night={forcedNight ? 1 : dayNightMode === 'auto' ? nightOpacity : dayNightMode === 'night' ? 1 : 0} onActivate={() => handleFurnitureClick('kanban-board')} />}
 
-          {/* Agents */}
-          {agents.map(agent => {
-            // Use spot zIndex override when agent is at their desk
-            const spot = MAIN_ROOM.agentSpots.find(s => s.id === agent.assignedSpotId)
-            const atDesk = Math.abs(agent.position.x - agent.deskPosition.x) < 1 &&
-                           Math.abs(agent.position.y - agent.deskPosition.y) < 1
+          {/* Agents: the ones in the room on the stage */}
+          {agents.filter(agent => roomOf(agent) === viewRoom).map(agent => {
+            // Use spot zIndex override when agent is at their desk (or, away
+            // in another room, at the seat it holds there)
+            const spot = findSpot(agent.visitSpotId ?? agent.assignedSpotId)?.spot
+            const seatAt = agent.visitSpotId && spot ? spot : agent.deskPosition
+            const atDesk = Math.abs(agent.position.x - seatAt.x) < 1 &&
+                           Math.abs(agent.position.y - seatAt.y) < 1
             const zOverride = atDesk && spot?.zIndex ? spot.zIndex : undefined
 
             const meta = officeRef.current?.meta[agent.id]
@@ -1573,7 +1631,8 @@ const App: React.FC = () => {
             const angela = getAngelaCat()
             if (!angela) return null
             const host = agents.find(a => a.role === angela.role)
-            if (!host) return null
+            // Why: the cat follows its host out of the room, so it is only here while the host is
+            if (!host || roomOf(host) !== viewRoom) return null
             return (
               <ResilientImg
                 src={angela.catSprite}
@@ -1597,7 +1656,7 @@ const App: React.FC = () => {
           })()}
 
           {/* Boss interaction effect */}
-          {bossEffect && (() => {
+          {bossEffect && officeInView && (() => {
             const boss = agents.find(a => a.id === BOSS_ID)
             if (!boss) return null
             return (
@@ -1622,7 +1681,7 @@ const App: React.FC = () => {
           })()}
 
           {/* Incident mode: days-since sign (every mode), tint / beacon / status TV (incident only) */}
-          <IncidentLayer />
+          {officeInView && <IncidentLayer />}
 
           {/* Day/night overlay */}
           <div className={`day-overlay ${effectivePhase}`} />
@@ -1679,8 +1738,21 @@ const App: React.FC = () => {
       )}
 
       <div className="app-body">
-      <div className="office-view">
+      <div className={`office-view${ROOMS_IN_USE ? ' has-rooms' : ''}`}>
         {scene}
+        {/* The floor plan (nothing at all while the office is the only open room) */}
+        {ROOMS_IN_USE && (
+          <RoomSwitcher
+            rooms={switcherModel(agents, {
+              open: OPEN_ROOMS,
+              view: viewRoom,
+              pendingSessionIds: permissionCards.filter(c => !c.resolved).map(c => c.sessionId),
+              officeIncident: variant === 'incident',
+            })}
+            theme={theme}
+            onSelect={setPickedRoom}
+          />
+        )}
       </div>
 
       <AgentCard agentId={inspectedId} agent={agents.find(a => a.id === inspectedId)} sessions={sessions} onClose={() => setInspectedId(null)} />

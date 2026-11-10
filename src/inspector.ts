@@ -119,7 +119,7 @@ export function workerStateLabel(state: string | undefined): string {
     case 'talking-to-manager':  return 'talking'
     case 'coffee-break':        return 'on a break'
     case 'waiting':             return 'waiting for a desk'
-    case 'changing-room':       return 'changing'
+    case 'changing-room':       return 'walking to another room'
     case 'completed':           return 'finished'
     case 'working':             return 'working'
     case 'idle':                return 'idle'

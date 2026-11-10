@@ -123,6 +123,7 @@ Toggle it off any time with `/the-office` again — state persists in `localStor
 - Day/night cycle with smooth transitions
 - **Settings** (the ⚙ in the title bar): theme, day/night, season, sound and the server settings in one panel — see [Settings](docs/reference.md#settings-panel)
 - **Today** (bottom-right of the status strip): the day's sessions, agents, tasks, deploys, failures, incidents and payroll, kept across restarts — or `/recap` in the chat
+- **More rooms, arriving with their art**: a corridor, a meeting room, a server room and a lunch room are built and stay closed until each is drawn; `?sim&rooms=all` previews them on placeholders — see [Rooms](docs/reference.md#rooms)
 
 **AI-Powered Office Chat**
 - Back-and-forth conversation with Claude through the office chat panel
@@ -309,6 +310,7 @@ Agents can also message each other directly — see [Agent-to-agent messages](do
 | `127.0.0.1:3333?sim` | Simulation — scripted demo with fake agents |
 | `127.0.0.1:3333?video` | Video — scripted recording mode |
 | `127.0.0.1:3333?helper` | Placement helper — dev tool for positioning furniture |
+| `127.0.0.1:3333?sim&rooms=all` | Rooms preview — the corridor, meeting room, server room and lunch room on placeholders, before their art ([Rooms](docs/reference.md#rooms)) |
 | `127.0.0.1:3333?variant=incident` | Incident — pins "Prod Is Down" on |
 | `<lan ip>:3335/#viewer=…` | Phone — `npm run lan` prints this link and a QR code: the office scene, watch-only, on a phone on your Wi-Fi ([Phone mode](docs/reference.md#phone-mode)) |
 | `127.0.0.1:3333?season=christmas` | Christmas — the festive office any day (on by itself 1 Dec – 6 Jan) |

@@ -323,6 +323,39 @@ It ends with `/all-clear`, ten minutes without a new failure, a deploy that goes
 
 The dedicated incident art (beacon frames, pizza tower, incident board, per-role props) is a follow-up: `src/incidentAssets.ts` lists the slots and today's fallbacks, and `public/sprites/incident/README.md` lists the files to draw. The office picks them up with no code change.
 
+## Rooms
+
+The building is five places in a star (`src/rooms.ts`): the **office**, whose one door opens onto a **corridor**, and a **meeting room**, a **server room** and a **lunch room**, each one door off that corridor. Every room is the same isometric box as the office. The corridor has the lift and the meeting room's door on its left wall, and along its right wall the manager's door (a nameplate, decoration only: no room is behind it, the boss keeps his desk in the office), the server room, the lunch room and, at the far end, the office.
+
+**A room is closed until its art is drawn.** `DRAWN_ROOMS` in `src/roomAccess.ts` lists the rooms whose backgrounds are in `public/rooms/`: all five today. With only the office in it there is no floor plan and no corridor, everybody comes and goes by the office door and MCP calls have no character. It is a list in code and not a probe for the image files (the way the festive art is found) because a room changes who walks where: the answer has to be known before the first event and be the same on every frame and in every test. A side room also needs the corridor drawn, since the corridor is the only way to it.
+
+| Room | Who is there | When |
+|---|---|---|
+| Office | Everyone's desk; the boss never leaves it | Always |
+| Corridor | Whoever is on the way | New agents come in by the front door and walk to their room's door; leavers go out the same way; anyone changing room crosses it |
+| Server room | One worker per MCP server, named after the server, at a rack | From the first call to that server (from any session) until 30 s after the last one finishes (`MCP_LINGER_MS`). Six racks: a seventh server at once has no character |
+| Meeting room | A session's Claude and its workers | While the session runs three or more workers at once (they stay until it is down to one: `MEETING_MIN_WORKERS` 3, `MEETING_STAY_WORKERS` 2, so a batch finishing seconds apart does not walk out and straight back), or while it waits on you for a permission, a plan approval or a question. Eight seats |
+| Lunch room | Anyone on a coffee or water break; a session's Claude with nothing to do | Breaks are taken at its machine or cooler, or at a table (the boss keeps his Red Bull at the office machine). A Claude goes to sit there two minutes after its turn ended (`LUNCH_IDLE_MS`) and walks back when the next prompt arrives |
+
+The rules are one small pure module, `src/roomRules.ts`, with the reasons for each number beside it. A reason has to hold for a moment before anyone gets up (10 s for a wait on you, since most permission dialogs are answered within seconds; 5 s for a team; 3 s to go back), a visitor keeps its desk while it is away, and a full room changes nothing: the team stays at its desks, the break is taken at the office machine. A room that is closed is never wanted, so each room can be drawn and opened on its own (after the corridor). Agents with no session never count as a team. The boss's walk to Claude's desk with a prompt is skipped while that Claude is in another room: the prompt still arrives, and it walks back by itself.
+
+**Changing room** (`src/roomTransfer.ts`): the agent walks to its room's door, is handed to the corridor at the matching door, crosses it at twice the usual pace, is handed into the other room at its door and walks to its place. The two hand-offs between pictures of the same doorway are the only jumps. The whole change is capped at 20 s (`TRANSFER_MAX_MS`), spent on the corridor alone: when the walks inside the two rooms have used the budget, the rest of the corridor is skipped. An agent that finishes on the way turns for the front door from wherever it is.
+
+**The view.** The stage shows one room at a time, the office unless you choose another. With more than the office open, a small floor plan sits in the stage's bottom-left corner: the rooms as boxes on the corridor strip, a dot per agent in each, an amber **!** on a room where a session waits on you and a red **×** where something went wrong (a failed tool call, a red build, an API error, or Prod Is Down in the office), and a ring around the room in view. Click a room, or Tab to it and press Enter; the arrow keys move between rooms. It never switches by itself. The desk screens, the room's props, the advent calendar, the task board and the incident layer belong to the office: they are drawn only while the office is in view and keep running while it is not. Prod Is Down stays an office affair. The phone view (`npm run lan`) shows the office only.
+
+**Furniture.** Each room's furniture is listed in `src/rooms.ts` like the office's and drawn by `FurnitureRenderer`: the meeting table with eight chairs and a wheeled whiteboard, six racks with a network cabinet and a crash cart, and the lunch room's vending machine, fridge, water cooler, counter (with the coffee machine) and two café tables of four. The sprites are in `public/sprites/rooms/`, cut from ChatGPT sheets drawn in the office's style; their sizes in `src/assets.ts` are set against a 78 px character and a 106 px desk on the 754 px stage. Each room has a Dunder Mifflin pair too (`backgroundDm`: beige walls, worn carpet, windows onto brick buildings and a car park), drawn from its default day picture with `office-day-dm.png` as the style; a room without one shows its default pictures in that theme.
+
+**Preview:** `?sim` plays a short loop of ordinary events (`src/roomsDemo.ts`: two MCP servers taking calls, one session running three workers) so every room has somebody in it. A room that is not drawn (a new one, before its art) shows a placeholder drawn in code (`RoomBackdrop.tsx`) under `?rooms=all`.
+
+**Placing a layout.** The four new rooms' furniture, seats and waypoints were computed on each room's measured floor corners (`B`ack, `R`ight, `F`ront, `L`eft), and the meeting seats from the table sprite's own edges. To fine-tune one, `/?helper&room=<id>` (`corridor`, `meeting-room`, `server-room`, `lunch-room`, or `main-office`) opens the placement helper on that room; the **Room** and **BG** selects switch room and background. Place the door, spots, entry, floor corners and waypoints, then **Export** gives the text for that room's entry in `src/rooms.ts`. A door placed in a side room is written with `toRoom: 'corridor'`; in the corridor the helper asks what is behind each door (a room, the front door, or the manager's nameplate door, which goes to `landmarks`).
+
+**Adding a room.** Draw it by giving ChatGPT `office-day.png` to edit ("make a … in this style with no furniture"), so it keeps the office's box and camera; make the night picture from the day one. Save each at 1508 × 1126 as WebP in `public/rooms/`: `<room>-day.webp`, `<room>-night.webp`, and optionally `<room>-day-dm.webp`, `<room>-night-dm.webp` for the Dunder Mifflin theme (listed in `backgroundDm`). Then:
+
+1. Add the room's id to `DRAWN_ROOMS` in `src/roomAccess.ts`. The corridor first: a side room without it stays closed.
+2. Take its entries off `PLANNED` in `scripts/check-assets.mjs`, and raise `BUDGET_BYTES` there if it no longer fits.
+3. Place the layout over the art with `/?helper&room=<id>` and paste the export into `src/rooms.ts`.
+4. `npm run check-assets` and `npm test` (`tests/rooms.test.ts` checks that every drawn room's files exist and that every door, spot and waypoint is on the floor).
+
 ## Agent-to-agent messages
 
 Agents can talk to each other, not just to you. A directed message shows up in the chat as `→ @Debugger`, and the sender walks over to the recipient's desk.

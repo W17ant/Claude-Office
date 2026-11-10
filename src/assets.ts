@@ -32,6 +32,30 @@ export const ASSETS: Record<string, SpriteAsset> = {
   'filing-closed':             { path: '/sprites/furniture/filling-closed.png', width: 42, height: 56, category: 'furniture' },
   'filing-open':               { path: '/sprites/furniture/filling-open.png', width: 46, height: 60, category: 'furniture' },
 
+  // === THE OTHER ROOMS' FURNITURE (src/rooms.ts) ===
+  // Cut from ChatGPT sheets drawn in the office's style, saved at twice these
+  // sizes. Why these heights: on the 754 px stage a character is 78 px and a
+  // standing desk 106 px, so a rack stands well over a person and a chair
+  // reaches about their waist; the meeting table seats four a side.
+  'meeting-table':             { path: '/sprites/rooms/meeting-table.webp', width: 234, height: 160, category: 'furniture' },
+  'meeting-chair-front-right': { path: '/sprites/rooms/meeting-chair-front-right.webp', width: 34, height: 52, category: 'furniture' },
+  'meeting-chair-rear-left':   { path: '/sprites/rooms/meeting-chair-rear-left.webp', width: 36, height: 47, category: 'furniture' },
+  'whiteboard-mobile':         { path: '/sprites/rooms/whiteboard-mobile.webp', width: 62, height: 90, category: 'furniture' },
+  'server-rack-1':             { path: '/sprites/rooms/server-rack-1.webp', width: 66, height: 125, category: 'furniture' },
+  'server-rack-2':             { path: '/sprites/rooms/server-rack-2.webp', width: 67, height: 125, category: 'furniture' },
+  'server-rack-3':             { path: '/sprites/rooms/server-rack-3.webp', width: 68, height: 125, category: 'furniture' },
+  'network-cabinet':           { path: '/sprites/rooms/network-cabinet.webp', width: 68, height: 100, category: 'furniture' },
+  'crash-cart':                { path: '/sprites/rooms/crash-cart.webp', width: 55, height: 80, category: 'furniture' },
+  'kitchen-counter':           { path: '/sprites/rooms/kitchen-counter.webp', width: 132, height: 81, category: 'furniture' },
+  'fridge':                    { path: '/sprites/rooms/fridge.webp', width: 44, height: 82, category: 'appliance' },
+  'vending-machine':           { path: '/sprites/rooms/vending-machine.webp', width: 56, height: 84, category: 'appliance' },
+  'water-cooler':              { path: '/sprites/rooms/water-cooler.webp', width: 24, height: 62, category: 'appliance' },
+  'cafe-table':                { path: '/sprites/rooms/cafe-table.webp', width: 64, height: 58, category: 'furniture' },
+  'cafe-chair-front-left':     { path: '/sprites/rooms/cafe-chair-front-left.webp', width: 36, height: 53, category: 'furniture' },
+  'cafe-chair-front-right':    { path: '/sprites/rooms/cafe-chair-front-right.webp', width: 36, height: 53, category: 'furniture' },
+  'cafe-chair-rear-left':      { path: '/sprites/rooms/cafe-chair-rear-left.webp', width: 34, height: 47, category: 'furniture' },
+  'cafe-chair-rear-right':     { path: '/sprites/rooms/cafe-chair-rear-right.webp', width: 34, height: 47, category: 'furniture' },
+
   // === APPLIANCES ===
   // Coffee machine: 296x378 → ~49x63
   'coffee-off':    { path: '/sprites/appliances/coffee-off.png', width: 40, height: 51, category: 'appliance' },

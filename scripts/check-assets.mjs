@@ -43,7 +43,8 @@
  * of KNOWN_DYNAMIC fails the check: model it here before relying on it.
  *
  * PLANNED lists paths the code names for art that is not drawn yet (the
- * unbuilt rooms in src/rooms.ts). They are reported, not fatal; delete an
+ * corridor, meeting room, server room and lunch room of src/rooms.ts, closed
+ * until drawn: src/roomAccess.ts). They are reported, not fatal; delete an
  * entry once its file lands. KEPT lists files no code references but the
  * README tells people to use; they are not reported as unreferenced.
  *
@@ -63,7 +64,9 @@ import { join, relative, resolve, sep, extname } from 'node:path'
 // far.
 // Why 60 MB: the last 28 festive cycles (336 frames) took public/ to 58.4 MB;
 // 1.6 MB of headroom keeps a stray full-resolution export visible.
-export const BUDGET_BYTES = 60_000_000
+// Why 62 MB: the four new rooms (16 WebP backgrounds, ~1.7 MB) and their
+// furniture sprites (~0.2 MB) took public/ to 60.4 MB; same headroom.
+export const BUDGET_BYTES = 62_000_000
 
 const SOURCE_ROOTS = ['src', 'index.html', 'server', 'electron', 'hooks', 'commands']
 const SOURCE_EXT = new Set(['.ts', '.tsx', '.js', '.cjs', '.mjs', '.html', '.css', '.md', '.sh', '.json', '.py'])
@@ -79,18 +82,13 @@ const KNOWN_DYNAMIC = new Set([
   '*-walk*.webp',                       // walk.ts walkFramePaths: name.png -> name-walk1..4.webp (P6)
 ])
 
-/** Art the code names but nobody has drawn: the unbuilt rooms in src/rooms.ts. */
-const PLANNED = new Set([
-  'rooms/ceo-office.png',
-  'rooms/meeting-room.png',
-  'rooms/kitchen-cafeteria.png',
-  'rooms/server-room.png',
-  'rooms/lobby-reception.png',
-  'rooms/nap-wellness-room.png',
-  'rooms/rooftop-terrace.png',
-  'rooms/gym-fitness-room.png',
-  'rooms/parking-garage.png',
-])
+/**
+ * Art the code names but nobody has drawn yet. Empty now that the corridor,
+ * meeting, server and lunch rooms have their pictures; a room added later
+ * lists its files here until its art lands, then joins DRAWN_ROOMS in
+ * src/roomAccess.ts, and from then on a missing file of it fails this check.
+ */
+const PLANNED = new Set([])
 
 /** Unreferenced on purpose: templates the README has people upload to draw a character. */
 const KEPT = new Map([
