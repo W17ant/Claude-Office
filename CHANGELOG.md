@@ -5,6 +5,7 @@ All notable changes to Claude Office. Numbers refer to pull requests.
 ## Unreleased
 
 - Characters walk instead of gliding: while one moves it steps through a stand, stride, stand, stride cycle (`src/walk.ts`). Stride frames are optional `-walk1.webp` / `-walk2.webp` files beside each sprite; every character has them (the default cast, the boss and the whole Dunder Mifflin cast), and a sprite without them (a custom one) glides as before.
+- Christmas in the office, from 1 December to 6 January: decorated rooms (day and night, both themes), Christmas trees in the plant pots, festive desks, and a Santa hat on every character (one hat sprite, placed on each head as measured from the sprite itself). Everyone wears a Christmas jumper (three meme ones), Claude dresses as an elf and the boss swaps his cap for a Santa hat; characters with ponytails or big hair skip the overlay hat. `?season=christmas` / `?season=none` override the date. Each festive image is an optional `-xmas.webp` copy beside the original, so a missing one just shows the normal art. The festive sprites walk too: each has its own `-xmas-walk1.webp` / `-xmas-walk2.webp` stride frames, so no one flashes back to everyday clothes mid-step.
 
 ## 1.1.2 — 2026-11-09
 

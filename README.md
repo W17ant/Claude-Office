@@ -270,6 +270,7 @@ Agents can also message each other directly — see [Agent-to-agent messages](do
 | `127.0.0.1:3333?video` | Video — scripted recording mode |
 | `127.0.0.1:3333?helper` | Placement helper — dev tool for positioning furniture |
 | `127.0.0.1:3333?variant=incident` | Incident — pins "Prod Is Down" on |
+| `127.0.0.1:3333?season=christmas` | Christmas — the festive office any day (on by itself 1 Dec – 6 Jan) |
 
 ## Tech Stack
 

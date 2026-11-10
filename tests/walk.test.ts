@@ -5,9 +5,10 @@ import { WALK_FRAME_MS, _setWalkFrameForTests, walkFrame, walkFramePaths } from 
 const SRC = '/sprites/characters/X-1-front-left.png'
 
 describe('walkFrame', () => {
-  it('names the two stride frames beside a standing sprite; a festive copy has none', () => {
+  it('names the two stride frames beside a standing sprite, festive copies included', () => {
     expect(walkFramePaths(SRC)).toEqual(['/sprites/characters/X-1-front-left-walk1.webp', '/sprites/characters/X-1-front-left-walk2.webp'])
-    expect(walkFramePaths('/sprites/characters/X-1-front-left-xmas.webp')).toBeNull()
+    expect(walkFramePaths('/sprites/characters/X-1-front-left-xmas.webp')).toEqual(['/sprites/characters/X-1-front-left-xmas-walk1.webp', '/sprites/characters/X-1-front-left-xmas-walk2.webp'])
+    expect(walkFramePaths('/sprites/characters/X-1-front-left-walk1.webp')).toBeNull()
   })
 
   it('cycles stand, stride 1, stand, stride 2 while stepping, once both frames exist', () => {

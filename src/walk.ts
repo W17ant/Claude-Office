@@ -7,9 +7,10 @@
  * cycles stand -> walk1 -> stand -> walk2, so its legs move instead of the
  * whole figure gliding. Frames are optional per sprite: they are found with the
  * same runtime image probe the incident and festive art use, and a sprite
- * without both frames keeps gliding as before. Festive copies (`-xmas.webp`)
- * have no frames of their own, so a character in a Christmas outfit glides
- * rather than flashing back to its everyday clothes mid-stride.
+ * without both frames keeps gliding as before. A festive copy has frames of
+ * its own beside it (`name-xmas.webp` -> `name-xmas-walk1.webp`), so a
+ * character in a Christmas jumper never flashes back to its everyday clothes
+ * mid-stride; without them it glides.
  */
 
 import { useSyncExternalStore } from 'react'
@@ -21,11 +22,14 @@ import { probeImage, subscribeIncidentAssets } from './incidentAssets'
 // office's scale (faster looks like scurrying, slower like moonwalking).
 export const WALK_FRAME_MS = 140
 
-/** The two stride frames for `src`, or null when `src` cannot have any. */
+/**
+ * The two stride frames for `src` (a sprite `.png`, or a festive `.webp` copy),
+ * or null when `src` cannot have any.
+ */
 export function walkFramePaths(src: string): [string, string] | null {
-  if (!src.endsWith('.png')) return null // a festive .webp copy: no frames
-  const base = src.slice(0, -'.png'.length)
-  return [`${base}-walk1.webp`, `${base}-walk2.webp`]
+  const m = /^(.*)\.(png|webp)$/.exec(src)
+  if (!m || /-walk[12]$/.test(m[1])) return null // not a sprite, or already a stride frame
+  return [`${m[1]}-walk1.webp`, `${m[1]}-walk2.webp`]
 }
 
 const found = new Map<string, boolean>()
