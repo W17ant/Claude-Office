@@ -4,6 +4,7 @@ All notable changes to Claude Office. Numbers refer to pull requests.
 
 ## Unreleased
 
+- A custom sprite can walk too: `scripts/walk-cycle.py` makes the image to give ChatGPT (`prepare`, which also prints the prompt), then cuts its 3 × 4 sheet into the four-frame cycle beside the sprites (`cut`, with `--festive` for the Christmas copy). README › Creating a custom sprite › Make it walk.
 - Characters walk instead of gliding: while one moves it loops a four-frame walk cycle, left foot down, passing, right foot down, passing (`src/walk.ts`). The standing pose is never one of the steps: it faces the camera and the stride art does not, so mixing them made a walker snap between angles every 140 ms. Frames are optional `-walk1.webp` .. `-walk4.webp` files beside each sprite; every character has them (the default cast, the boss and the whole Dunder Mifflin cast), and a sprite without all four (a custom one) glides as before.
 - Prod Is Down has its own art now: a rotating red beacon over the door, the wall TV showing a ROLLBACK status page, an incident timeline written over the kanban board, and pizza boxes piling up on the counter the longer the incident runs (one, three, then a leaning six). The incident board is laid exactly over the wall board's writing surface.
 - During an incident each kind of agent grabs a prop: the on-call DevOps engineer's pager, the boss's megaphone, a fire extinguisher for the debugger, a magnifying glass for reviewers and security, the tester's canary in its cage, and a stopwatch for performance.

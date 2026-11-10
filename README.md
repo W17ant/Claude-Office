@@ -235,6 +235,34 @@ Here's Mini Claude — I asked Claude to describe itself after showing it the of
 python3 scripts/extract-boss-sprite.py your-character.png MyChar-1
 ```
 
+#### Make it walk
+
+The cast walk with a four-frame cycle (left foot down, passing, right foot down, passing) instead of gliding. A custom sprite glides until it has one; one more ChatGPT image gives it the whole cycle. Walking uses three directions, so the image is a 3 × 4 grid: a row per direction, a column per step.
+
+1. Make the image to upload: the three standing poses side by side on magenta. The script also prints the prompt to use:
+
+   ```bash
+   python3 scripts/walk-cycle.py prepare MyChar-1
+   ```
+
+2. In ChatGPT, upload `MyChar-1-walk-input.png` with that prompt and save the sheet it draws. Check it before cutting: 3 rows of 4, every figure facing the same way as its standing pose, the bottom row showing the back of the head (not the face), and the same clothes in every frame. If one is off, ask again; a new image costs nothing on a ChatGPT plan.
+3. Cut it into the 12 frames (`MyChar-1-front-left-walk1.webp` … `MyChar-1-rear-left-walk4.webp`, beside the sprites):
+
+   ```bash
+   python3 scripts/walk-cycle.py cut your-walk-sheet.png MyChar-1
+   ```
+
+Reload the office and your character walks. The script places each frame on the standing sprite's canvas with its feet where the standing pose's feet are, and mirrors a row ChatGPT drew facing the wrong way. Add `--no-mirror` if the outfit has words on it, so they never read backwards. It needs Pillow and numpy (`pip3 install Pillow numpy`).
+
+For the Christmas look, do the same with `--festive` on both commands once your `-xmas.webp` copies exist (see [Christmas](docs/reference.md#christmas)). Your character then keeps its festive outfit mid-step.
+
+<details>
+<summary>The walk-cycle prompt</summary>
+
+> This is a pixel-art game character standing in 3 directions (left figure, middle figure, right figure). Make a 4-frame looping WALK CYCLE sprite sheet of the SAME character: 3 ROWS and 4 COLUMNS. Row 1 = the left figure's direction, row 2 = the middle figure's direction, row 3 = the right figure's direction. The 4 columns are the 4 phases of the walk, left to right: 1 = contact: left foot forward with its heel on the ground, right foot back, right arm swung forward; 2 = passing: legs together under the body, right foot lifted a little as it passes, arms by the sides; 3 = contact: right foot forward, left foot back, left arm swung forward; 4 = passing: legs together, left foot lifted a little, arms by the sides. Small natural steps, feet never wider apart than the shoulders. In every frame the head and torso face EXACTLY the same angle as that row's standing figure: do not turn the head, do not turn the body sideways, only the legs and arms move. Same size and proportions as the standing figures, same clothes, face, hair, accessories and shoes, same pixel-art style, outline and shading. Row 3 walks AWAY from the viewer like the right standing figure: in all 4 frames of row 3 we see the back of the head and the back, never the face. All 12 figures the same height, feet on one baseline per row. Leave clear magenta gaps between all 12 figures. Flat solid magenta (#FF00FF) background everywhere, no shadows, no grid lines, no labels, no added text.
+
+</details>
+
 ## Chat
 
 | Command | Description |
