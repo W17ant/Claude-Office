@@ -2,6 +2,7 @@ import React from 'react'
 import ResilientImg from './ResilientImg'
 import { FurnitureItem } from '../rooms'
 import { ASSETS } from '../assets'
+import { seasonalUrl, useSeasonArt } from '../season'
 import DeskScreens from './DeskScreens'
 import { DESK_GEOMETRY, type DeskScreen } from '../screens'
 
@@ -13,14 +14,11 @@ interface FurnitureRendererProps {
 }
 
 function resolveSpriteUrl(sprite: string): string | null {
-  // Direct asset key lookup
-  if (ASSETS[sprite]) return ASSETS[sprite].path
-
   // Legacy sprite-sheet format "sheet-name:frame" — no image available
-  if (sprite.includes(':')) return null
-
-  // Try as direct path
-  return sprite
+  if (!ASSETS[sprite] && sprite.includes(':')) return null
+  // Why seasonalUrl: in December a desk or plant shows its festive copy
+  // (tinsel, a Christmas tree) once that file exists, else the normal sprite
+  return seasonalUrl(ASSETS[sprite] ? ASSETS[sprite].path : sprite)
 }
 
 function getSpriteHeight(sprite: string): number {
@@ -36,6 +34,7 @@ const CLICKABLE_TYPES = new Set([
 ])
 
 const FurnitureRenderer: React.FC<FurnitureRendererProps> = ({ items, onItemClick, screens }) => {
+  useSeasonArt() // Why: memoised; re-render when a festive desk or plant file turns out to exist
   return (
     <>
       {items.map(item => {

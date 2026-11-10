@@ -39,6 +39,12 @@ describe('mainState helpers', () => {
     expect(needsYouLabel({ kind: 'registry', summary: 'waiting in the terminal' })).toBe('✋ waiting in the terminal')
     expect(needsYouLabel({ kind: 'registry' })).toBe('✋ waiting in the terminal')
     expect(mainPillText('needs-you', { kind: 'registry' })).toBe('✋ waiting in the terminal')
+    // An MCP server's question blocks its tool call until someone answers: hard, named by the server only
+    expect(isHardNeedsYou({ kind: 'elicitation' })).toBe(true)
+    expect(needsYouBadge('elicitation')).toBe('✋')
+    expect(needsYouShort('elicitation')).toBe('MCP question')
+    expect(needsYouLabel({ kind: 'elicitation', summary: 'github' })).toBe('✋ github is asking you something')
+    expect(needsYouLabel({ kind: 'elicitation', message: 'never shown' })).toBe('✋ an MCP server is asking you something')
   })
 
   it('labels say only what the event said', () => {

@@ -179,7 +179,10 @@ describe('officeWsProtocols (what useAgentSocket offers on every (re)connect)', 
   it('useAgentSocket builds its socket with it and reads the server\'s `auth` verdict', async () => {
     const { readFileSync } = await import('node:fs')
     const source = readFileSync(new URL('../src/hooks/useAgentSocket.ts', import.meta.url), 'utf8')
-    expect(source).toContain('new WebSocket(url, officeWsProtocols())')
+    // Through src/viewerKey.ts pageWsProtocols: the token where it may travel,
+    // the viewer key on a phone-mode page (tests/viewer-key.test.ts)
+    expect(source).toContain('new WebSocket(url, socketProtocols())')
+    expect(source).toMatch(/pageWsProtocols\(\{ viewerKey: getViewerKey\(\), safe: mayCarryOfficeToken\(window\.location\) \}\)/)
     expect(source).toMatch(/msg\.type === 'auth'/)
   })
 })

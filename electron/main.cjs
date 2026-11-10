@@ -1,6 +1,6 @@
 'use strict'
 
-const { app, BrowserWindow, Menu, dialog, screen, shell } = require('electron')
+const { app, BrowserWindow, Menu, Notification, dialog, screen, shell } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const { spawn } = require('child_process')
@@ -40,6 +40,7 @@ const {
   writeRedirectPage,
 } = require('./helpers.cjs')
 const { createTray } = require('./tray.cjs')
+const { STATE_FILE_NAME: UPDATE_STATE_FILE_NAME, createUpdateChecker, fetchLatestRelease, releasePageUrl } = require('./update-check.cjs')
 
 // The server's port: AGENT_OFFICE_PORT, default 3334 (helpers.cjs mirrors
 // server/config.js). The same number goes to the server child's environment,
@@ -427,10 +428,57 @@ function menuState() {
     visible: !!win && !win.isDestroyed() && win.isVisible() && !win.isMinimized(),
     compact,
     alwaysOnTop: state.alwaysOnTop === true,
+    update: availableUpdate,
   }
 }
 
-const menuActions = { toggleWindow, setCompact, setAlwaysOnTop, resetBounds, openInBrowser, quit: quitApp }
+const menuActions = { toggleWindow, setCompact, setAlwaysOnTop, resetBounds, openInBrowser, openUpdate, quit: quitApp }
+
+// ---------------------------------------------------------------------------
+// Update check (electron/update-check.cjs): no auto-updater, just a menu item
+// and one notification per new version pointing at the release page.
+// ---------------------------------------------------------------------------
+
+/** { version, url } once a newer release has been seen, for the menus. */
+let availableUpdate = null
+let updateChecker = null
+
+/** Open the release page: only a URL that passes releasePageUrl again, never anything else. */
+function openUpdate() {
+  const url = availableUpdate && releasePageUrl(availableUpdate.url)
+  if (url) shell.openExternal(url)
+}
+
+function startUpdateCheck() {
+  // Why: packaged builds only. A checkout is updated from its repository, and
+  // the release page offers installers it has no use for; the headless
+  // screenshot run (AGENT_OFFICE_SCREENSHOT) must not reach the network either.
+  if (updateChecker || !app.isPackaged || process.env.AGENT_OFFICE_SCREENSHOT) return
+  const currentVersion = app.getVersion()
+  updateChecker = createUpdateChecker({
+    currentVersion,
+    stateFile: path.join(app.getPath('userData'), UPDATE_STATE_FILE_NAME),
+    fetchRelease: () => fetchLatestRelease({ version: currentVersion }),
+    onUpdate(update) {
+      const changed = !availableUpdate || availableUpdate.version !== update.version
+      availableUpdate = update
+      if (changed) {
+        console.log(`[update] ${update.version} is available (running ${currentVersion})`)
+        refreshMenus()
+      }
+    },
+    notify(update) {
+      if (!Notification.isSupported()) return
+      const note = new Notification({
+        title: `${APP_NAME} ${update.version} is available`,
+        body: 'Click to open the release page, or use "Update available" in the tray menu.',
+      })
+      note.on('click', openUpdate)
+      note.show()
+    },
+  })
+  updateChecker.start()
+}
 
 /** A keyboard shortcut (helpers.cjs SHORTCUTS), the same as its menu item. */
 function runShortcut(action) {
@@ -633,6 +681,7 @@ async function createWindow() {
 
   refreshMenus()
   createTrayIcon()
+  startUpdateCheck()
 }
 
 // ---------------------------------------------------------------------------
@@ -704,6 +753,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
   app.on('before-quit', () => {
     quitting = true
     if (tray) { tray.dispose(); tray = null }
+    if (updateChecker) { updateChecker.stop(); updateChecker = null }
     stopServer()
   })
 
