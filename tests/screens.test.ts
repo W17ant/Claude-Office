@@ -1,6 +1,6 @@
 /** screens.ts - what each desk's monitors show. */
 import { describe, expect, it } from 'vitest'
-import { DESK_GEOMETRY, SPOT_DESK, deskScreens, previewScreenMode, screenMode } from '../src/screens'
+import { DESK_GEOMETRY, SPOT_DESK, deskScreens, previewScreens, roleScreens, screenMode } from '../src/screens'
 import { ROOMS } from '../src/rooms'
 import type { Agent } from '../src/types'
 
@@ -17,40 +17,50 @@ function worker(over: Partial<Agent> = {}): Agent {
 }
 
 describe('screenMode', () => {
-  it('a working agent at its desk scrolls code; the security auditor shows the warning sign', () => {
-    expect(screenMode(worker())).toBe('code')
-    expect(screenMode(worker({ role: 'security-auditor' }))).toBe('security')
+  it('a busy worker has its role\'s two screens up: the frontend dev code and the page, the auditor the warning sign', () => {
+    expect(screenMode(worker())).toEqual(['code', 'web'])
+    expect(screenMode(worker({ role: 'security-auditor' }))).toEqual(['terminal', 'security'])
+    expect(screenMode(worker({ role: 'test-engineer' }))).toEqual(['code', 'tests'])
   })
 
-  it('a failed tool call, a red test run or an API error shows the bug, ahead of everything else', () => {
-    expect(screenMode(worker({ lastFailed: true }))).toBe('bug')
-    expect(screenMode(worker({ role: 'security-auditor', scene: { kind: 'red' } as Agent['scene'] }))).toBe('bug')
-    expect(screenMode(worker({ mainState: 'error' }))).toBe('bug')
+  it('a failed tool call, a red test run or an API error shows the bug on both, ahead of everything else', () => {
+    expect(screenMode(worker({ lastFailed: true }))).toEqual(['bug', 'bug'])
+    expect(screenMode(worker({ role: 'security-auditor', scene: { kind: 'red' } as Agent['scene'] }))).toEqual(['bug', 'bug'])
+    expect(screenMode(worker({ mainState: 'error' }))).toEqual(['bug', 'bug'])
   })
 
   it('idle at the desk keeps the lit screens; typing counts as busy', () => {
-    expect(screenMode(worker({ state: 'idle' }))).toBe('idle')
-    expect(screenMode(worker({ state: 'idle' }), true)).toBe('code')
+    expect(screenMode(worker({ state: 'idle' }))).toEqual(['idle', 'idle'])
+    expect(screenMode(worker({ state: 'idle' }), true)).toEqual(['code', 'web'])
   })
 
   it('nobody, or someone still walking to the desk, leaves the screens off', () => {
-    expect(screenMode(undefined)).toBe('off')
-    expect(screenMode(worker({ state: 'walking-to-desk' }))).toBe('off')
-    expect(screenMode(worker({ position: { x: 20, y: 68.2 } }))).toBe('off')
+    expect(screenMode(undefined)).toEqual(['off', 'off'])
+    expect(screenMode(worker({ state: 'walking-to-desk' }))).toEqual(['off', 'off'])
+    expect(screenMode(worker({ position: { x: 20, y: 68.2 } }))).toEqual(['off', 'off'])
+  })
+})
+
+describe('roleScreens', () => {
+  it('a custom subagent type or another MCP server is matched by name, else code and a terminal', () => {
+    expect(roleScreens('qa-tester')).toEqual(['code', 'tests'])
+    expect(roleScreens('vercel')).toEqual(['terminal', 'pipeline'])
+    expect(roleScreens('postgres-tuner')).toEqual(['data', 'terminal'])
+    expect(roleScreens('something-else')).toEqual(['code', 'terminal'])
   })
 })
 
 describe('deskScreens', () => {
   it('every desk is listed, off unless someone works at it', () => {
     const modes = deskScreens([worker()])
-    expect(modes['desk-2b']).toBe('code')
-    expect(Object.values(modes).filter(m => m === 'off')).toHaveLength(Object.keys(SPOT_DESK).length - 1)
+    expect(modes['desk-2b']).toEqual(['code', 'web'])
+    expect(Object.values(modes).filter(m => m[0] === 'off')).toHaveLength(Object.keys(SPOT_DESK).length - 1)
   })
 
   it('someone passing a desk does not switch off the screens of the one working at it', () => {
     const passer = worker({ id: 'b', state: 'walking-to-desk', assignedSpotId: 'spot-2' })
-    expect(deskScreens([worker(), passer])['desk-2b']).toBe('code')
-    expect(deskScreens([passer, worker()])['desk-2b']).toBe('code')
+    expect(deskScreens([worker(), passer])['desk-2b']).toEqual(['code', 'web'])
+    expect(deskScreens([passer, worker()])['desk-2b']).toEqual(['code', 'web'])
   })
 })
 
@@ -63,9 +73,14 @@ describe('desk wiring', () => {
     }
   })
 
-  it('?screens= previews a mode on every desk; anything else is ignored', () => {
-    expect(previewScreenMode('?sim&screens=bug')).toBe('bug')
-    expect(previewScreenMode('?screens=disco')).toBeNull()
-    expect(previewScreenMode('')).toBeNull()
+  it('?screens= previews a screen on every desk, ?screens=all a different pair on each; anything else is ignored', () => {
+    const desks = [{ id: 'rear', front: false }, { id: 'd1', front: true }, { id: 'd2', front: true }]
+    expect(previewScreens(desks, '?sim&screens=web')).toEqual({ rear: ['web', 'web'], d1: ['web', 'web'], d2: ['web', 'web'] })
+    const all = previewScreens(desks, '?screens=all')!
+    expect(all.d1).toEqual(['bug', 'bug']) // the first desk facing us
+    expect(all.d2).toEqual(['code', 'terminal'])
+    expect(all.rear).toEqual(['web', 'tests'])
+    expect(previewScreens(desks, '?screens=disco')).toBeNull()
+    expect(previewScreens(desks, '')).toBeNull()
   })
 })

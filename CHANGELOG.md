@@ -4,7 +4,7 @@ All notable changes to Claude Office. Numbers refer to pull requests.
 
 ## Unreleased
 
-- Desk monitors come alive, drawn in code over the desk art (`src/screens.ts`, `DeskScreens.tsx`): an empty desk's screens are off, a busy worker's scroll code, a worker whose last tool call failed (or whose test run went red, or whose session hit an API error) gets red screens flashing once a second with a bug walking from one monitor to the other, and the security auditor's show a pulsing yellow warning sign. Desks facing away glow in the same colour. Reduced motion draws them still; `?screens=code|bug|security|off` previews one on every desk.
+- Desk monitors come alive, drawn in code over the desk art (`src/screens.ts`, `DeskScreens.tsx`). An empty desk's screens are off; a busy worker has its role's two screens up: the frontend developer code and a web page building itself, the tester code and tests going green, reviewers a red/green diff, devops a terminal and a deploy pipeline lighting up, the performance engineer a live chart, the database architect a table scan, AI and prompt engineers a chat, Explore a file search, the debugger code stepping past a breakpoint, Gmail an inbox, the security auditor a pulsing yellow warning sign, the boss chat and email (custom roles are matched by name, else code and a terminal). A worker whose last tool call failed, whose test run went red or whose session hit an API error gets red screens flashing once a second with a bug walking from one monitor to the other. Desks facing away glow in the same colour. Reduced motion draws them still; `?screens=<kind>` previews one kind on every desk and `?screens=all` every kind at once.
 
 ## 1.1.2 — 2026-11-09
 

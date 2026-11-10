@@ -7,7 +7,7 @@ import SlackChat, { ChatMessage, getAvatarSrc } from './components/SlackChat'
 import Character from './components/Character'
 import ResilientImg from './components/ResilientImg'
 import FurnitureRenderer from './components/FurnitureRenderer'
-import { deskScreens, previewScreenMode, type ScreenMode } from './screens'
+import { DESK_GEOMETRY, deskScreens, previewScreens, type DeskScreen } from './screens'
 import SessionStrip from './components/SessionStrip'
 import Meters from './components/Meters'
 import AgentCard from './components/AgentCard'
@@ -73,6 +73,10 @@ function makeMsgId() { return -(nextMsgId++) }
 
 // Waypoints for the main office
 const MAIN_WAYPOINTS = MAIN_ROOM.waypoints ?? []
+// The main room's desks for the ?screens= preview, with whether their screens face us
+const PREVIEW_DESKS = MAIN_ROOM.furniture
+  .filter(f => DESK_GEOMETRY[f.sprite])
+  .map(f => ({ id: f.id, front: DESK_GEOMETRY[f.sprite].screens.length > 0 }))
 
 /**
  * Compute a pathQueue from one position to another using the main-office
@@ -1403,11 +1407,8 @@ const App: React.FC = () => {
   // What each desk's monitors show (src/screens.ts). Why the string key: agents
   // change every walking frame, but the screens only when someone's mode does,
   // and the memoised furniture must not re-render on every step
-  const screensPreview = previewScreenMode()
-  const deskScreensKey = JSON.stringify(screensPreview
-    ? Object.fromEntries(Object.keys(deskScreens([])).map(d => [d, screensPreview]))
-    : deskScreens(agents, typingAgents))
-  const deskScreenModes = useMemo(() => JSON.parse(deskScreensKey) as Record<string, ScreenMode>, [deskScreensKey])
+  const deskScreensKey = JSON.stringify(previewScreens(PREVIEW_DESKS) ?? deskScreens(agents, typingAgents))
+  const deskScreenModes = useMemo(() => JSON.parse(deskScreensKey) as Record<string, DeskScreen>, [deskScreensKey])
   const furnitureItems = useMemo(() => MAIN_ROOM.furniture.map(item => {
     const stateOverride = furnitureStates[item.id]
     if (!stateOverride) return item

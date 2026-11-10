@@ -3,17 +3,28 @@
  *
  * The standing desks are furniture sprites with two monitors each. Instead of
  * new art, the screens are drawn over the sprite in code (DeskScreens.tsx):
- * a desk nobody works at has its screens off, a desk whose worker is busy
- * scrolls code, a worker whose last tool call failed (or whose test run went
- * red, or whose session hit an API error) gets a red flashing screen with a bug
- * walking from one monitor to the other, and the security auditor's screens
- * show a yellow warning triangle. A rear-facing desk (screens turned away from
- * us) shows the same mood as a glow around the monitor backs.
+ * a desk nobody works at has its screens off; a busy worker has its role's
+ * pair up (the frontend developer code and the page it builds, the tester
+ * code and tests going green, devops a terminal and a pipeline, the security
+ * auditor a yellow warning sign...); a worker whose last tool call failed (or
+ * whose test run went red, or whose session hit an API error) gets red
+ * flashing screens with a bug walking from one monitor to the other. A
+ * rear-facing desk (screens turned away from us) glows in the same colour
+ * around the monitor backs.
  */
 
 import type { Agent } from './types'
 
-export type ScreenMode = 'off' | 'idle' | 'code' | 'bug' | 'security'
+/** What one busy monitor shows; each role has its own pair (ROLE_SCREENS). */
+export type ScreenKind =
+  | 'code' | 'terminal' | 'web' | 'tests' | 'diff' | 'pipeline' | 'chart'
+  | 'data' | 'chat' | 'search' | 'debug' | 'mail' | 'security'
+
+/** One monitor: off, the desk art's own lit screen (idle), the bug, or a busy kind. */
+export type ScreenMode = 'off' | 'idle' | 'bug' | ScreenKind
+
+/** A desk's two monitors, left then right as we see them. */
+export type DeskScreen = readonly [ScreenMode, ScreenMode]
 
 /** Which desk (MAIN_ROOM furniture id) each desk spot works at. */
 // Why a table: the spot stands beside its desk, not on it, and in two cases
@@ -22,6 +33,57 @@ export const SPOT_DESK: Readonly<Record<string, string>> = {
   'spot-1': 'desk-2c', 'spot-2': 'desk-2b', 'spot-3': 'desk-2a',
   'spot-4': 'desk-1c', 'spot-5': 'desk-1b', 'spot-6': 'desk-1a',
   'spot-7': 'desk-3c', 'spot-8': 'desk-3b', 'spot-9': 'desk-3a', 'spot-10': 'desk-3d',
+}
+
+// What each kind of worker has up on its two monitors while busy. Roles are
+// config.ts ROLE_TO_CHAR's keys (subagent types and MCP servers); anything else
+// falls through ROLE_PATTERNS, then to code and a terminal.
+const ROLE_SCREENS: Readonly<Record<string, readonly [ScreenKind, ScreenKind]>> = {
+  'boss': ['chat', 'mail'],
+  'assistant': ['code', 'terminal'],
+  'debugger': ['debug', 'terminal'],
+  'code-reviewer': ['diff', 'code'],
+  'architect-reviewer': ['diff', 'chart'],
+  'frontend-developer': ['code', 'web'],
+  'fullstack-developer': ['code', 'web'],
+  'test-engineer': ['code', 'tests'],
+  'security-auditor': ['terminal', 'security'],
+  'devops-engineer': ['terminal', 'pipeline'],
+  'performance-engineer': ['chart', 'code'],
+  'database-architect': ['data', 'terminal'],
+  'typescript-pro': ['code', 'code'],
+  'ai-engineer': ['chat', 'code'],
+  'prompt-engineer': ['chat', 'chat'],
+  'general-purpose': ['code', 'terminal'],
+  'Explore': ['search', 'code'],
+  'github': ['terminal', 'pipeline'],
+  'supabase': ['data', 'terminal'],
+  'playwright': ['web', 'tests'],
+  'chrome': ['web', 'web'],
+  'memory': ['data', 'chat'],
+  'seo': ['web', 'chart'],
+  'gmail': ['mail', 'mail'],
+  'ios-simulator': ['code', 'web'],
+}
+
+// Why patterns too: custom subagent types and other MCP servers have their own names
+const ROLE_PATTERNS: ReadonlyArray<[RegExp, readonly [ScreenKind, ScreenKind]]> = [
+  [/secur|audit|pentest/i, ['terminal', 'security']],
+  [/test|qa\b|e2e/i, ['code', 'tests']],
+  [/review/i, ['diff', 'code']],
+  [/front|ui\b|ux\b|css|design|web/i, ['code', 'web']],
+  [/devops|deploy|ops\b|ci\b|infra|cloud|vercel|docker|k8s/i, ['terminal', 'pipeline']],
+  [/perf|bench|profil/i, ['chart', 'code']],
+  [/data|sql|db\b|postgres|mongo|redis/i, ['data', 'terminal']],
+  [/\bai\b|prompt|llm|ml\b/i, ['chat', 'code']],
+  [/explor|research|search/i, ['search', 'code']],
+  [/debug/i, ['debug', 'terminal']],
+  [/mail|slack|chat/i, ['mail', 'chat']],
+]
+
+/** The two monitors a busy worker in `role` has up. */
+export function roleScreens(role: string): readonly [ScreenKind, ScreenKind] {
+  return ROLE_SCREENS[role] ?? ROLE_PATTERNS.find(([re]) => re.test(role))?.[1] ?? ['code', 'terminal']
 }
 
 // Why 1 (% of the room): the same "at the desk" test App.tsx uses for the desk z-order
@@ -34,34 +96,35 @@ export function atDesk(agent: Agent): boolean {
     Math.abs(agent.position.y - agent.deskPosition.y) < AT_DESK
 }
 
+const OFF: DeskScreen = ['off', 'off']
+
 /**
- * The screens of a desk worked at by `agent`.
+ * The two monitors of a desk worked at by `agent`.
  * @param agent the worker at the desk, or undefined for an empty desk
  * @param typing whether the office shows it typing right now
  */
-export function screenMode(agent: Agent | undefined, typing = false): ScreenMode {
-  if (!agent || !atDesk(agent)) return 'off'
+export function screenMode(agent: Agent | undefined, typing = false): DeskScreen {
+  if (!agent || !atDesk(agent)) return OFF
   // Why bug first: a failure is the one thing worth looking up for
-  if (agent.lastFailed || agent.scene?.kind === 'red' || agent.mainState === 'error') return 'bug'
+  if (agent.lastFailed || agent.scene?.kind === 'red' || agent.mainState === 'error') return ['bug', 'bug']
   const busy = typing || agent.state === 'working'
-  if (!busy) return 'idle'
-  return /secur/i.test(agent.role) ? 'security' : 'code'
+  return busy ? roleScreens(agent.role) : ['idle', 'idle']
 }
 
 /**
- * Screen mode per desk id for everyone in the room; desks nobody is at are 'off'.
+ * The monitors of every desk, by desk id; desks nobody is at are off.
  * @param agents the room's agents
  * @param typing ids the office shows typing
  */
-export function deskScreens(agents: readonly Agent[], typing: ReadonlySet<string> = new Set()): Record<string, ScreenMode> {
-  const out: Record<string, ScreenMode> = {}
-  for (const desk of Object.values(SPOT_DESK)) out[desk] = 'off'
+export function deskScreens(agents: readonly Agent[], typing: ReadonlySet<string> = new Set()): Record<string, DeskScreen> {
+  const out: Record<string, DeskScreen> = {}
+  for (const desk of Object.values(SPOT_DESK)) out[desk] = OFF
   for (const a of agents) {
     const desk = a.assignedSpotId ? SPOT_DESK[a.assignedSpotId] : undefined
     if (!desk) continue
-    const mode = screenMode(a, typing.has(a.id))
-    // Why keep a lit mode: someone walking past a desk must not switch off its worker's screens
-    if (mode !== 'off' || out[desk] === undefined) out[desk] = mode
+    const screens = screenMode(a, typing.has(a.id))
+    // Why keep lit screens: someone walking past a desk must not switch off its worker's
+    if (screens[0] !== 'off') out[desk] = screens
   }
   return out
 }
@@ -99,14 +162,27 @@ export const DESK_GEOMETRY: Readonly<Record<string, DeskGeometry>> = {
   'desk-standing-right-rear': { w: 576, h: 704, screens: [], glow: { cx: 240, cy: 165, rx: 210, ry: 140 } },
 }
 
-const MODES: readonly ScreenMode[] = ['off', 'idle', 'code', 'bug', 'security']
+const KINDS: readonly ScreenKind[] = ['code', 'terminal', 'web', 'tests', 'diff', 'pipeline', 'chart', 'data', 'chat', 'search', 'debug', 'mail', 'security']
+const MODES: readonly string[] = ['off', 'idle', 'bug', ...KINDS]
 
 /**
- * `?screens=bug` (or code, security, off, idle) shows that on every desk, to
- * see a screen without waiting for the state behind it (like `?season=`).
- * @returns the forced mode, or null when the URL does not ask for one
+ * `?screens=<mode>` (bug, web, tests, off...) shows that on every desk, and
+ * `?screens=all` the bug on the first desk facing us and every other kind in
+ * turn on the rest, to see the screens without waiting for the work behind
+ * them (like `?season=`).
+ * @param desks the desk ids to fill, with whether their screens face us
+ * @returns the forced screens by desk, or null when the URL does not ask for any
  */
-export function previewScreenMode(search: string = typeof location !== 'undefined' ? location.search : ''): ScreenMode | null {
+export function previewScreens(desks: ReadonlyArray<{ id: string; front: boolean }>, search: string = typeof location !== 'undefined' ? location.search : ''): Record<string, DeskScreen> | null {
   const v = new URLSearchParams(search).get('screens')
-  return v && (MODES as readonly string[]).includes(v) ? (v as ScreenMode) : null
+  if (!v) return null
+  if (v === 'all') {
+    // Why front desks first: only their screens are seen; a rear desk just glows
+    const order = [...desks.filter(d => d.front), ...desks.filter(d => !d.front)]
+    let k = 0
+    const next = () => KINDS[k++ % KINDS.length]
+    return Object.fromEntries(order.map((d, i) => [d.id, i === 0 ? ['bug', 'bug'] : [next(), next()]]))
+  }
+  if (!MODES.includes(v)) return null
+  return Object.fromEntries(desks.map(d => [d.id, [v, v] as unknown as DeskScreen]))
 }

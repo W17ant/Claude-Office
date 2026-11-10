@@ -3,13 +3,13 @@ import ResilientImg from './ResilientImg'
 import { FurnitureItem } from '../rooms'
 import { ASSETS } from '../assets'
 import DeskScreens from './DeskScreens'
-import { DESK_GEOMETRY, type ScreenMode } from '../screens'
+import { DESK_GEOMETRY, type DeskScreen } from '../screens'
 
 interface FurnitureRendererProps {
   items: FurnitureItem[]
   onItemClick?: (itemId: string) => void
-  /** What each desk's monitors show, by furniture id (screens.ts deskScreens) */
-  screens?: Record<string, ScreenMode>
+  /** What each desk's two monitors show, by furniture id (screens.ts deskScreens) */
+  screens?: Record<string, DeskScreen>
 }
 
 function resolveSpriteUrl(sprite: string): string | null {
@@ -70,7 +70,7 @@ const FurnitureRenderer: React.FC<FurnitureRendererProps> = ({ items, onItemClic
         const h = getSpriteHeight(item.sprite)
         // A standing desk's monitors are drawn over it in code (DeskScreens)
         const desk = DESK_GEOMETRY[item.sprite]
-        const screenMode = desk ? screens?.[item.id] ?? 'off' : undefined
+        const deskScreen: DeskScreen | undefined = desk ? screens?.[item.id] ?? ['off', 'off'] : undefined
 
         return (
           <div
@@ -88,7 +88,7 @@ const FurnitureRenderer: React.FC<FurnitureRendererProps> = ({ items, onItemClic
             title={item.label || (clickable ? 'Click to interact' : undefined)}
             onClick={clickable && onItemClick ? () => onItemClick(item.id) : undefined}
           >
-            {desk && screenMode && <DeskScreens geometry={desk} mode={screenMode} layer="back" />}
+            {desk && deskScreen && <DeskScreens geometry={desk} screens={deskScreen} layer="back" />}
             <ResilientImg
               src={url}
               alt={item.label || item.type}
@@ -104,7 +104,7 @@ const FurnitureRenderer: React.FC<FurnitureRendererProps> = ({ items, onItemClic
               }}
               draggable={false}
             />
-            {desk && screenMode && <DeskScreens geometry={desk} mode={screenMode} layer="front" />}
+            {desk && deskScreen && <DeskScreens geometry={desk} screens={deskScreen} layer="front" />}
           </div>
         )
       })}
