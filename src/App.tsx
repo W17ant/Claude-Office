@@ -790,7 +790,7 @@ const App: React.FC = () => {
   const viewRoom = viewableRoom(pickedRoom, OPEN_ROOMS)
   const officeInView = viewRoom === OFFICE_ROOM
 
-  // ?sim&rooms=all: MCP calls and a three-worker session, so the server room
+  // ?sim: MCP calls and a three-worker session, so the server room
   // and the meeting room have somebody in them too (src/roomsDemo.ts)
   useEffect(() => {
     if (!isSimMode || isVideoMode || !ROOMS_IN_USE) return
@@ -1590,6 +1590,8 @@ const App: React.FC = () => {
 
           {/* Furniture — apply interactive state overrides */}
           {officeInView && <FurnitureRenderer onItemClick={handleFurnitureClick} items={furnitureItems} screens={deskScreenModes} printJob={printedPage} />}
+          {/* Another room's furniture: drawn as listed in src/rooms.ts (nothing in it is clickable yet) */}
+          {!officeInView && <FurnitureRenderer items={ROOMS[viewRoom].furniture} />}
 
           {/* The session's real task list on the kanban whiteboard (nothing drawn while no session has tasks) */}
           {officeInView && <TaskBoard sessions={sessions} night={forcedNight ? 1 : dayNightMode === 'auto' ? nightOpacity : dayNightMode === 'night' ? 1 : 0} onActivate={() => handleFurnitureClick('kanban-board')} />}

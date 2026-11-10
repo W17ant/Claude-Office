@@ -34,17 +34,18 @@ describe('the floor plan model', () => {
   })
 
   it('lists the open rooms as their doors stand along the corridor, the corridor last', () => {
-    expect(planOrder()).toEqual(['main-office', 'meeting-room', 'server-room', 'lunch-room'])
+    // Left to right as drawn: the meeting room by the lift, the office at the far end
+    expect(planOrder()).toEqual(['meeting-room', 'server-room', 'lunch-room', 'main-office'])
     const model = switcherModel([], { open: ALL, view: OFFICE_ROOM })
-    expect(model.map(r => r.id)).toEqual(['main-office', 'meeting-room', 'server-room', 'lunch-room', 'corridor'])
+    expect(model.map(r => r.id)).toEqual(['meeting-room', 'server-room', 'lunch-room', 'main-office', 'corridor'])
     expect(model.map(r => r.place)).toEqual(['room', 'room', 'room', 'room', 'hub'])
-    expect(model.map(r => r.short)).toEqual(['Office', 'Meeting', 'Server', 'Lunch', 'Corridor'])
+    expect(model.map(r => r.short)).toEqual(['Meeting', 'Server', 'Lunch', 'Office', 'Corridor'])
   })
 
   it('leaves a closed room out', () => {
     const open = openRoomSet([OFFICE_ROOM, HUB_ROOM, 'server-room'])
     const model = switcherModel([someone('a', 'server-room')], { open, view: OFFICE_ROOM })
-    expect(model.map(r => r.id)).toEqual(['main-office', 'server-room', 'corridor'])
+    expect(model.map(r => r.id)).toEqual(['server-room', 'main-office', 'corridor'])
   })
 
   it('puts a dot per agent in the room it is in, in its own colour', () => {
@@ -197,9 +198,9 @@ describe('the placement helper export', () => {
     }
   })
 
-  it('says whose block it is, and reminds to drop `provisional` for a room placed over new art', () => {
+  it('says whose block it is (no `provisional` reminder once every room is placed on its art)', () => {
     const server = exportRoomLayout('server-room', [door(18, 50)])
-    expect(server.split('\n')[0]).toBe("    // ROOMS['server-room'] in src/rooms.ts (placed over its art: also delete `provisional: true`)")
+    expect(server.split('\n')[0]).toBe("    // ROOMS['server-room'] in src/rooms.ts")
     expect(exportRoomLayout(OFFICE_ROOM, [door(74, 44)]).split('\n')[0]).toBe("    // ROOMS['main-office'] in src/rooms.ts")
   })
 

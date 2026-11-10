@@ -80,16 +80,15 @@ describe('the building: five places in a star', () => {
   })
 })
 
-describe('the provisional layouts are sound', () => {
+describe('the new rooms\' layouts are sound', () => {
   const inside = (p: { x: number; y: number }, poly: { x: number; y: number }[]) => {
     const xs = poly.map(q => q.x)
     const ys = poly.map(q => q.y)
     return p.x >= Math.min(...xs) && p.x <= Math.max(...xs) && p.y >= Math.min(...ys) && p.y <= Math.max(...ys)
   }
 
-  it('the four new rooms are marked provisional, the office is not', () => {
-    expect(ROOMS[OFFICE_ROOM].provisional).toBeFalsy()
-    for (const id of [HUB_ROOM, ...SIDE_ROOMS]) expect(ROOMS[id].provisional).toBe(true)
+  it('no room is provisional: every layout was placed on its drawn art', () => {
+    for (const id of ROOM_IDS) expect(ROOMS[id].provisional, id).toBeFalsy()
   })
 
   it('every door, spot, landmark and waypoint of a new room stands on its floor (the walkable rectangle)', () => {
@@ -118,11 +117,11 @@ describe('the provisional layouts are sound', () => {
     }
   })
 
-  it('a side room has room for what it is for: 8 meeting seats, 6 racks, a coffee and a water place and 6 lunch seats', () => {
+  it('a side room has room for what it is for: 8 meeting seats, 6 racks, a coffee and a water place and 8 lunch seats', () => {
     const kinds = (id: RoomId) => ROOMS[id].agentSpots.map(s => s.type)
     expect(kinds('meeting-room')).toEqual(Array(8).fill('meeting-seat'))
     expect(kinds('server-room')).toEqual(Array(6).fill('standing'))
-    expect(kinds('lunch-room').sort()).toEqual(['coffee', ...Array(6).fill('lounge'), 'water'])
+    expect(kinds('lunch-room').sort()).toEqual(['coffee', ...Array(8).fill('lounge'), 'water'])
   })
 
   it('a waypoint stands at every door of a new room, and every waypoint is reachable from it', () => {
@@ -163,13 +162,15 @@ describe('the provisional layouts are sound', () => {
     }
   })
 
-  it("the corridor's doors stand left to right as office, meeting room, server room, lunch room, the manager's door between them", () => {
+  it("the corridor's doors stand as drawn: lift and meeting room on the left wall, then manager, server room, lunch room and office along the right", () => {
     const xs = (id: RoomId) => doorTo(HUB_ROOM, id)!.x
+    const lift = ROOMS[HUB_ROOM].landmarks!.find(l => l.kind === 'front-door')!
     const manager = ROOMS[HUB_ROOM].landmarks!.find(l => l.kind === 'decor-door')!
-    expect(xs('main-office')).toBeLessThan(xs('meeting-room'))
+    expect(lift.x).toBeLessThan(xs('meeting-room'))
     expect(xs('meeting-room')).toBeLessThan(manager.x)
     expect(manager.x).toBeLessThan(xs('server-room'))
     expect(xs('server-room')).toBeLessThan(xs('lunch-room'))
+    expect(xs('lunch-room')).toBeLessThan(xs('main-office'))
   })
 })
 
@@ -208,21 +209,19 @@ describe('a room is closed until its art is drawn (src/roomAccess.ts)', () => {
     expect([...openRoomSet([OFFICE_ROOM], true)].sort()).toEqual([...ROOM_IDS].sort())
   })
 
-  it("a room's art is four files named after it (day, night, and both for Dunder Mifflin); the office's live in the theme", () => {
-    expect(roomArtFiles('server-room')).toEqual([
-      '/rooms/server-room-day.png', '/rooms/server-room-night.png',
-      '/rooms/server-room-day-dm.png', '/rooms/server-room-night-dm.png',
-    ])
+  it("a room's art is named after it (day and night, plus a Dunder Mifflin pair when it has one); the office's live in the theme", () => {
     for (const id of [HUB_ROOM, ...SIDE_ROOMS]) {
-      expect(roomArtFiles(id)).toEqual([`/rooms/${id}-day.png`, `/rooms/${id}-night.png`, `/rooms/${id}-day-dm.png`, `/rooms/${id}-night-dm.png`])
+      const dm = ROOMS[id].backgroundDm ? [`/rooms/${id}-day-dm.webp`, `/rooms/${id}-night-dm.webp`] : []
+      expect(roomArtFiles(id)).toEqual([`/rooms/${id}-day.webp`, `/rooms/${id}-night.webp`, ...dm])
     }
     expect(roomArtFiles(OFFICE_ROOM)).toEqual([])
   })
 
   it('roomArt gives the theme\'s two pictures for a drawn room and null (draw the placeholder) otherwise', () => {
     expect(roomArt('server-room', 'default', [OFFICE_ROOM])).toBeNull()
-    expect(roomArt('server-room', 'default', [OFFICE_ROOM, 'server-room'])).toEqual({ day: '/rooms/server-room-day.png', night: '/rooms/server-room-night.png' })
-    expect(roomArt('server-room', 'office', [OFFICE_ROOM, 'server-room'])).toEqual({ day: '/rooms/server-room-day-dm.png', night: '/rooms/server-room-night-dm.png' })
+    expect(roomArt('server-room', 'default', [OFFICE_ROOM, 'server-room'])).toEqual({ day: '/rooms/server-room-day.webp', night: '/rooms/server-room-night.webp' })
+    // Dunder Mifflin: the room's own pair when it has one, else its default pictures
+    expect(roomArt('server-room', 'office', [OFFICE_ROOM, 'server-room'])).toEqual(ROOMS['server-room'].backgroundDm ?? ROOMS['server-room'].background)
     expect(roomArt(OFFICE_ROOM, 'default', [OFFICE_ROOM])).toBeNull()
   })
 })

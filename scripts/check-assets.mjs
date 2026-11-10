@@ -81,30 +81,12 @@ const KNOWN_DYNAMIC = new Set([
 ])
 
 /**
- * Art the code names but nobody has drawn: the four rooms beside the office
- * in src/rooms.ts. Each has a day and a night picture, and both again for the
- * Dunder Mifflin theme (-dm), named like the office's own four. When a room's
- * art lands, delete its four lines here and add the room to DRAWN_ROOMS in
- * src/roomAccess.ts: from then on a missing file of it fails this check.
+ * Art the code names but nobody has drawn yet. Empty now that the corridor,
+ * meeting, server and lunch rooms have their pictures; a room added later
+ * lists its files here until its art lands, then joins DRAWN_ROOMS in
+ * src/roomAccess.ts, and from then on a missing file of it fails this check.
  */
-const PLANNED = new Set([
-  'rooms/corridor-day.png',
-  'rooms/corridor-night.png',
-  'rooms/corridor-day-dm.png',
-  'rooms/corridor-night-dm.png',
-  'rooms/meeting-room-day.png',
-  'rooms/meeting-room-night.png',
-  'rooms/meeting-room-day-dm.png',
-  'rooms/meeting-room-night-dm.png',
-  'rooms/server-room-day.png',
-  'rooms/server-room-night.png',
-  'rooms/server-room-day-dm.png',
-  'rooms/server-room-night-dm.png',
-  'rooms/lunch-room-day.png',
-  'rooms/lunch-room-night.png',
-  'rooms/lunch-room-day-dm.png',
-  'rooms/lunch-room-night-dm.png',
-])
+const PLANNED = new Set([])
 
 /** Unreferenced on purpose: templates the README has people upload to draw a character. */
 const KEPT = new Map([

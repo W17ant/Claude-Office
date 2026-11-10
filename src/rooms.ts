@@ -17,11 +17,11 @@
  * room can be used at all (its art exists, or ?rooms=all) in src/roomAccess.ts;
  * the walk between rooms in src/roomTransfer.ts.
  *
- * Positions are percentages (0-100) of the room picture, which is 4800 x 3584
- * for every room. The four new rooms' layouts are PROVISIONAL: they were
- * placed by hand against the code-drawn placeholder (src/components/
- * RoomBackdrop.tsx) so the preview works, and are to be re-placed with
- * /?helper once each room's art is drawn (docs/reference.md, "Rooms").
+ * Positions are percentages (0-100) of the room picture (1508 x 1126 art,
+ * the 4800 x 3584 aspect). Every room is the same isometric box, drawn by
+ * editing the office's picture, so the four new rooms' layouts were computed
+ * on each room's measured floor corners (back, right, front, left) and can be
+ * fine-tuned with /?helper&room=<id> (docs/reference.md, "Rooms").
  */
 
 export type RoomId =
@@ -115,14 +115,6 @@ export interface Room {
 export const HUB_ROOM: RoomId = 'corridor'
 /** Where everyone has a desk; the room shown by default */
 export const OFFICE_ROOM: RoomId = 'main-office'
-
-// Why one door position for the three side rooms: until their art exists the
-// placeholder draws each as the same plain box, and a shared door keeps the
-// provisional layouts easy to check against each other.
-const SIDE_DOOR = { x: 18, y: 50 }
-// Why this rectangle: it is the floor the placeholder draws (back wall above
-// y = 50), leaving a margin so a sprite's head and name tag stay on the picture.
-const SIDE_FLOOR = [{ x: 8, y: 50 }, { x: 92, y: 50 }, { x: 92, y: 88 }, { x: 8, y: 88 }]
 
 // ===== ROOM DEFINITIONS =====
 
@@ -291,175 +283,223 @@ export const ROOMS: Record<RoomId, Room> = {
     ],
   },
 
-  // PROVISIONAL (no art yet): a long hallway seen from the front. The four
-  // room doors and the manager's nameplate door are in the back wall, left to
-  // right; the front door / lift is in the left end wall. The office is the
-  // door nearest the front door because that is the walk nearly every
-  // newcomer and leaver makes.
+  // A hallway in the office's isometric box. Left wall: the lift (where people
+  // join and leave the building) and the meeting room. Right wall, from the
+  // corner: the manager's nameplate door (decoration), the server room, the
+  // lunch room and the office. Nobody is stationed here: it is only walked through.
   'corridor': {
     id: 'corridor',
     name: 'Corridor',
-    description: 'The hallway every room opens onto. In by the front door, out the same way.',
+    description: 'The hallway every room opens onto. In by the lift, out the same way.',
     background: {
-      day: '/rooms/corridor-day.png',
-      night: '/rooms/corridor-night.png',
-    },
-    backgroundDm: {
-      day: '/rooms/corridor-day-dm.png',
-      night: '/rooms/corridor-night-dm.png',
+      day: '/rooms/corridor-day.webp',
+      night: '/rooms/corridor-night.webp',
     },
     width: 800,
     height: 600,
     furniture: [],
     connections: [
-      { toRoom: 'main-office', position: { x: 22, y: 50 }, label: 'Office', exitFacing: 'rear-right', entryFacing: 'front-right' },
-      { toRoom: 'meeting-room', position: { x: 40, y: 50 }, label: 'Meeting Room', exitFacing: 'rear-right', entryFacing: 'front-right' },
-      { toRoom: 'server-room', position: { x: 70, y: 50 }, label: 'Server Room', exitFacing: 'rear-right', entryFacing: 'front-right' },
-      { toRoom: 'lunch-room', position: { x: 86, y: 50 }, label: 'Lunch Room', exitFacing: 'rear-right', entryFacing: 'front-right' },
+      { toRoom: 'main-office', position: { x: 86.4, y: 66 }, label: 'Office', exitFacing: 'rear-right', entryFacing: 'front-left' },
+      { toRoom: 'meeting-room', position: { x: 31, y: 51.5 }, label: 'Meeting Room', exitFacing: 'rear-left', entryFacing: 'front-right' },
+      { toRoom: 'server-room', position: { x: 62.3, y: 54 }, label: 'Server Room', exitFacing: 'rear-right', entryFacing: 'front-left' },
+      { toRoom: 'lunch-room', position: { x: 74.2, y: 59.3 }, label: 'Lunch Room', exitFacing: 'rear-right', entryFacing: 'front-left' },
     ],
     landmarks: [
-      { id: 'front-door', kind: 'front-door', label: 'Front door / lift', x: 6, y: 60 },
-      { id: 'manager-door', kind: 'decor-door', label: 'Manager', x: 55, y: 50 },
+      { id: 'front-door', kind: 'front-door', label: 'Lift', x: 14.5, y: 63 },
+      { id: 'manager-door', kind: 'decor-door', label: 'Manager', x: 51.2, y: 45.5 },
     ],
-    // Nobody is stationed in the corridor: it is only walked through
     agentSpots: [],
-    // The front door: where newcomers appear and leavers are last seen
-    entryPoint: { x: 6, y: 60 },
-    walkableArea: [{ x: 3, y: 50 }, { x: 97, y: 50 }, { x: 97, y: 70 }, { x: 3, y: 70 }],
+    // The lift: where newcomers appear and leavers are last seen
+    entryPoint: { x: 14.5, y: 63 },
+    walkableArea: [{ x: 43.6, y: 42.0 }, { x: 93.0, y: 67.6 }, { x: 53.7, y: 94.6 }, { x: 5.9, y: 65.5 }],
     waypoints: [
-      { id: 'W-corr-front',   x: 6,  y: 60, connections: ['W-corr-office'] },
-      { id: 'W-corr-office',  x: 22, y: 50, connections: ['W-corr-front', 'W-corr-meeting'] },
-      { id: 'W-corr-meeting', x: 40, y: 50, connections: ['W-corr-office', 'W-corr-server'] },
-      { id: 'W-corr-server',  x: 70, y: 50, connections: ['W-corr-meeting', 'W-corr-lunch'] },
-      { id: 'W-corr-lunch',   x: 86, y: 50, connections: ['W-corr-server'] },
+      { id: 'W-corr-lift', x: 14.5, y: 63.0, connections: ['W-corr-hub', 'W-corr-meeting'] },
+      { id: 'W-corr-meeting', x: 31.0, y: 51.5, connections: ['W-corr-hub', 'W-corr-lift'] },
+      { id: 'W-corr-hub', x: 50.5, y: 63.3, connections: ['W-corr-lift', 'W-corr-lunch', 'W-corr-meeting', 'W-corr-server'] },
+      { id: 'W-corr-server', x: 62.3, y: 54.0, connections: ['W-corr-hub', 'W-corr-lunch'] },
+      { id: 'W-corr-lunch', x: 74.2, y: 59.3, connections: ['W-corr-hub', 'W-corr-office', 'W-corr-server'] },
+      { id: 'W-corr-office', x: 86.4, y: 66.0, connections: ['W-corr-lunch'] },
     ],
-    provisional: true,
   },
 
-  // PROVISIONAL (no art yet): one long table across the middle, four seats
-  // behind it (facing the viewer) and four in front (backs to the viewer).
+  // One long table parallel to the window wall: four seats on the far side
+  // (facing us, drawn behind the table) and four on the near side (backs to us).
   // Eight seats: a session's Claude and seven workers; more stay at their desks.
   'meeting-room': {
     id: 'meeting-room',
     name: 'Meeting Room',
     description: 'Where a session gathers when it runs several agents at once, or waits on you.',
     background: {
-      day: '/rooms/meeting-room-day.png',
-      night: '/rooms/meeting-room-night.png',
-    },
-    backgroundDm: {
-      day: '/rooms/meeting-room-day-dm.png',
-      night: '/rooms/meeting-room-night-dm.png',
+      day: '/rooms/meeting-room-day.webp',
+      night: '/rooms/meeting-room-night.webp',
     },
     width: 800,
     height: 600,
-    furniture: [],
+    furniture: [
+      { id: 'meet-table', type: 'meeting-table', sprite: 'meeting-table', x: 47.9, y: 74.3, zIndex: 50 },
+      { id: 'meet-whiteboard', type: 'whiteboard', sprite: 'whiteboard-mobile', x: 42.4, y: 44.5, zIndex: 31 },
+      { id: 'meet-chair-1', type: 'meeting-chair', sprite: 'meeting-chair-front-right', x: 32.8, y: 63.9, zIndex: 30 },
+      { id: 'meet-chair-2', type: 'meeting-chair', sprite: 'meeting-chair-front-right', x: 38.1, y: 60.2, zIndex: 31 },
+      { id: 'meet-chair-3', type: 'meeting-chair', sprite: 'meeting-chair-front-right', x: 43.4, y: 56.6, zIndex: 32 },
+      { id: 'meet-chair-4', type: 'meeting-chair', sprite: 'meeting-chair-front-right', x: 48.7, y: 53.0, zIndex: 33 },
+      { id: 'meet-chair-5', type: 'meeting-chair', sprite: 'meeting-chair-rear-left', x: 46.8, y: 75.0, zIndex: 70 },
+      { id: 'meet-chair-6', type: 'meeting-chair', sprite: 'meeting-chair-rear-left', x: 52.3, y: 71.2, zIndex: 71 },
+      { id: 'meet-chair-7', type: 'meeting-chair', sprite: 'meeting-chair-rear-left', x: 57.8, y: 67.3, zIndex: 72 },
+      { id: 'meet-chair-8', type: 'meeting-chair', sprite: 'meeting-chair-rear-left', x: 63.3, y: 63.5, zIndex: 73 },
+    ],
     connections: [
-      { toRoom: 'corridor', position: SIDE_DOOR, label: 'Corridor', exitFacing: 'rear-right', entryFacing: 'front-right' },
+      { toRoom: 'corridor', position: { x: 68, y: 51.5 }, label: 'Corridor', exitFacing: 'rear-right', entryFacing: 'front-left' },
     ],
     agentSpots: [
-      // Behind the table (drawn before it)
-      { id: 'meet-1', type: 'meeting-seat', x: 38, y: 62, facing: 'down', spriteFacing: 'front-right', zIndex: 40 },
-      { id: 'meet-2', type: 'meeting-seat', x: 50, y: 62, facing: 'down', spriteFacing: 'front-right', zIndex: 40 },
-      { id: 'meet-3', type: 'meeting-seat', x: 62, y: 62, facing: 'down', spriteFacing: 'front-left', zIndex: 40 },
-      { id: 'meet-4', type: 'meeting-seat', x: 74, y: 62, facing: 'down', spriteFacing: 'front-left', zIndex: 40 },
-      // In front of the table
-      { id: 'meet-5', type: 'meeting-seat', x: 38, y: 80, facing: 'up', spriteFacing: 'rear-right', zIndex: 90 },
-      { id: 'meet-6', type: 'meeting-seat', x: 50, y: 80, facing: 'up', spriteFacing: 'rear-right', zIndex: 90 },
-      { id: 'meet-7', type: 'meeting-seat', x: 62, y: 80, facing: 'up', spriteFacing: 'rear-left', zIndex: 90 },
-      { id: 'meet-8', type: 'meeting-seat', x: 74, y: 80, facing: 'up', spriteFacing: 'rear-left', zIndex: 90 },
+      { id: 'meet-1', type: 'meeting-seat', x: 33.3, y: 64.4, facing: 'down', spriteFacing: 'front-right', zIndex: 40 },
+      { id: 'meet-2', type: 'meeting-seat', x: 38.6, y: 60.8, facing: 'down', spriteFacing: 'front-right', zIndex: 41 },
+      { id: 'meet-3', type: 'meeting-seat', x: 43.9, y: 57.1, facing: 'down', spriteFacing: 'front-right', zIndex: 42 },
+      { id: 'meet-4', type: 'meeting-seat', x: 49.2, y: 53.5, facing: 'down', spriteFacing: 'front-right', zIndex: 43 },
+      { id: 'meet-5', type: 'meeting-seat', x: 46.5, y: 74.1, facing: 'up', spriteFacing: 'rear-left', zIndex: 60 },
+      { id: 'meet-6', type: 'meeting-seat', x: 52.0, y: 70.3, facing: 'up', spriteFacing: 'rear-left', zIndex: 61 },
+      { id: 'meet-7', type: 'meeting-seat', x: 57.5, y: 66.5, facing: 'up', spriteFacing: 'rear-left', zIndex: 62 },
+      { id: 'meet-8', type: 'meeting-seat', x: 63.0, y: 62.6, facing: 'up', spriteFacing: 'rear-left', zIndex: 63 },
     ],
-    entryPoint: SIDE_DOOR,
-    walkableArea: SIDE_FLOOR,
+    entryPoint: { x: 68, y: 51.5 },
+    walkableArea: [{ x: 43.8, y: 37.0 }, { x: 93.0, y: 63.9 }, { x: 53.7, y: 93.1 }, { x: 5.9, y: 63.4 }],
     waypoints: [
-      { id: 'W-meet-door',  x: 18, y: 50, connections: ['W-meet-back', 'W-meet-front'] },
-      // The two aisles either side of the table: nobody walks across it
-      { id: 'W-meet-back',  x: 28, y: 58, connections: ['W-meet-door'] },
-      { id: 'W-meet-front', x: 26, y: 84, connections: ['W-meet-door'] },
+      { id: 'W-meet-door', x: 68.0, y: 51.5, connections: ['W-meet-in'] },
+      { id: 'W-meet-in', x: 67.3, y: 54.5, connections: ['W-meet-8', 'W-meet-door', 'W-meet-far-1', 'W-meet-near-1'] },
+      { id: 'W-meet-far-1', x: 45.8, y: 46.7, connections: ['W-meet-4', 'W-meet-far-2', 'W-meet-in'] },
+      { id: 'W-meet-far-2', x: 33.6, y: 55.3, connections: ['W-meet-1', 'W-meet-2', 'W-meet-3', 'W-meet-far-1', 'W-meet-far-3'] },
+      { id: 'W-meet-far-3', x: 21.5, y: 63.9, connections: ['W-meet-end', 'W-meet-far-2'] },
+      { id: 'W-meet-near-1', x: 75.0, y: 65.7, connections: ['W-meet-in', 'W-meet-near-2'] },
+      { id: 'W-meet-near-2', x: 63.8, y: 74.0, connections: ['W-meet-7', 'W-meet-near-1', 'W-meet-near-3'] },
+      { id: 'W-meet-near-3', x: 52.1, y: 82.5, connections: ['W-meet-5', 'W-meet-6', 'W-meet-end', 'W-meet-near-2'] },
+      { id: 'W-meet-end', x: 31.2, y: 75.2, connections: ['W-meet-far-3', 'W-meet-near-3'] },
+      { id: 'W-meet-1', x: 33.3, y: 64.4, connections: ['W-meet-far-2'] },
+      { id: 'W-meet-2', x: 38.6, y: 60.8, connections: ['W-meet-far-2'] },
+      { id: 'W-meet-3', x: 43.9, y: 57.1, connections: ['W-meet-far-2'] },
+      { id: 'W-meet-4', x: 49.2, y: 53.5, connections: ['W-meet-far-1'] },
+      { id: 'W-meet-5', x: 46.5, y: 74.1, connections: ['W-meet-near-3'] },
+      { id: 'W-meet-6', x: 52.0, y: 70.3, connections: ['W-meet-near-3'] },
+      { id: 'W-meet-7', x: 57.5, y: 66.5, connections: ['W-meet-near-2'] },
+      { id: 'W-meet-8', x: 63.0, y: 62.6, connections: ['W-meet-in'] },
     ],
-    provisional: true,
   },
 
-  // PROVISIONAL (no art yet): a row of six racks along the back wall, one
-  // standing place in front of each. One MCP server worker per rack.
+  // Six racks along the left wall, one standing place in front of each (one MCP
+  // server worker per rack), a network cabinet and a crash cart.
   'server-room': {
     id: 'server-room',
     name: 'Server Room',
     description: 'Racks, blinking lights and the MCP servers the sessions call.',
     background: {
-      day: '/rooms/server-room-day.png',
-      night: '/rooms/server-room-night.png',
-    },
-    backgroundDm: {
-      day: '/rooms/server-room-day-dm.png',
-      night: '/rooms/server-room-night-dm.png',
+      day: '/rooms/server-room-day.webp',
+      night: '/rooms/server-room-night.webp',
     },
     width: 800,
     height: 600,
-    furniture: [],
+    furniture: [
+      { id: 'srv-rack-1', type: 'server-rack', sprite: 'server-rack-1', x: 41.4, y: 45.1, zIndex: 30 },
+      { id: 'srv-rack-2', type: 'server-rack', sprite: 'server-rack-2', x: 36.6, y: 48.4, zIndex: 31 },
+      { id: 'srv-rack-3', type: 'server-rack', sprite: 'server-rack-3', x: 31.8, y: 51.7, zIndex: 32 },
+      { id: 'srv-rack-4', type: 'server-rack', sprite: 'server-rack-1', x: 26.9, y: 55.0, zIndex: 33 },
+      { id: 'srv-rack-5', type: 'server-rack', sprite: 'server-rack-2', x: 22.1, y: 58.3, zIndex: 34 },
+      { id: 'srv-rack-6', type: 'server-rack', sprite: 'server-rack-3', x: 17.3, y: 61.6, zIndex: 35 },
+      { id: 'srv-cabinet', type: 'network-cabinet', sprite: 'network-cabinet', x: 12.2, y: 65.5, zIndex: 40 },
+      { id: 'srv-cart', type: 'crash-cart', sprite: 'crash-cart', x: 79.8, y: 66.2, zIndex: 45 },
+    ],
     connections: [
-      { toRoom: 'corridor', position: SIDE_DOOR, label: 'Corridor', exitFacing: 'rear-right', entryFacing: 'front-right' },
+      { toRoom: 'corridor', position: { x: 68.5, y: 53 }, label: 'Corridor', exitFacing: 'rear-right', entryFacing: 'front-left' },
     ],
     agentSpots: [
-      { id: 'srv-1', type: 'standing', x: 34, y: 60, facing: 'up', spriteFacing: 'rear-right' },
-      { id: 'srv-2', type: 'standing', x: 44, y: 60, facing: 'up', spriteFacing: 'rear-right' },
-      { id: 'srv-3', type: 'standing', x: 54, y: 60, facing: 'up', spriteFacing: 'rear-right' },
-      { id: 'srv-4', type: 'standing', x: 64, y: 60, facing: 'up', spriteFacing: 'rear-left' },
-      { id: 'srv-5', type: 'standing', x: 74, y: 60, facing: 'up', spriteFacing: 'rear-left' },
-      { id: 'srv-6', type: 'standing', x: 84, y: 60, facing: 'up', spriteFacing: 'rear-left' },
+      { id: 'srv-1', type: 'standing', x: 49.8, y: 47.6, facing: 'up', spriteFacing: 'rear-left', zIndex: 50 },
+      { id: 'srv-2', type: 'standing', x: 45.0, y: 50.9, facing: 'up', spriteFacing: 'rear-left', zIndex: 51 },
+      { id: 'srv-3', type: 'standing', x: 40.1, y: 54.3, facing: 'up', spriteFacing: 'rear-left', zIndex: 52 },
+      { id: 'srv-4', type: 'standing', x: 35.3, y: 57.7, facing: 'up', spriteFacing: 'rear-left', zIndex: 53 },
+      { id: 'srv-5', type: 'standing', x: 30.4, y: 61.0, facing: 'up', spriteFacing: 'rear-left', zIndex: 54 },
+      { id: 'srv-6', type: 'standing', x: 25.6, y: 64.4, facing: 'up', spriteFacing: 'rear-left', zIndex: 55 },
     ],
-    entryPoint: SIDE_DOOR,
-    walkableArea: SIDE_FLOOR,
+    entryPoint: { x: 68.5, y: 53 },
+    walkableArea: [{ x: 43.8, y: 38.8 }, { x: 93.0, y: 65.6 }, { x: 54.5, y: 94.0 }, { x: 6.0, y: 64.6 }],
     waypoints: [
-      { id: 'W-srv-door',  x: 18, y: 50, connections: ['W-srv-aisle'] },
-      // The aisle in front of the racks
-      { id: 'W-srv-aisle', x: 26, y: 64, connections: ['W-srv-door'] },
+      { id: 'W-srv-door', x: 68.5, y: 53.0, connections: ['W-srv-in'] },
+      { id: 'W-srv-in', x: 63.9, y: 55.3, connections: ['W-srv-aisle-1', 'W-srv-door'] },
+      { id: 'W-srv-aisle-1', x: 56.6, y: 51.3, connections: ['W-srv-1', 'W-srv-aisle-2', 'W-srv-in'] },
+      { id: 'W-srv-aisle-2', x: 46.9, y: 58.1, connections: ['W-srv-2', 'W-srv-3', 'W-srv-aisle-1', 'W-srv-aisle-3'] },
+      { id: 'W-srv-aisle-3', x: 37.2, y: 65.0, connections: ['W-srv-4', 'W-srv-5', 'W-srv-aisle-2', 'W-srv-aisle-4'] },
+      { id: 'W-srv-aisle-4', x: 27.4, y: 71.8, connections: ['W-srv-6', 'W-srv-aisle-3'] },
+      { id: 'W-srv-1', x: 49.8, y: 47.6, connections: ['W-srv-aisle-1'] },
+      { id: 'W-srv-2', x: 45.0, y: 50.9, connections: ['W-srv-aisle-2'] },
+      { id: 'W-srv-3', x: 40.1, y: 54.3, connections: ['W-srv-aisle-2'] },
+      { id: 'W-srv-4', x: 35.3, y: 57.7, connections: ['W-srv-aisle-3'] },
+      { id: 'W-srv-5', x: 30.4, y: 61.0, connections: ['W-srv-aisle-3'] },
+      { id: 'W-srv-6', x: 25.6, y: 64.4, connections: ['W-srv-aisle-4'] },
     ],
-    provisional: true,
   },
 
-  // PROVISIONAL (no art yet): a counter along the back wall on the right with
-  // the coffee machine and the water cooler, and two tables with three seats
-  // each. Today's "kitchen", renamed.
+  // Right wall: vending machine, fridge, water cooler, the door, then the counter
+  // with the coffee machine. Two cafe tables of four in the middle.
   'lunch-room': {
     id: 'lunch-room',
     name: 'Lunch Room',
     description: 'Coffee, water and somewhere to sit when there is nothing to do.',
     background: {
-      day: '/rooms/lunch-room-day.png',
-      night: '/rooms/lunch-room-night.png',
-    },
-    backgroundDm: {
-      day: '/rooms/lunch-room-day-dm.png',
-      night: '/rooms/lunch-room-night-dm.png',
+      day: '/rooms/lunch-room-day.webp',
+      night: '/rooms/lunch-room-night.webp',
     },
     width: 800,
     height: 600,
-    furniture: [],
+    furniture: [
+      { id: 'lunch-vending', type: 'vending-machine', sprite: 'vending-machine', x: 46.7, y: 42.1, zIndex: 30 },
+      { id: 'lunch-fridge', type: 'fridge', sprite: 'fridge', x: 53.0, y: 45.2, zIndex: 31 },
+      { id: 'lunch-water', type: 'water-cooler', sprite: 'water-cooler', x: 58.7, y: 47.8, zIndex: 32, label: 'Water Cooler' },
+      { id: 'lunch-counter', type: 'kitchen-counter', sprite: 'kitchen-counter', x: 82.1, y: 62.0, zIndex: 33 },
+      { id: 'lunch-coffee-machine', type: 'coffee-machine', sprite: 'coffee-off', x: 81.5, y: 54.5, zIndex: 34, label: 'Coffee Machine' },
+      { id: 'lunch-table-1', type: 'cafe-table', sprite: 'cafe-table', x: 39.0, y: 66.8, zIndex: 60 },
+      { id: 'lunch-chair-1', type: 'cafe-chair', sprite: 'cafe-chair-front-right', x: 33.3, y: 62.0, zIndex: 55 },
+      { id: 'lunch-chair-2', type: 'cafe-chair', sprite: 'cafe-chair-front-left', x: 43.5, y: 62.1, zIndex: 55 },
+      { id: 'lunch-chair-3', type: 'cafe-chair', sprite: 'cafe-chair-rear-left', x: 44.6, y: 68.7, zIndex: 66 },
+      { id: 'lunch-chair-4', type: 'cafe-chair', sprite: 'cafe-chair-rear-right', x: 34.5, y: 68.6, zIndex: 66 },
+      { id: 'lunch-table-2', type: 'cafe-table', sprite: 'cafe-table', x: 61.3, y: 73.5, zIndex: 70 },
+      { id: 'lunch-chair-5', type: 'cafe-chair', sprite: 'cafe-chair-front-right', x: 55.7, y: 68.8, zIndex: 65 },
+      { id: 'lunch-chair-6', type: 'cafe-chair', sprite: 'cafe-chair-front-left', x: 65.9, y: 68.7, zIndex: 65 },
+      { id: 'lunch-chair-7', type: 'cafe-chair', sprite: 'cafe-chair-rear-left', x: 67.0, y: 75.4, zIndex: 76 },
+      { id: 'lunch-chair-8', type: 'cafe-chair', sprite: 'cafe-chair-rear-right', x: 56.8, y: 75.4, zIndex: 76 },
+    ],
     connections: [
-      { toRoom: 'corridor', position: SIDE_DOOR, label: 'Corridor', exitFacing: 'rear-right', entryFacing: 'front-right' },
+      { toRoom: 'corridor', position: { x: 68.3, y: 52.3 }, label: 'Corridor', exitFacing: 'rear-right', entryFacing: 'front-left' },
     ],
     agentSpots: [
-      // At the counter
-      { id: 'lunch-coffee', type: 'coffee', x: 66, y: 56, facing: 'up', spriteFacing: 'rear-right' },
-      { id: 'lunch-water', type: 'water', x: 82, y: 56, facing: 'up', spriteFacing: 'rear-left' },
-      // Left table
-      { id: 'lunch-1', type: 'lounge', x: 30, y: 68, facing: 'down', spriteFacing: 'front-right', zIndex: 50 },
-      { id: 'lunch-2', type: 'lounge', x: 42, y: 68, facing: 'down', spriteFacing: 'front-left', zIndex: 50 },
-      { id: 'lunch-3', type: 'lounge', x: 36, y: 82, facing: 'up', spriteFacing: 'rear-right', zIndex: 90 },
-      // Right table
-      { id: 'lunch-4', type: 'lounge', x: 60, y: 72, facing: 'down', spriteFacing: 'front-right', zIndex: 55 },
-      { id: 'lunch-5', type: 'lounge', x: 72, y: 72, facing: 'down', spriteFacing: 'front-left', zIndex: 55 },
-      { id: 'lunch-6', type: 'lounge', x: 66, y: 84, facing: 'up', spriteFacing: 'rear-left', zIndex: 90 },
+      { id: 'lunch-water', type: 'water', x: 54.2, y: 50.1, facing: 'up', spriteFacing: 'rear-right', zIndex: 45 },
+      { id: 'lunch-coffee', type: 'coffee', x: 78.1, y: 63.5, facing: 'up', spriteFacing: 'rear-right', zIndex: 45 },
+      { id: 'lunch-1', type: 'lounge', x: 34.5, y: 62.3, facing: 'down', spriteFacing: 'front-right', zIndex: 57 },
+      { id: 'lunch-2', type: 'lounge', x: 42.6, y: 62.4, facing: 'down', spriteFacing: 'front-left', zIndex: 57 },
+      { id: 'lunch-3', type: 'lounge', x: 43.5, y: 67.7, facing: 'up', spriteFacing: 'rear-left', zIndex: 64 },
+      { id: 'lunch-4', type: 'lounge', x: 35.4, y: 67.6, facing: 'up', spriteFacing: 'rear-right', zIndex: 64 },
+      { id: 'lunch-5', type: 'lounge', x: 56.8, y: 69.1, facing: 'down', spriteFacing: 'front-right', zIndex: 67 },
+      { id: 'lunch-6', type: 'lounge', x: 65.0, y: 69.0, facing: 'down', spriteFacing: 'front-left', zIndex: 67 },
+      { id: 'lunch-7', type: 'lounge', x: 65.9, y: 74.3, facing: 'up', spriteFacing: 'rear-left', zIndex: 74 },
+      { id: 'lunch-8', type: 'lounge', x: 57.7, y: 74.4, facing: 'up', spriteFacing: 'rear-right', zIndex: 74 },
     ],
-    entryPoint: SIDE_DOOR,
-    walkableArea: SIDE_FLOOR,
+    entryPoint: { x: 68.3, y: 52.3 },
+    walkableArea: [{ x: 43.8, y: 37.2 }, { x: 92.7, y: 64.1 }, { x: 53.6, y: 93.1 }, { x: 5.9, y: 63.6 }],
     waypoints: [
-      { id: 'W-lunch-door',    x: 18, y: 50, connections: ['W-lunch-counter', 'W-lunch-tables'] },
-      { id: 'W-lunch-counter', x: 50, y: 56, connections: ['W-lunch-door'] },
-      { id: 'W-lunch-tables',  x: 22, y: 76, connections: ['W-lunch-door'] },
+      { id: 'W-lunch-door', x: 68.3, y: 52.3, connections: ['W-lunch-in'] },
+      { id: 'W-lunch-in', x: 65.5, y: 55.9, connections: ['W-lunch-cooler', 'W-lunch-counter', 'W-lunch-door', 'W-lunch-mid'] },
+      { id: 'W-lunch-counter', x: 76.8, y: 64.4, connections: ['W-lunch-coffee', 'W-lunch-east', 'W-lunch-in'] },
+      { id: 'W-lunch-cooler', x: 53.0, y: 51.0, connections: ['W-lunch-in', 'W-lunch-water'] },
+      { id: 'W-lunch-mid', x: 59.2, y: 61.8, connections: ['W-lunch-5', 'W-lunch-east', 'W-lunch-in', 'W-lunch-west'] },
+      { id: 'W-lunch-west', x: 32.1, y: 59.9, connections: ['W-lunch-1', 'W-lunch-2', 'W-lunch-4', 'W-lunch-mid', 'W-lunch-south'] },
+      { id: 'W-lunch-south', x: 38.5, y: 75.5, connections: ['W-lunch-3', 'W-lunch-east', 'W-lunch-west'] },
+      { id: 'W-lunch-east', x: 68.5, y: 75.9, connections: ['W-lunch-6', 'W-lunch-7', 'W-lunch-8', 'W-lunch-counter', 'W-lunch-mid', 'W-lunch-south'] },
+      { id: 'W-lunch-water', x: 54.2, y: 50.1, connections: ['W-lunch-cooler'] },
+      { id: 'W-lunch-coffee', x: 78.1, y: 63.5, connections: ['W-lunch-counter'] },
+      { id: 'W-lunch-1', x: 34.5, y: 62.3, connections: ['W-lunch-west'] },
+      { id: 'W-lunch-2', x: 42.6, y: 62.4, connections: ['W-lunch-west'] },
+      { id: 'W-lunch-3', x: 43.5, y: 67.7, connections: ['W-lunch-south'] },
+      { id: 'W-lunch-4', x: 35.4, y: 67.6, connections: ['W-lunch-west'] },
+      { id: 'W-lunch-5', x: 56.8, y: 69.1, connections: ['W-lunch-mid'] },
+      { id: 'W-lunch-6', x: 65.0, y: 69.0, connections: ['W-lunch-east'] },
+      { id: 'W-lunch-7', x: 65.9, y: 74.3, connections: ['W-lunch-east'] },
+      { id: 'W-lunch-8', x: 57.7, y: 74.4, connections: ['W-lunch-east'] },
     ],
-    provisional: true,
   },
 }
 

@@ -892,3 +892,4 @@ describe('the rooms demo script (src/roomsDemo.ts) played against the reducer', 
     expect(end.agents.map(a => a.id).sort()).toEqual([BOSS_ID, CLAUDE_ID].sort())
   })
 })
+

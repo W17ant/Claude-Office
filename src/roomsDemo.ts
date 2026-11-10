@@ -22,12 +22,12 @@ export const DEMO_SESSION = 'rooms-demo'
 
 /**
  * How long one pass of the script lasts before it starts over.
- * Why 110 s: the last worker leaves at 80 s, the MCP workers stand down 30 s
+ * Why 120 s: the last worker leaves at 90 s, the MCP workers stand down 30 s
  * after their last call (MCP_LINGER_MS, by 75 s) and a walk out takes up to
- * 20 s (TRANSFER_MAX_MS), so by 110 s everybody the pass brought in is gone
+ * 20 s (TRANSFER_MAX_MS), so by 120 s everybody the pass brought in is gone
  * and the next pass's ids are free again.
  */
-export const DEMO_LOOP_MS = 110_000
+export const DEMO_LOOP_MS = 120_000
 
 const worker = (n: number, role: string, name: string, task: string): OfficeEvent => ({
   type: 'agent_spawned',
@@ -40,7 +40,9 @@ const worker = (n: number, role: string, name: string, task: string): OfficeEven
  * (src/roomRules.ts): the three workers spawn within 4 s, so the team rule
  * holds for its 5 s dwell and they walk to the meeting room together; two
  * finish at 55 s and 60 s, which takes the team under MEETING_STAY_WORKERS,
- * so the third walks back to its desk and finishes there.
+ * so the third walks back to its desk and finishes there (at 90 s: the
+ * walk from the meeting room to the office, at the far end of the corridor,
+ * takes it until about 77 s).
  */
 export const ROOMS_DEMO_SCRIPT: readonly DemoStep[] = [
   { at: 4_000, event: { type: 'mcp_call', server: 'github', tool: 'search_code' } },
@@ -52,7 +54,7 @@ export const ROOMS_DEMO_SCRIPT: readonly DemoStep[] = [
   { at: 45_000, event: { type: 'mcp_done', server: 'supabase' } },
   { at: 55_000, event: { type: 'agent_completed', agentId: 'rooms-demo-1', result: 'Plan agreed' } },
   { at: 60_000, event: { type: 'agent_completed', agentId: 'rooms-demo-2', result: 'Tests written' } },
-  { at: 80_000, event: { type: 'agent_completed', agentId: 'rooms-demo-3', result: 'Rules typed' } },
+  { at: 90_000, event: { type: 'agent_completed', agentId: 'rooms-demo-3', result: 'Rules typed' } },
 ]
 
 /**
