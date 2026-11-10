@@ -2,6 +2,10 @@
 
 All notable changes to Claude Office. Numbers refer to pull requests.
 
+## Unreleased
+
+- Desk monitors come alive, drawn in code over the desk art (`src/screens.ts`, `DeskScreens.tsx`): an empty desk's screens are off, a busy worker's scroll code, a worker whose last tool call failed (or whose test run went red, or whose session hit an API error) gets red screens flashing once a second with a bug walking from one monitor to the other, and the security auditor's show a pulsing yellow warning sign. Desks facing away glow in the same colour. Reduced motion draws them still; `?screens=code|bug|security|off` previews one on every desk.
+
 ## 1.1.2 — 2026-11-09
 
 - The tracker hook's Python now lives in its own file, `hooks/agent-tracker.py`, run by `agent-tracker.sh` as `python3 -I agent-tracker.py`. As a ~65 KB heredoc passed through `python3 -c` it hung Git Bash on Windows (a heredoc over 64 KiB deadlocks, found in #74), was over Windows' 32 KB command-line limit (#72), and could not be parsed by macOS bash 3.2 (#53). A test keeps it out of the wrapper and keeps the two small heredocs left there under 16 KB.
