@@ -28,6 +28,12 @@
  *            one start-office.sh runs; also used when the server says its
  *            UI is not built
  *   --print  print the link, open nothing
+ *   --host <name>  print the link for another device reaching this office
+ *            through an HTTPS proxy on that name — `tailscale serve`'s
+ *            my-mac.tail1234.ts.net (docs/reference.md › Phone mode):
+ *            https://<name>/#token=..., plus its QR code on a terminal.
+ *            Opens nothing; the server must list the name in
+ *            AGENT_OFFICE_ALLOWED_HOSTS
  *
  * Exit 0 when the link was printed (opened, or not when no opener works —
  * the link is there to paste), 1 when there is no token or no server.
@@ -39,6 +45,7 @@ import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import helpers from '../electron/helpers.cjs'
 import { readPort, readUiPort } from '../server/config.js'
+import { parseAllowedHost, parseAllowedHosts, renderQr } from '../server/lan.js'
 
 const { runtimeDirFromEnv, readOfficeToken, officeLink, writeRedirectPage, officeProofMatches, healthChallenge } = helpers
 
@@ -96,7 +103,16 @@ function runOpener(command, args, env, graceMs = 3000) {
  * Print (and unless `print`, open) the office link. `out` / `err` are the
  * streams to write to; returns the exit code.
  */
-export async function openOffice({ env = process.env, platform = process.platform, dev = false, print = false, out = process.stdout, err = process.stderr } = {}) {
+export async function openOffice({ env = process.env, platform = process.platform, dev = false, print = false, host = null, out = process.stdout, err = process.stderr } = {}) {
+  // --host: the link is for another device, through an HTTPS proxy on that name
+  let remote = null
+  if (host !== null) {
+    remote = parseAllowedHost(host)
+    if (!remote) {
+      err.write(`--host ${JSON.stringify(host)} is not a host name: give the proxy's name, e.g. my-mac.tail1234.ts.net (optionally :port) — no scheme, path or IP address.\n`)
+      return 1
+    }
+  }
   const runtimeDir = runtimeDirFromEnv(env)
   const tokenFile = join(runtimeDir, 'auth-token')
   const port = readPort(env, { warn: m => err.write(`${m}\n`) })
@@ -116,6 +132,22 @@ export async function openOffice({ env = process.env, platform = process.platfor
   if (status && !status.proven) {
     err.write(`Something is answering on port ${port}, but it is not this office: it could not prove it holds your token, so the link was not opened or printed. Stop whatever holds the port, start the office, and run npm run open again.\n`)
     return 1
+  }
+  if (remote) {
+    const name = remote.port ? `${remote.host}:${remote.port}` : remote.host
+    const link = officeLink(`https://${name}`, token)
+    out.write(`Agent Office (through ${name}): ${link}\n`)
+    const qr = out.isTTY ? renderQr(link) : null
+    if (qr) out.write(`${qr}\n`)
+    if (!status) {
+      err.write(`The office server is not answering on port ${port}. Start it (with AGENT_OFFICE_ALLOWED_HOSTS=${name}); the link works once it is up.\n`)
+      return 1
+    }
+    if (status.uiAvailable === false) err.write('The office UI is not built (npm run build): the server has no page to serve through the proxy.\n')
+    // Why: this shell's env is only a hint of the server's; a mismatch is the usual cause of a 421
+    const listed = parseAllowedHosts(env.AGENT_OFFICE_ALLOWED_HOSTS, null).some(h => h.host === remote.host && h.port === remote.port)
+    if (!listed) err.write(`Make sure the server was started with AGENT_OFFICE_ALLOWED_HOSTS=${name}, or it answers that name with 421.\n`)
+    return 0
   }
   // The server's own page needs a built UI; without one the Vite dev server serves it
   const useVite = dev || (status && status.uiAvailable === false)
@@ -154,5 +186,7 @@ function isMainModule() {
 
 if (isMainModule()) {
   const argv = process.argv.slice(2)
-  openOffice({ dev: argv.includes('--dev'), print: argv.includes('--print') }).then(code => process.exit(code))
+  const hostAt = argv.indexOf('--host')
+  const host = hostAt === -1 ? null : (argv[hostAt + 1] ?? '')
+  openOffice({ dev: argv.includes('--dev'), print: argv.includes('--print'), host }).then(code => process.exit(code))
 }

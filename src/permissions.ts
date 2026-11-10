@@ -131,7 +131,7 @@ export function answerPermission(permissionId: string, decision: PermissionDecis
   return postWithUiToken(`/permission/${encodeURIComponent(permissionId)}`, { decision })
 }
 
-/** Change an office setting (answerPermissions, logPrompts). */
+/** Change an office setting (answerPermissions, notifyPermissions, logPrompts). */
 export function postSetting(body: Record<string, unknown>): Promise<boolean> {
   return postWithUiToken('/settings', body)
 }

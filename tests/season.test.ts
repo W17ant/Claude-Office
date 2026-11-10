@@ -22,6 +22,28 @@ describe('seasonFor', () => {
   })
 })
 
+describe('seasonFor: the stored preference (Settings panel)', () => {
+  const stored = (pref: 'auto' | 'christmas' | 'off', y: number, m: number, d: number, search = '') =>
+    seasonFor(new Date(y, m - 1, d, 12), search, pref)
+
+  it('Christmas or Off from the Settings panel beats the date', () => {
+    expect(stored('christmas', 2027, 7, 14)).toBe('christmas')
+    expect(stored('off', 2026, 12, 25)).toBeNull()
+  })
+
+  it('Auto follows the date, as with nothing stored', () => {
+    expect(stored('auto', 2026, 12, 25)).toBe('christmas')
+    expect(stored('auto', 2027, 7, 14)).toBeNull()
+  })
+
+  it('the URL beats the stored preference: ?season=none over Christmas, ?season=christmas over Off', () => {
+    expect(stored('christmas', 2026, 12, 25, '?season=none')).toBeNull()
+    expect(stored('off', 2027, 7, 14, '?season=christmas')).toBe('christmas')
+    // An unknown ?season= says nothing, so the stored choice decides
+    expect(stored('off', 2026, 12, 25, '?season=easter')).toBeNull()
+  })
+})
+
 describe('seasonalUrl', () => {
   it('names the festive copy next to the original', () => {
     expect(seasonalVariant('/rooms/office-day.png', 'christmas')).toBe('/rooms/office-day-xmas.webp')

@@ -17,16 +17,20 @@
  * a stale one: src/officeToken.ts) an amber item says so and how to get the
  * link that fixes it.
  *
+ * The "today" button at the right end opens the day's numbers (TodayPanel,
+ * GET /recap): counts only, so it is there on a read-only page too.
+ *
  * VITE_HOOK_WARN_MS (build-time, ms) lowers the 60 s "no hook events yet"
  * threshold, for screenshots and demos.
  */
 
-import React, { useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { hookVerdict, initialHealth, HOOK_WARN_MS, type HealthState, type HookVerdict, type OfficeState, type ConnectionPhase } from '../officeReducer'
 import { needsYouLabel, stripCounts, type StripCounts } from '../mainState'
 import type { SessionInfo } from '../types'
 import { pillLabel } from './SessionStrip'
 import { officeHttpBase } from '../serverUrl'
+import TodayPanel from './TodayPanel'
 import '../styles/strip.css'
 
 const params = new URLSearchParams(window.location.search)
@@ -137,6 +141,9 @@ function describe(h: HealthState, v: HookVerdict, now: number, c: StripCounts): 
 const StatusStrip: React.FC<StatusStripProps> = ({ office, sessions = [], readOnly = false }) => {
   // Sample the reducer's health once a second (also ticks the "ago" labels)
   const [view, setView] = useState(() => ({ health: office.current?.health ?? null, now: Date.now() }))
+  const [todayOpen, setTodayOpen] = useState(false)
+  const todayRef = useRef<HTMLButtonElement>(null)
+  const closeToday = useCallback(() => setTodayOpen(false), [])
   useEffect(() => {
     if (MODE !== 'live') return
     const sample = () => setView({ health: office.current?.health ?? null, now: Date.now() })
@@ -160,6 +167,7 @@ const StatusStrip: React.FC<StatusStripProps> = ({ office, sessions = [], readOn
   const c = stripCounts(sessions)
 
   return (
+    <>
     <div
       className="status-strip"
       role="status"
@@ -195,8 +203,21 @@ const StatusStrip: React.FC<StatusStripProps> = ({ office, sessions = [], readOn
       <span className="strip-spacer" />
       {down && <span className="strip-item strip-hint">start it: <code>{START_CMD}</code></span>}
       {!down && v.kind === 'missing' && <span className="strip-item strip-hint"><code>{DOCTOR_CMD}</code></span>}
+      <button
+        ref={todayRef}
+        type="button"
+        className={`strip-item strip-today${todayOpen ? ' open' : ''}`}
+        onClick={() => setTodayOpen(o => !o)}
+        aria-expanded={todayOpen}
+        title="Today so far: sessions, agents, tasks, deploys, failures, incidents, payroll"
+        data-testid="strip-today"
+      >
+        today
+      </button>
       {s && <span className="strip-item strip-version">v{s.version}</span>}
     </div>
+    {todayOpen && <TodayPanel onClose={closeToday} anchor={todayRef} />}
+    </>
   )
 }
 

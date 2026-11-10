@@ -57,7 +57,11 @@ import { join, relative, resolve, sep, extname } from 'node:path'
 // 754 px wide, and 28 walk frames nothing loads). The budget is the trimmed
 // 47.7 MB plus 10 %, so a stray full-resolution export cannot land unnoticed.
 // Raise it here, on purpose, when art is added.
-export const BUDGET_BYTES = 52_500_000
+// Why 56 MB: the walk cycles are four frames per direction (contact, passing,
+// contact, passing; the standing pose is no longer one of the steps), ~9 KB a
+// frame at 200 px tall: 37 everyday characters plus the festive ones drawn so
+// far. The remaining 28 festive cycles add ~3.1 MB; raise it again when they land.
+export const BUDGET_BYTES = 56_000_000
 
 const SOURCE_ROOTS = ['src', 'index.html', 'server', 'electron', 'hooks', 'commands']
 const SOURCE_EXT = new Set(['.ts', '.tsx', '.js', '.cjs', '.mjs', '.html', '.css', '.md', '.sh', '.json', '.py'])
@@ -70,6 +74,7 @@ const KNOWN_DYNAMIC = new Set([
   '/sprites/characters/*-*.png',        // PlacementHelper.tsx (P1)
   '/sprites/office/cats/*.png',         // theme.ts getAngelaCat, OFFICE_CATS_PATHS (P3)
   '*.webp',                             // season.ts seasonalVariant: name.png -> name-xmas.webp (P5)
+  '*-walk*.webp',                       // walk.ts walkFramePaths: name.png -> name-walk1..4.webp (P6)
 ])
 
 /** Art the code names but nobody has drawn: the unbuilt rooms in src/rooms.ts. */
@@ -252,6 +257,16 @@ for (const f of files) {
     // Why only beside a known original: a festive copy of nothing would never load
     if (required.has(base) || optional.has(base) || present.has(base)) ref(optional, f.rel, `P5 seasonal copy of ${base}`)
   }
+}
+// P6 — walk-cycle frames (src/walk.ts): `<name>-walk1.webp` .. `-walk4.webp`
+// beside the sprite they animate: a `<name>.png`, or a festive `<name>.webp`
+// (`…-xmas-walk1.webp` beside `…-xmas.webp`). Optional: present ones are
+// referenced through their sprite, missing ones are not listed.
+for (const f of files) {
+  const m = /^(.*)-walk[1-4]\.webp$/.exec(f.rel)
+  if (!m) continue
+  const sprite = [`${m[1]}.png`, `${m[1]}.webp`].find(p => required.has(p) || optional.has(p) || present.has(p))
+  if (sprite) ref(optional, f.rel, `P6 walk frame of ${sprite}`)
 }
 const totalBytes = files.reduce((n, f) => n + f.bytes, 0)
 
