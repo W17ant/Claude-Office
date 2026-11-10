@@ -734,10 +734,14 @@ describe('the full-mode listener', () => {
     for (const want of [`${SECRET} prompt`, `${SECRET} task`, `running: ${SECRET}`, `${SECRET} reply`, `${SECRET} chat line`]) expect(text, want).toContain(want)
     // ...but no credential ever travels in the stream
     for (const never of [office.server.AUTH_TOKEN, office.server.UI_TOKEN, lan.secret, viewerKey]) expect(text).not.toContain(never)
-    // Event for event what the trusted page got
+    // Event for event what the trusted page got. Why compare from the end: the
+    // phone's socket opened first, so it may also hold a broadcast from before
+    // the trusted page joined (a session_needs_you from an earlier test's
+    // session, seen on CI); everything since must match
     const streamed = (list: Message[]) => list.filter(m => m.type !== 'auth' && m.type !== 'snapshot').map(m => m.type)
-    await until(() => streamed(trusted.messages).length >= streamed(client.messages).length)
-    expect(streamed(client.messages)).toEqual(streamed(trusted.messages))
+    await until(() => streamed(trusted.messages).length >= 6)
+    const theirs = streamed(trusted.messages)
+    expect(streamed(client.messages).slice(-theirs.length)).toEqual(theirs)
   })
 
   it('answering a permission from the phone works end to end: the card arrives, the tap allows, the hook is released with its proof', async () => {
