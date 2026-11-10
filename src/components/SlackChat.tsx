@@ -108,12 +108,14 @@ const SlackChat: React.FC<SlackChatProps> = ({ messages, muted, volume, onToggle
   // The same GET /settings also says whether permission dialogs may be answered here.
   const [logPrompts, setLogPrompts] = useState<string | null>(null)
   const [answerHere, setAnswerHere] = useState<boolean | null>(null)
+  const [notifyHere, setNotifyHere] = useState<boolean | null>(null)
   useEffect(() => {
     fetch(SETTINGS_URL, { signal: AbortSignal.timeout(2000), headers: officeAuthHeaders() })
       .then(r => (r.ok ? r.json() : null))
       .then(d => {
         if (d && typeof d.logPrompts === 'string') setLogPrompts(d.logPrompts)
         if (d && typeof d.answerPermissions === 'boolean') setAnswerHere(d.answerPermissions)
+        if (d && typeof d.notifyPermissions === 'boolean') setNotifyHere(d.notifyPermissions)
       })
       .catch(() => {})
   }, [])
@@ -127,6 +129,15 @@ const SlackChat: React.FC<SlackChatProps> = ({ messages, muted, volume, onToggle
     setAnswerHere(next)
     postSetting({ answerPermissions: next }).then(ok => { if (!ok) setAnswerHere(answerHere) })
   }, [answerHere])
+
+  // An OS notification when a permission wait starts (notifyPermissions):
+  // the same optimistic POST /settings as the toggle above
+  const toggleNotify = useCallback(() => {
+    if (notifyHere === null) return
+    const next = !notifyHere
+    setNotifyHere(next)
+    postSetting({ notifyPermissions: next }).then(ok => { if (!ok) setNotifyHere(notifyHere) })
+  }, [notifyHere])
 
   // Cron/chat-monitor pause toggle
   const [cronPaused, setCronPaused] = useState(false)
@@ -216,10 +227,10 @@ const SlackChat: React.FC<SlackChatProps> = ({ messages, muted, volume, onToggle
         </div>
       </div>
 
-      {/* The two settings pills sit on their own row: with the AI toggle,
+      {/* The settings pills sit on their own row: with the AI toggle,
           mute and volume they no longer fit the 300 px panel, and the
           overflow made the whole window scroll sideways */}
-      {(logPrompts || (!readOnly && answerHere !== null)) && (
+      {(logPrompts || (!readOnly && (answerHere !== null || notifyHere !== null))) && (
         <div className="slack-settings-row">
           {logPrompts && (
             <span className={`slack-logprompts ${logPrompts}`} title={logPromptsHint(logPrompts)} data-testid="log-prompts">
@@ -236,6 +247,18 @@ const SlackChat: React.FC<SlackChatProps> = ({ messages, muted, volume, onToggle
               data-testid="answer-permissions"
             >
               Answer here: {answerHere ? 'on' : 'off'}
+            </span>
+          )}
+          {!readOnly && notifyHere !== null && (
+            <span
+              className={`slack-answer-toggle slack-notify-toggle ${notifyHere ? 'on' : 'off'}`}
+              onClick={toggleNotify}
+              title={notifyHere
+                ? 'A desktop notification (project and tool only) when Claude starts waiting on a permission — click to turn off'
+                : 'No desktop notification when Claude waits on a permission — click to turn on'}
+              data-testid="notify-permissions"
+            >
+              Notify: {notifyHere ? 'on' : 'off'}
             </span>
           )}
         </div>
