@@ -1,3 +1,5 @@
+import { currentSeason, useSeasonArt } from '../season'
+import { HAT_SRC, useHeadAnchor, wearsOverlayHat } from '../hat'
 import React, { useRef, useState, useEffect } from 'react'
 import { Agent, AgentState } from '../types'
 import SpeechBubble from './SpeechBubble'
@@ -157,7 +159,11 @@ const Character: React.FC<CharacterProps> = ({ agent, idleDurationMs = 0, zIndex
   const animState = getAnimState(agent.state)
   const charBase = getCharBase(agent.role)
   const theme = useTheme() // Why: re-render on theme toggle so sprite path updates
+  useSeasonArt() // Why: re-render when this sprite's festive copy turns out to exist
   const spriteSrc = getSpritePath(agent.id, agent.role, charBase, directionRef.current)
+  // In December everyone wears a Santa hat, placed on the head measured from
+  // the sprite itself (src/hat.ts), so every cast and custom sprite gets one
+  const head = useHeadAnchor(spriteSrc, currentSeason() === 'christmas' && wearsOverlayHat(spriteSrc))
   void theme
   const variant = useVariant() // Why: re-render when incident mode flips so the failure bubble shows/hides
   // Prod is down: each kind of agent grabs its prop (pager, megaphone, ...)
@@ -243,30 +249,57 @@ const Character: React.FC<CharacterProps> = ({ agent, idleDurationMs = 0, zIndex
         data-agent-id={agent.id}
       >
         <div className="char-shadow" />
-        <ResilientImg
-          src={spriteSrc}
-          alt={agent.name}
-          className="char-sprite"
-          style={{
-            height: agent.id.startsWith('boss-') ? 85 : 78,
-            width: 'auto',
-            filter: `drop-shadow(0 0 1px ${agent.color}) drop-shadow(0 0 0.5px #000)`,
-            animationDelay: `${(agent.id.charCodeAt(0) * 0.37) % 3}s`,
-          }}
-          draggable={false}
-        />
-        {prop && (
-          <img
-            src={prop}
-            alt=""
-            className={`char-prop${directionRef.current.endsWith('right') ? ' mirrored' : ''}`}
+        {/* The sprite and anything worn on it bob together: the animation is on the stack */}
+        <div className="char-sprite-stack" style={{ animationDelay: `${(agent.id.charCodeAt(0) * 0.37) % 3}s` }}>
+          <ResilientImg
+            src={spriteSrc}
+            alt={agent.name}
+            className="char-sprite"
+            style={{
+              height: agent.id.startsWith('boss-') ? 85 : 78,
+              width: 'auto',
+              filter: `drop-shadow(0 0 1px ${agent.color}) drop-shadow(0 0 0.5px #000)`,
+            }}
             draggable={false}
           />
-        )}
+          {head && (
+            <img
+              src={HAT_SRC}
+              alt=""
+              className="char-hat"
+              style={{
+                left: `${(head.x - (head.width * HAT_SCALE) / 2) * 100}%`,
+                width: `${head.width * HAT_SCALE * 100}%`,
+                bottom: `${(1 - head.top - HAT_SINK) * 100}%`,
+                // Why: the hat is drawn for a head turned to the viewer's left;
+                // a sprite facing right wears it mirrored so the tip trails behind
+                transform: directionRef.current.endsWith('right') ? 'scaleX(-1)' : undefined,
+              }}
+              draggable={false}
+            />
+          )}
+          {/* Prod is down: the prop this kind of agent grabs, held at the hand */}
+          {prop && (
+            <img
+              src={prop}
+              alt=""
+              className={`char-prop${directionRef.current.endsWith('right') ? ' mirrored' : ''}`}
+              draggable={false}
+            />
+          )}
+        </div>
       </div>
     </div>
   )
 }
+
+// Why 1.2: the fur band overhangs the head a little on each side, like a
+// real hat; tuned on all 30+ cast sprites (wider looked like a sombrero)
+const HAT_SCALE = 1.2
+// Why 0.13: the band sits 13% of the sprite's height below the top of the
+// hair, at the forehead, so the hat is worn rather than balanced on the hair
+// (less floated above the chibi heads' volume of hair)
+const HAT_SINK = 0.13
 
 // Why: the animation tick re-renders App up to 60 times a second while anyone
 // walks; an agent whose object did not change keeps its previous render

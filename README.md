@@ -271,6 +271,7 @@ Agents can also message each other directly — see [Agent-to-agent messages](do
 | `127.0.0.1:3333?helper` | Placement helper — dev tool for positioning furniture |
 | `127.0.0.1:3333?variant=incident` | Incident — pins "Prod Is Down" on |
 | `<lan ip>:3335/#viewer=…` | Phone — `npm run lan` prints this link and a QR code: the office scene, watch-only, on a phone on your Wi-Fi ([Phone mode](docs/reference.md#phone-mode)) |
+| `127.0.0.1:3333?season=christmas` | Christmas — the festive office any day (on by itself 1 Dec – 6 Jan) |
 
 ## Tech Stack
 
