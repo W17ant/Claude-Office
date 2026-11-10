@@ -60,8 +60,10 @@ import { join, relative, resolve, sep, extname } from 'node:path'
 // Why 56 MB: the walk cycles are four frames per direction (contact, passing,
 // contact, passing; the standing pose is no longer one of the steps), ~9 KB a
 // frame at 200 px tall: 37 everyday characters plus the festive ones drawn so
-// far. The remaining 28 festive cycles add ~3.1 MB; raise it again when they land.
-export const BUDGET_BYTES = 56_000_000
+// far.
+// Why 60 MB: the last 28 festive cycles (336 frames) took public/ to 58.4 MB;
+// 1.6 MB of headroom keeps a stray full-resolution export visible.
+export const BUDGET_BYTES = 60_000_000
 
 const SOURCE_ROOTS = ['src', 'index.html', 'server', 'electron', 'hooks', 'commands']
 const SOURCE_EXT = new Set(['.ts', '.tsx', '.js', '.cjs', '.mjs', '.html', '.css', '.md', '.sh', '.json', '.py'])
