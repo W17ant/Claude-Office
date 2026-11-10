@@ -173,13 +173,14 @@ const Character: React.FC<CharacterProps> = ({ agent, idleDurationMs = 0, zIndex
   useWalkFrames() // Why: re-render when this sprite's stride frames turn out to exist
   useSeasonArt() // Why: re-render when this sprite's festive copy turns out to exist
   const standingSrc = getSpritePath(agent.id, agent.role, charBase, directionRef.current)
-  // While walking, the legs move: stand, stride, stand, stride (src/walk.ts)
+  // While walking, the legs move: a four-frame walk cycle (src/walk.ts)
   const spriteSrc = walkFrame(standingSrc, stepping, now)
   // In December everyone wears a Santa hat, placed on the head measured from
   // the sprite itself (src/hat.ts), so every cast and custom sprite gets one.
-  // Why the standing sprite: who wears the hat (NO_HAT) is decided by sprite
-  // name, and a stride frame's name would not match; the head barely moves.
-  const head = useHeadAnchor(standingSrc, currentSeason() === 'christmas' && wearsOverlayHat(standingSrc))
+  // Who wears it (NO_HAT) is decided by the standing sprite's name, which a
+  // walk frame's name would not match; where it sits is measured on the frame
+  // actually drawn, so the hat bobs with the head through the walk cycle.
+  const head = useHeadAnchor(spriteSrc, currentSeason() === 'christmas' && wearsOverlayHat(standingSrc))
   void theme
   const variant = useVariant() // Why: re-render when incident mode flips so the failure bubble shows/hides
   void variant
