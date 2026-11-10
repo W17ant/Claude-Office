@@ -10,6 +10,7 @@
  */
 
 import { useEffect, useState } from 'react'
+import { SEASON_SUFFIX_PATTERN } from './seasonNames'
 
 export const HAT_SRC = '/sprites/effects/santa-hat.png'
 
@@ -19,15 +20,22 @@ export const HAT_SRC = '/sprites/effects/santa-hat.png'
 // hat of their own
 const NO_HAT = new Set(['employee-2', 'erin-hannon', 'Frontend-dev-1', 'Me-1', 'Claude-1'])
 
+// A standing sprite's file name after the character's base name: the facing,
+// then `.png` or a seasonal copy's `<suffix>.webp`. Why every suffix and not
+// only -xmas: at Christmas a sprite with no jumper of its own falls back to
+// its winter copy (src/season.ts), and it must still be recognised.
+const FACING_AND_SEASON = new RegExp(`-(front|rear)-(left|right)((${SEASON_SUFFIX_PATTERN})\\.webp|\\.png)$`)
+
 /**
- * Whether a sprite gets the overlay hat. A festive copy (a Christmas jumper,
- * `-xmas.webp`) still does; the characters in NO_HAT never do.
- * @param src the sprite URL being drawn
+ * Whether a sprite gets the overlay hat. A seasonal copy (a Christmas jumper
+ * `-xmas.webp`, a winter coat `-winter.webp`) still does; the characters in
+ * NO_HAT never do. Whether it is Christmas at all is the caller's question.
+ * @param src the standing sprite URL being drawn
+ * @returns false for the characters in NO_HAT, true for everyone else
  */
 export function wearsOverlayHat(src: string): boolean {
   const file = src.slice(src.lastIndexOf('/') + 1)
-  const base = file.replace(/-(front|rear)-(left|right)(-xmas\.webp|\.png)$/, '')
-  return !NO_HAT.has(base)
+  return !NO_HAT.has(file.replace(FACING_AND_SEASON, ''))
 }
 
 /** Where the hat goes, as fractions of the sprite's width and height. */

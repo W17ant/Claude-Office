@@ -300,7 +300,7 @@ const OFFICE_SIM_CHATTER = [
 const App: React.FC = () => {
   // All hooks must be at the top — before any conditional returns.
   const theme = useTheme() // Why: re-render rooms + agents when /the-office toggles
-  useSeasonArt() // Why: re-render when a festive room or avatar file turns out to exist
+  useSeasonArt() // Why: re-render when a seasonal room or avatar file turns out to exist
   const variant = useVariant() // Why: forced night + incident overlays while prod is down
   // The office state machine (src/officeReducer.ts) lives in a ref that every
   // mutation path (server events, the animation tick, sim scripts, random

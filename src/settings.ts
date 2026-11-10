@@ -13,6 +13,8 @@
  * the page must then simply fall back to the defaults.
  */
 
+import { HOLIDAYS, QUARTERS, isHoliday, isQuarter, type Season } from './seasonNames'
+
 /** The part of Storage these helpers use. */
 export interface PrefStorage {
   getItem(key: string): string | null
@@ -24,9 +26,12 @@ export const MUTED_KEY = 'agent-office-muted'
 export const SEASON_KEY = 'agent-office-season'
 export const DAY_NIGHT_KEY = 'agent-office-daynight'
 
-/** What the season setting can say: follow the date, always Christmas, never. */
-export type SeasonPreference = 'auto' | 'christmas' | 'off'
-export const SEASON_PREFERENCES: readonly SeasonPreference[] = ['auto', 'christmas', 'off']
+/**
+ * What the season setting can say: follow the date, always one holiday or
+ * one of the four seasons (src/seasonNames.ts), or no seasonal art at all.
+ */
+export type SeasonPreference = 'auto' | Season | 'off'
+export const SEASON_PREFERENCES: readonly SeasonPreference[] = ['auto', ...HOLIDAYS, ...QUARTERS, 'off']
 
 export type DayNightMode = 'auto' | 'day' | 'night'
 export const DAY_NIGHT_MODES: readonly DayNightMode[] = ['auto', 'day', 'night']
@@ -98,14 +103,19 @@ export function saveSeasonPreference(pref: SeasonPreference, storage: PrefStorag
 }
 
 /**
- * What ?season= in the URL forces, as a preference; null when the URL says
- * nothing it knows (src/season.ts: `christmas` on, `none` off).
+ * What ?season= in the URL forces, as a preference: a holiday or quarter by
+ * name (`?season=halloween`, `?season=summer`), or `none` for off.
+ * @param search the page's query string (location.search)
+ * @returns the preference, or null when the URL says nothing it knows, so a
+ *   mistyped name falls through to the stored choice and the date
  */
 export function seasonFromUrl(search: string): SeasonPreference | null {
   const forced = new URLSearchParams(search).get('season')
-  if (forced === 'christmas') return 'christmas'
+  if (forced === null) return null
   if (forced === 'none') return 'off'
-  return null
+  // Why not `auto` or `off`: a link exists to pin a look; the words the
+  // stored setting uses are not part of the URL's vocabulary
+  return isHoliday(forced) || isQuarter(forced) ? forced : null
 }
 
 // ---------------------------------------------------------------------------

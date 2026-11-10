@@ -650,6 +650,34 @@ App is stable after 30s in sim mode (?sim) — no console errors
 
 ---
 
+## Manual checks: seasons
+
+The date rules, the lookup chain and the overrides are unit-tested (`tests/season.test.ts`, `tests/settings.test.ts`). These are the parts only a browser shows. Only Christmas has art so far, so most of them check that an undrawn season changes nothing.
+
+```
+?season=christmas shows the Christmas office, the Santa hats and the advent calendar, as before
+?season=halloween, easter, valentine, spring, summer, autumn and winter each look exactly like ?season=none
+  (no broken images, no hats, no advent calendar)
+?season=none in December shows the normal office
+?season=midsummer (not a season) behaves like no ?season= at all
+Network tab, ?season=autumn: one request for rooms/office-day-autumn.webp and no other *-autumn.webp
+Network tab, ?season=halloween: rooms/office-day-halloween.webp and the date's season's key file
+  (rooms/office-day-summer.webp in July), nothing else with either suffix
+Network tab, ?season=christmas: the only *-winter.webp request is rooms/office-day-winter.webp
+Settings > Season is a drop-down: Auto (by date), Holidays (4), Seasons (4), Off; it opens, closes and
+  takes the keyboard like any select, and matches the panel in both themes
+Choosing a season there offers a reload; after it the choice is still selected, and it survives a restart
+On Auto the note names what is on now ("Autumn", "Christmas over Winter") and says "(no art yet)"
+  for a layer that has none
+With ?season= in the address a note under the control says the URL wins over it
+Key file: copy public/rooms/office-day-xmas.webp to public/rooms/office-day-autumn.webp, load
+  ?season=autumn: the day room changes, and requests for the other -autumn.webp files appear and fail
+  quietly (everything else stays normal). Delete the copy afterwards; do not commit it
+A character walking under ?season=christmas keeps its jumper mid-step (its -xmas walk frames)
+```
+
+---
+
 ## Effort Summary
 
 | Area | Tests | Effort |

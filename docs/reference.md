@@ -9,6 +9,8 @@ Everything the [README](../README.md) leaves out: how the hooks work, every sett
 - [Running tests](#running-tests)
 - [Auto-permissions](#auto-permissions)
 - [Payroll, electricity and memory](#payroll-electricity-and-memory)
+- [Seasons](#seasons)
+- [Christmas](#christmas)
 - [Settings panel](#settings-panel)
 - [End-of-day recap](#end-of-day-recap)
 - [Incident mode — Prod Is Down](#incident-mode--prod-is-down)
@@ -272,13 +274,47 @@ The numbers are Claude Code's own: `npm run install-hooks` registers `hooks/stat
 
 Dated, Bedrock and Vertex spellings of an id count as the id. The reading refreshes when a hook event for the session arrives, at most once every 5 s per session (a burst ends in one trailing read), from the end of the file only, after the server has answered the hook. The panel draws it with a small **est.** marker; its tooltip says it comes from the transcript because no status line is registered. **PAYROLL** and **ELECTRICITY** are not estimated — the transcript has no cost and no rate limits, and the office does not price tokens or invent limits — so when no session reports them the tiles say *needs the status line* (hover for `npm run install-status-line`), and an estimated session's row shows no cost. The moment a real status line reports for that session it wins and the estimate stops for good. The estimate is numbers and a model id only, never what was said, so it is on the open `GET /status` with `source: "transcript"` and an `estimate` block (`tokens`, `basis`: `model` / `1m-tag` / `unknown` / `overflow`, `approximate`); status-line sessions carry `source: "statusline"`.
 
+## Seasons
+
+The office follows the calendar all year round: one of the four seasons is always on, and a holiday sits on top of it for a few days. Each has its own art, saved under its own file suffix.
+
+| | On (Auto, local time) | Suffix | `?season=` |
+|---|---|---|---|
+| Spring | March to May | `-spring` | `spring` |
+| Summer | June to August | `-summer` | `summer` |
+| Autumn | September to November | `-autumn` | `autumn` |
+| Winter | December to February | `-winter` | `winter` |
+| Valentine's Day | 7 to 14 February | `-valentine` | `valentine` |
+| Easter | Good Friday to Easter Monday (Western Easter, worked out for the year) | `-easter` | `easter` |
+| Halloween | 25 to 31 October | `-halloween` | `halloween` |
+| [Christmas](#christmas) | 1 December to 6 January | `-xmas` | `christmas` |
+
+The four seasons are the meteorological ones (whole months) for the **northern hemisphere**. South of the equator, pick your season by hand in [Settings](#settings-panel): it stays until you change it.
+
+**Only Christmas has art so far.** The other seven are wired up and waiting for their files; until a season is drawn the office looks exactly as it does without it.
+
+**The lookup.** A seasonal image is an optional copy saved next to the one it replaces, `<name><suffix>.webp` beside `<name>.png` (`src/season.ts`), and the first file that exists wins:
+
+- on a holiday: the holiday's copy, else the season's copy, else the normal image
+- otherwise: the season's copy, else the normal image
+
+So on 25 December `rooms/office-day.png` is drawn from `office-day-xmas.webp` if there is one, else `office-day-winter.webp`, else itself. A holiday therefore only needs the pieces it changes; whatever it leaves alone shows the season underneath. The swap covers the room backgrounds (day and night, both themes), the furniture the room draws (desks, plants, the coffee machine, the filing cabinet, the printer) and every character sprite in both casts. A character's copy can have walk frames of its own beside it (`<name><suffix>-walk1.webp` to `-walk4.webp`; `scripts/walk-cycle.py --season NAME` makes them), so nobody changes clothes mid-step.
+
+**Draw the key file first.** A season counts as drawn only once `public/rooms/office-day<suffix>.webp` exists (the default theme's day room: `office-day-autumn.webp` for autumn). Until then none of that season's other files are looked for. That is what keeps an undrawn season cheap: one request for the key file per page load (two on a holiday, one for the holiday and one for the season under it) instead of one failed request for every image in the office. After that, files can arrive one at a time with no code change.
+
+**Choosing a season.** `?season=<name>` in the address forces any of the eight on any day (a demo, a screenshot), and `?season=none` turns seasonal art off. **Season** in [Settings](#settings-panel) offers the same without a URL: Auto, the eight, or Off, remembered in this browser as `agent-office-season`. The URL wins over the stored choice, which wins over the date; a `?season=` value the office does not know is ignored. A holiday picked by hand still sits on the season the date is in (`?season=halloween` in July is Halloween over summer). A season picked by hand shows no holiday at all, even on Christmas Day. The season is judged once per page load, so a change in Settings offers a reload.
+
+The advent calendar and the Santa hats belong to Christmas alone; no other season brings them out.
+
+Copies must keep the original's canvas size and anchor (a character's feet, a desk's footprint) exactly, or the sprite shifts in the office. `npm run check-assets` counts a copy as referenced through its original, for any of the eight suffixes, and still lists a file with a suffix it does not know or a copy of nothing. `public/` is close to its size budget, so a season's art will need `BUDGET_BYTES` in `scripts/check-assets.mjs` raised on purpose when it lands.
+
 ## Christmas
 
-From 1 December to 6 January the office decorates itself: tinsel, fairy lights and snow outside in all four rooms (day and night, both themes), Christmas trees in the plant pots, garlands and a mug on every desk, and a Santa hat on everyone. The hat is one sprite (`public/sprites/effects/santa-hat.png`) placed on each character's head as measured from that sprite's own pixels (`src/hat.ts`: the top of the hair, and the head's width 8% of the sprite's height below it), so the whole cast, the Dunder Mifflin cast and a custom boss sprite all get one with no per-sprite numbers. Every character also has a festive sprite (a `-xmas.webp` copy, 270 px tall): a Christmas jumper for the whole cast, three of them meme jumpers (an 80s action-movie tower, *Birthday Boy*, *Not the worst employee*), an elf costume for Claude and a Santa hat in place of the boss's cap. The overlay hat goes on top of the jumpers, except for the characters in `NO_HAT` (`src/hat.ts`): ponytails and big hair it sits badly on, and the two whose costume already has a hat. `?season=christmas` turns it on any day (a demo, a screenshot), `?season=none` keeps it off in December, and **Season** in [Settings](#settings-panel) (Auto / Christmas / Off, remembered in this browser as `agent-office-season`) does the same without a URL; the URL wins over the stored choice, which wins over the date. The season is judged once per page load, so a change in Settings offers a reload.
+From 1 December to 6 January the office decorates itself: tinsel, fairy lights and snow outside in all four rooms (day and night, both themes), Christmas trees in the plant pots, garlands and a mug on every desk, and a Santa hat on everyone. The hat is one sprite (`public/sprites/effects/santa-hat.png`) placed on each character's head as measured from that sprite's own pixels (`src/hat.ts`: the top of the hair, and the head's width 8% of the sprite's height below it), so the whole cast, the Dunder Mifflin cast and a custom boss sprite all get one with no per-sprite numbers. Every character also has a festive sprite (a `-xmas.webp` copy, 270 px tall): a Christmas jumper for the whole cast, three of them meme jumpers (an 80s action-movie tower, *Birthday Boy*, *Not the worst employee*), an elf costume for Claude and a Santa hat in place of the boss's cap. The overlay hat goes on top of the jumpers, except for the characters in `NO_HAT` (`src/hat.ts`): ponytails and big hair it sits badly on, and the two whose costume already has a hat. `?season=christmas` turns it on any day (a demo, a screenshot), `?season=none` keeps it off in December, and **Season** in [Settings](#settings-panel) does the same without a URL; [Seasons](#seasons) has the rules. Christmas is one of four holidays that sit on top of the season of the year: a sprite or room with no Christmas copy shows its winter one, once winter is drawn.
 
 ![The office at Christmas](images/christmas.jpg)
 
-Each festive image is an optional copy saved next to the one it replaces, `<name>-xmas.webp` beside `<name>.png` (`src/season.ts`): until a copy exists the normal art shows, so festive art can be added one file at a time with no code change. WebP, not PNG, because at quality 90 a room is ~200 KB instead of ~2 MB, which keeps `public/` inside its size budget; `npm run check-assets` counts a copy as referenced through its original. Copies must keep the original's canvas size and anchor (a character's feet, a desk's footprint) exactly, or the sprite shifts in the office.
+Each festive image is an optional copy saved next to the one it replaces, `<name>-xmas.webp` beside `<name>.png` (`src/season.ts`): until a copy exists the next one down shows (the winter copy, else the normal art), so festive art can be added one file at a time with no code change. WebP, not PNG, because at quality 90 a room is ~200 KB instead of ~2 MB, which keeps `public/` inside its size budget; `npm run check-assets` counts a copy as referenced through its original. Copies must keep the original's canvas size and anchor (a character's feet, a desk's footprint) exactly, or the sprite shifts in the office.
 
 ## Settings panel
 
@@ -288,7 +324,7 @@ The ⚙ at the right of the title bar opens one panel for the settings that used
 |---|---|---|
 | Theme — Default / Dunder Mifflin | this browser (`agent-office-theme`) | Same as `/the-office`; `?theme=office` still preloads it |
 | Day / night — Auto / Day / Night | this browser (`agent-office-daynight`) | Same as the AUTO / DAY / NIGHT button in the title bar, now remembered |
-| Season — Auto / Christmas / Off | this browser (`agent-office-season`) | `?season=` wins; applies on reload (see [Christmas](#christmas)) |
+| Season — Auto / a holiday (Christmas, Halloween, Easter, Valentine's Day) / a season (Spring, Summer, Autumn, Winter) / Off | this browser (`agent-office-season`) | A drop-down, ten choices being too many for a row of buttons. Auto goes by the date (northern-hemisphere seasons: pick yours by hand south of the equator). `?season=` wins; applies on reload. The note under it says what is on now and whether it has art yet (see [Seasons](#seasons)) |
 | Sound — mute + volume | this browser (`agent-office-volume`, `agent-office-muted`) | Same as the chat header's controls, now remembered |
 | Answer permissions here | server (`POST /settings`, UI token) | Same as the chat header's **Answer here** pill |
 | Notify on permission waits | server (`POST /settings`, UI token) | Same as the chat header's **Notify** pill: a desktop notification when Claude starts waiting on a permission |

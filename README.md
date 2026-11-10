@@ -121,6 +121,7 @@ Toggle it off any time with `/the-office` again — state persists in `localStor
 - Boss character (you) with an energy drink, Claude with coffee
 - Random office events: pizza deliveries, fire drills, power flickers, printer jams
 - Day/night cycle with smooth transitions
+- Seasons: the office follows the calendar, spring, summer, autumn and winter all year round with Christmas, Halloween, Easter and Valentine's Day on top. Christmas is drawn; the other seven are wired up and show the normal office until their art is added — see [Seasons](docs/reference.md#seasons)
 - **Settings** (the ⚙ in the title bar): theme, day/night, season, sound and the server settings in one panel — see [Settings](docs/reference.md#settings-panel)
 - **Today** (bottom-right of the status strip): the day's sessions, agents, tasks, deploys, failures, incidents and payroll, kept across restarts — or `/recap` in the chat
 - **More rooms, arriving with their art**: a corridor, a meeting room, a server room and a lunch room are built and stay closed until each is drawn; `?sim&rooms=all` previews them on placeholders — see [Rooms](docs/reference.md#rooms)
@@ -255,7 +256,7 @@ The cast walk with a four-frame cycle (left foot down, passing, right foot down,
 
 Reload the office and your character walks. The script places each frame on the standing sprite's canvas with its feet where the standing pose's feet are, and mirrors a row ChatGPT drew facing the wrong way. Add `--no-mirror` if the outfit has words on it, so they never read backwards. It needs Pillow and numpy (`pip3 install Pillow numpy`).
 
-For the Christmas look, do the same with `--festive` on both commands once your `-xmas.webp` copies exist (see [Christmas](docs/reference.md#christmas)). Your character then keeps its festive outfit mid-step.
+For the Christmas look, do the same with `--festive` on both commands once your `-xmas.webp` copies exist (see [Christmas](docs/reference.md#christmas)). Your character then keeps its festive outfit mid-step. Any other season's outfit works the same way with `--season NAME` (`--season autumn` reads the `-autumn.webp` copies; `--festive` is short for `--season christmas`), see [Seasons](docs/reference.md#seasons).
 
 <details>
 <summary>The walk-cycle prompt</summary>
@@ -314,6 +315,8 @@ Agents can also message each other directly — see [Agent-to-agent messages](do
 | `127.0.0.1:3333?variant=incident` | Incident — pins "Prod Is Down" on |
 | `<lan ip>:3335/#viewer=…` | Phone — `npm run lan` prints this link and a QR code: the office scene, watch-only, on a phone on your Wi-Fi ([Phone mode](docs/reference.md#phone-mode)) |
 | `127.0.0.1:3333?season=christmas` | Christmas — the festive office any day (on by itself 1 Dec – 6 Jan) |
+| `127.0.0.1:3333?season=autumn` | Any season or holiday by name, any day: `spring`, `summer`, `autumn`, `winter`, `halloween`, `easter`, `valentine` (only Christmas has art so far: [Seasons](docs/reference.md#seasons)) |
+| `127.0.0.1:3333?season=none` | No seasonal art, whatever the date |
 
 The theme, day/night mode, season and sound are also in **Settings** (the ⚙ at the right of the title bar) and are remembered per browser; a `?theme=` or `?season=` in the address still wins over what is stored there.
 

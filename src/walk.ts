@@ -8,11 +8,12 @@
  * figure gliding. The standing sprite is never one of the steps (Why: it is
  * drawn facing the camera and the stride art is not; mixing them made the
  * figure snap between angles every frame). Frames are optional per sprite:
- * they are found with the same runtime image probe the incident and festive
- * art use, and a sprite without all four keeps gliding as before. A festive copy has frames of
- * its own beside it (`name-xmas.webp` -> `name-xmas-walk1.webp`), so a
- * character in a Christmas jumper never flashes back to its everyday clothes
- * mid-stride; without them it glides.
+ * they are found with the same runtime image probe the incident and seasonal
+ * art use, and a sprite without all four keeps gliding as before. A seasonal
+ * copy (src/season.ts) has frames of its own beside it, whatever its suffix
+ * (`name-xmas.webp` -> `name-xmas-walk1.webp`, `name-autumn.webp` ->
+ * `name-autumn-walk1.webp`), so a character in a Christmas jumper never
+ * flashes back to its everyday clothes mid-stride; without them it glides.
  */
 
 import { useSyncExternalStore } from 'react'
@@ -28,10 +29,13 @@ export const WALK_FRAME_MS = 140
 export const WALK_FRAMES = 4
 
 /**
- * The walk-cycle frames for `src` (a sprite `.png`, or a festive `.webp` copy),
- * in order, or null when `src` cannot have any.
+ * The walk-cycle frames for `src`, in order.
+ * @param src a standing sprite: a `.png`, or any season's `.webp` copy of one
+ * @returns the four frame URLs, or null when `src` cannot have any
  */
 export function walkFramePaths(src: string): string[] | null {
+  // Why no list of season suffixes here: the frames sit beside whatever file
+  // is being drawn, so a new season needs nothing in this file
   const m = /^(.*)\.(png|webp)$/.exec(src)
   if (!m || /-walk\d$/.test(m[1])) return null // not a sprite, or already a walk frame
   return Array.from({ length: WALK_FRAMES }, (_, i) => `${m[1]}-walk${i + 1}.webp`)

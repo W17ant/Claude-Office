@@ -158,8 +158,9 @@ export function getSpriteDir(): string {
 /** Kept signature-compatible for existing callers — agentId ignored; role is the key. */
 export function getSpritePath(_agentId: string, role: string, defaultBase: string, direction: string): string {
   const base = getCharacterBaseForRole(role, defaultBase)
-  // Why seasonalUrl: in December a festive copy (…-xmas.png) replaces the
-  // sprite once that file exists; until then this is the normal sprite
+  // Why seasonalUrl: a seasonal copy (…-xmas.webp at Christmas, …-autumn.webp
+  // in autumn; src/season.ts) replaces the sprite once that file exists;
+  // until then this is the normal sprite
   return seasonalUrl(`${getSpriteDir()}/${base}-${direction}.png`)
 }
 
