@@ -12,7 +12,6 @@
 const fs = require('fs')
 const os = require('os')
 const path = require('path')
-const { updateMenuLabel } = require('./update-check.cjs')
 
 const APP_NAME = 'Agent Office'
 
@@ -542,12 +541,62 @@ function windowTitle(summary) {
   return summary ? `${APP_NAME} — ${statusText(summary)}` : APP_NAME
 }
 
+// ---------------------------------------------------------------------------
+// The menu's update items
+//
+// Why here and not in update-check.cjs: this file is also in the npm package
+// (scripts/open-office.mjs imports the link helpers from it), and the package
+// ships none of the updater. It has to load with no other electron/ file
+// beside it (tests/release.test.ts checks that).
+// ---------------------------------------------------------------------------
+
+/** The item that opens the release page: the fallback, and the whole feature when "Update automatically" is off. */
+function updateMenuLabel(update) {
+  return `Update available: ${update.version} — Download`
+}
+
+/** The item that installs a downloaded, verified update. */
+function restartMenuLabel(version) {
+  return `Restart to update to ${version}`
+}
+
+/** The disabled line shown while an update downloads. */
+function downloadingMenuLabel(version) {
+  return `Downloading update ${version}…`
+}
+
+/**
+ * The one update item for the top of the menu, or none.
+ *
+ * @param {{ update?: {version: string, url: string} | null, autoUpdate?: {enabled: boolean, phase: string, version: string | null} | null }} state
+ *   `update` is the newer release the check found; `autoUpdate` is
+ *   auto-update.cjs menuState(), absent when this install cannot update
+ *   itself (a checkout, a translocated or read-only macOS app, ...)
+ * @param {{ openUpdate: () => void, applyUpdate?: () => void }} actions
+ * @returns {object[]} zero or one menu item
+ */
+function updateMenuItems(state, actions) {
+  const auto = state.autoUpdate
+  if (auto && auto.enabled && auto.version) {
+    if (auto.phase === 'ready') return [{ label: restartMenuLabel(auto.version), click: () => actions.applyUpdate() }]
+    if (auto.phase === 'downloading') return [{ label: downloadingMenuLabel(auto.version), enabled: false }]
+  }
+  // Why: everything else is the download page, including a failed download
+  // or checksum. A version that could not be installed is still worth
+  // knowing about.
+  return state.update ? [{ label: updateMenuLabel(state.update), click: () => actions.openUpdate() }] : []
+}
+
 /**
  * The tray / right-click menu. `state` is { visible, compact, alwaysOnTop,
- * status, update? }; `actions` supplies toggleWindow, setCompact, setAlwaysOnTop,
- * resetBounds, openInBrowser, quit and (with an update) openUpdate. `update`
- * is { version, url } from electron/update-check.cjs when a newer release is
- * out: an "Update available" item under the status line. Compact mode is always on top, so the
+ * status, update?, autoUpdate? }; `actions` supplies toggleWindow, setCompact,
+ * setAlwaysOnTop, resetBounds, openInBrowser, quit and (with an update)
+ * openUpdate, applyUpdate and setAutoUpdate. `update` is { version, url } from
+ * electron/update-check.cjs when a newer release is out, and `autoUpdate` is
+ * { enabled, phase, version } from electron/auto-update.cjs when this install
+ * can update itself: together they pick the one update item under the status
+ * line (updateMenuItems), and `autoUpdate` alone adds the "Update
+ * automatically" checkbox above Quit. Compact mode is always on top, so the
  * toggle is shown checked and disabled there. Every window control is here,
  * because on Windows and Linux the frameless window shows no menu bar: this
  * menu (the tray's, and the window's right-click) is the only one there is.
@@ -555,14 +604,12 @@ function windowTitle(summary) {
 function trayMenuTemplate(state, actions) {
   // The shortcuts are shown, not registered: the window handles the keys itself
   const hint = action => ({ accelerator: acceleratorFor(action), registerAccelerator: false })
+  const updateItems = updateMenuItems(state, actions)
+  const auto = state.autoUpdate
   return [
     { label: state.status ? `${APP_NAME} — ${state.status}` : APP_NAME, enabled: false },
     { type: 'separator' },
-    // A newer release (electron/update-check.cjs): opens its page in the browser
-    ...(state.update ? [
-      { label: updateMenuLabel(state.update), click: () => actions.openUpdate() },
-      { type: 'separator' },
-    ] : []),
+    ...(updateItems.length ? [...updateItems, { type: 'separator' }] : []),
     { label: state.visible ? 'Hide office' : 'Show office', click: () => actions.toggleWindow() },
     { type: 'separator' },
     {
@@ -584,6 +631,12 @@ function trayMenuTemplate(state, actions) {
     { type: 'separator' },
     { label: 'Open in browser', ...hint('openInBrowser'), click: () => actions.openInBrowser() },
     { type: 'separator' },
+    // Why only with `autoUpdate`: where the app cannot update itself the
+    // checkbox would promise something that never happens.
+    ...(auto ? [
+      { label: 'Update automatically', type: 'checkbox', checked: !!auto.enabled, click: () => actions.setAutoUpdate(!auto.enabled) },
+      { type: 'separator' },
+    ] : []),
     { label: `Quit ${APP_NAME}`, click: () => actions.quit() },
   ]
 }
@@ -633,5 +686,9 @@ module.exports = {
   statusText,
   trayTitle,
   windowTitle,
+  updateMenuLabel,
+  restartMenuLabel,
+  downloadingMenuLabel,
+  updateMenuItems,
   trayMenuTemplate,
 }

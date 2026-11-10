@@ -13,6 +13,7 @@ Run with `npm test` (Vitest, Node environment, `tests/`). CI (`.github/workflows
 - `hooks/agent-tracker.py` (run by `hooks/agent-tracker.sh`) against real Claude Code 2.1.x payloads — `tests/hook-script.test.ts`
 - `hooks/install-hooks.sh` — fresh install, upgrade from PostToolUse-only, idempotent re-run — `tests/install-hooks.test.ts`
 - Rooms — the star of five places, `findRoomPath`, the provisional layouts (every door, spot and waypoint on the floor), open/closed (`DRAWN_ROOMS`, `?rooms=all`) and the room rules — `tests/rooms.test.ts`; the reducer with rooms open and closed (nothing changes with none open, the front door, office → server room leg by leg, MCP workers, the meeting room and its hysteresis, a full room, completing mid-transfer, lunch breaks, the boss hand-over) — `tests/roomTransfer.test.ts`; the floor plan's model and the placement helper's export — `tests/roomSwitcher.test.ts`
+- Desktop updates — the release check, version comparison and the *Update automatically* setting (`tests/update-check.test.ts`); which updater a platform gets, when it falls back to the download link, `latest-mac.yml` parsing, asset choice per architecture, the URL allowlist, never downgrading (`tests/update-plan.test.ts`); the download-then-ready state machine, menu labels, the single notification, three download tries (`tests/auto-update.test.ts`); on macOS the download, size cap, sha512, unpack, bundle id and version checks, and the real `electron/mac-swap.sh` against a fake `.app` in a temp dir, including the roll-back when the new bundle cannot be moved in (`tests/mac-update.test.ts`, the swap tests skip on other platforms). `electron-updater` itself is only ever a fake here. The manual checks are under *Desktop updates* below.
 
 **Still planned** (see modules below): `chat-db.js` unit tests, all `src/` modules (jsdom + Testing Library), `useAgentSocket` reconnect logic, React components, Playwright E2E, coverage thresholds.
 
@@ -674,6 +675,53 @@ Key file: copy public/rooms/office-day-xmas.webp to public/rooms/office-day-autu
   ?season=autumn: the day room changes, and requests for the other -autumn.webp files appear and fail
   quietly (everything else stays normal). Delete the copy afterwards; do not commit it
 A character walking under ?season=christmas keeps its jumper mid-step (its -xmas walk frames)
+```
+
+## Desktop updates (manual)
+
+Nothing here runs in CI: the updater only exists in a packaged app, and the real thing needs a published GitHub release. What the unit tests cover is in *Covered now* above.
+
+### One command, on a Mac
+
+```bash
+node scripts/e2e-mac-update.mjs          # --keep keeps the work dir, --reuse skips the two builds
+```
+
+It packages the app twice (the current version and the next patch), serves the newer build's `latest-mac.yml` and zip on 127.0.0.1, starts the older build from a temp `Applications` folder and checks 17 things: the menu goes *Downloading update* → *Restart to update* and never shows *Download*, exactly one *is ready* notification, the requests went to the real `github.com` URLs, the click quits the app, `update-swap.log` says `updated`, the bundle at the same path is the newer version and is running, its server answers `/health`, nothing is left beside the app. It opens the app's window twice, uses its own user-data dir, `AGENT_OFFICE_HOME` and a free port (never 3333, 3334 or 3335), and exits non-zero on any failed check. The feed is injected through an entry file in a throwaway copy of the app, never through the environment; the script's header lists what that replaces.
+
+It does not cover a real release and TLS, the notification actually appearing, `/Applications` and its permissions, a quarantined or translocated download, an Intel Mac, or Windows and Linux. Those are by hand, below.
+
+### By hand, against a real release
+
+Install release N, publish release N+1 (the draft has to be published: neither the check nor electron-updater sees a draft), start the app. The check runs at start; started from a terminal the app prints `[update] vN+1 is available`.
+
+```
+macOS (arm64 and x64), app dragged to /Applications
+  menu shows "Downloading update vN+1…" (greyed), then "Restart to update to vN+1"
+  one "is ready" notification, no "is available" one; none again on the next start
+  "Restart to update" → app quits, comes back as vN+1 at the same path, the office (port, agents, chat) is as it was
+  update-swap.log in the user-data directory has one "updated" line; no ".agent-office-update-*" folder or old bundle left in /Applications
+  with an update ready, Quit instead → next start is vN+1
+  if macOS asks to let the app "manage other apps" (App Management): allow → updated; deny → expected: the old version starts again and the menu shows "Download" for vN+1 (never tried; note what really happens)
+  a standard (non-admin) user whose app an admin installed → "Download", no download attempted
+macOS, app opened straight from the dmg or from Downloads (translocated)
+  no "Update automatically" checkbox; "Update available: vN+1 — Download" opens the release page
+Windows (nsis), installed for the current user
+  "Restart to update" → installer runs without its wizard, app starts again as vN+1
+  with an update ready, Quit → next start is vN+1
+Windows, installed for all users
+  as above with one elevation (UAC) prompt; decline it → the app is still vN, and on its next start the menu shows "Download" for vN+1
+Linux (AppImage in a folder the user owns)
+  "Restart to update" → the AppImage file is replaced, the app starts again as vN+1
+  Quit with an update ready → nothing is installed; the next start offers it again
+Linux, AppImage in a read-only folder, or the unpacked directory build
+  "Download" only
+Every platform
+  untick "Update automatically" → the menu shows "Download" at once and nothing more is fetched; tick it → "Restart to update" is back without a second download when one had finished, otherwise the download starts
+  the setting survives a restart ("autoUpdate" in update-check.json)
+  the zip or installer missing from the release, or the network cut mid-download → "Download" and one "is available" notification after the first failed try; it tries again at the next two six-hourly checks, then not until the app is restarted
+  release N+1 deleted or made a draft again → no update offered; a release older than the running app is never installed
+  a dev run (npm run dev:electron) has no update items at all
 ```
 
 ---

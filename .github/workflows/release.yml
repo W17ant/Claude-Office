@@ -75,7 +75,7 @@ jobs:
       matrix:
         include:
           - os: macos-latest
-            name: macOS (dmg, arm64 and x64)
+            name: macOS (dmg and zip, arm64 and x64)
             args: --mac
           - os: windows-latest
             name: Windows (nsis)
@@ -108,6 +108,14 @@ jobs:
         # --publish always: upload from this job, tag or not (a dispatch on a
         # branch is still a rebuild). package.json's "repository" tells the
         # publisher which repo, and its "publish" block says draft.
+        #
+        # What installed apps update from goes up with the installers, with
+        # nothing more to do here: latest.yml, latest-mac.yml and
+        # latest-linux.yml, and on macOS one zip per architecture (the dmg is
+        # the download for people; the app's own updater takes the zip). The
+        # macOS leg builds both architectures in this one run, so its
+        # latest-mac.yml names both zips; split it in two and the second
+        # upload would replace the first.
         run: npx electron-builder ${{ matrix.args }} --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

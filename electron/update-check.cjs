@@ -1,17 +1,34 @@
 'use strict'
 
 /**
- * update-check.cjs - tells the desktop app a newer release is out.
+ * update-check.cjs - finds a newer release of the desktop app and remembers what was done about it.
  *
- * There is no auto-updater: the builds are unsigned, and electron-updater
- * needs a signed app on macOS. Instead, on start and every six hours, the app
- * reads the latest GitHub release (unauthenticated, nothing about the user
- * sent beyond a User-Agent of "Agent-Office/<version>"), and when its tag is
- * newer than app.getVersion() the tray and right-click menus gain an
- * "Update available: vX.Y.Z — Download" item that opens the release page in
- * the browser. One native notification is shown per new version; the last
- * version notified about is remembered in update-check.json in the app's
- * user-data directory. Every failure is silent (logged only).
+ * On start and every six hours the packaged app reads the latest GitHub
+ * release (unauthenticated, nothing about the user sent beyond a User-Agent
+ * of "Agent-Office/<version>"). When its tag is newer than app.getVersion()
+ * one of two things happens:
+ *
+ *   "Update automatically" on (the default)
+ *     The update is downloaded in the background and the tray and right-click
+ *     menus gain "Restart to update to vX.Y.Z", with one native notification
+ *     when it is ready. Windows and Linux use electron-updater; macOS uses the
+ *     app's own updater, because Squirrel.Mac (what electron-updater drives
+ *     there) refuses an app with no Developer ID signature. See
+ *     auto-update.cjs (the flow), update-plan.cjs (every decision, pure) and
+ *     mac-update.cjs (the macOS download, verification and swap).
+ *
+ *   off, or the update cannot be installed from here (a translocated or
+ *   read-only macOS app, no asset for this platform, a failed download or
+ *   checksum)
+ *     The menus gain "Update available: vX.Y.Z — Download", which opens the
+ *     release page in the browser, with one notification per new version.
+ *     This is what the app did before it could update itself, and it is
+ *     always the fallback.
+ *
+ * update-check.json in the app's user-data directory holds what must survive
+ * a restart: the "Update automatically" preference, the versions already
+ * notified about, and an install in progress (so one that did not take is
+ * not tried again). Every failure is silent (logged only).
  *
  * Everything here but `fetchLatestRelease`'s default getter is pure and runs
  * in plain Node (tests/update-check.test.ts); main.cjs supplies Electron's
@@ -147,37 +164,89 @@ function availableUpdate(release, currentVersion) {
   return url ? { version, url } : null
 }
 
-/** The menu item's label for an update. */
-function updateMenuLabel(update) {
-  return `Update available: ${update.version} — Download`
+// ---------------------------------------------------------------------------
+// The state file: update-check.json in the user-data directory
+//
+//   lastNotifiedVersion    the "is available" notification was shown for it
+//   readyNotifiedVersion   the "is ready, restart to update" one was
+//   autoUpdate             the "Update automatically" checkbox; absent = on
+//   applying               an install of this version was started on the way
+//                          out; the next start compares it with the version
+//                          it is running (update-plan.cjs applyOutcome)
+//   failedVersion          that install did not take: this version is offered
+//                          as a download instead of being tried again
+// ---------------------------------------------------------------------------
+
+const STATE_VERSION_KEYS = ['lastNotifiedVersion', 'readyNotifiedVersion', 'applying', 'failedVersion']
+
+/** Keep only the keys the file is meant to hold, with the right types (a hand edit or a truncated write is dropped, not trusted). */
+function sanitizeUpdateState(raw) {
+  const state = {}
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return state
+  for (const key of STATE_VERSION_KEYS) {
+    const version = normaliseTag(raw[key])
+    if (version) state[key] = version
+  }
+  if (typeof raw.autoUpdate === 'boolean') state.autoUpdate = raw.autoUpdate
+  return state
 }
 
-// ---------------------------------------------------------------------------
-// The state file: which version has been notified about
-// ---------------------------------------------------------------------------
-
-/** The last version a notification was shown for, or null (no file, junk in it). */
-function readLastNotified(file) {
+/**
+ * Read the state file.
+ * @param {string} file
+ * @returns {{ lastNotifiedVersion?: string, readyNotifiedVersion?: string, applying?: string, failedVersion?: string, autoUpdate?: boolean }}
+ *   only the keys that are set; a missing or unreadable file is {}
+ */
+function readUpdateState(file) {
   try {
-    const saved = JSON.parse(fs.readFileSync(file, 'utf8'))
-    return normaliseTag(saved && saved.lastNotifiedVersion)
+    return sanitizeUpdateState(JSON.parse(fs.readFileSync(file, 'utf8')))
   } catch {
-    return null
+    return {}
   }
 }
 
-/** Remember the version notified about (temp file + rename); false when it cannot be written. */
-function writeLastNotified(file, version) {
+/**
+ * Merge `patch` into the state file (temp file + rename, so a crash mid-write
+ * leaves the previous state). A null or undefined value removes its key.
+ * @param {string} file
+ * @param {Record<string, string | boolean | null | undefined>} patch
+ * @returns {boolean} false when the file cannot be written
+ */
+function writeUpdateState(file, patch) {
+  const merged = { ...readUpdateState(file) }
+  for (const [key, value] of Object.entries(patch || {})) {
+    if (value === null || value === undefined) delete merged[key]
+    else merged[key] = value
+  }
   const tmp = `${file}.${process.pid}.tmp`
   try {
     fs.mkdirSync(path.dirname(file), { recursive: true })
-    fs.writeFileSync(tmp, JSON.stringify({ lastNotifiedVersion: version }, null, 2) + '\n')
+    fs.writeFileSync(tmp, JSON.stringify(sanitizeUpdateState(merged), null, 2) + '\n')
     fs.renameSync(tmp, file)
     return true
   } catch {
     try { fs.unlinkSync(tmp) } catch {}
     return false
   }
+}
+
+/** The last version an "is available" notification was shown for, or null (no file, junk in it). */
+function readLastNotified(file) {
+  return readUpdateState(file).lastNotifiedVersion || null
+}
+
+/** Remember the version notified about; false when it cannot be written. */
+function writeLastNotified(file, version) {
+  return writeUpdateState(file, { lastNotifiedVersion: version })
+}
+
+/**
+ * Whether "Update automatically" is on: yes unless the file says false.
+ * @param {string} file
+ * @returns {boolean}
+ */
+function readAutoUpdate(file) {
+  return readUpdateState(file).autoUpdate !== false
 }
 
 // ---------------------------------------------------------------------------
@@ -232,20 +301,33 @@ function fetchLatestRelease({ version, timeoutMs = UPDATE_CHECK_TIMEOUT_MS, get 
 
 /**
  * The periodic check. `check()` runs once; `start()` checks now and every
- * `intervalMs`; `stop()` ends it.
+ * `intervalMs`; `stop()` ends it; `announce(update)` shows the "is available"
+ * notification unless that version already had one.
  *
  * @param {object} opts
  * @param {string} opts.currentVersion  app.getVersion()
  * @param {string} opts.stateFile  where the last notified version is kept
  * @param {() => Promise<any>} opts.fetchRelease  resolves the release JSON or null
- * @param {(update: {version: string, url: string}) => void} opts.onUpdate  a newer release was found (every check that finds it)
+ * @param {(update: {version: string, url: string}) => unknown} opts.onUpdate  a newer release was found (every
+ *   check that finds it). Returning true defers the notification: the caller is downloading the update and will
+ *   either show its own "ready" notification or call `announce` when it has to fall back to the download page.
  * @param {(update: {version: string, url: string}) => void} opts.notify  show the native notification (once per version)
  * @param {number} [opts.intervalMs]
  * @param {(msg: string) => void} [opts.log]
+ * @returns {{ check: () => Promise<{version: string, url: string} | null>, announce: (update: {version: string, url: string}) => boolean, start: () => void, stop: () => void, readonly update: {version: string, url: string} | null }}
  */
 function createUpdateChecker({ currentVersion, stateFile, fetchRelease, onUpdate = () => {}, notify = () => {}, intervalMs = UPDATE_CHECK_INTERVAL_MS, log = console.log }) {
   let timer = null
   let update = null
+
+  function announce(found) {
+    if (!found || readLastNotified(stateFile) === found.version) return false
+    // Why: remember first, so a notifier that throws cannot make every
+    // later check notify again.
+    writeLastNotified(stateFile, found.version)
+    notify(found)
+    return true
+  }
 
   async function check() {
     try {
@@ -253,13 +335,7 @@ function createUpdateChecker({ currentVersion, stateFile, fetchRelease, onUpdate
       const found = availableUpdate(release, currentVersion)
       if (!found) return null
       update = found
-      onUpdate(found)
-      if (readLastNotified(stateFile) !== found.version) {
-        // Why: remember first, so a notifier that throws cannot make every
-        // later check notify again.
-        writeLastNotified(stateFile, found.version)
-        notify(found)
-      }
+      if (onUpdate(found) !== true) announce(found)
       return found
     } catch (err) {
       log(`[update] Check failed: ${err && err.message}`)
@@ -269,6 +345,7 @@ function createUpdateChecker({ currentVersion, stateFile, fetchRelease, onUpdate
 
   return {
     check,
+    announce,
     start() {
       if (timer) return
       check()
@@ -294,9 +371,11 @@ module.exports = {
   normaliseTag,
   releasePageUrl,
   availableUpdate,
-  updateMenuLabel,
+  readUpdateState,
+  writeUpdateState,
   readLastNotified,
   writeLastNotified,
+  readAutoUpdate,
   fetchLatestRelease,
   createUpdateChecker,
 }

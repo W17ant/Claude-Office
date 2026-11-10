@@ -218,3 +218,185 @@ describe('the tray menu with an update', () => {
     expect(main).toContain('update: availableUpdate')
   })
 })
+
+describe('update-check.json: what the app remembers about updates', () => {
+  const file = () => join(mkdtempSync(join(tmpdir(), 'agent-office-update-state-')), 'update-check.json')
+
+  it('a write merges into what is there, and null removes a key', () => {
+    const f = file()
+    expect(u.writeUpdateState(f, { lastNotifiedVersion: 'v1.2.0' })).toBe(true)
+    expect(u.writeUpdateState(f, { autoUpdate: false, applying: 'v1.2.0' })).toBe(true)
+    expect(u.readUpdateState(f)).toEqual({ lastNotifiedVersion: 'v1.2.0', autoUpdate: false, applying: 'v1.2.0' })
+    u.writeUpdateState(f, { applying: null, failedVersion: 'v1.2.0' })
+    expect(JSON.parse(readFileSync(f, 'utf8'))).toEqual({ lastNotifiedVersion: 'v1.2.0', autoUpdate: false, failedVersion: 'v1.2.0' })
+  })
+
+  it('"Update automatically" is on unless the file says false', () => {
+    const f = file()
+    expect(u.readAutoUpdate(f)).toBe(true)
+    writeFileSync(f, '{not json')
+    expect(u.readAutoUpdate(f)).toBe(true)
+    writeFileSync(f, JSON.stringify({ autoUpdate: 'no' }))
+    expect(u.readAutoUpdate(f)).toBe(true)
+    u.writeUpdateState(f, { autoUpdate: false })
+    expect(u.readAutoUpdate(f)).toBe(false)
+    u.writeUpdateState(f, { autoUpdate: true })
+    expect(u.readAutoUpdate(f)).toBe(true)
+  })
+
+  it('anything that is not a version or a boolean is dropped on read', () => {
+    const f = file()
+    writeFileSync(f, JSON.stringify({
+      lastNotifiedVersion: '1.2.0', readyNotifiedVersion: 'latest', applying: 42, failedVersion: ['v1.2.0'],
+      autoUpdate: 0, extra: 'x',
+    }))
+    expect(u.readUpdateState(f)).toEqual({ lastNotifiedVersion: 'v1.2.0' })
+    writeFileSync(f, '[1, 2]')
+    expect(u.readUpdateState(f)).toEqual({})
+  })
+
+  it('an unwritable location is reported, not thrown', () => {
+    const f = file()
+    writeFileSync(f, '{}')
+    // A file where a directory is needed
+    expect(u.writeUpdateState(join(f, 'update-check.json'), { autoUpdate: false })).toBe(false)
+  })
+})
+
+describe('createUpdateChecker with something handling the update', () => {
+  const stateFile = () => join(mkdtempSync(join(tmpdir(), 'agent-office-update-')), 'update-check.json')
+
+  it('onUpdate returning true holds back the "is available" notification; announce shows it later, once', async () => {
+    const notify = vi.fn()
+    const checker = u.createUpdateChecker({ currentVersion: '1.1.2', stateFile: stateFile(), fetchRelease: async () => release(), onUpdate: () => true, notify, log: () => {} })
+    const found = await checker.check()
+    expect(found).toEqual({ version: 'v1.2.0', url: PAGE })
+    expect(notify).not.toHaveBeenCalled()
+    // The download failed: the fallback is announced
+    expect(checker.announce(found)).toBe(true)
+    expect(checker.announce(found)).toBe(false)
+    expect(notify).toHaveBeenCalledTimes(1)
+    expect(notify).toHaveBeenCalledWith({ version: 'v1.2.0', url: PAGE })
+  })
+
+  it('onUpdate returning false (or nothing) is the behaviour without an updater: notified at once', async () => {
+    for (const onUpdate of [() => false, () => undefined, undefined]) {
+      const notify = vi.fn()
+      await u.createUpdateChecker({ currentVersion: '1.1.2', stateFile: stateFile(), fetchRelease: async () => release(), onUpdate, notify, log: () => {} }).check()
+      expect(notify).toHaveBeenCalledTimes(1)
+    }
+  })
+
+  it('the once-per-version marker survives the other keys being written', async () => {
+    const f = stateFile()
+    u.writeUpdateState(f, { autoUpdate: false })
+    const notify = vi.fn()
+    const make = () => u.createUpdateChecker({ currentVersion: '1.1.2', stateFile: f, fetchRelease: async () => release(), notify, log: () => {} })
+    await make().check()
+    u.writeUpdateState(f, { readyNotifiedVersion: 'v1.2.0' })
+    await make().check()
+    expect(notify).toHaveBeenCalledTimes(1)
+    expect(u.readUpdateState(f)).toEqual({ autoUpdate: false, lastNotifiedVersion: 'v1.2.0', readyNotifiedVersion: 'v1.2.0' })
+  })
+})
+
+describe('the menu\'s update items, when the app can update itself', () => {
+  const actions = {
+    toggleWindow: vi.fn(), setCompact: vi.fn(), setAlwaysOnTop: vi.fn(), resetBounds: vi.fn(),
+    openInBrowser: vi.fn(), openUpdate: vi.fn(), applyUpdate: vi.fn(), setAutoUpdate: vi.fn(), quit: vi.fn(),
+  }
+  const base = { visible: true, compact: false, alwaysOnTop: false, status: '' }
+  const update = { version: 'v1.2.0', url: PAGE }
+  const auto = (over: object = {}) => ({ enabled: true, phase: 'idle', version: null, ...over })
+  const item = (t: any[], label: string) => t.find((i) => i.label === label)
+  const clear = () => { for (const fn of Object.values(actions)) fn.mockClear() }
+
+  it('labels', () => {
+    expect(h.updateMenuLabel(update)).toBe('Update available: v1.2.0 — Download')
+    expect(h.restartMenuLabel('v1.2.0')).toBe('Restart to update to v1.2.0')
+    expect(h.downloadingMenuLabel('v1.2.0')).toBe('Downloading update v1.2.0…')
+  })
+
+  it('downloading: one disabled line, no Download item', () => {
+    const t = h.trayMenuTemplate({ ...base, update, autoUpdate: auto({ phase: 'downloading', version: 'v1.2.0' }) }, actions)
+    expect(t[2]).toEqual({ label: 'Downloading update v1.2.0…', enabled: false })
+    expect(t[3]).toEqual({ type: 'separator' })
+    expect(item(t, 'Update available: v1.2.0 — Download')).toBeUndefined()
+  })
+
+  it('ready: "Restart to update to vX.Y.Z" calls applyUpdate, never the browser', () => {
+    clear()
+    const t = h.trayMenuTemplate({ ...base, update, autoUpdate: auto({ phase: 'ready', version: 'v1.2.0' }) }, actions)
+    expect(t[2].label).toBe('Restart to update to v1.2.0')
+    t[2].click()
+    expect(actions.applyUpdate).toHaveBeenCalledTimes(1)
+    expect(actions.openUpdate).not.toHaveBeenCalled()
+    expect(item(t, 'Update available: v1.2.0 — Download')).toBeUndefined()
+  })
+
+  it('failed, idle or switched off: the Download item, exactly as without an updater', () => {
+    clear()
+    const plain = h.updateMenuItems({ update }, actions).map((i: any) => i.label)
+    expect(plain).toEqual(['Update available: v1.2.0 — Download'])
+    for (const autoUpdate of [
+      auto({ phase: 'failed', version: 'v1.2.0' }),
+      auto(),
+      auto({ enabled: false, phase: 'ready', version: 'v1.2.0' }),
+      auto({ enabled: false, phase: 'downloading', version: 'v1.2.0' }),
+      auto({ phase: 'ready', version: null }),
+    ]) {
+      const items = h.updateMenuItems({ update, autoUpdate }, actions)
+      expect(items.map((i: any) => i.label)).toEqual(plain)
+      items[0].click()
+    }
+    expect(actions.openUpdate).toHaveBeenCalledTimes(5)
+    expect(actions.applyUpdate).not.toHaveBeenCalled()
+    expect(h.updateMenuItems({ update: null, autoUpdate: auto() }, actions)).toEqual([])
+  })
+
+  it('"Update automatically" is a checkbox above Quit, only where the app can update itself', () => {
+    clear()
+    const shape = (t: any[]) => t.map((i) => i.label ?? i.type)
+    const without = h.trayMenuTemplate(base, actions)
+    expect(item(without, 'Update automatically')).toBeUndefined()
+    expect(shape(h.trayMenuTemplate({ ...base, autoUpdate: null }, actions))).toEqual(shape(without))
+
+    const on = h.trayMenuTemplate({ ...base, autoUpdate: auto() }, actions)
+    const box = item(on, 'Update automatically')
+    expect(box).toMatchObject({ type: 'checkbox', checked: true })
+    // ..., checkbox, separator, Quit — and nothing else moved
+    expect(on.indexOf(box)).toBe(on.length - 3)
+    expect(shape(on.filter((_, index) => index < on.length - 3 || index === on.length - 1))).toEqual(shape(without))
+    box.click()
+    expect(actions.setAutoUpdate).toHaveBeenLastCalledWith(false)
+
+    const off = item(h.trayMenuTemplate({ ...base, autoUpdate: auto({ enabled: false }) }, actions), 'Update automatically')
+    expect(off.checked).toBe(false)
+    off.click()
+    expect(actions.setAutoUpdate).toHaveBeenLastCalledWith(true)
+  })
+
+  it('main.cjs builds the updater from updateStrategy in a packaged app, and passes no feed URL or transport', () => {
+    const main = readFileSync(join(__dirname, '..', 'electron/main.cjs'), 'utf8')
+    expect(main).toMatch(/updateStrategy\(\{/)
+    expect(main).toMatch(/packaged: app\.isPackaged/)
+    expect(main).toMatch(/autoUpdate: autoUpdater \? autoUpdater\.menuState\(\) : null/)
+    // The call's own options, up to the `})` at its indent
+    const call = (name: string) => {
+      const start = main.indexOf(`return ${name}({`)
+      expect(start).toBeGreaterThan(0)
+      return main.slice(start, main.indexOf('\n    })\n', start))
+    }
+    // Why: `get`, `helper` and `load` are the tests' injection points
+    expect(call('createMacBackend')).not.toMatch(/^\s*(get|helper)\b/m)
+    expect(call('createElectronUpdaterBackend')).not.toMatch(/^\s*load\b/m)
+    // No update URL, host or switch comes from the environment
+    // (comment lines aside: update-plan.cjs documents that main passes process.env for APPIMAGE)
+    const code = (rel: string) => readFileSync(join(__dirname, '..', rel), 'utf8').split('\n').filter((line) => !/^\s*(\*|\/\/|\/\*)/.test(line)).join('\n')
+    for (const rel of ['electron/update-plan.cjs', 'electron/mac-update.cjs', 'electron/auto-update.cjs']) {
+      expect(code(rel), rel).not.toMatch(/process\.env/)
+    }
+    expect(code('electron/update-plan.cjs').match(/env\.[A-Z_]+/g)).toEqual(['env.APPIMAGE'])
+    expect(main).not.toMatch(/setFeedURL|UPDATE_URL|UPDATE_FEED/i)
+  })
+})
