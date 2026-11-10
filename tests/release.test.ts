@@ -33,8 +33,14 @@ describe('the electron-builder configuration a release is built from', () => {
     expect(pkg.repository.url).toMatch(/^https:\/\/github\.com\/W17ant\/Claude-Office(\.git)?$/)
   })
 
-  it('builds macOS as one dmg per architecture, never universal — after-pack.cjs refuses that', () => {
-    expect(build.mac.target).toEqual([{ target: 'dmg', arch: ['arm64', 'x64'] }])
+  it('builds macOS as one dmg and one zip per architecture, never universal — after-pack.cjs refuses that', () => {
+    // The dmg is what a person downloads; the zip is what the app's own
+    // updater fetches (electron/mac-update.cjs), and building it is also what
+    // makes electron-builder list it in latest-mac.yml.
+    expect(build.mac.target).toEqual([
+      { target: 'dmg', arch: ['arm64', 'x64'] },
+      { target: 'zip', arch: ['arm64', 'x64'] },
+    ])
     expect(read('electron/after-pack.cjs')).toMatch(/archName === 'universal'/)
   })
 
@@ -42,6 +48,44 @@ describe('the electron-builder configuration a release is built from', () => {
     expect(build.win.target).toEqual(['nsis'])
     expect(build.nsis).toMatchObject({ oneClick: false, allowToChangeInstallationDirectory: true })
     expect(build.linux.target).toEqual(['AppImage'])
+  })
+
+  it('packages the updater: every electron/ file but the build hook, and electron-updater as a production dependency', () => {
+    // electron-builder only copies `dependencies` into the app
+    expect(pkg.dependencies['electron-updater']).toBeTruthy()
+    expect(pkg.devDependencies['electron-updater']).toBeUndefined()
+    expect(build.files).toContain('electron/**')
+    // Why: the macOS updater reads and writes the bundle's files directly,
+    // and runs electron/mac-swap.sh from inside it
+    expect(build.asar).toBe(false)
+  })
+})
+
+describe('the same package.json is the npm package (`npx agent-office`), which never loads the updater', () => {
+  it('electron-updater is required in one place, inside a function', () => {
+    const sources = ['main', 'helpers', 'update-check', 'update-plan', 'mac-update', 'auto-update'].map((name) => read(`electron/${name}.cjs`))
+    const requires = sources.join('\n').match(/require\('electron-updater'\)/g) || []
+    expect(requires).toHaveLength(1)
+    expect(read('electron/auto-update.cjs')).toContain("load = () => require('electron-updater')")
+    // Nothing under cli/, server/ or the scripts the package ships names it
+    for (const rel of ['cli/agent-office.mjs', 'server/index.js', 'scripts/open-office.mjs', 'scripts/doctor.mjs']) {
+      expect(read(rel), rel).not.toContain('electron-updater')
+    }
+  })
+
+  it('electron/helpers.cjs, the one electron/ file the package ships, needs no file beside it', () => {
+    expect(pkg.files.filter((entry: string) => entry.startsWith('electron/'))).toEqual(['electron/helpers.cjs'])
+    const local = read('electron/helpers.cjs').match(/require\('\.[^']*'\)/g) || []
+    expect(local).toEqual([])
+    // Loaded alone from an empty directory, as it is inside node_modules
+    const dir = mkdtempSync(join(tmpdir(), 'helpers-alone-'))
+    try {
+      writeFileSync(join(dir, 'helpers.cjs'), read('electron/helpers.cjs'))
+      const out = execFileSync(process.execPath, ['-e', "const h = require('./helpers.cjs'); process.stdout.write(typeof h.trayMenuTemplate)"], { cwd: dir, encoding: 'utf8' })
+      expect(out).toBe('function')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })
 

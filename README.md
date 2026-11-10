@@ -371,6 +371,8 @@ npm run dev:electron    # Development
 npm run build:electron  # Build the installer
 ```
 
+The app keeps itself up to date: when a newer release is out it downloads it in the background, and the tray menu (also on right-click in the window) offers **Restart to update**. Untick **Update automatically** in the same menu and it only tells you a new version is there, with a link to the download. How it works on each platform, and when it falls back to the download link, is in the [reference](docs/reference.md#desktop-app-electron).
+
 ## Contributing
 
 Issues and pull requests welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).

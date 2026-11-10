@@ -41,6 +41,9 @@ const {
 } = require('./helpers.cjs')
 const { createTray } = require('./tray.cjs')
 const { STATE_FILE_NAME: UPDATE_STATE_FILE_NAME, createUpdateChecker, fetchLatestRelease, releasePageUrl } = require('./update-check.cjs')
+const { updateStrategy } = require('./update-plan.cjs')
+const { createAutoUpdater, createElectronUpdaterBackend } = require('./auto-update.cjs')
+const { createMacBackend } = require('./mac-update.cjs')
 
 // The server's port: AGENT_OFFICE_PORT, default 3334 (helpers.cjs mirrors
 // server/config.js). The same number goes to the server child's environment,
@@ -429,24 +432,98 @@ function menuState() {
     compact,
     alwaysOnTop: state.alwaysOnTop === true,
     update: availableUpdate,
+    autoUpdate: autoUpdater ? autoUpdater.menuState() : null,
   }
 }
 
-const menuActions = { toggleWindow, setCompact, setAlwaysOnTop, resetBounds, openInBrowser, openUpdate, quit: quitApp }
+const menuActions = { toggleWindow, setCompact, setAlwaysOnTop, resetBounds, openInBrowser, openUpdate, applyUpdate, setAutoUpdate, quit: quitApp }
 
 // ---------------------------------------------------------------------------
-// Update check (electron/update-check.cjs): no auto-updater, just a menu item
-// and one notification per new version pointing at the release page.
+// Updates
+//
+// update-check.cjs finds a newer release (its header tells the whole story).
+// Where this install can update itself (update-plan.cjs updateStrategy), the
+// update is downloaded in the background and the menus offer "Restart to
+// update"; everywhere else, and whenever that fails, they offer the release
+// page, with one notification per new version either way.
 // ---------------------------------------------------------------------------
 
 /** { version, url } once a newer release has been seen, for the menus. */
 let availableUpdate = null
 let updateChecker = null
+/** The update flow (auto-update.cjs); null where this install cannot update itself. */
+let autoUpdater = null
 
 /** Open the release page: only a URL that passes releasePageUrl again, never anything else. */
 function openUpdate() {
   const url = availableUpdate && releasePageUrl(availableUpdate.url)
   if (url) shell.openExternal(url)
+}
+
+/** "Restart to update to vX.Y.Z": install the downloaded update and start it. */
+function applyUpdate() {
+  if (autoUpdater) autoUpdater.apply()
+}
+
+/** The "Update automatically" checkbox. */
+function setAutoUpdate(flag) {
+  if (autoUpdater) autoUpdater.setEnabled(flag, availableUpdate)
+}
+
+function canWrite(target) {
+  try {
+    fs.accessSync(target, fs.constants.W_OK)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * The platform's update backend, or null when this install can only be
+ * updated by hand (the reason is logged once).
+ */
+function createUpdateBackend(currentVersion) {
+  const strategy = updateStrategy({
+    platform: process.platform,
+    arch: process.arch,
+    packaged: app.isPackaged,
+    execPath: process.execPath,
+    env: process.env,
+    canWrite,
+  })
+  if (strategy.kind === 'mac-swap') {
+    return createMacBackend({
+      bundle: strategy.bundle,
+      parent: strategy.parent,
+      currentVersion,
+      arch: process.arch,
+      userData: app.getPath('userData'),
+      // Why the server too: it runs on this app's own binary, from inside the
+      // bundle that is about to be moved.
+      getPids: () => {
+        const child = server.get()
+        return [process.pid, child ? child.pid : undefined]
+      },
+      // The relaunched app gets what this one was started with (--compact)
+      argv: process.argv.slice(1),
+    })
+  }
+  if (strategy.kind === 'electron-updater') {
+    return createElectronUpdaterBackend({
+      currentVersion,
+      platform: process.platform,
+      beforeInstall() {
+        // Why: on Linux the new AppImage is started before this process has
+        // gone. It must find the single-instance lock free and no old server
+        // on the port, or it would hand over to an app that is about to exit.
+        stopServer()
+        if (process.platform === 'linux') app.releaseSingleInstanceLock()
+      },
+    })
+  }
+  console.log(`[update] This install cannot update itself (${strategy.reason}); a new version is offered as a download`)
+  return null
 }
 
 function startUpdateCheck() {
@@ -455,17 +532,46 @@ function startUpdateCheck() {
   // screenshot run (AGENT_OFFICE_SCREENSHOT) must not reach the network either.
   if (updateChecker || !app.isPackaged || process.env.AGENT_OFFICE_SCREENSHOT) return
   const currentVersion = app.getVersion()
+  const stateFile = path.join(app.getPath('userData'), UPDATE_STATE_FILE_NAME)
+  const backend = createUpdateBackend(currentVersion)
+  if (backend) {
+    autoUpdater = createAutoUpdater({
+      currentVersion,
+      stateFile,
+      backend,
+      onChange: refreshMenus,
+      notifyReady({ version }) {
+        if (!Notification.isSupported()) return
+        const note = new Notification({
+          title: `${APP_NAME} ${version} is ready`,
+          body: 'Click to restart and update, or use "Restart to update" in the tray menu.',
+        })
+        note.on('click', applyUpdate)
+        note.show()
+      },
+      // The fallback: the same "is available" notification as with no updater
+      announce: (update) => { if (updateChecker) updateChecker.announce(update) },
+      quit: quitApp,
+    })
+    refreshMenus()
+  }
   updateChecker = createUpdateChecker({
     currentVersion,
-    stateFile: path.join(app.getPath('userData'), UPDATE_STATE_FILE_NAME),
+    stateFile,
     fetchRelease: () => fetchLatestRelease({ version: currentVersion }),
     onUpdate(update) {
       const changed = !availableUpdate || availableUpdate.version !== update.version
       availableUpdate = update
-      if (changed) {
-        console.log(`[update] ${update.version} is available (running ${currentVersion})`)
-        refreshMenus()
-      }
+      if (changed) console.log(`[update] ${update.version} is available (running ${currentVersion})`)
+      // Why offered before the menus are rebuilt: a download that starts
+      // here already shows "Downloading update", so the menus never hold the
+      // "Download" item for an update the app is about to fetch itself.
+      const handled = autoUpdater ? autoUpdater.offer(update) : false
+      if (changed) refreshMenus()
+      // Why returned: true means the update is being downloaded, so the
+      // checker holds back "is available"; the user hears once, when it is
+      // ready (or "is available" after all, if the download fails).
+      return handled
     },
     notify(update) {
       if (!Notification.isSupported()) return
@@ -754,6 +860,10 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     quitting = true
     if (tray) { tray.dispose(); tray = null }
     if (updateChecker) { updateChecker.stop(); updateChecker = null }
+    // Why before the server stops: a downloaded update is installed on the
+    // way out, and on macOS the swap helper is told which processes to wait
+    // for, the server child among them. A no-op after "Restart to update".
+    if (autoUpdater) autoUpdater.applyOnQuit()
     stopServer()
   })
 
