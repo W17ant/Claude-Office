@@ -4,6 +4,7 @@
  */
 
 import { officeHttpBase } from './serverUrl'
+import { officeAuthHeaders } from './officeAuth'
 
 /** One day's counts, as GET /recap answers (see server/recap.js for each definition). */
 export interface RecapStats {
@@ -38,7 +39,8 @@ export async function fetchRecap(date?: string): Promise<RecapStats | null> {
   try {
     const query = date ? `?date=${encodeURIComponent(date)}` : ''
     // Why 3 s: the popover shows "loading" meanwhile; longer means the server is not there
-    const res = await fetch(`${officeHttpBase()}/recap${query}`, { signal: AbortSignal.timeout(3000) })
+    // Why the auth headers: through a proxy (Tailscale, phone mode) the server wants the token in a header
+    const res = await fetch(`${officeHttpBase()}/recap${query}`, { signal: AbortSignal.timeout(3000), headers: officeAuthHeaders() })
     if (!res.ok) return null
     const body = await res.json()
     return body && typeof body.date === 'string' ? (body as RecapStats) : null
