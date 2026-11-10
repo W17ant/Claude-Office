@@ -8,6 +8,8 @@ import Character from './components/Character'
 import ResilientImg from './components/ResilientImg'
 import FurnitureRenderer from './components/FurnitureRenderer'
 import { DESK_GEOMETRY, deskScreens, previewScreens, type DeskScreen } from './screens'
+import RoomLife from './components/RoomLife'
+import { filingOpen, printJob, tvMode, waterBusy, type LastSignal } from './roomLife'
 import SessionStrip from './components/SessionStrip'
 import Meters from './components/Meters'
 import AgentCard from './components/AgentCard'
@@ -73,6 +75,8 @@ function makeMsgId() { return -(nextMsgId++) }
 
 // Waypoints for the main office
 const MAIN_WAYPOINTS = MAIN_ROOM.waypoints ?? []
+// Where people stand at the water cooler (it bubbles while someone is there)
+const WATER_SPOTS = MAIN_ROOM.agentSpots.filter(s => s.type === 'water')
 // The main room's desks for the ?screens= preview, with whether their screens face us
 const PREVIEW_DESKS = MAIN_ROOM.furniture
   .filter(f => DESK_GEOMETRY[f.sprite])
@@ -305,6 +309,16 @@ const App: React.FC = () => {
 
   // Track interactive furniture state (coffee on/off, filing open/closed)
   const [furnitureStates, setFurnitureStates] = useState<Record<string, string>>({})
+  // The room's props (RoomLife, src/roomLife.ts): the last signal heard drives the
+  // deploy TV and the printer; the bell rings on each bump
+  const [lastSignal, setLastSignal] = useState<LastSignal | null>(null)
+  const [bellRings, setBellRings] = useState(0)
+  // Why a 10 s tick: the TV's SHIPPED / ROLLBACK and a stale deploy end by the clock
+  const [roomClock, setRoomClock] = useState(() => Date.now())
+  useEffect(() => {
+    const t = setInterval(() => setRoomClock(Date.now()), 10_000)
+    return () => clearInterval(t)
+  }, [])
 
   // Visual flicker state for power-flicker event
   const [flickering, setFlickering] = useState(false)
@@ -388,7 +402,7 @@ const App: React.FC = () => {
       if (verdict === 'redirected') return
 
       // Play sound if specified
-      if (interaction.sound === 'bell') sfx.playBell()
+      if (interaction.sound === 'bell') { sfx.playBell(); setBellRings(n => n + 1) }
       else if (interaction.sound === 'notification') sfx.playNotification()
       else if (interaction.sound === 'coffee') sfx.playCoffee()
 
@@ -677,6 +691,7 @@ const App: React.FC = () => {
       })
     }
     if (action.type === 'signal') {
+      setLastSignal({ kind: action.kind, at: Date.now() })
       const worker = action.agentId ? agentsRef.current.find(a => a.id === action.agentId) : undefined
       const input = signalIncidentInput(action, Date.now(), worker?.name)
       if (input) dispatchIncident(input)
@@ -1403,13 +1418,18 @@ const App: React.FC = () => {
     setMessages(prev => prev.map(m => (m.id === messageId ? { ...m, reactions } : m)))
   }, [])
 
-  // Why: a new items array every frame would re-render all 24 furniture sprites
   // What each desk's monitors show (src/screens.ts). Why the string key: agents
   // change every walking frame, but the screens only when someone's mode does,
   // and the memoised furniture must not re-render on every step
   const deskScreensKey = JSON.stringify(previewScreens(PREVIEW_DESKS) ?? deskScreens(agents, typingAgents))
   const deskScreenModes = useMemo(() => JSON.parse(deskScreensKey) as Record<string, DeskScreen>, [deskScreensKey])
+  // The room's props (src/roomLife.ts): the filing cabinet opens while an agent reads files
+  const filesOpen = filingOpen(agents)
+  // Why memoised: a fresh object each render would re-render every furniture sprite
+  const printedPage = useMemo(() => printJob(lastSignal), [lastSignal])
+  // Why: a new items array every frame would re-render all 24 furniture sprites
   const furnitureItems = useMemo(() => MAIN_ROOM.furniture.map(item => {
+    if (item.id === 'filing-1' && filesOpen) return { ...item, sprite: 'filing-open' }
     const stateOverride = furnitureStates[item.id]
     if (!stateOverride) return item
     // Swap sprite based on state
@@ -1423,7 +1443,7 @@ const App: React.FC = () => {
       return { ...item, sprite: 'printer-broken' }
     }
     return item
-  }), [furnitureStates])
+  }), [furnitureStates, filesOpen])
 
   // ---------------------------------------------------------------------------
   // Render — helper mode renders PlacementHelper in place of the full app
@@ -1483,8 +1503,19 @@ const App: React.FC = () => {
             }}
           />
 
+          {/* The wall props come alive: deploy TV, city windows, water cooler, bell, extinguisher */}
+          <RoomLife
+            tv={tvMode(agents, lastSignal, roomClock)}
+            night={forcedNight ? 1 : dayNightMode === 'auto' ? nightOpacity : dayNightMode === 'night' ? 1 : 0}
+            incident={variant === 'incident'}
+            waterBusy={waterBusy(agents, WATER_SPOTS)}
+            bellKey={(officeRef.current?.handoverSeq ?? 0) + bellRings}
+            dayImage={getRoomImage('day')}
+            nightImage={getRoomImage('night')}
+          />
+
           {/* Furniture — apply interactive state overrides */}
-          <FurnitureRenderer onItemClick={handleFurnitureClick} items={furnitureItems} screens={deskScreenModes} />
+          <FurnitureRenderer onItemClick={handleFurnitureClick} items={furnitureItems} screens={deskScreenModes} printJob={printedPage} />
 
           {/* The session's real task list on the kanban whiteboard (nothing drawn while no session has tasks) */}
           <TaskBoard sessions={sessions} night={forcedNight ? 1 : dayNightMode === 'auto' ? nightOpacity : dayNightMode === 'night' ? 1 : 0} onActivate={() => handleFurnitureClick('kanban-board')} />

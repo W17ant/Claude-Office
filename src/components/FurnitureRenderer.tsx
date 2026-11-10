@@ -8,6 +8,8 @@ import { DESK_GEOMETRY, type DeskScreen } from '../screens'
 interface FurnitureRendererProps {
   items: FurnitureItem[]
   onItemClick?: (itemId: string) => void
+  /** A page the printer is printing (roomLife.ts printJob): a green one or a red one, keyed by when */
+  printJob?: { ok: boolean; at: number } | null
   /** What each desk's two monitors show, by furniture id (screens.ts deskScreens) */
   screens?: Record<string, DeskScreen>
 }
@@ -28,6 +30,45 @@ function getSpriteHeight(sprite: string): number {
   return asset?.height ?? 64
 }
 
+// Why: still pictures instead of motion when the viewer asks for less
+const MOVE = !(typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches)
+
+/** Wisps of steam curling up from a coffee machine that is on (over the sprite's own painted steam). */
+function CoffeeSteam() {
+  if (!MOVE) return null
+  return (
+    <svg viewBox="0 0 100 100" aria-hidden="true" style={{ position: 'absolute', left: '5%', bottom: '78%', width: '55%', height: '70%', pointerEvents: 'none', overflow: 'visible' }}>
+      {[[30, '2.6s', '0s'], [55, '3.1s', '0.9s'], [75, '2.8s', '1.7s']].map(([x, dur, begin]) => (
+        <path key={x as number} d={`M ${x} 100 q -10 -20 0 -40 q 10 -20 0 -40`} fill="none" stroke="#f1f5f9" strokeWidth={5} strokeLinecap="round" opacity={0}>
+          <animate attributeName="opacity" values="0;0.7;0" dur={dur as string} begin={begin as string} repeatCount="indefinite" />
+          <animateTransform attributeName="transform" type="translate" values="0 10;0 -20" dur={dur as string} begin={begin as string} repeatCount="indefinite" />
+        </path>
+      ))}
+    </svg>
+  )
+}
+
+/**
+ * A page sliding out into the printer's tray when a build, test run or deploy
+ * finishes, its top stripe green or red. Mounted afresh per job (keyed), so
+ * its animation starts as it appears.
+ */
+function PrintedPage({ ok }: { ok: boolean }) {
+  // Why these points: the tray's paper on printer-working.png, as % of the sprite
+  const sheet = '15,72 37,63 48,75 25,83'
+  return (
+    <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 2 }}>
+      <g opacity={MOVE ? 0 : 1}>
+        {MOVE && <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.15;0.8;1" dur="5s" fill="freeze" />}
+        {MOVE && <animateTransform attributeName="transform" type="translate" values="9 -9;0 0;0 0" keyTimes="0;0.35;1" dur="5s" fill="freeze" />}
+        <polygon points={sheet} fill="#f8fafc" stroke="#94a3b8" strokeWidth={0.6} />
+        <polygon points="17.5,72 37,64 39,66.5 19.5,74.5" fill={ok ? '#22c55e' : '#ef4444'} />
+        {[0, 1, 2].map(i => <line key={i} x1={22 + i * 2} y1={76 + i * 2.2} x2={38 + i * 2} y2={69.5 + i * 2.2} stroke="#94a3b8" strokeWidth={0.8} />)}
+      </g>
+    </svg>
+  )
+}
+
 // Items that the boss can interact with
 const CLICKABLE_TYPES = new Set([
   'coffee-machine', 'filing-cabinet', 'printer',
@@ -35,7 +76,7 @@ const CLICKABLE_TYPES = new Set([
   'hotspot',
 ])
 
-const FurnitureRenderer: React.FC<FurnitureRendererProps> = ({ items, onItemClick, screens }) => {
+const FurnitureRenderer: React.FC<FurnitureRendererProps> = ({ items, onItemClick, screens, printJob }) => {
   return (
     <>
       {items.map(item => {
@@ -105,6 +146,8 @@ const FurnitureRenderer: React.FC<FurnitureRendererProps> = ({ items, onItemClic
               draggable={false}
             />
             {desk && deskScreen && <DeskScreens geometry={desk} screens={deskScreen} layer="front" />}
+            {item.sprite === 'coffee-on' && <CoffeeSteam />}
+            {item.type === 'printer' && item.sprite !== 'printer-broken' && printJob && <PrintedPage key={printJob.at} ok={printJob.ok} />}
           </div>
         )
       })}
