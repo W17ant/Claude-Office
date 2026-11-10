@@ -64,7 +64,9 @@ import { join, relative, resolve, sep, extname } from 'node:path'
 // far.
 // Why 60 MB: the last 28 festive cycles (336 frames) took public/ to 58.4 MB;
 // 1.6 MB of headroom keeps a stray full-resolution export visible.
-export const BUDGET_BYTES = 60_000_000
+// Why 62 MB: the four new rooms (16 WebP backgrounds, ~1.7 MB) and their
+// furniture sprites (~0.2 MB) took public/ to 60.4 MB; same headroom.
+export const BUDGET_BYTES = 62_000_000
 
 const SOURCE_ROOTS = ['src', 'index.html', 'server', 'electron', 'hooks', 'commands']
 const SOURCE_EXT = new Set(['.ts', '.tsx', '.js', '.cjs', '.mjs', '.html', '.css', '.md', '.sh', '.json', '.py'])

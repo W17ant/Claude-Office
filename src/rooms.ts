@@ -295,6 +295,10 @@ export const ROOMS: Record<RoomId, Room> = {
       day: '/rooms/corridor-day.webp',
       night: '/rooms/corridor-night.webp',
     },
+    backgroundDm: {
+      day: '/rooms/corridor-day-dm.webp',
+      night: '/rooms/corridor-night-dm.webp',
+    },
     width: 800,
     height: 600,
     furniture: [],
@@ -332,6 +336,10 @@ export const ROOMS: Record<RoomId, Room> = {
     background: {
       day: '/rooms/meeting-room-day.webp',
       night: '/rooms/meeting-room-night.webp',
+    },
+    backgroundDm: {
+      day: '/rooms/meeting-room-day-dm.webp',
+      night: '/rooms/meeting-room-night-dm.webp',
     },
     width: 800,
     height: 600,
@@ -393,6 +401,10 @@ export const ROOMS: Record<RoomId, Room> = {
       day: '/rooms/server-room-day.webp',
       night: '/rooms/server-room-night.webp',
     },
+    backgroundDm: {
+      day: '/rooms/server-room-day-dm.webp',
+      night: '/rooms/server-room-night-dm.webp',
+    },
     width: 800,
     height: 600,
     furniture: [
@@ -443,6 +455,10 @@ export const ROOMS: Record<RoomId, Room> = {
     background: {
       day: '/rooms/lunch-room-day.webp',
       night: '/rooms/lunch-room-night.webp',
+    },
+    backgroundDm: {
+      day: '/rooms/lunch-room-day-dm.webp',
+      night: '/rooms/lunch-room-night-dm.webp',
     },
     width: 800,
     height: 600,
