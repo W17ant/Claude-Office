@@ -117,7 +117,9 @@ export function useHeadAnchor(src: string, enabled: boolean): HeadAnchor | null 
   useEffect(() => {
     if (!enabled) { setAnchor(null); return }
     let live = true
-    setAnchor(anchors.get(src) ?? null)
+    // Why keep the previous anchor: while a walk frame is measured for the
+    // first time the hat stays where it was rather than vanishing for a frame
+    setAnchor(prev => anchors.get(src) ?? prev)
     void measureHead(src).then(a => { if (live) setAnchor(a) })
     return () => { live = false }
   }, [src, enabled])
