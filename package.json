@@ -1,5 +1,5 @@
 {
-  "name": "agent-office",
+  "name": "@w17ant/agent-office",
   "productName": "Agent Office",
   "version": "1.1.2",
   "description": "Pixel art office visualization for AI agents powered by Claude Code hooks",
@@ -12,6 +12,26 @@
   "homepage": "https://github.com/W17ant/Claude-Office",
   "bugs": "https://github.com/W17ant/Claude-Office/issues",
   "type": "module",
+  "bin": {
+    "agent-office": "cli/agent-office.mjs"
+  },
+  "files": [
+    "cli/",
+    "server/",
+    "dist/",
+    "hooks/",
+    "scripts/open-office.mjs",
+    "scripts/doctor.mjs",
+    "scripts/stop-office.sh",
+    "electron/helpers.cjs",
+    "NOTICE.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite",
@@ -33,15 +53,13 @@
     "install-status-line": "bash hooks/install-hooks.sh --status-line-only",
     "uninstall-hooks": "bash hooks/install-hooks.sh --uninstall",
     "doctor": "node scripts/doctor.mjs",
-    "version": "node scripts/sync-plugin-version.mjs && git add .claude-plugin/plugin.json"
+    "version": "node scripts/sync-plugin-version.mjs && git add .claude-plugin/plugin.json",
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
     "better-sqlite3": "^12.8.0",
-    "concurrently": "^8.2.2",
     "express": "^4.19.2",
     "qrcode-terminal": "0.12.0",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
     "ws": "^8.18.0"
   },
   "devDependencies": {
@@ -50,8 +68,11 @@
     "@types/react-dom": "^18.3.0",
     "@types/ws": "^8.5.12",
     "@vitejs/plugin-react": "^4.3.1",
+    "concurrently": "^8.2.2",
     "electron": "^33.0.0",
     "electron-builder": "^24.13.3",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
     "supertest": "^7.3.1",
     "typescript": "^5.5.3",
     "vite": "^5.4.0",
@@ -60,6 +81,9 @@
   "build": {
     "appId": "com.agentoffice.app",
     "productName": "Agent Office",
+    "extraMetadata": {
+      "name": "agent-office"
+    },
     "artifactName": "Agent-Office-${version}-${os}-${arch}.${ext}",
     "directories": {
       "output": "release",

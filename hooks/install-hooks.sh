@@ -650,6 +650,16 @@ echo -e "${GREEN}Installation complete!${RESET}"
 echo ""
 echo "Next steps:"
 echo ""
+# AGENT_OFFICE_START_HINT: set by cli/agent-office.mjs (the npx install), whose
+# copy of this script lives in ~/.agent-office/hooks, not in a checkout to cd to
+if [ -n "${AGENT_OFFICE_START_HINT:-}" ]; then
+echo "  1. Start the office (server + UI) and open it in your browser:"
+echo "       $AGENT_OFFICE_START_HINT"
+echo ""
+echo "  2. Keep that terminal open (Ctrl+C stops the office), or start it"
+echo "     with --detach and stop it later with the stop command."
+echo ""
+else
 echo "  1. Start the Agent Office server:"
 echo "       cd $(dirname "$SCRIPT_DIR")"
 echo "       npm run server"
@@ -658,6 +668,7 @@ echo "  2. Start the Agent Office UI:"
 echo "       npm run dev           # browser"
 echo "       npm run dev:electron  # desktop app"
 echo ""
+fi
 if [ "$HOOKS" = "1" ]; then
 echo "  3. Use Claude Code normally. When you (or Claude) use the Agent"
 echo "     tool or any MCP tool, a character will appear in the office."
