@@ -12,7 +12,9 @@
  * before the last slot says "+N". Hovering a post-it shows what it is (the
  * activeForm while in progress) in a caption above the board. The board shows
  * the session whose tasks changed last, with its name in the corner; with
- * several sessions' boards up, a click shows the next one. A click also does
+ * several sessions' boards up, a click shows the next one. An agent team's
+ * shared task list is a board of its own in that cycle, labelled 👥 and the
+ * team's name, its members' names in the tooltip. A click also does
  * what the board's hotspot always did (the boss walks over and reads it out).
  *
  * With no session's tasks it draws nothing at all: the decorative board stays
@@ -23,8 +25,8 @@ import React, { useState } from 'react'
 import { useTheme } from '../theme'
 import type { SessionInfo } from '../types'
 import {
-  BOARD_RECT, COLUMNS, FX_MS, boardCounts, boardLabel, columnView, cycleTaskBoards, isBlocked, shownBoard, taskCaption,
-  useTaskBoards, type BoardTask, type TaskBoardInfo, type TaskFx,
+  BOARD_RECT, COLUMNS, FX_MS, boardCounts, boardKey, boardLabel, columnView, cycleTaskBoards, isBlocked, shownBoard, taskCaption,
+  teamMembersLine, useTaskBoards, type BoardTask, type TaskBoardInfo, type TaskFx,
 } from '../taskBoard'
 import '../styles/taskboard.css'
 
@@ -68,11 +70,13 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ sessions, night, onActivate }) =>
   const label = boardLabel(board, sessions, state.boards.indexOf(board), state.boards.length)
   // Only the latest change animates, and only while it is fresh: cycling back
   // to a board later does not replay it
-  const fresh = state.fx && state.fx.sessionId === board.sessionId && Date.now() - state.fx.at < FX_MS
+  const fresh = state.fx && state.fx.boardId === boardKey(board) && Date.now() - state.fx.at < FX_MS
   const fx: Record<string, TaskFx> = fresh ? state.fx!.tasks : {}
   const keep = Object.keys(fx)
   const counts = boardCounts(board)
   const hoveredTask = hovered ? board.tasks.find(t => t.id === hovered) : undefined
+  const members = teamMembersLine(board)
+  const what = board.team ? `Team ${board.team.name}'s task board${members ? ` (${members})` : ''}` : 'Task board'
 
   const activate = (e: React.SyntheticEvent) => {
     e.stopPropagation()
@@ -93,8 +97,8 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ sessions, night, onActivate }) =>
         }}
         role="button"
         tabIndex={0}
-        aria-label={`Task board, ${label}: ${counts.pending} to do, ${counts.in_progress} in progress, ${counts.completed} done${several ? '. Click for the next session' : ''}`}
-        title={several ? 'Task board: click for the next session' : 'Task board'}
+        aria-label={`${what}, ${label}: ${counts.pending} to do, ${counts.in_progress} in progress, ${counts.completed} done${several ? '. Click for the next board' : ''}`}
+        title={several ? `${what}: click for the next board` : what}
         onClick={activate}
         onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') activate(e) }}
       >

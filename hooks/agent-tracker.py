@@ -426,7 +426,74 @@ if hook_event in ('TaskCreated', 'TaskCompleted'):
         })
     sys.exit(0)
 
+# Elicitation {mcp_server_name, message, mode?: form|url, url?,
+# elicitation_id?, requested_schema?} — an MCP server asks the user for input
+# in the middle of a tool call (a form, or a URL to open for a sign-in).
+# Shape from the hooks reference (https://code.claude.com/docs/en/hooks,
+# "Elicitation input"); never fired here. The hand goes up with the server's
+# name only. Why not the question: `message` is the server's own text ("Please
+# provide your credentials"), `url` may carry an auth state, and
+# requested_schema names the fields it wants — none of it is needed to say
+# "this terminal is waiting on you", and none of it reaches the office.
+# Nothing is printed: on this event stdout would ANSWER the elicitation
+# (accept / decline / cancel) instead of letting the dialog ask.
+if hook_event == 'Elicitation':
+    server = one_line(d.get('mcp_server_name'), 80)
+    event = {'type': 'session_needs_you', 'kind': 'elicitation', 'summary': server or 'MCP server'}
+    if d.get('agent_id'):
+        event['agentId'] = str(d['agent_id'])
+    emit_session(event)
+
+# ElicitationResult {mcp_server_name, action: accept|decline|cancel, mode?,
+# elicitation_id?, content?} — the user answered (or dismissed) the dialog and
+# the answer is about to go back to the server. Also fires on decline and
+# cancel; not at all when an Elicitation hook answered by itself (the MCP
+# call's own completion lowers the hand then). `content` is what the user
+# typed into the form and never leaves this script. Nothing is printed: here
+# stdout would REPLACE the user's answer.
+ELICITATION_ACTIONS = ('accept', 'decline', 'cancel')
+if hook_event == 'ElicitationResult':
+    action = d.get('action')
+    event = {'type': 'session_elicitation_done', 'server': one_line(d.get('mcp_server_name'), 80)}
+    if action in ELICITATION_ACTIONS:
+        event['elicitationAction'] = action
+    emit_session(event)
+
+# TeammateIdle {teammate_name, team_name (deprecated), agent_id?} — an agent
+# team teammate finished its turn and is about to go idle (hooks reference,
+# "TeammateIdle input"; never fired here: agent teams are off on this
+# machine). Teammates usually go idle right after marking a task done, so the
+# event makes the server read the team's task list (server/tasks.js) at once.
+# Nothing is printed and the exit is 0: exit 2 or {"continue": false} on this
+# event would keep the teammate working or stop it.
+if hook_event == 'TeammateIdle':
+    event = {'type': 'teammate_idle', 'name': one_line(d.get('teammate_name'), 80)}
+    if d.get('agent_id'):
+        event['agentId'] = str(d['agent_id'])
+    emit_session(event)
+
 if not tool_name:
+    sys.exit(0)
+
+# PermissionDenied {tool_name, tool_input, tool_use_id, reason, mcp_server?} —
+# auto mode's classifier refused a tool call (only in auto mode: a dialog the
+# user denies, a deny rule or a PreToolUse block never fire it). Hooks
+# reference "PermissionDenied input"; never fired here. Sent like a failed
+# tool call (PostToolUseFailure below), with `denied`, on the character that
+# asked: the tool's name, never its input. `reason` is forwarded only in the
+# documented bracketed-category form ("[Irreversible Local Destruction]") —
+# anything else could quote the command, so it stays behind. Its exit code and
+# output are ignored by Claude Code. Handled here, above the MCP and Agent
+# sections, because the payload carries a tool_name like a tool call.
+DENIAL_CATEGORY = re.compile(r'^\[([^\[\]\n]{1,60})\]$')
+if hook_event == 'PermissionDenied':
+    why = DENIAL_CATEGORY.match(str(d.get('reason') or '').strip())
+    status = f"denied: {str(tool_name)[:60]} (auto mode{' — ' + why.group(1).strip() if why else ''})"
+    event = {'type': 'agent_working', 'status': status, 'failed': True, 'denied': True, 'tool': str(tool_name)[:80]}
+    if d.get('agent_id'):
+        event['agentId'] = str(d['agent_id'])
+        event['agentType'] = str(d.get('agent_type') or 'general-purpose')
+    emit(event)
     sys.exit(0)
 
 # ── MCP tool calls  (tool names match pattern: mcp__<server>__<tool>) ──────

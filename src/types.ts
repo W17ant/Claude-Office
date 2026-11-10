@@ -101,8 +101,11 @@ export interface AgentScene {
 /** What a session's main thread (its Claude) is doing — the server's `main.state` */
 export type MainState = 'working' | 'waiting' | 'idle' | 'needs-you' | 'error' | 'compacting'
 
-/** `registry`: an unhooked session whose registry status is "waiting" (a dialog or question in its terminal) */
-export type NeedsYouKind = 'permission' | 'idle' | 'quota' | 'agent-input' | 'registry'
+/**
+ * `registry`: an unhooked session whose registry status is "waiting" (a dialog or question in its terminal).
+ * `elicitation`: an MCP server asked the user something (the Elicitation hook); `summary` is the server's name.
+ */
+export type NeedsYouKind = 'permission' | 'idle' | 'quota' | 'agent-input' | 'registry' | 'elicitation'
 
 /** Why a session is waiting on a person (session_needs_you / main.needsYou) */
 export interface NeedsYou {
@@ -370,6 +373,8 @@ export interface OfficeEvent {
   unread?: number
   // agent_working: the tool call errored (PostToolUseFailure)
   failed?: boolean
+  // agent_working: auto mode refused the call (PermissionDenied); always with failed
+  denied?: boolean
   // variant_change: the server relayed /incident or /all-clear to every client
   // (reason is also why a session_ended session ended)
   variant?: 'none' | 'incident'
@@ -380,6 +385,8 @@ export interface OfficeEvent {
   // every board at once (`boards`, from the snapshot)
   board?: TaskBoardInfo | null
   boards?: TaskBoardInfo[]
+  // task_board: which board it is when it is an agent team's (`team:<name>`); a session's own board has none
+  boardId?: string
   // connection: the WebSocket opened or closed — dispatched by useAgentSocket, not sent by the server
   socket?: 'open' | 'closed'
 }

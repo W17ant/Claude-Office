@@ -49,6 +49,7 @@ export async function loadOffice(opts: LoadOptions = {}): Promise<Office> {
     // failed agents, permission waits): notify.sh is swapped for an empty
     // script. A test that wants to see the arguments passes its own.
     AGENT_OFFICE_NOTIFY_SCRIPT: '/dev/null',
+    AGENT_OFFICE_TEAMS_DIR: join(dir, 'teams'),
     ...(opts.env ?? {}),
   })
   for (const [key, value] of extra) process.env[key] = value
