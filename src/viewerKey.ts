@@ -26,6 +26,7 @@ import {
   WS_PROTOCOL, officeWsProtocols, pageStorages, splitHashParam,
   type HashLocation, type ReplaceHistory, type TokenStorage,
 } from './officeToken'
+import { phoneWsProtocols } from './phoneSecret'
 
 export const VIEWER_KEY_STORAGE = 'agent-office.viewer'
 /** The server's viewer key: 32 random bytes as 64 lowercase hex digits (server/lan.js). */
@@ -111,10 +112,25 @@ export function mayCarryOfficeToken(loc: { protocol: string; hostname: string })
 }
 
 /**
- * The subprotocols this page's WebSocket offers: the viewer key on a viewer
- * page, the office token where it may travel, else just the office's own.
+ * The subprotocols this page's WebSocket offers: the phone secret on a
+ * phone-full page (src/phoneSecret.ts), the viewer key on a viewer page, the
+ * office token where it may travel, else just the office's own.
+ * @param opts.viewerKey the kept viewer key, or null
+ * @param opts.safe mayCarryOfficeToken for this page
+ * @param opts.token the office token (tests pass it; read from storage when left out)
+ * @param opts.phone set on a phone-full page only: the kept phone secret, or null
+ * @returns the list for `new WebSocket(url, protocols)`
  */
-export function pageWsProtocols(opts: { viewerKey: string | null; safe: boolean; token?: string | null }): string[] {
+export function pageWsProtocols(opts: {
+  viewerKey: string | null
+  safe: boolean
+  token?: string | null
+  phone?: { secret: string | null }
+}): string[] {
+  // Why first, and why nothing else even without a secret: a phone-full page
+  // is https, so `safe` is true and the rules below would offer the office
+  // token to the full-mode listener, which refuses it
+  if (opts.phone) return phoneWsProtocols(opts.phone.secret)
   if (opts.viewerKey) return viewerWsProtocols(opts.viewerKey)
   if (!opts.safe) return [WS_PROTOCOL]
   return opts.token === undefined ? officeWsProtocols() : officeWsProtocols(opts.token)

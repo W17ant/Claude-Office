@@ -503,9 +503,9 @@ Everything is optional; the defaults are the office as described above. Set thes
 |---|---|---|---|
 | `AGENT_OFFICE_PORT` | `3334` | server, hook, status line, office scripts, `npm run doctor`, Vite dev (proxy and page), desktop app and tray | The office server's port. Not a port (letters, `0`, `70000`)? The server warns and uses 3334, as do Vite and the desktop app; the shell hooks and scripts use the value as given, so fix it rather than rely on that. The page served by the server needs nothing: it talks to the origin it was loaded from |
 | `AGENT_OFFICE_HOST` | `127.0.0.1` | server | The bind address, **IPv4 loopback only**: `127.0.0.1` or `localhost`, and both bind `127.0.0.1` (`localhost` is not left to the resolver, which may answer `::1`). `::1` is refused too, with the reason logged: the office scripts, `npm run doctor`, the desktop app and `/agent-office:office` all dial `127.0.0.1`, which a server on `[::1]` alone would refuse. Anything else (`0.0.0.0`, a LAN address) is refused with the reason logged and the server binds `127.0.0.1` — see [Security](#security) |
-| `AGENT_OFFICE_LAN` | off | server (`npm run lan` sets it) | `1` opens phone mode's **watch-only** second listener on this machine's private Wi-Fi address — see [Phone mode](#phone-mode). The loopback listener is unchanged |
-| `AGENT_OFFICE_LAN_HOST` | the first private (RFC 1918) IPv4 of this machine | server | The LAN listener's address. It must itself be a `10.x`, `172.16–31.x` or `192.168.x` address: `0.0.0.0`, loopback, public addresses and names are refused with the reason logged, and LAN mode stays off |
-| `AGENT_OFFICE_LAN_PORT` | `3335` | server | The LAN listener's port |
+| `AGENT_OFFICE_LAN` | off | server (`npm run lan` sets it) | `1` (or `true`) opens phone mode's **watch-only** second listener on this machine's private Wi-Fi address. `full` (`npm run lan -- --full`) opens the **full office** there instead, over HTTPS only, behind the phone secret and a route allowlist. Any other value leaves both off — see [Phone mode](#phone-mode). The loopback listener is unchanged |
+| `AGENT_OFFICE_LAN_HOST` | the first private (RFC 1918) IPv4 of this machine | server | The LAN listener's address, in either mode. It must itself be a `10.x`, `172.16–31.x` or `192.168.x` address: `0.0.0.0`, loopback, public addresses and names are refused with the reason logged, and LAN mode stays off |
+| `AGENT_OFFICE_LAN_PORT` | `3335` | server | The LAN listener's port, in either mode |
 | `AGENT_OFFICE_ALLOWED_HOSTS` | none | server, `npm run open -- --host` (a hint only) | Comma-separated host names (`my-mac.tail1234.ts.net`, optionally `:port`) a local HTTPS proxy such as `tailscale serve` reaches the office by: the loopback listener's Host guard accepts them and the origin allowlist accepts `https://<name>[:port]`. Through such a name every route but the static UI needs a token, and the WebSocket the office token. Host names only — a wildcard, scheme, path or IP address is logged and ignored. Never with `tailscale funnel`. See [Phone mode](#phone-mode) |
 | `AGENT_OFFICE_UI_PORT` | `3333` | `start-office.sh`, `stop-office.sh`, the server's origin allowlist | The Vite dev server's port (`start-office.sh` runs `vite --port`); `npm run dev` always uses 3333 |
 | `AGENT_OFFICE_HOME` | `~/.agent-office` | server, hook, status line, scripts | The runtime dir: auth token, `agents.json`, `chat.db`, inbox files, pid files |
@@ -533,10 +533,12 @@ The server always binds `127.0.0.1` (IPv4 loopback): `AGENT_OFFICE_HOST` may
 spell it `127.0.0.1` or `localhost`, both of which bind `127.0.0.1`, and `::1`
 and anything else are refused with the reason and `127.0.0.1` bound. So, unless
 you opt into [phone mode](#phone-mode), it is never on the network. (Phone
-mode adds two opt-in exceptions, each with its own rules below: a separate
-watch-only listener on your LAN address, and host names a local HTTPS proxy
-may use to reach the loopback listener. Neither changes anything in this
-section for the loopback listener itself.) The threat it defends against is therefore what else
+mode adds three opt-in exceptions, each with its own rules below: a separate
+watch-only listener on your LAN address; in its place, when asked for, an
+HTTPS listener there that serves the full office behind its own secret and a
+route allowlist; and host names a local HTTPS proxy may use to reach the
+loopback listener. None changes anything in this section for the loopback
+listener itself.) The threat it defends against is therefore what else
 runs on the same machine: a malicious npm dependency, or another local user on
 a shared host. Loopback is not user-isolated — any local process can reach the
 port, open the WebSocket and send any `Origin` or `Host` header it likes
@@ -570,7 +572,10 @@ line to the network, and the token travels in clear HTTP.
 Phone mode's LAN listener is the answer to "but I want to see it on my
 phone": a *second* listener that serves no API route, never accepts the
 office token, and carries a stream with that task and status text taken out
-([Phone mode](#phone-mode)).
+([Phone mode](#phone-mode)). Its full mode is the answer to "and answer
+from it": the same address, HTTPS only, a secret of its own instead of the
+office token, and a short list of routes — nothing trusted crosses the Wi-Fi
+in clear in either mode.
 
 **The office link.** When the server starts it prints, to its own output only,
 
@@ -729,8 +734,19 @@ requires the token, conversation text requires it, and the rest stay open:
 
 ## Phone mode
 
-Watch the office on a phone mounted next to your monitor. Two ways, both off
+See the office on a phone mounted next to your monitor. Three ways, all off
 unless you turn them on; pick one.
+
+| Route | Start it with | The phone gets | On the wire |
+|---|---|---|---|
+| [Watch-only over Wi-Fi](#watch-only-over-wi-fi-npm-run-lan) | `npm run lan` | the scene alone, with the text taken out | plain HTTP |
+| [The full office over Wi-Fi](#the-full-office-over-wi-fi-npm-run-lan------full) | `npm run lan -- --full` | chat, permission cards it can answer, meters, settings, inspector | HTTPS with a certificate made on this machine |
+| [Full control through Tailscale](#full-control-through-tailscale) | `tailscale serve` and `AGENT_OFFICE_ALLOWED_HOSTS` | the desktop page, as on this machine | Tailscale's HTTPS |
+
+Watch-only is the default and the least to trust. The full office over Wi-Fi
+needs no account and no extra software, at the price of a certificate nobody
+signed (you compare a fingerprint once). Tailscale gives a certificate the
+phone already trusts and works away from home, and needs a tailnet.
 
 ### Watch-only over Wi-Fi: `npm run lan`
 
@@ -768,8 +784,9 @@ the key in that browser.
 `~/.agent-office/lan-viewer-key` (`0600`, kept across restarts with the same
 trust checks as the token file, replaced when they fail, never the office
 token). It opens the LAN listener's WebSocket and nothing else. `npm run lan
--- --rotate` deletes it before starting, so that start mints a new one; an
-office already running keeps the old key until it restarts.
+-- --rotate` deletes it before starting (and full mode's phone secret with
+it), so that start mints a new one; an office already running keeps the old
+key until it restarts.
 
 **What the LAN listener allows.** It is its own server with its own Express
 app and WebSocket server; it shares no route with the loopback listener.
@@ -821,6 +838,189 @@ nothing else. Use it on a network you trust, rotate the key if you doubt it,
 and stop `npm run lan` (use `npm run server`) when you do not need it. A
 malicious web page on the phone or any other device cannot use the key it
 does not have, and its WebSocket carries its own `Origin`, which is refused.
+
+### The full office over Wi-Fi: `npm run lan -- --full`
+
+```
+npm run build                     # once: the LAN listener serves the built UI
+npm run lan -- --full             # the office, plus the phone's link, QR code and certificate fingerprint
+npm run lan -- --full --rotate    # the same with a new phone secret (old phone links stop working)
+```
+
+`npm run lan -- --full` is `npm run server` with `AGENT_OFFICE_LAN=full` (set
+that yourself for any other launcher; `npm run lan` without `--full` sets `1`
+outright, so a value left in the shell cannot turn it into full mode). The
+loopback listener is unchanged. **In place of** the watch-only listener —
+never beside it, and never on plain HTTP — the server opens an **HTTPS**
+listener on the same private LAN address and port and prints, to its own
+output only,
+
+```
+  Phone (FULL office, this network, HTTPS only): https://192.168.1.23:3335/#phone=<phone secret>
+  Certificate SHA-256 fingerprint (made on this machine, signed by nobody):
+    3F:9A:…:C1
+```
+
+with a QR code of the link between the two when the output is a terminal.
+
+**The first visit, and the fingerprint.** Nobody signed the certificate, so
+the phone's browser warns before it shows the page. Before you accept, open
+the certificate's details from that warning and compare its SHA-256
+fingerprint with the one the server printed. The same: go on, and from then
+on the traffic between the phone and this machine is encrypted. Different:
+something on the network answered in this machine's place — do not go on.
+The browser keeps your exception for that address, so the warning comes back
+only when the certificate is replaced (the server then prints `New
+certificate (<why>): the phone will warn once more`, and the fingerprint is a
+new one to compare). Where a browser shows the fingerprint differs by
+browser and version; that step was not walked through on a real phone for
+this release (see the last list of this section).
+
+**The phone secret** is a third secret: 32 random bytes in
+`~/.agent-office/lan-phone-secret` (`0600`, kept across restarts with the
+same trust checks as the token and viewer-key files, replaced when they
+fail). It is never the office token and never the viewer key, and the
+full-mode listener refuses both of those like any other wrong value. It
+travels in the link's **fragment**, which a browser never sends to a server:
+the page takes it out of the address bar on load, keeps it in that browser's
+storage for that address, and presents it as `Authorization: Bearer` on its
+requests and as the WebSocket subprotocol `agent-office.phone.<secret>`,
+compared in constant time. A page keeps or presents the phone secret only
+when it was served over `https:` from a private IPv4 address; on any other
+page a `#phone=` fragment is stripped and thrown away, so the secret is never
+offered over plain HTTP whatever link is opened. On the full-mode page the
+office token and the viewer key are in turn never kept or sent. Open
+`https://<lan ip>:3335/#phone=off` to forget the secret in that browser;
+`npm run lan -- --full --rotate` deletes the file before starting, so every
+phone needs the new link.
+
+**The certificate** is made on this machine the first time full mode starts
+(`server/lan-cert.js`, Node's `crypto` and a small DER writer, no new
+dependency): an EC P-256 key, self-signed with ECDSA-SHA256, its
+`subjectAltName` the LAN IP and nothing else, marked `CA:FALSE` and for
+server authentication only, valid 800 days. It lives in
+`~/.agent-office/lan-cert.pem` and `lan-key.pem`, both `0600` and read back
+only through the token file's trust checks, and is reused across restarts so
+the phone warns once. A new one is made — and the phone warns again — when
+the LAN address changed, when it is within 30 days of expiry, when it is not
+valid yet (the clock moved), when the key does not match, or when the files
+fail the trust checks. `--rotate` leaves it alone; delete the two files to
+force a new one.
+
+**What the full-mode listener allows.** It is its own HTTPS server (TLS 1.2
+or newer); a plain-HTTP request to the port never gets an HTTP answer. Each
+request then passes, in this order:
+
+1. `Host` must be `<lan ip>:<lan port>` exactly — `421` otherwise (a
+   DNS-rebinding page, another name, another port).
+2. `Origin`, when sent, must be `https://<lan ip>:<lan port>` exactly — `403`
+   otherwise. The watch-only `http://` origin is not accepted here, nor this
+   one there.
+3. `GET` / `HEAD` of the built UI's files are served without the secret: the
+   page has to load before it can read its fragment. They are the same files
+   as in the repository.
+4. An address that sent 20 wrong secrets within a minute is refused for a
+   minute — `429` with `Retry-After` — before its secret is even looked at.
+   A request with no secret at all is refused but not counted: a page opened
+   without its link is not a guess.
+5. The phone secret — `401` without it or with a wrong one.
+6. The route allowlist below — `404` for everything else, any method.
+7. Only then is the request handed to the office's own routes, acting as the
+   office page does (the page's UI tier), never with the office token's
+   rights: `/clear` typed in the chat stays refused, as it is for the page on
+   this machine.
+
+| Route | Why the phone needs it |
+|---|---|
+| `GET /config` | the boss's name, sprite and colour, before the first frame |
+| `GET /roster` | the MCP servers drawn on the wall rack |
+| `GET /recap` | the Today tab's counts (numbers only) |
+| `GET /settings` | the three switches' current state |
+| `POST /settings` | changing them from the Settings tab |
+| `GET /chat/cron-state` | whether the chat monitor is paused |
+| `POST /chat/cron-state` | the pause button |
+| `POST /chat` | posting a chat line |
+| `GET /agents/:id` | the inspector card, with its transcript tail |
+| `POST /permission/:id` | answering a permission card |
+
+Kept off the Wi-Fi on purpose: hook ingestion and everything else only local
+hooks and tools call (`POST /event`, `POST /status`, the hook's
+`GET /permission/:id` long-poll, `/chat/reply`, `/chat/inbox/read`,
+`/chat/seen`, `/chat/react`, `/chat/typing`, `/chat/video-mode`), the
+agent-to-agent routes (`/a2a`, `/a2a/agents`,
+`/.well-known/agent-card.json`), and the reads the page does not make
+(`GET /chat`, `/agents`, `/sessions`, `/signals`, `/tasks`, `/registry`,
+`/permissions`, `/health`, `GET /status`). Rotating the office token is not
+a route on any listener: `npm run rotate-token` deletes its file on this
+machine.
+
+The WebSocket `/ws` passes the same checks — Host, Origin, lockout, secret —
+**before** the upgrade, and is answered with that HTTP status when it fails:
+a peer without the secret never holds a WebSocket. With the secret it gets
+the trusted stream, what the office page on this machine sees, without the
+UI token (the phone has no use for it). At most 8 phones at a time, and at
+most 64 TLS connections to the listener.
+
+**What the phone can do** is therefore: read the conversation, the agents'
+tasks and status lines, the meters and the transcript tail in the inspector;
+post in the chat; answer a permission dialog (allow, allow and remember,
+deny); flip the three settings; pause the chat monitor. It cannot `/clear`,
+send hook events, reach the agent-to-agent routes, or read or replace the
+office token.
+
+**The phone layout** (390 x 844, portrait): the room across the top, scaled
+to the screen's width; pending permission cards right under it, on screen
+without scrolling or zooming, with buttons a thumb can hit; then the tab's
+content — Chat, Meters, Today or Settings — with the tabs at the bottom.
+Tapping a character opens the inspector over the lower half. Nothing scrolls
+sideways. Landscape puts the room on the left and the rest on the right;
+with the keyboard up the room is put away so the chat keeps its lines. It
+keeps clear of the notch and the home bar, and under
+`prefers-reduced-motion` its own transitions and the session pills' pulse
+stop (the scene's animations are the scene's, as on the desktop). Opened
+without its `#phone=` part the page says so and calls nothing; with a
+replaced secret or a stopped office it says *Not connected* and names both
+causes — it cannot tell them apart without guessing at the lockout's
+expense. After a reload the chat shows new lines only, as the desktop page
+does.
+
+**What this does not protect.**
+
+- **The first visit is trust on first use.** The phone has nothing to check
+  the certificate against but your eyes. Someone already able to intercept
+  traffic on the Wi-Fi at that moment (ARP spoofing, a rogue access point)
+  can present their own certificate; accept it and they see and can alter
+  everything, the phone secret included once the page sends it. The printed
+  fingerprint is the defence, and it works only if you compare it. The same
+  holds each time the certificate is replaced.
+- **The link is a key.** Whoever gets it — a photo of the terminal, a shared
+  screen, the QR code — and is on the network can do everything listed
+  above. Rotate when in doubt.
+- **The secret sits in the phone's browser storage** until `#phone=off` or
+  a rotation. A lost or lent phone on this Wi-Fi drives the office.
+- **A permission card has no second step.** A mis-tap on *Allow* on the
+  phone is an answer.
+- **Anyone on the network can still reach the listener**: load the page's
+  files, see that an office runs here, and hold some of the 64 connections.
+  The lockout is per address, so a device that borrows the phone's address
+  could keep it locked out a minute at a time; it slows guessing of a
+  256-bit secret that could not be guessed anyway.
+- **The certificate's key** is a file on this machine, `0600`. Whoever can
+  read it can impersonate this listener to a phone that accepted the
+  certificate; `--rotate` does not replace it.
+- **Not verified on a real phone.** The page, a chat post and a permission
+  answer were checked in desktop Chromium at 390 x 844 with the certificate
+  error ignored. In the iOS simulator Safari reached the listener and showed
+  its certificate warning; nothing past that warning was tested. In
+  particular it is **unverified** whether iOS Safari lets the page's
+  `wss://` connection use a certificate accepted through that warning, and
+  whether the link's `#phone=` part survives the warning. If the page loads
+  but stays *Not connected* on your phone, that is the likely reason: use
+  the Tailscale route below, whose certificate the phone already trusts.
+  The checks to run are in `TEST_PLAN.md`.
+
+Use it on a network you trust, and stop it (`npm run lan`, or `npm run
+server`) when you do not need it.
 
 ### Full control through Tailscale
 

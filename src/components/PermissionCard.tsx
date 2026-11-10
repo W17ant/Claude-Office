@@ -16,6 +16,10 @@
  * left out the command line) the card still says which tool is waiting,
  * but offers no buttons and no keys — the server would refuse the answer —
  * and points at the terminal instead.
+ *
+ * On the phone (src/components/PhoneOffice.tsx, `explainRemember`) what
+ * "Allow & remember" would add is printed under the buttons: a touch screen
+ * has no tooltip to read it from before tapping.
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react'
@@ -31,6 +35,8 @@ interface PermissionCardsProps {
   dispatch: (action: PermissionAction) => void
   /** The page has no office token: show the cards, offer no answers */
   readOnly?: boolean
+  /** Print what "Allow & remember" would add as text (the phone: no tooltips on touch) */
+  explainRemember?: boolean
 }
 
 function isTyping(target: EventTarget | null): boolean {
@@ -39,7 +45,7 @@ function isTyping(target: EventTarget | null): boolean {
   return el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable
 }
 
-const PermissionCards: React.FC<PermissionCardsProps> = ({ cards, dispatch, readOnly = false }) => {
+const PermissionCards: React.FC<PermissionCardsProps> = ({ cards, dispatch, readOnly = false, explainRemember = false }) => {
   // One bell per card id, however many times the list re-renders or a deadline moves
   const rungRef = useRef<Set<string>>(new Set())
   useEffect(() => {
@@ -134,6 +140,11 @@ const PermissionCards: React.FC<PermissionCardsProps> = ({ cards, dispatch, read
                   Deny
                 </button>
                 {card.sent && <span className="perm-sending">sending {card.sent === 'allow-remember' ? 'allow' : card.sent}…</span>}
+              </div>
+            )}
+            {explainRemember && !readOnly && !card.resolved && card.suggestions.length > 0 && (
+              <div className="perm-remember-note" data-testid="permission-remember-note">
+                Allow &amp; remember: {describeSuggestions(card.suggestions)}
               </div>
             )}
           </div>

@@ -1,0 +1,528 @@
+/* phone.css - the full office on a phone (src/components/PhoneOffice.tsx).
+
+   Every rule is scoped under .phone-wrapper (or html:has(.phone-wrapper)),
+   which only the full-mode LAN listener's page renders: the desktop window
+   (.app-wrapper) and the watch-only stage (.viewer-wrapper) never match one.
+
+   The second half restyles parts the desktop window also uses (permission
+   cards, chat, meters, settings, today, inspector) for a 390 px wide touch
+   screen. Their own files place them inside the 1056 x 682 window with 8 to
+   12 px type; here they sit in the flow, full width, with type a phone can
+   read and controls a thumb can hit (44 px, Apple's minimum touch target). */
+
+/* Why: the desktop page relies on body's fixed size; the phone page must own the whole screen */
+html:has(.phone-wrapper),
+html:has(.phone-wrapper) body {
+  height: 100%;
+  overflow: hidden;
+  background: #0a0a0f;
+  overscroll-behavior: none;
+}
+
+.phone-wrapper {
+  position: fixed;
+  top: 0;
+  left: 0;
+  /* Why not 100vw: on a browser with a classic scrollbar it is wider than the page, a sideways scroll */
+  right: 0;
+  height: 100vh;
+  /* Why: 100dvh follows iOS Safari's collapsing toolbars; 100vh above is the fallback.
+     PhoneOffice then sets top and height from the visual viewport (the keyboard). */
+  height: 100dvh;
+  box-sizing: border-box;
+  /* Clear of the notch, the rounded corners and the home bar, as the watch-only stage is */
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+  display: flex;
+  flex-direction: column;
+  background: #0a0a0f;
+  color: #e6e6e6;
+  overflow: hidden;
+  font-family: 'JetBrains Mono', monospace;
+  -webkit-tap-highlight-color: transparent;
+  /* Why: iOS would otherwise enlarge text it thinks is too small, unevenly */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  /* Why manipulation and not none: panes scroll and pinch-zoom stays (accessibility); only the double-tap zoom goes, which fires on quick Allow / Deny taps */
+  touch-action: manipulation;
+  overscroll-behavior: none;
+}
+
+/* ---- header: connection, title, waiting count, session pills ---- */
+.phone-header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  min-width: 0;
+  padding: 4px 12px;
+  background: #151210;
+  border-bottom: 1px solid #2a2520;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.phone-conn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #febc2e;
+}
+.phone-conn.online { color: #8a7a58; }
+.phone-conn-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #febc2e;
+}
+.phone-conn.online .phone-conn-dot {
+  background: #28c840;
+  box-shadow: 0 0 4px #28c840;
+}
+.phone-title {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: #5a4a38;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.phone-pending {
+  flex: none;
+  padding: 1px 8px;
+  border-radius: 10px;
+  border: 1px solid #f0b429;
+  background: rgba(240, 180, 41, 0.14);
+  color: #f0b429;
+  font-size: 11px;
+  font-weight: 700;
+}
+/* The pills take what the title and the waiting count leave, and scroll
+   sideways inside their own box when there are many: the page itself never does */
+.phone-sessions {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.phone-sessions::-webkit-scrollbar { display: none; }
+.phone-wrapper .session-strip {
+  max-width: none;
+  overflow: visible;
+  flex: none;
+  /* Why a margin and not justify-content: flex-end: pills that overflow to the left of a right-aligned box cannot be scrolled to */
+  margin-left: auto;
+}
+.phone-wrapper .session-pill {
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 11px;
+  font-size: 10px;
+}
+.phone-wrapper .session-pill > span { font-size: 9px; }
+
+/* ---- the room and the panel: stacked in portrait, side by side in landscape ---- */
+.phone-main {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.phone-wrapper.landscape .phone-main { flex-direction: row; }
+
+.phone-room {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #0a0a0f;
+  user-select: none;
+  -webkit-user-select: none;
+}
+/* The keyboard is up (PhoneOffice phoneIsCompact): the panel takes the whole box */
+.phone-wrapper.compact .phone-room { display: none; }
+.phone-stage {
+  position: relative;
+  flex: none;
+  overflow: hidden;
+}
+.phone-scaler {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+}
+
+.phone-panel {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: #1a1d21;
+  border-top: 1px solid #35363a;
+}
+.phone-wrapper.landscape .phone-panel {
+  border-top: none;
+  border-left: 1px solid #35363a;
+}
+
+/* ---- notices ---- */
+.phone-notice {
+  margin: 16px;
+  padding: 14px 16px;
+  border: 1px solid #f0b429;
+  border-left-width: 4px;
+  border-radius: 8px;
+  background: #15171a;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.phone-notice strong { color: #f0b429; }
+.phone-notice p { margin-top: 6px; color: #b5bac1; }
+.phone-offline {
+  flex: none;
+  padding: 8px 12px;
+  background: rgba(240, 180, 41, 0.1);
+  border-bottom: 1px solid rgba(240, 180, 41, 0.35);
+  color: #f0b44c;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.phone-notice code,
+.phone-offline code {
+  font-family: inherit;
+  background: rgba(255, 255, 255, 0.07);
+  border-radius: 3px;
+  padding: 0 4px;
+  color: #e6e6e6;
+  /* Why: a command is one word to the layout and would push the page wider than the screen */
+  overflow-wrap: anywhere;
+}
+
+/* ---- permission cards: in the flow, right under the room ----
+   Why the cards may shrink and the rest may not go under 140 px: a pending
+   dialog is what the phone is most needed for, so the cards get the space
+   first and scroll inside their own box only when the pane and the tabs
+   would otherwise drop below one row of content plus the tab bar. */
+.phone-cards {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+.phone-cards:empty { display: none; }
+.phone-wrapper .perm-stack {
+  position: static;
+  width: auto;
+  max-width: none;
+  z-index: auto;
+  gap: 8px;
+  padding: 8px;
+  pointer-events: auto;
+}
+.phone-wrapper .perm-card {
+  padding: 10px 12px;
+  box-shadow: none;
+}
+.phone-wrapper .perm-title { font-size: 15px; }
+.phone-wrapper .perm-where { font-size: 11px; }
+.phone-wrapper .perm-detail {
+  font-size: 12px;
+  /* Four lines, then it scrolls: the buttons stay on screen under a long command */
+  max-height: calc(4 * 1.4 * 12px + 12px);
+}
+.phone-wrapper .perm-actions { gap: 8px; }
+.phone-wrapper .perm-btn {
+  flex: 1 1 auto;
+  min-height: 44px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 15px;
+}
+/* Why no auto margin here: the buttons share the row evenly, Deny last */
+.phone-wrapper .perm-btn.deny { margin-left: 0; }
+.phone-wrapper .perm-sending,
+.phone-wrapper .perm-outcome {
+  font-size: 12px;
+}
+.phone-wrapper .perm-sending { flex-basis: 100%; }
+.perm-remember-note {
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--meter-sub, #8b8d91);
+  overflow-wrap: anywhere;
+}
+
+/* ---- the pane and its tabs ---- */
+.phone-lower {
+  position: relative;
+  flex: 1 1 0;
+  /* One row of content (92 px) over the 48 px tab bar */
+  min-height: 140px;
+  display: flex;
+  flex-direction: column;
+}
+.phone-pane {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.phone-tabpanel {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+/* Why spelled out: the display rules below would otherwise beat the hidden attribute */
+.phone-tabpanel[hidden] { display: none; }
+.phone-tab-chat {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.phone-tabs {
+  flex: none;
+  display: flex;
+  height: 48px;
+  background: #151210;
+  border-top: 1px solid #2a2520;
+}
+.phone-tab {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  border-top: 2px solid transparent;
+  color: #8a7a58;
+  font: inherit;
+  font-size: 13px;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+}
+.phone-tab.on {
+  color: #e0b25c;
+  border-top-color: #e0b25c;
+  background: rgba(255, 255, 255, 0.04);
+}
+.phone-tab:focus-visible {
+  outline: 2px solid #e0b25c;
+  outline-offset: -2px;
+}
+
+/* ---- chat ---- */
+.phone-wrapper .slack-panel {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  min-width: 0;
+  border-left: none;
+}
+/* Why hidden: the channel header and its pills (AI on/off, mute, volume,
+   answer here, notify) are 8 px controls made for a mouse. The Settings tab
+   has every one of them at thumb size, and the pane is short. */
+.phone-wrapper .slack-header,
+.phone-wrapper .slack-settings-row {
+  display: none;
+}
+.phone-wrapper .slack-body {
+  padding: 6px 10px;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.phone-wrapper .slack-sender,
+.phone-wrapper .slack-msg-text {
+  font-size: 14px;
+}
+.phone-wrapper .slack-msg-system .slack-system-text { font-size: 12px; }
+.phone-wrapper .slack-time,
+.phone-wrapper .slack-typing-label,
+.phone-wrapper .slack-seen-label {
+  font-size: 11px;
+}
+.phone-wrapper .slack-input-wrap { margin: 0 8px 8px; }
+.phone-wrapper .slack-input-bar { padding: 0 12px; }
+.phone-wrapper .slack-input-field {
+  min-height: 44px;
+  /* Why 16 px exactly: iOS Safari zooms the page into a focused field with smaller text, and does not zoom back */
+  font-size: 16px;
+}
+.phone-wrapper .slack-slash-cmd { font-size: 12px; }
+
+/* ---- meters ---- */
+.phone-wrapper .meters-panel {
+  border-left: none;
+  padding: 12px;
+}
+.phone-wrapper .meters-head { margin-bottom: 8px; }
+.phone-wrapper .meters-title { font-size: 10px; }
+.phone-wrapper .meter-pill {
+  font-size: 12px;
+  padding: 2px 9px;
+  border-radius: 10px;
+}
+.phone-wrapper .meters-row { gap: 6px; }
+.phone-wrapper .meter { padding: 8px 8px 9px; }
+.phone-wrapper .meter-label { font-size: 9px; margin-bottom: 4px; }
+.phone-wrapper .meter-value { font-size: 17px; }
+.phone-wrapper .meter-unit { font-size: 9px; }
+.phone-wrapper .meter-sub,
+.phone-wrapper .meter-needs-text {
+  font-size: 10px;
+  margin-top: 4px;
+}
+.phone-wrapper .meters-session {
+  font-size: 11px;
+  min-height: 28px;
+}
+.phone-wrapper .meters-tip { font-size: 11px; }
+.phone-empty {
+  display: none;
+  padding: 16px;
+  color: #8b8d91;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.phone-meters-slot:empty + .phone-empty { display: block; }
+
+/* ---- settings and today: the desktop popovers, laid flat in the pane ---- */
+.phone-wrapper .office-popover {
+  position: static;
+  width: auto;
+  max-width: none;
+  max-height: none;
+  overflow: visible;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  background: none;
+  padding: 12px 14px 16px;
+  font-size: 14px;
+  /* Why: the 120 ms drop belongs to a popover opening over the room; a tab's content just shows */
+  animation: none;
+}
+/* A tab does not close */
+.phone-wrapper .op-close { display: none; }
+.phone-wrapper .op-title { font-size: 11px; }
+.phone-wrapper .op-foot,
+.phone-wrapper .sp-note {
+  font-size: 12px;
+}
+.phone-wrapper .sp-section-title { font-size: 10px; margin-bottom: 6px; }
+.phone-wrapper .sp-section + .sp-section { margin-top: 12px; padding-top: 10px; }
+.phone-wrapper .sp-row {
+  min-height: 48px;
+  gap: 12px;
+  /* A long label and a wide control share the row at 390 px by wrapping, never by overflowing */
+  flex-wrap: wrap;
+  padding: 2px 0;
+}
+.phone-wrapper .sp-label { white-space: normal; }
+.phone-wrapper .sp-segmented { border-radius: 6px; }
+.phone-wrapper .sp-segmented button {
+  min-height: 40px;
+  padding: 0 12px;
+  font-size: 13px;
+}
+.phone-wrapper .sp-switch {
+  min-height: 44px;
+  gap: 8px;
+  font-size: 13px;
+}
+.phone-wrapper .sp-switch-track {
+  width: 44px;
+  height: 24px;
+  border-radius: 12px;
+}
+.phone-wrapper .sp-switch-thumb {
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+}
+/* Why 20 px: track 44 - 2 border - 18 thumb - 2 x 2 inset */
+.phone-wrapper .sp-switch.on .sp-switch-thumb { transform: translateX(20px); }
+.phone-wrapper .sp-switch-text { min-width: 26px; }
+.phone-wrapper .sp-sound { gap: 10px; }
+.phone-wrapper .sp-mute {
+  min-width: 44px;
+  min-height: 44px;
+  font-size: 18px;
+}
+.phone-wrapper .sp-volume {
+  width: 130px;
+  height: 28px;
+}
+.phone-wrapper .sp-value { width: 44px; }
+.phone-wrapper .sp-link { min-height: 44px; }
+.phone-wrapper .today-grid { row-gap: 8px; }
+
+/* ---- inspector: a sheet over the pane and the tabs, never over the room or the cards ---- */
+.phone-wrapper .agent-card,
+.phone-wrapper .agent-card.side-right {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  width: auto;
+  max-height: none;
+  z-index: 20;
+  border: none;
+  border-top: 1px solid var(--ac-border);
+  border-radius: 0;
+  box-shadow: none;
+  background: #0e1013;
+  padding: 10px 12px;
+  font-size: 13px;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+.phone-wrapper .ac-name { font-size: 15px; }
+.phone-wrapper .ac-role,
+.phone-wrapper .ac-model {
+  font-size: 11px;
+}
+/* Why the chip gives its auto margin to the button: the desktop card pushes the
+   close button right with the model chip's margin, so a card with no chip (a
+   session that has not named its model) left the button mid-header; here the
+   button is always at the right edge, where a thumb looks for it */
+.phone-wrapper .ac-model { margin-left: 0; }
+.phone-wrapper .ac-close {
+  margin-left: auto;
+  /* 44 px: the smallest target a thumb hits reliably (Apple HIG) */
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  font-size: 20px;
+  line-height: 1;
+}
+
+/* ---- reduced motion: what this layout shows that its own file does not already still ---- */
+@media (prefers-reduced-motion: reduce) {
+  .phone-wrapper .perm-card { animation: none; }
+  .phone-wrapper .perm-card.resolved { transition: none; transform: none; }
+  .phone-wrapper .perm-timebar-fill { transition: none; }
+  .phone-wrapper .agent-card { animation: none; }
+  /* The header's session pills pulse while a session works (office.css); the
+     desktop strip is left as it is, this layout's own header is stilled */
+  .phone-wrapper .session-dot { animation: none; }
+  .phone-wrapper .slack-cron-thumb,
+  .phone-wrapper .slack-cron-track { transition: none; }
+}

@@ -20,11 +20,16 @@
  *
  * The dev case is recognised by import.meta.env.DEV (true under `vite`,
  * false in a build) or by the page being on 3333, Vite's port; everything
- * else is office-served. Pure: the location and the environment come in as
+ * else is office-served. One page is office-served by definition, whatever
+ * those two say: the full-mode LAN listener's (https on the private Wi-Fi
+ * address, src/phoneSecret.ts), which always talks to its own origin. Pure:
+ * the location and the environment come in as
  * arguments so tests pass fake ones, and nothing runs at import time, so
  * modules that import this still load in Node (the tests) where there is no
  * window — the fallback there is the default server on 127.0.0.1.
  */
+
+import { isPhoneFullLocation } from './phoneSecret'
 
 export const DEFAULT_SERVER_PORT = 3334
 export const VITE_DEV_PORT = 3333
@@ -67,8 +72,19 @@ export function configuredServerPort(env: BuildEnv = buildEnv()): number {
   return Number.isInteger(n) && n >= 1 && n <= 65535 ? n : DEFAULT_SERVER_PORT
 }
 
-/** True when the page comes from the Vite dev server rather than the office server. */
+/**
+ * True when the page comes from the Vite dev server rather than the office server.
+ * @param loc the page location (tests pass a fake)
+ * @param env the build environment (tests pass a fake)
+ * @returns whether the server is another process on the configured port
+ */
 export function isDevServerPage(loc: PageLocation = pageLocation(), env: BuildEnv = buildEnv()): boolean {
+  // Why never, whatever the env or the port says: the full-mode LAN
+  // listener's page (https on the private Wi-Fi address) presents the phone
+  // secret, which may only go back to the origin that served the page.
+  // Without this, AGENT_OFFICE_LAN_PORT=3333 would make the port rule below
+  // send it to http://127.0.0.1:<port> — in the clear, on the phone itself.
+  if (isPhoneFullLocation(loc)) return false
   return env.dev || loc.port === String(VITE_DEV_PORT)
 }
 

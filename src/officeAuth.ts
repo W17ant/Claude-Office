@@ -13,10 +13,17 @@
  *   the office token before that, on reads only (GET /config at start-up):
  *                    a POST never carries the file token, so a `/clear`
  *                    typed in the chat stays refused here as on loopback
+ *
+ * A phone-full page (https on the private Wi-Fi address, the full-mode LAN
+ * listener: src/phoneSecret.ts) is a third case: it sends the phone secret
+ * on every request, GET or POST, and never either of the two tokens above —
+ * that listener refuses them, and the office token has no business on the
+ * Wi-Fi at all.
  */
 
 import { getOfficeToken } from './officeToken'
 import { getUiToken } from './permissions'
+import { getPhoneSecret, isPhoneFullLocation } from './phoneSecret'
 
 const LOOPBACK_NAMES = new Set(['localhost', '127.0.0.1', '[::1]', '::1'])
 
@@ -27,10 +34,12 @@ export function isProxiedPage(loc: { protocol: string; hostname: string }): bool
 
 /**
  * Headers to spread into a fetch to the office server: `{}` on loopback,
- * `{ Authorization: 'Bearer …' }` on a proxied page that holds a token.
+ * `{ Authorization: 'Bearer …' }` on a proxied page that holds a token, and
+ * on a phone-full page that holds the phone secret.
  * @param opts.method the request's method; only GET may fall back to the office token
  * @param opts.loc the page location (tests pass a fake)
  * @param opts.uiToken / opts.officeToken the tokens (tests pass them)
+ * @param opts.phoneSecret the phone secret (tests pass it)
  * @returns headers for fetch
  */
 export function officeAuthHeaders(opts: {
@@ -38,8 +47,17 @@ export function officeAuthHeaders(opts: {
   loc?: { protocol: string; hostname: string }
   uiToken?: string | null
   officeToken?: string | null
+  phoneSecret?: string | null
 } = {}): Record<string, string> {
   const loc = opts.loc ?? (typeof window !== 'undefined' ? window.location : { protocol: 'http:', hostname: '127.0.0.1' })
+  // Why first, and why it returns either way: on the full-mode listener's
+  // page the phone secret is the only credential that may leave the page.
+  // Falling through to the token rules below would offer the office token to
+  // a listener that refuses it (and counts it as a wrong secret).
+  if (isPhoneFullLocation(loc)) {
+    const phone = opts.phoneSecret !== undefined ? opts.phoneSecret : getPhoneSecret()
+    return phone ? { Authorization: `Bearer ${phone}` } : {}
+  }
   if (!isProxiedPage(loc)) return {}
   const ui = opts.uiToken !== undefined ? opts.uiToken : getUiToken()
   const office = opts.officeToken !== undefined ? opts.officeToken : getOfficeToken()
