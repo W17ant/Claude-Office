@@ -2,7 +2,7 @@
 
 All notable changes to Claude Office. Numbers refer to pull requests.
 
-## Unreleased
+## 1.2.0 — 2026-11-10
 
 - A custom sprite can walk too: `scripts/walk-cycle.py` makes the image to give ChatGPT (`prepare`, which also prints the prompt), then cuts its 3 × 4 sheet into the four-frame cycle beside the sprites (`cut`, with `--festive` for the Christmas copy). README › Creating a custom sprite › Make it walk.
 - Characters walk instead of gliding: while one moves it loops a four-frame walk cycle, left foot down, passing, right foot down, passing (`src/walk.ts`). The standing pose is never one of the steps: it faces the camera and the stride art does not, so mixing them made a walker snap between angles every 140 ms. Frames are optional `-walk1.webp` .. `-walk4.webp` files beside each sprite; every character has them (the default cast, the boss and the whole Dunder Mifflin cast), and a sprite without all four (a custom one) glides as before.
