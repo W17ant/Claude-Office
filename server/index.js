@@ -20,7 +20,8 @@
  */
 
 import express from 'express'
-import { createServer } from 'http'
+import { createServer, STATUS_CODES } from 'http'
+import { createServer as createTlsServer } from 'https'
 import { WebSocketServer, WebSocket } from 'ws'
 import { readFileSync, existsSync, writeFileSync, mkdirSync, realpathSync, chmodSync, unlinkSync, openSync, fstatSync, closeSync, constants as fsConstants } from 'fs'
 import { homedir } from 'os'
@@ -42,7 +43,10 @@ import { agentTranscriptPath, readTranscript, isTranscriptPath, clampLine } from
 import {
   readLanConfig, lanHostOk, lanOriginOk, viewerKeyFrom, viewerKeyMatches, viewerLink, renderQr,
   parseAllowedHosts, allowedHostMatches, allowedOriginMatches,
+  lanFullHostOk, lanFullOriginOk, phoneSecretFrom, phoneSecretMatches, offersWsCredential, phoneLink,
+  lanFullRouteAllowed, createLockout,
 } from './lan.js'
+import { loadOrCreateLanCert } from './lan-cert.js'
 import { createRecap, recapLine, isRecapDate, localDate } from './recap.js'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -120,10 +124,14 @@ const UI_DEV_PORT = readUiPort()
 // remembered it keeps working after the office restarts. `npm run
 // rotate-token` deletes the file, and the next start writes a new one.
 //
-// Two opt-in exceptions (server/lan.js; docs/reference.md › Phone mode):
+// Three opt-in exceptions (server/lan.js; docs/reference.md › Phone mode):
 // AGENT_OFFICE_LAN=1 adds a second, watch-only listener on the private LAN
 // address ("The LAN listener" below: static UI + a viewer-key WebSocket,
-// stripped by redactForLan, no API route, never the office token), and
+// stripped by redactForLan, no API route, never the office token);
+// AGENT_OFFICE_LAN=full makes that second listener HTTPS-only and lets a
+// phone holding the phone secret use the full office through it ("The LAN
+// listener, full mode" below: an allowlist of routes at the page's UI tier
+// and the trusted stream, never the office token, never plain HTTP); and
 // AGENT_OFFICE_ALLOWED_HOSTS lets a local HTTPS proxy (tailscale serve) reach
 // this loopback listener under its own host name. The loopback bind itself
 // never changes.
@@ -1759,11 +1767,26 @@ const captureRaw = (req, _res, buf) => { req.rawBody = buf }
 const jsonBody = express.json({ limit: JSON_LIMIT, verify: captureRaw })
 const eventJsonBody = express.json({ limit: EVENT_JSON_LIMIT, verify: captureRaw })
 
+/**
+ * Requests the full-mode LAN gate let through (createLanFullApp, "The LAN
+ * listener, full mode" below), and nothing else: the gate adds a request
+ * here only after its own exact Host and Origin checks, the phone secret and
+ * the route allowlist, then hands it to this app. A WeakSet of the request
+ * objects themselves, so nothing a client sends — no header, no path — can
+ * claim membership, and it empties itself as requests end.
+ *
+ * The two guards below that compare Host and Origin with loopback's lists
+ * step aside for a member (its Host is the LAN address, which they would
+ * rightly refuse from anyone else); every other guard, the remote-request
+ * one included, still runs.
+ */
+const lanAdmitted = new WeakSet()
+
 // Host-header guard: the first thing every request passes, before the body
 // parsers and CORS. A non-loopback (or missing) Host is a DNS-rebinding page
 // or a cross-host request and is refused outright.
 app.use((req, res, next) => {
-  if (!isAllowedHost(req.headers.host)) {
+  if (!lanAdmitted.has(req) && !isAllowedHost(req.headers.host)) {
     return res.status(421).json({ error: 'Forbidden host' })
   }
   next()
@@ -1789,6 +1812,9 @@ app.use((req, res, next) => (req.path === '/event' ? eventJsonBody : jsonBody)(r
 
 // CORS for local dev — only allow known localhost origins
 app.use((req, res, next) => {
+  // Why no CORS headers either: the full-mode gate already held the Origin to
+  // the one page it serves, which is same-origin and needs none
+  if (lanAdmitted.has(req)) return next()
   const origin = req.headers.origin
   if (origin && !isAllowedOrigin(origin)) {
     return res.status(403).json({ error: 'Forbidden origin' })
@@ -4131,7 +4157,11 @@ const LAN_MAX_CLIENTS = 8
 // Why: a viewer never sends anything; 1 KiB bounds what a stray frame costs
 const LAN_MAX_PAYLOAD = 1024
 
-/** The running LAN listener: { server, wss, host, port, key }, or null. */
+/**
+ * The running LAN listener, or null: { server, wss, host, port, key } for the
+ * watch-only one, { full: true, server, wss, host, port, secret, fingerprint,
+ * lockout } for the full-mode one (startLanFull below). Never both.
+ */
 let lan = null
 
 /** The static-only Express app of the LAN listener (`state` holds the bound host and port). */
@@ -4177,10 +4207,15 @@ function onLanConnection(state, ws, req) {
  * and the loopback port is bound; tests bind 127.0.0.1:0). The viewer key is
  * reused from its file when that is still safe to trust, else minted, and
  * written once the port is bound.
- * @param {{ host: string, port: number }} opts
+ *
+ * With `full: true` (AGENT_OFFICE_LAN=full) it opens the HTTPS full-mode
+ * listener instead — see startLanFull below; the two never run together.
+ * @param {{ host: string, port: number, full?: boolean }} opts
  * @returns {Promise<{ host: string, port: number, key: string, link: string, server: import('http').Server, wss: WebSocketServer }>}
+ *   in full mode, what startLanFull resolves
  */
-export function startLan({ host, port }) {
+export function startLan({ host, port, full = false }) {
+  if (full) return startLanFull({ host, port })
   return new Promise((resolve, reject) => {
     let key = readTokenFile(VIEWER_KEY_FILE)
     // Why: the viewer key crosses the Wi-Fi in clear; it must never be the office token
@@ -4210,6 +4245,263 @@ export function startLan({ host, port }) {
   })
 }
 
+// ---------------------------------------------------------------------------
+// The LAN listener, full mode — the whole office on the phone
+// (AGENT_OFFICE_LAN=full, `npm run lan -- --full`)
+//
+// Instead of the watch-only listener above (never next to it), an
+// https.Server on the same private LAN address. Nothing here speaks plain
+// HTTP: a client that does fails the TLS handshake and is dropped before any
+// request exists, so no route, no WebSocket and no secret can cross the
+// Wi-Fi in clear.
+//
+// The flow, in the order a request meets it:
+//
+//   0. TLS         a certificate made on this machine for the LAN IP
+//                  (server/lan-cert.js: EC P-256, key 0600 in the runtime
+//                  dir, remade when the IP changes or it nears expiry). Its
+//                  SHA-256 fingerprint is printed beside the link: the
+//                  phone's first visit is trust-on-first-use, and comparing
+//                  that fingerprint is what tells this office from an
+//                  impostor on the same Wi-Fi.
+//   1. Host        exactly <lan ip>:<lan port> (lanFullHostOk), else 421:
+//                  a DNS-rebinding page never gets further.
+//   2. Origin      absent, or exactly https://<lan ip>:<lan port>
+//                  (lanFullOriginOk), else 403: only the page this listener
+//                  served may call it from a browser.
+//   3. Static UI   GET / HEAD of the built UI's files, no secret needed (the
+//                  page has to load before it can read the secret from its
+//                  URL fragment, and the bundle is public).
+//   4. Lockout     an address that sent too many wrong secrets waits
+//                  (createLockout in server/lan.js): 429 + Retry-After.
+//   5. Secret      Authorization: Bearer <phone secret>, compared in
+//                  constant time. The phone secret is a third credential —
+//                  32 random bytes in $AGENT_OFFICE_HOME/lan-phone-secret,
+//                  0600, same trust checks as the token file, never equal
+//                  to the office token or the viewer key. Nothing else is
+//                  accepted here: the office token, the UI token and the
+//                  viewer key are all just wrong secrets (401, counted).
+//   6. Allowlist   the method and path must be in LAN_FULL_ROUTES
+//                  (server/lan.js has the table and the reason for each),
+//                  else 404 — also for a holder of the secret. /event, the
+//                  hook's long-poll, the agent-to-agent routes and every
+//                  route that needs the office token are not in it.
+//   7. Hand-over   the request is marked (lanAdmitted) and its bearer is
+//                  replaced, in this process, by the UI token, then it runs
+//                  through the loopback app. So a phone acts exactly as the
+//                  office page does — it may answer a permission, change a
+//                  setting, read a transcript tail — and never as the office
+//                  token: /clear and everything token-only stay refused by
+//                  the routes' own checks even if the allowlist ever grew.
+//
+// The WebSocket passes 1, 2, 4 and 5 before the upgrade (the secret travels
+// as the subprotocol `agent-office.phone.<secret>`, inside TLS), so a peer
+// without the secret never holds an open socket; then the client cap. It
+// gets the trusted stream — what the office page on this machine sees —
+// minus the UI token, which the phone has no use for: its requests are
+// authorised by the phone secret alone.
+// ---------------------------------------------------------------------------
+
+const PHONE_SECRET_FILE = join(RUNTIME_DIR, 'lan-phone-secret')
+// Why: bounds the TLS sockets peers without the secret can hold open (each
+// costs a handshake and buffers). A phone's browser uses about six for the
+// page and one for the stream; 64 leaves room for LAN_MAX_CLIENTS of them.
+const LAN_FULL_MAX_CONNECTIONS = 64
+// Why: a peer that connects and never finishes the handshake holds one of
+// those sockets; Node's default is two minutes, a phone needs well under ten seconds
+const LAN_FULL_HANDSHAKE_MS = 10_000
+
+/**
+ * The Express app of the full-mode listener: steps 1 to 7 of the flow above.
+ * It has no routes of its own — what passes the gate runs in the loopback
+ * `app`, so there is one implementation of every route and no second copy to
+ * drift.
+ * @param {{ host: string, port: number, secret: string, lockout: ReturnType<typeof createLockout> }} state
+ * @returns {import('express').Express}
+ */
+function createLanFullApp(state) {
+  const lanApp = express()
+  lanApp.disable('x-powered-by')
+
+  // --- 1 + 2: Host and Origin -------------------------------------------
+  lanApp.use((req, res, next) => {
+    if (!lanFullHostOk(req.headers.host, state.host, state.port)) return res.status(421).json({ error: 'Forbidden host' })
+    if (!lanFullOriginOk(req.headers.origin, state.host, state.port)) return res.status(403).json({ error: 'Forbidden origin' })
+    res.setHeader('X-Content-Type-Options', 'nosniff')
+    res.setHeader('Referrer-Policy', 'no-referrer')
+    next()
+  })
+
+  // --- 3: the built UI's files ------------------------------------------
+  if (UI_AVAILABLE) {
+    const ui = express.static(UI_DIR, { dotfiles: 'ignore', redirect: false })
+    lanApp.use((req, res, next) => (req.method === 'GET' || req.method === 'HEAD' ? ui(req, res, next) : next()))
+  }
+
+  // --- 4 + 5 + 6 + 7: lockout, secret, allowlist, hand-over ---------------
+  lanApp.use((req, res, next) => {
+    const ip = req.socket.remoteAddress ?? 'unknown'
+    const wait = state.lockout.blockedFor(ip)
+    if (wait > 0) {
+      res.setHeader('Retry-After', String(Math.ceil(wait / 1000)))
+      return res.status(429).json({ error: 'Too many wrong secrets from this address; try again later' })
+    }
+    const supplied = bearerToken(req)
+    if (!phoneSecretMatches(supplied, state.secret)) {
+      // Why only a presented secret counts: a page opened without its link
+      // sends none, and that is not a guess
+      if (supplied && state.lockout.fail(ip)) console.warn(`[lan] ${ip} is locked out after repeated wrong phone secrets`)
+      return unauthorized(res, { error: 'Unauthorized: this office answers the network only with the phone secret' })
+    }
+    state.lockout.ok(ip)
+    if (!lanFullRouteAllowed(req.method, req.path)) return res.status(404).json({ error: 'Not found' })
+
+    // Answers here carry the conversation: never into a cache on the phone
+    res.setHeader('Cache-Control', 'no-store')
+    lanAdmitted.add(req)
+    // Why swap the bearer rather than teach every route a fourth credential:
+    // the routes already know the page's tier (requireUi, remoteAuthed, the
+    // transcript on GET /agents/:id). The phone secret stays a gate secret,
+    // and the UI token never leaves this process on this path.
+    req.headers.authorization = `Bearer ${UI_TOKEN}`
+    // Why: a request signature is the hook's way to prove the office token
+    // (signatureValid); nothing from the network gets to offer one
+    delete req.headers['x-office-timestamp']
+    delete req.headers['x-office-signature']
+    app(req, res, next)
+  })
+
+  lanApp.use((_req, res) => res.status(404).json({ error: 'Not found' }))
+  lanApp.use(jsonErrorHandler)
+  return lanApp
+}
+
+/**
+ * Answer a WebSocket handshake the full-mode listener will not upgrade: a
+ * plain HTTP status on the raw socket, then close. Refusing before the
+ * upgrade (rather than accept-then-close, as the watch-only listener does)
+ * means a peer without the secret never holds a WebSocket at all.
+ * @param {import('stream').Duplex} socket
+ * @param {number} status
+ * @param {string[]} [headers] extra header lines
+ */
+function refuseUpgrade(socket, status, headers = []) {
+  const lines = [`HTTP/1.1 ${status} ${STATUS_CODES[status]}`, 'Connection: close', 'Content-Length: 0', ...headers]
+  socket.end(`${lines.join('\r\n')}\r\n\r\n`)
+  socket.destroySoon?.()
+}
+
+/**
+ * A WebSocket handshake on the full-mode listener: the same gate as HTTP
+ * (Host, Origin, lockout, phone secret) before the upgrade, then the client
+ * cap, then the trusted stream.
+ * @param {object} state the running listener (see startLanFull)
+ * @param {import('http').IncomingMessage} req
+ * @param {import('stream').Duplex} socket
+ * @param {Buffer} head
+ */
+function onLanFullUpgrade(state, req, socket, head) {
+  // The http server has let go of this socket: without a listener an error on it would throw
+  socket.on('error', () => {})
+  const ip = socket.remoteAddress ?? 'unknown'
+  const refuse = (status, reason, headers) => {
+    console.warn(`[lan] Refused a phone connection from ${ip}: ${reason}`)
+    refuseUpgrade(socket, status, headers)
+  }
+  if ((req.url ?? '').split('?')[0] !== '/ws') return refuse(404, 'not /ws')
+  if (!lanFullHostOk(req.headers.host, state.host, state.port)) return refuse(421, 'forbidden host')
+  if (!lanFullOriginOk(req.headers.origin, state.host, state.port)) return refuse(403, 'forbidden origin')
+  const wait = state.lockout.blockedFor(ip)
+  if (wait > 0) return refuse(429, 'locked out', [`Retry-After: ${Math.ceil(wait / 1000)}`])
+  if (!phoneSecretMatches(phoneSecretFrom(req), state.secret)) {
+    // The office token and the viewer key are wrong secrets here like any other
+    if (offersWsCredential(req) && state.lockout.fail(ip)) console.warn(`[lan] ${ip} is locked out after repeated wrong phone secrets`)
+    return refuse(401, 'phone secret required')
+  }
+  state.lockout.ok(ip)
+  if (state.wss.clients.size >= LAN_MAX_CLIENTS) return refuse(503, 'too many phones', ['Retry-After: 5'])
+
+  state.wss.handleUpgrade(req, socket, head, ws => {
+    console.log(`[lan] Phone connected from ${ip} (full mode, phones: ${state.wss.clients.size})`)
+    // `phone` tells the page which credential answers for it; trusted: the full stream follows
+    ws.send(JSON.stringify({ type: 'auth', trusted: true, phone: true }))
+    // Why no uiToken: the phone's requests are authorised by the phone secret
+    // at the gate; the UI token stays on this machine
+    ws.send(JSON.stringify(omit(buildSnapshot(true), ['uiToken'])))
+    ws.on('close', () => console.log(`[lan] Phone disconnected (phones: ${state.wss.clients.size})`))
+    ws.on('error', err => console.error('[lan] Phone error:', err.message))
+  })
+}
+
+/**
+ * Open the full-mode listener on `host:port`: HTTPS and WSS only, behind the
+ * phone secret (the flow is at the top of this section). The secret and the
+ * certificate are reused from their files when those are still safe to
+ * trust, else made, and written only once the port is bound — a second
+ * office that loses the port never replaces what the running one started from.
+ * @param {{ host: string, port: number }} opts
+ * @returns {Promise<{ host: string, port: number, full: true, secret: string, link: string, fingerprint: string, certReused: boolean, certReason: string | null, server: import('https').Server, wss: WebSocketServer }>}
+ *   fingerprint: the certificate's SHA-256, colon-separated; certReason: why
+ *   a stored certificate was not reused (null when it was)
+ */
+function startLanFull({ host, port }) {
+  return new Promise((resolve, reject) => {
+    let secret = readTokenFile(PHONE_SECRET_FILE)
+    // Why: three secrets with three reaches. The office token must never
+    // travel to a phone at all, and the viewer key crosses the Wi-Fi in
+    // clear in watch-only mode, so a phone secret equal to either is burnt.
+    if (!secret || secret === AUTH_TOKEN || secret === readTokenFile(VIEWER_KEY_FILE)) secret = randomBytes(32).toString('hex')
+
+    let tlsPair
+    try {
+      tlsPair = loadOrCreateLanCert(RUNTIME_DIR, host)
+    } catch (err) {
+      // No certificate, no listener: there is no plain-HTTP fallback
+      reject(err)
+      return
+    }
+    const state = { full: true, host, port, secret, fingerprint: tlsPair.fingerprint, lockout: createLockout(), server: null, wss: null }
+    const server = createTlsServer(
+      // TLS 1.2 is the floor every phone browser of the last decade speaks; 1.3 is negotiated when offered
+      { key: tlsPair.key, cert: tlsPair.cert, minVersion: 'TLSv1.2', handshakeTimeout: LAN_FULL_HANDSHAKE_MS },
+      createLanFullApp(state),
+    )
+    server.maxConnections = LAN_FULL_MAX_CONNECTIONS
+    // noServer: the upgrade is ours to refuse first (onLanFullUpgrade)
+    const lanWss = new WebSocketServer({ noServer: true, handleProtocols, maxPayload: LAN_MAX_PAYLOAD })
+    state.server = server
+    state.wss = lanWss
+    server.on('upgrade', (req, socket, head) => onLanFullUpgrade(state, req, socket, head))
+    let settled = false
+    const onError = err => {
+      if (!settled) { settled = true; reject(err); return }
+      console.error('[lan]', err.message)
+    }
+    server.on('error', onError)
+    lanWss.on('error', onError)
+    server.listen(port, host, () => {
+      settled = true
+      state.port = server.address().port
+      lan = state
+      tlsPair.save()
+      writeSecretFile(PHONE_SECRET_FILE, secret, 'phone secret')
+      server.once('close', () => { if (lan === state) lan = null })
+      resolve({
+        host,
+        port: state.port,
+        full: true,
+        secret,
+        link: phoneLink(host, state.port, secret),
+        fingerprint: tlsPair.fingerprint,
+        certReused: tlsPair.reused,
+        certReason: tlsPair.reason,
+        server,
+        wss: lanWss,
+      })
+    })
+  })
+}
+
 /** Close the LAN listener and drop its viewers (with the loopback server, and in tests). */
 function stopLan() {
   const state = lan
@@ -4218,10 +4510,34 @@ function stopLan() {
   for (const client of state.wss.clients) client.terminate()
   state.wss.close()
   state.server.close()
+  // Why full mode only: a phone's keep-alive TLS sockets would otherwise hold
+  // the closed listener (and a test's process) open; the watch-only listener
+  // is left exactly as it was
+  if (state.full) state.server.closeAllConnections?.()
 }
 
-/** The phone link and its QR code, to the server's own output only (like the office link). */
-function printLanBanner({ link }) {
+/**
+ * The phone link and its QR code, to the server's own output only (like the
+ * office link). In full mode also the certificate's fingerprint and what to
+ * do with it.
+ * @param {{ link: string, full?: boolean, fingerprint?: string, certReused?: boolean, certReason?: string | null }} listener what startLan resolved
+ */
+function printLanBanner({ link, full, fingerprint, certReused, certReason }) {
+  if (full) {
+    console.log(`  Phone (FULL office, this network, HTTPS only): ${link}`)
+    const qr = process.stdout.isTTY ? renderQr(link) : null
+    if (qr) console.log(`${qr}\n`)
+    console.log('  Certificate SHA-256 fingerprint (made on this machine, signed by nobody):')
+    console.log(`    ${fingerprint}`)
+    if (!certReused) console.log(`  New certificate (${certReason}): the phone will warn once more.`)
+    console.log('  The phone warns about the certificate on its first visit. Before you accept, open the')
+    console.log('  certificate details on the phone and compare its SHA-256 fingerprint with the line above:')
+    console.log('  if they differ, something on this network is in the middle, so do not go on.')
+    console.log('  That link is a key: whoever opens it on this network can chat, answer permission dialogs,')
+    console.log('  change settings and read the conversation. New link: npm run lan -- --full --rotate')
+    console.log()
+    return
+  }
   console.log(`  Phone (watch-only, this network): ${link}`)
   // A QR code is only readable on a terminal; a log file gets the link alone
   const qr = process.stdout.isTTY ? renderQr(link) : null
@@ -4233,8 +4549,9 @@ function printLanBanner({ link }) {
 
 /**
  * Broadcast a JSON message to all connected WebSocket clients: trusted ones
- * get the payload as is, read-only ones what redactForReadOnly leaves of it,
- * LAN viewers what redactForLan leaves. Each variant is serialised once, the
+ * (and, in full mode, the phones that presented the phone secret) get the
+ * payload as is, read-only ones what redactForReadOnly leaves of it,
+ * watch-only LAN viewers what redactForLan leaves. Each variant is serialised once, the
  * read-only and LAN ones only when such a client is connected. A null
  * payload (processEvent had nothing to say) is skipped rather than sent as
  * "null".
@@ -4258,16 +4575,27 @@ function broadcast(payload) {
     client.send(msg)
     sent++
   }
-  let lanMsg  // undefined: not built yet; null: withheld from LAN viewers
-  for (const client of lan?.wss.clients ?? []) {
-    if (client.readyState !== WebSocket.OPEN) continue
-    if (lanMsg === undefined) {
-      const redacted = redactForLan(payload)
-      lanMsg = redacted ? JSON.stringify(redacted) : null
+  if (lan?.full) {
+    // Full mode: every socket on this listener presented the phone secret
+    // inside TLS before it was upgraded (onLanFullUpgrade), so it gets what
+    // a trusted page gets. No broadcast carries the UI token.
+    for (const client of lan.wss.clients) {
+      if (client.readyState !== WebSocket.OPEN) continue
+      client.send(full)
+      sent++
     }
-    if (!lanMsg) break
-    client.send(lanMsg)
-    sent++
+  } else {
+    let lanMsg  // undefined: not built yet; null: withheld from LAN viewers
+    for (const client of lan?.wss.clients ?? []) {
+      if (client.readyState !== WebSocket.OPEN) continue
+      if (lanMsg === undefined) {
+        const redacted = redactForLan(payload)
+        lanMsg = redacted ? JSON.stringify(redacted) : null
+      }
+      if (!lanMsg) break
+      client.send(lanMsg)
+      sent++
+    }
   }
   if (sent > 0) {
     console.log(`[broadcast] ${payload.type} -> ${sent} client(s)`)
@@ -4379,9 +4707,12 @@ export function start({ port = PORT, host = readHost() } = {}) {
     console.log('  Open that link once per browser (or run `npm run open`); a bare address shows the office read-only.')
     console.log()
 
-    // Phone mode (opt-in): the watch-only LAN listener, opened only once the
-    // loopback port is ours, so a losing second instance never touches it or
-    // the viewer key. A failure there leaves the office running loopback-only.
+    // Phone mode (opt-in): the LAN listener — watch-only over plain HTTP, or
+    // with AGENT_OFFICE_LAN=full the whole office over HTTPS — opened only
+    // once the loopback port is ours, so a losing second instance never
+    // touches it, the viewer key, the phone secret or the certificate. A
+    // failure there leaves the office running loopback-only: full mode never
+    // falls back to plain HTTP.
     const lanConfig = readLanConfig(process.env)
     if (lanConfig.enabled) {
       if (!UI_AVAILABLE) console.warn('  [lan] The office UI is not built (npm run build): the phone link will show nothing until it is')
@@ -4429,6 +4760,7 @@ export {
   LAN_EVENT_RULES,
   stopLan,
   VIEWER_KEY_FILE,
+  PHONE_SECRET_FILE,
   ALLOWED_HOSTS,
   isAllowedHost,
   isRemoteHost,

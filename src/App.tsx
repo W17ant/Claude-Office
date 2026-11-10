@@ -34,10 +34,11 @@ import {
 } from './officeReducer'
 import { BOSS_ROLE } from './config'
 import { officeHttpBase, officeWsUrl, sameOriginWsUrl } from './serverUrl'
-import { pageViewerKey } from './pageAuth'
+import { isPhoneFullPage, pagePhoneSecret, pageViewerKey } from './pageAuth'
 import { officeAuthHeaders } from './officeAuth'
 import { mayCarryOfficeToken } from './viewerKey'
 import ViewerStage from './components/ViewerStage'
+import PhoneOffice from './components/PhoneOffice'
 import { pickEvent } from './events'
 import { getInteraction } from './interactions'
 import {
@@ -79,6 +80,16 @@ const isVideoMode = params.has('video')
 const isLanPage = !mayCarryOfficeToken(window.location)
 const isViewerMode = !isSimMode && (pageViewerKey !== null || isLanPage)
 const VIEWER_NOTICE = pageViewerKey === null ? 'no viewer key: open the phone link from npm run lan (scan its QR code)' : undefined
+// Phone full mode: the page came from the HTTPS LAN listener (`npm run lan --
+// --full`, src/phoneSecret.ts). It is the whole office — chat, permission
+// cards that answer, meters, settings, inspector — in a phone layout
+// (PhoneOffice), authorised by the phone secret alone and talking only to
+// the listener it came from. Never a viewer page: pageAuth.ts drops the
+// viewer key on this origin and the page is https, so isViewerMode is false.
+const isPhoneFull = isPhoneFullPage && !isSimMode
+// Why nothing connects without the secret: the listener refuses the socket
+// (401) and the page would retry for ever; PhoneOffice says where the link is
+const phoneHasSecret = pagePhoneSecret !== null
 // Why: allow ?theme=office on demo/sim URLs to preload Dunder Mifflin mode
 import { setTheme as _setTheme } from './theme'
 if (params.get('theme') === 'office') { _setTheme('office') }
@@ -773,7 +784,12 @@ const App: React.FC = () => {
   // WebSocket connection
   // ---------------------------------------------------------------------------
 
-  const { sessions, trusted, connected } = useAgentSocket({ onEvent: handleEvent, url: isViewerMode ? sameOriginWsUrl() : officeWsUrl(), disabled: isSimMode })
+  const { sessions, trusted, connected } = useAgentSocket({
+    onEvent: handleEvent,
+    // Why same-origin on the phone too: the phone secret may only go back to the listener that served the page
+    url: isViewerMode || isPhoneFull ? sameOriginWsUrl() : officeWsUrl(),
+    disabled: isSimMode || (isPhoneFull && !phoneHasSecret),
+  })
   // The server showed this page the office read-only: no office token, or a
   // stale one (src/officeToken.ts). The cards and the chat stop offering
   // answers the server would refuse, and the status strip says how to fix it.
@@ -1689,6 +1705,54 @@ const App: React.FC = () => {
   )
 
   if (isViewerMode) return <ViewerStage connected={connected} notice={VIEWER_NOTICE}>{scene}</ViewerStage>
+
+  // The full office on the phone: the same parts as the desktop window below,
+  // handed to PhoneOffice to lay out. Without the phone secret it mounts none
+  // of the parts that call the server (PhoneOffice's header says why).
+  if (isPhoneFull) {
+    return (
+      <PhoneOffice
+        connected={connected}
+        hasSecret={phoneHasSecret}
+        title={`${titlePrefix}${variant === 'incident' ? 'PROD IS DOWN' : 'AGENT OFFICE'}`}
+        scene={scene}
+        sessions={<SessionStrip sessions={sessions} agents={agents} />}
+        permissions={<PermissionCards cards={permissionCards} dispatch={dispatchPermissions} readOnly={readOnly} explainRemember />}
+        pending={permissionCards.filter(c => !c.resolved).length}
+        chat={
+          <SlackChat
+            messages={messages}
+            muted={muted}
+            volume={volume}
+            onToggleMute={handleToggleMute}
+            onVolumeChange={handleVolumeChange}
+            onSendMessage={handleSendMessage}
+            dayPhase={effectivePhase}
+            typingUser={chatTypingUser}
+            lastSeenId={lastSeenId}
+            onReaction={handleReaction}
+            readOnly={readOnly}
+          />
+        }
+        meters={<Meters onNotice={text => addMsg('system', 'default', '#8b8d91', text, true)} />}
+        settings={
+          <SettingsPanel
+            onClose={closeSettings}
+            anchor={gearRef}
+            dayNightMode={dayNightMode}
+            onDayNightMode={setDayNightMode}
+            volume={volume}
+            muted={muted}
+            onVolumeChange={handleVolumeChange}
+            onToggleMute={handleToggleMute}
+            readOnly={readOnly}
+            simMode={false}
+          />
+        }
+        inspector={<AgentCard agentId={inspectedId} agent={agents.find(a => a.id === inspectedId)} sessions={sessions} onClose={() => setInspectedId(null)} />}
+      />
+    )
+  }
 
   return (
     <div className="app-wrapper">

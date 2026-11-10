@@ -1,8 +1,8 @@
 /**
- * lan.js - Phone mode: the opt-in LAN viewer listener's pure helpers, and the
- * Tailscale host allowlist for the loopback listener.
+ * lan.js - Phone mode: the opt-in LAN listener's pure helpers (watch-only and
+ * full), and the Tailscale host allowlist for the loopback listener.
  *
- * Two opt-in exceptions to "loopback only" (docs/reference.md › Security):
+ * Three opt-in exceptions to "loopback only" (docs/reference.md › Security):
  *
  *   AGENT_OFFICE_LAN=1          a SECOND listener on this machine's private
  *                               LAN IPv4 (never 0.0.0.0), port
@@ -12,13 +12,20 @@
  *                               API route is a 404 there, the office token is
  *                               never accepted, and the stream is stripped to
  *                               the scene (redactForLan in server/index.js).
+ *   AGENT_OFFICE_LAN=full       the same address and port, but the listener
+ *                               speaks HTTPS only (a certificate made on this
+ *                               machine, server/lan-cert.js) and serves the
+ *                               full office to a phone holding the phone
+ *                               secret: the trusted WebSocket stream and the
+ *                               routes in LAN_FULL_ROUTES below, nothing
+ *                               else. See "Full mode" further down.
  *   AGENT_OFFICE_ALLOWED_HOSTS  extra host names (a `tailscale serve` name)
  *                               the loopback listener's Host guard and origin
  *                               allowlist accept, with https origins. Trust
  *                               still needs the office token.
  *
- * Everything here is pure (env, interfaces and headers come in as arguments)
- * so the tests need no network; server/index.js owns the sockets.
+ * Everything here is pure (env, interfaces, headers and the clock come in as
+ * arguments) so the tests need no network; server/index.js owns the sockets.
  */
 
 import { networkInterfaces } from 'os'
@@ -82,20 +89,31 @@ function parsePort(raw) {
 
 /**
  * LAN mode as the environment asks for it. Off unless AGENT_OFFICE_LAN is
- * `1` / `true`. The host is AGENT_OFFICE_LAN_HOST when set (it must itself be
+ * `1` / `true` (watch-only, plain HTTP) or `full` (the full office over
+ * HTTPS). The host is AGENT_OFFICE_LAN_HOST when set (it must itself be
  * an RFC 1918 IPv4 literal — a public address, 0.0.0.0 or a name is refused
  * and LAN mode stays off), else the first private address of this machine.
+ *
+ * Why one variable with a third value rather than a second flag: the two
+ * modes share one port and exclude each other, and a lone "full" flag next
+ * to AGENT_OFFICE_LAN=0 would have to mean something. Any other value is
+ * off, as before, so a typo of `full` can only ever give less than was
+ * asked for.
  * @param {Record<string, string | undefined>} [env]
  * @param {{ interfaces?: object, log?: { warn?: Function } }} [opts]
- * @returns {{ enabled: false, reason?: string } | { enabled: true, host: string, port: number }}
+ * @returns {{ enabled: false, reason?: string } | { enabled: true, host: string, port: number, full?: true }}
+ *   `full: true` is present only in full mode
  */
 export function readLanConfig(env = process.env, { interfaces, log = console } = {}) {
   const flag = String(env?.AGENT_OFFICE_LAN ?? '').trim().toLowerCase()
-  if (flag !== '1' && flag !== 'true') return { enabled: false }
+  const full = flag === 'full'
+  if (flag !== '1' && flag !== 'true' && !full) return { enabled: false }
   const off = reason => {
     log?.warn?.(`[lan] ${reason}; LAN mode is off, the office stays loopback-only`)
     return { enabled: false, reason }
   }
+  // Why the key only in full mode: watch-only keeps the exact shape it had
+  const on = (host, port) => (full ? { enabled: true, host, port, full: true } : { enabled: true, host, port })
 
   let port = DEFAULT_LAN_PORT
   const rawPort = env?.AGENT_OFFICE_LAN_PORT
@@ -110,11 +128,11 @@ export function readLanConfig(env = process.env, { interfaces, log = console } =
     // Why: an explicit address is still held to the same rule as a picked one,
     // so a typo can never put the office on a public interface or on every one
     if (!isPrivateIPv4(host)) return off(`AGENT_OFFICE_LAN_HOST=${JSON.stringify(override)} is not a private (RFC 1918) IPv4 address`)
-    return { enabled: true, host, port }
+    return on(host, port)
   }
   const host = pickLanAddress(interfaces)
   if (!host) return off('no private (RFC 1918) IPv4 address on this machine')
-  return { enabled: true, host, port }
+  return on(host, port)
 }
 
 /**
@@ -185,6 +203,279 @@ export function viewerKeyMatches(supplied, key) {
  */
 export function viewerLink(host, port, key) {
   return `http://${host}:${port}/#viewer=${key}`
+}
+
+// ---------------------------------------------------------------------------
+// Full mode (AGENT_OFFICE_LAN=full) — the whole office on the phone, HTTPS only
+//
+// The flow, end to end (server/index.js owns the sockets and runs it):
+//
+//   1. start     the listener is an https.Server on <lan ip>:<lan port> with a
+//                certificate made here (server/lan-cert.js). There is no
+//                plain-HTTP listener in this mode at all: a plain request to
+//                the port fails the TLS handshake and is dropped.
+//   2. the link  https://<lan ip>:<port>/#phone=<phone secret>, printed with
+//                its QR code and the certificate's SHA-256 fingerprint. The
+//                secret rides in the fragment, which no browser sends to a
+//                server; the page takes it out of the address bar and keeps
+//                it in that browser's storage (src/phoneSecret.ts).
+//   3. the gate  every request and every WebSocket handshake passes, in this
+//                order: exact Host (421) -> exact https Origin when one is
+//                sent (403) -> static UI files for GET / HEAD (no secret:
+//                the page has to load before it can read its fragment) ->
+//                lockout (429) -> the phone secret, constant time (401) ->
+//                LAN_FULL_ROUTES (404). Only then does the loopback app see
+//                the request, acting with the page's UI tier — never with
+//                the office token's.
+//   4. the wire  the phone secret is a third secret, never the office token
+//                or the viewer key; both of those are refused here like any
+//                other wrong value, and count towards the lockout.
+//
+// What the gate does not do is make the first visit safe against someone
+// already in the middle: the certificate is self-signed, so the phone trusts
+// it on first use. That is what the printed fingerprint is for.
+// ---------------------------------------------------------------------------
+
+/** The subprotocol that carries the phone secret (src/phoneSecret.ts builds the same). */
+export const WS_PHONE_PROTOCOL_PREFIX = 'agent-office.phone.'
+
+/** The phone secret: 32 random bytes as 64 lowercase hex digits, like the office token. */
+export const PHONE_SECRET_PATTERN = /^[0-9a-f]{64}$/
+
+/**
+ * The Host header the full-mode listener accepts: exactly `<lan ip>:<lan port>`
+ * (just `<lan ip>` on 443, which browsers leave out of an https Host).
+ * @param {string | undefined} hostHeader
+ * @param {string} host the LAN IP
+ * @param {number} port the LAN port actually bound
+ * @returns {boolean}
+ */
+export function lanFullHostOk(hostHeader, host, port) {
+  if (typeof hostHeader !== 'string') return false
+  return hostHeader === `${host}:${port}` || (port === 443 && hostHeader === host)
+}
+
+/**
+ * The Origin the full-mode listener accepts when one is sent: the page it
+ * served itself, `https://<lan ip>:<lan port>`. Plain http is never accepted
+ * here (and https never by lanOriginOk): the two modes share nothing.
+ * @param {string | undefined} origin
+ * @param {string} host
+ * @param {number} port
+ * @returns {boolean}
+ */
+export function lanFullOriginOk(origin, host, port) {
+  if (origin === undefined || origin === '') return true
+  return origin === `https://${host}:${port}` || (port === 443 && origin === `https://${host}`)
+}
+
+/**
+ * The phone secret a WebSocket handshake offered as a subprotocol
+ * (`agent-office.phone.<secret>`), or ''. A browser cannot set headers on a
+ * WebSocket, so this is the one place it can put a secret that is not a URL.
+ * @param {{ headers: Record<string, string | string[] | undefined> }} req
+ * @returns {string}
+ */
+export function phoneSecretFrom(req) {
+  const header = req?.headers?.['sec-websocket-protocol']
+  if (typeof header !== 'string') return ''
+  for (const part of header.split(',')) {
+    const value = part.trim()
+    if (value.startsWith(WS_PHONE_PROTOCOL_PREFIX)) return value.slice(WS_PHONE_PROTOCOL_PREFIX.length)
+  }
+  return ''
+}
+
+/**
+ * True when a WebSocket handshake offered any credential at all — the phone
+ * secret, the office token or the viewer key. A handshake that offered one
+ * and is refused counts as a failed attempt; one that offered nothing (a
+ * page opened without its link) does not.
+ * @param {{ headers: Record<string, string | string[] | undefined> }} req
+ * @returns {boolean}
+ */
+export function offersWsCredential(req) {
+  const header = req?.headers?.['sec-websocket-protocol']
+  if (typeof header !== 'string') return false
+  // Why a shape test: every credential subprotocol is `agent-office.<kind>.<value>`
+  return header.split(',').some(part => /^agent-office\.[a-z]+\../.test(part.trim()))
+}
+
+/**
+ * Constant-time comparison of a supplied phone secret with the real one.
+ * @param {unknown} supplied
+ * @param {string} secret
+ * @returns {boolean}
+ */
+export function phoneSecretMatches(supplied, secret) {
+  return viewerKeyMatches(supplied, secret)
+}
+
+/**
+ * The full-mode phone link: the https page on the LAN listener with the
+ * phone secret in its fragment (never a query string: a fragment is not sent
+ * to the server, logged by it, or put in a Referer).
+ * @param {string} host
+ * @param {number} port
+ * @param {string} secret
+ * @returns {string}
+ */
+export function phoneLink(host, port, secret) {
+  return `https://${host}:${port}/#phone=${secret}`
+}
+
+// One path segment that names a record (an agent id, a permission id). Why
+// 200: the longest id the office mints is `main:<session uuid>` (41
+// characters); 200 leaves room and still bounds what reaches the router.
+const ID = '[^/]{1,200}'
+
+/**
+ * What the phone may call in full mode: an ALLOWLIST of exactly the requests
+ * the office page itself makes (every fetch under src/; tests/lan-full.test.ts
+ * holds the two lists against each other), each matched on method and exact,
+ * case-sensitive path. A route added to the loopback app later stays off the
+ * LAN until someone lists it here and says why.
+ *
+ *   route                    why the phone needs it              on loopback
+ *   -----------------------  ----------------------------------  -----------
+ *   GET  /config             the boss's name and sprite, read    open
+ *                            once before the first render
+ *   GET  /roster             the MCP servers at the wall rack,   open
+ *                            read when the socket opens
+ *   GET  /recap              the "today" popover's counts        open
+ *                            (numbers only, no text)
+ *   GET  /settings           the settings panel's three server   open
+ *                            switches as they are now
+ *   POST /settings           change them (prompt logging,        UI token
+ *                            answer-from-office, notifications)
+ *   GET  /chat/cron-state    is the chat monitor paused          open
+ *   POST /chat/cron-state    the chat header's pause button      open
+ *   POST /chat               a chat line typed on the phone;     open
+ *                            `/clear` stays refused: it needs
+ *                            the office token, which the phone
+ *                            never has
+ *   GET  /agents/:id         the inspector card, with the        text needs
+ *                            transcript tail the desktop page    the UI token
+ *                            sees
+ *   POST /permission/:id     answer a permission card            UI token
+ *
+ * Deliberately NOT here, and so a 404 on the LAN even with the secret:
+ *
+ *   POST /event, POST /status, GET /permission/:id (the hook's long-poll)
+ *       hook ingestion: only the local hook and status line call these, and
+ *       they are what would let a caller invent agents, sessions or decisions
+ *   POST /chat/reply, /chat/inbox/read, /chat/seen, /chat/react,
+ *   /chat/video-mode, /chat/typing, POST /a2a, GET /a2a/agents,
+ *   GET /.well-known/agent-card.json
+ *       acting as an agent, and agent-to-agent traffic
+ *   GET /chat, /agents, /sessions, /signals, /tasks, /registry, /permissions,
+ *   /health, GET /status
+ *       reads the page never makes: the WebSocket already carries what it draws
+ *   OPTIONS, HEAD on a route, every other method
+ *       the page is same-origin, so nothing preflights
+ *
+ * Token rotation has no route at all (npm run rotate-token, a local script).
+ */
+export const LAN_FULL_ROUTES = Object.freeze([
+  ['GET', /^\/config$/],
+  ['GET', /^\/roster$/],
+  ['GET', /^\/recap$/],
+  ['GET', /^\/settings$/],
+  ['POST', /^\/settings$/],
+  ['GET', /^\/chat\/cron-state$/],
+  ['POST', /^\/chat\/cron-state$/],
+  ['POST', /^\/chat$/],
+  ['GET', new RegExp(`^/agents/${ID}$`)],
+  ['POST', new RegExp(`^/permission/${ID}$`)],
+])
+
+/**
+ * True when `method path` is on the full-mode allowlist.
+ * @param {string} method the request method as Node reports it (upper case)
+ * @param {string} path the URL's path, undecoded, without the query string
+ * @returns {boolean}
+ */
+export function lanFullRouteAllowed(method, path) {
+  if (typeof method !== 'string' || typeof path !== 'string') return false
+  return LAN_FULL_ROUTES.some(([m, pattern]) => m === method && pattern.test(path))
+}
+
+// Lockout defaults. The secret is 256 random bits, so no rate could let it be
+// guessed; what the lockout bounds is the work and the log lines a device
+// hammering the port costs, and it makes a scripted attempt visible.
+//
+// Why 20 in a minute: a phone still holding the old secret after `--rotate`
+// retries its WebSocket on a backoff that reaches one try every 30 s — about
+// 7 tries in its first minute, plus the page's own start-up fetches, then 2
+// a minute. 20 keeps that phone (and a second tab on it) clear of the lock,
+// so scanning the new code works at once.
+const LOCKOUT_MAX_FAILURES = 20
+const LOCKOUT_WINDOW_MS = 60_000
+// Why a minute, fixed: long enough to make a loop pointless, short enough
+// that a wrongly locked phone (see below) is back without anyone restarting
+const LOCKOUT_LOCK_MS = 60_000
+// Why 256: a home network has a handful of devices; this only bounds memory
+// if something walks through source addresses
+const LOCKOUT_MAX_ENTRIES = 256
+
+/**
+ * A per-address lockout for wrong secrets. `fail(ip)` records a wrong secret;
+ * the LOCKOUT_MAX_FAILURES-th within LOCKOUT_WINDOW_MS locks that address
+ * for LOCKOUT_LOCK_MS, during which the gate answers 429 without looking at
+ * what was offered (so a locked address learns nothing, a right guess
+ * included). The lock is fixed-length: attempts made while locked neither
+ * extend it nor count. `ok(ip)` forgets an address after a good secret.
+ *
+ * Known limit: it keys on the peer address, and on a LAN an attacker can
+ * borrow the phone's address. That can lock the phone out for a minute at a
+ * time (a nuisance, not an entry), never let anyone in.
+ * @param {{ maxFailures?: number, windowMs?: number, lockMs?: number, maxEntries?: number, now?: () => number }} [opts]
+ * @returns {{ blockedFor: (ip: string) => number, fail: (ip: string) => boolean, ok: (ip: string) => void, size: () => number }}
+ *   blockedFor: milliseconds the address is still locked (0 when it is not);
+ *   fail: true when this failure started a lock
+ */
+export function createLockout({
+  maxFailures = LOCKOUT_MAX_FAILURES, windowMs = LOCKOUT_WINDOW_MS, lockMs = LOCKOUT_LOCK_MS,
+  maxEntries = LOCKOUT_MAX_ENTRIES, now = Date.now,
+} = {}) {
+  /** @type {Map<string, { failures: number[], lockedUntil: number }>} insertion order = age */
+  const table = new Map()
+
+  /** Drop entries with no live lock and no failure inside the window. */
+  const sweep = t => {
+    for (const [ip, entry] of table) {
+      if (entry.lockedUntil <= t && !entry.failures.some(at => t - at < windowMs)) table.delete(ip)
+    }
+  }
+
+  return {
+    blockedFor(ip) {
+      const entry = table.get(ip)
+      return entry ? Math.max(0, entry.lockedUntil - now()) : 0
+    },
+    fail(ip) {
+      const t = now()
+      let entry = table.get(ip)
+      if (entry && entry.lockedUntil > t) return false
+      if (!entry) {
+        if (table.size >= maxEntries) sweep(t)
+        // Still full: every entry is live. Let the oldest go rather than grow
+        if (table.size >= maxEntries) table.delete(table.keys().next().value)
+        entry = { failures: [], lockedUntil: 0 }
+        table.set(ip, entry)
+      }
+      entry.failures = entry.failures.filter(at => t - at < windowMs)
+      entry.failures.push(t)
+      if (entry.failures.length < maxFailures) return false
+      entry.failures = []
+      entry.lockedUntil = t + lockMs
+      return true
+    },
+    ok(ip) {
+      table.delete(ip)
+    },
+    size: () => table.size,
+  }
 }
 
 // ---------------------------------------------------------------------------

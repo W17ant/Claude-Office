@@ -11,10 +11,16 @@
  * This module is the cards' state (a pure reducer, kept out of the office
  * reducer: cards are not characters), the UI token store, and the two POSTs
  * the page makes with it. src/components/PermissionCard.tsx draws the cards.
+ *
+ * On a phone-full page (the HTTPS LAN listener, src/phoneSecret.ts) the
+ * token the page acts with is the phone secret instead: the listener checks
+ * it and swaps it for the UI token itself, so the UI token never travels to
+ * the phone.
  */
 
 import type { OfficeEvent, PendingPermission, PermissionSuggestion } from './types'
 import { officeHttpBase } from './serverUrl'
+import { getPhoneSecret, onPhoneFullPage } from './phoneSecret'
 
 export type PermissionDecision = 'allow' | 'allow-remember' | 'deny'
 
@@ -98,20 +104,38 @@ export function reducePermissions(state: PermissionCardState[], action: Permissi
 // the office token (src/officeToken.ts), so a read-only page never has one —
 // and is kept here, not in React state: the chat header's toggle and the
 // cards both need it at click time, and nothing re-renders because of it.
+//
+// A phone-full page is the exception: its snapshot carries no UI token (the
+// server leaves it out), and the token it acts with is the phone secret. That
+// one is read from storage at every use rather than seated here once, so a
+// new link opened in another tab takes effect at once and a snapshot can
+// never wipe it.
 // ---------------------------------------------------------------------------
 
-let uiToken: string | null = null
+let snapshotUiToken: string | null = null
 
+/**
+ * Keep the UI token a snapshot carried (null when it carried none).
+ * @param token the snapshot's uiToken
+ */
 export function setUiToken(token: string | null | undefined): void {
-  uiToken = typeof token === 'string' && token ? token : null
+  snapshotUiToken = typeof token === 'string' && token ? token : null
 }
 
+/**
+ * The token this page acts with: the phone secret on a phone-full page (and
+ * nothing else there, even if a snapshot had brought one), the snapshot's UI
+ * token everywhere else.
+ * @returns the bearer value, or null when the page may not act
+ */
 export function getUiToken(): string | null {
-  return uiToken
+  if (onPhoneFullPage()) return getPhoneSecret()
+  return snapshotUiToken
 }
 
 /** POST a JSON body with the UI token; false without a token, on a network error or a non-2xx. */
 async function postWithUiToken(path: string, body: unknown): Promise<boolean> {
+  const uiToken = getUiToken()
   if (!uiToken) return false
   try {
     const res = await fetch(`${officeHttpBase()}${path}`, {

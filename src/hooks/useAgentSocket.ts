@@ -21,6 +21,11 @@
  *    (re)connect, read afresh each time, and exposes the server's verdict as
  *    `trusted`: without the token the server sends the office read-only (no
  *    conversation text, no UI token), and the page says so
+ *  - On a phone-full page (the HTTPS LAN listener, src/phoneSecret.ts) it
+ *    presents the phone secret instead and never the office token. That
+ *    listener refuses the handshake outright without a valid secret (the
+ *    socket just fails and backs off), and answers a valid one with
+ *    `trusted: true` and a snapshot that carries no UI token
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react'
@@ -30,14 +35,19 @@ import type { TaskBoardInfo } from '../taskBoard'
 import { projectFromCwd } from '../mainState'
 import { officeHttpBase, officeWsUrl } from '../serverUrl'
 import { getViewerKey, mayCarryOfficeToken, pageWsProtocols } from '../viewerKey'
+import { getPhoneSecret, onPhoneFullPage } from '../phoneSecret'
 import { officeAuthHeaders } from '../officeAuth'
 
 /**
- * The subprotocols for this attempt, read afresh: a viewer page offers its
- * viewer key, a page that may hold the office token offers that, any other
- * page (plain HTTP off loopback) offers neither (src/viewerKey.ts).
+ * The subprotocols for this attempt, read afresh: a phone-full page offers
+ * its phone secret and nothing else, a viewer page offers its viewer key, a
+ * page that may hold the office token offers that, any other page (plain
+ * HTTP off loopback) offers neither (src/viewerKey.ts).
  */
 function socketProtocols(): string[] {
+  // Why its own branch: the page is https, so the general rule would call it
+  // safe for the office token; `phone` makes pageWsProtocols ignore both others
+  if (onPhoneFullPage()) return pageWsProtocols({ viewerKey: null, safe: false, phone: { secret: getPhoneSecret() } })
   return pageWsProtocols({ viewerKey: getViewerKey(), safe: mayCarryOfficeToken(window.location) })
 }
 
@@ -99,6 +109,8 @@ interface SnapshotMessage {
 interface AuthMessage {
   type: 'auth'
   trusted: boolean
+  /** Set by the full-mode LAN listener: trusted through the phone secret, not the office token */
+  phone?: boolean
 }
 
 type ServerMessage = OfficeEvent | SnapshotMessage | AuthMessage

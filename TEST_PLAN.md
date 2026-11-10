@@ -14,6 +14,11 @@ Run with `npm test` (Vitest, Node environment, `tests/`). CI (`.github/workflows
 - `hooks/install-hooks.sh` — fresh install, upgrade from PostToolUse-only, idempotent re-run — `tests/install-hooks.test.ts`
 - Rooms — the star of five places, `findRoomPath`, the provisional layouts (every door, spot and waypoint on the floor), open/closed (`DRAWN_ROOMS`, `?rooms=all`) and the room rules — `tests/rooms.test.ts`; the reducer with rooms open and closed (nothing changes with none open, the front door, office → server room leg by leg, MCP workers, the meeting room and its hysteresis, a full room, completing mid-transfer, lunch breaks, the boss hand-over) — `tests/roomTransfer.test.ts`; the floor plan's model and the placement helper's export — `tests/roomSwitcher.test.ts`
 - Desktop updates — the release check, version comparison and the *Update automatically* setting (`tests/update-check.test.ts`); which updater a platform gets, when it falls back to the download link, `latest-mac.yml` parsing, asset choice per architecture, the URL allowlist, never downgrading (`tests/update-plan.test.ts`); the download-then-ready state machine, menu labels, the single notification, three download tries (`tests/auto-update.test.ts`); on macOS the download, size cap, sha512, unpack, bundle id and version checks, and the real `electron/mac-swap.sh` against a fake `.app` in a temp dir, including the roll-back when the new bundle cannot be moved in (`tests/mac-update.test.ts`, the swap tests skip on other platforms). `electron-updater` itself is only ever a fake here. The manual checks are under *Desktop updates* below.
+- Phone full mode, the listener (`npm run lan -- --full`) — `AGENT_OFFICE_LAN=full` parsing; exact Host (421) and `https://` Origin (403); nothing answers over plain HTTP; the built UI without the secret; every route a 401 without the phone secret, with a wrong one, with the office token, the UI token or the viewer key; each allowlisted route as the page uses it and a 404 for the rest (`LAN_FULL_ROUTES` checked against every path the page fetches and against the token-guarded routes); `/clear` refused; the WebSocket refused before the upgrade (401 / 421 / 403 / 404), the trusted stream with the secret and no UI token, the ninth phone 503; a permission answered from the LAN end to end; lockout after 20 wrong secrets, HTTP and WebSocket; secret and certificate reused across restarts, `--rotate`, a second office that loses the port; watch-only mode unchanged after full mode ran — `tests/lan-full.test.ts`
+- Phone full mode, the certificate (`server/lan-cert.js`) — parsed with `crypto.X509Certificate` (v3, self-signed, ECDSA P-256, SAN = the LAN IP, validity, serial, GeneralizedTime past 2049); a real TLS handshake that succeeds only for a client trusting this certificate at this address; reuse, and regeneration on a changed address, near expiry, a mismatched or missing half; `0600` files, nothing written until the port is bound — `tests/lan-cert.test.ts`
+- Phone full mode, the page — which location may keep and present the phone secret (https on a private IPv4 literal only), capture from the fragment, `#phone=off`, the secret never offered on a plain-HTTP or loopback page, the office token and viewer key never offered on the phone page, the page dialling only its own origin; the phone layout's arithmetic (room size, portrait or landscape with the keyboard up) and `phone.css` scoped under `.phone-wrapper`, with safe-area insets, reduced motion, a 16 px chat field and 44 px answer buttons — `tests/phone-secret.test.ts`
+
+**Not covered by any test** (manual, see [Manual checks: phone full mode](#manual-checks-phone-full-mode)): a real phone's browser. The listener tests reach the LAN address from the same machine, and the layout was checked in desktop Chromium at 390 × 844 with the certificate error ignored.
 
 **Still planned** (see modules below): `chat-db.js` unit tests, all `src/` modules (jsdom + Testing Library), `useAgentSocket` reconnect logic, React components, Playwright E2E, coverage thresholds.
 
@@ -723,6 +728,41 @@ Every platform
   release N+1 deleted or made a draft again → no update offered; a release older than the running app is never installed
   a dev run (npm run dev:electron) has no update items at all
 ```
+
+## Manual checks: phone full mode
+
+`npm run lan -- --full` (docs/reference.md › Phone mode). The automated tests cover the listener, the certificate and the page's rules for the secret; these need a real phone on the same Wi-Fi and are done by hand. Use a throwaway `AGENT_OFFICE_HOME` and other ports (`AGENT_OFFICE_PORT`, `AGENT_OFFICE_LAN_PORT`) if an office you care about is running.
+
+**Never yet run on a real phone** — the first two decide whether full mode works on an iPhone at all:
+
+1. **iOS Safari, WebSocket after the warning.** Scan the QR code, accept the certificate warning, and check the header reads *online* and the server logs `Phone connected … (full mode, phones: 1)`. Unverified: whether Safari lets the page's `wss://` connection use a certificate accepted through that warning. If the page loads and stays *Not connected*, it does not; note the iOS version.
+2. **The fragment survives the warning.** After accepting, the page must not show *NO KEY*. If it does, the browser dropped `#phone=…` on the way through the warning: open the link a second time and note which browser.
+3. **The fingerprint can be compared.** From the warning, open the certificate's details and find the SHA-256 fingerprint; it must equal the one the server printed. Write down the taps for iOS Safari and Android Chrome (the reference does not give them yet).
+4. Repeat 1–3 in Chrome on Android.
+
+**Layout, portrait 390 × 844 or the phone's own size**
+
+5. The room spans the width at the top; nothing scrolls sideways in any tab (Chat, Meters, Today, Settings).
+6. With a permission pending (run a tool that asks, with **Answer here** on): the card is on screen under the room without scrolling or zooming; *Allow*, *Allow & remember* and *Deny* are each easy to hit; the hook is released with the answer given; the card leaves.
+7. Chat: tap the field — with the keyboard up the field and the last lines stay visible (the room is put away); post a line and see it in the desktop office. `/clear` is refused.
+8. Meters and Today show live numbers; Settings' three switches change the server's settings (check on the desktop page) and the chat monitor pauses.
+9. Tap a character: the inspector opens over the lower half with a transcript tail; its close button is at the right edge.
+10. Rotate to landscape: the room on the left, the rest on the right, clear of the notch and the home bar.
+11. With *Reduce Motion* on (iOS: Settings › Accessibility › Motion): cards and the inspector appear without sliding, session pills do not pulse.
+
+**The secret and the certificate**
+
+12. `https://<lan ip>:<port>/` without the fragment in a fresh browser: the *NO KEY* notice, no tabs, no chat field.
+13. `#phone=off` forgets the secret: the same notice, and a reload stays there.
+14. Restart with `--full --rotate`: the phone shows *Not connected*; the new link works; the certificate warning does **not** come back (the certificate is kept).
+15. Restart with nothing changed: no new warning, the same fingerprint, the old link still works.
+16. Change this machine's LAN address (another network), restart: the server prints `New certificate (the LAN address changed)` and a new fingerprint; the phone warns once more.
+17. Open the full-mode link's address with `http://` instead of `https://`: no page, no answer.
+18. In a browser holding no phone secret, the office link's `#token=…` and the watch-only link's `#viewer=…` put on the `https://<lan ip>:<port>/` address: the *NO KEY* notice both times, the fragment gone from the address bar, and neither value stored (Safari › Develop, or Chrome's remote inspector: of the office's three secrets only `agent-office.phone` may ever appear in that origin's storage).
+
+**Watch-only is unchanged**
+
+19. `npm run lan` with no flag, also with `AGENT_OFFICE_LAN=full` left in the shell: the banner says *watch-only*, the link is `http://…/#viewer=…`, the phone shows the scene alone, and `curl http://<lan ip>:<port>/settings` is a 404.
 
 ---
 

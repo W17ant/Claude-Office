@@ -313,7 +313,8 @@ Agents can also message each other directly — see [Agent-to-agent messages](do
 | `127.0.0.1:3333?helper` | Placement helper — dev tool for positioning furniture |
 | `127.0.0.1:3333?sim&rooms=all` | Rooms preview — the corridor, meeting room, server room and lunch room on placeholders, before their art ([Rooms](docs/reference.md#rooms)) |
 | `127.0.0.1:3333?variant=incident` | Incident — pins "Prod Is Down" on |
-| `<lan ip>:3335/#viewer=…` | Phone — `npm run lan` prints this link and a QR code: the office scene, watch-only, on a phone on your Wi-Fi ([Phone mode](docs/reference.md#phone-mode)) |
+| `http://<lan ip>:3335/#viewer=…` | Phone, watch-only — `npm run lan` prints this link and a QR code: the office scene alone, on a phone on your Wi-Fi ([Phone mode](docs/reference.md#phone-mode)) |
+| `https://<lan ip>:3335/#phone=…` | Phone, full office — `npm run lan -- --full` prints this link, a QR code and a certificate fingerprint to compare on the first visit: chat, permission cards you can answer, meters, settings and the inspector, over HTTPS only ([Phone mode](docs/reference.md#phone-mode)) |
 | `127.0.0.1:3333?season=christmas` | Christmas — the festive office any day (on by itself 1 Dec – 6 Jan) |
 | `127.0.0.1:3333?season=autumn` | Any season or holiday by name, any day: `spring`, `summer`, `autumn`, `winter`, `halloween`, `easter`, `valentine` (only Christmas has art so far: [Seasons](docs/reference.md#seasons)) |
 | `127.0.0.1:3333?season=none` | No seasonal art, whatever the date |
@@ -355,7 +356,7 @@ Claude-Office/
 
 ## Security
 
-- Server binds to `127.0.0.1` only — not exposed to the network. Phone mode is opt-in: `npm run lan` adds a separate watch-only listener on your LAN address (no API routes, its own viewer key, no prompts, commands, paths or task text), and `AGENT_OFFICE_ALLOWED_HOSTS` lets `tailscale serve` reach the loopback server ([Phone mode](docs/reference.md#phone-mode))
+- Server binds to `127.0.0.1` only — not exposed to the network. Phone mode is opt-in: `npm run lan` adds a separate watch-only listener on your LAN address (no API routes, its own viewer key, no prompts, commands, paths or task text); `npm run lan -- --full` serves the full office there instead, over HTTPS only, with a certificate made on this machine (compare its printed fingerprint on the first visit: nobody signed it), its own phone secret and a short allowlist of routes; and `AGENT_OFFICE_ALLOWED_HOSTS` lets `tailscale serve` reach the loopback server ([Phone mode](docs/reference.md#phone-mode))
 - Agent events, permission answers and wiping the chat need the auth token in `~/.agent-office/auth-token` (`0600` permissions); typing in the chat doesn't
 - The office page gets the token from the link the start script opens; without it the office is read-only
 - Hook requests are signed, so the token never appears on a command line
