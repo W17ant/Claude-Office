@@ -22,6 +22,7 @@ const EVENTS = [
   'UserPromptSubmit', 'Stop', 'PermissionRequest', 'Notification', 'StopFailure', 'PreCompact', 'PostCompact',
   'PostToolBatch', 'CwdChanged', 'PostModelSwitch',
   'TaskCreated', 'TaskCompleted',
+  'Elicitation', 'ElicitationResult', 'PermissionDenied', 'TeammateIdle',
 ] as const
 /** The ones added for the main thread (F01/F02); an older install lacks exactly these. */
 const TURN_EVENTS = [
@@ -30,6 +31,8 @@ const TURN_EVENTS = [
 ] as const
 /** The ones added for the task board (F09); an install from before it lacks these two. */
 const TASK_EVENTS = ['TaskCreated', 'TaskCompleted'] as const
+/** The ones added for MCP questions, auto-mode denials and agent teams; a 19-event install lacks these four. */
+const NEWER_EVENTS = ['Elicitation', 'ElicitationResult', 'PermissionDenied', 'TeammateIdle'] as const
 const TRACKER_COMMAND = /^bash ".*\/hooks\/agent-tracker\.sh"$/
 /** What the installer writes for an event when nothing of ours was there */
 const OUR_GROUP = { matcher: '', hooks: [{ type: 'command', command: expect.stringMatching(TRACKER_COMMAND) }] }
@@ -74,7 +77,7 @@ function trackerGroups(settings: any, event: string) {
 }
 
 describe('install-hooks.sh', () => {
-  it('creates settings.json with all 19 events (workers, sessions, the main thread\'s turn, the task list) on a fresh HOME', () => {
+  it('creates settings.json with all 23 events (workers, sessions, the main thread\'s turn, the task list, MCP questions, denials, teammates) on a fresh HOME', () => {
     const home = freshHome()
     const out = runInstaller(home)
 
@@ -121,10 +124,10 @@ describe('install-hooks.sh', () => {
     }
   })
 
-  it('adds the ten main-thread events (and the two task events) to an install that predates them and leaves the seven it had alone', () => {
+  it('adds the ten main-thread events (and the task and newer events) to an install that predates them and leaves the seven it had alone', () => {
     const home = freshHome()
     mkdirSync(join(home, '.claude'), { recursive: true })
-    const newer: readonly string[] = [...TURN_EVENTS, ...TASK_EVENTS]
+    const newer: readonly string[] = [...TURN_EVENTS, ...TASK_EVENTS, ...NEWER_EVENTS]
     const older = EVENTS.filter(e => !newer.includes(e))
     const settings: any = { hooks: {} }
     for (const event of older) settings.hooks[event] = [{ matcher: '', hooks: [{ type: 'command', command: `bash "${TRACKER_SCRIPT}"` }] }]
@@ -141,13 +144,13 @@ describe('install-hooks.sh', () => {
       expect(after.hooks[event]).toEqual([OUR_GROUP])
       expect(out).toContain(`[add]  ${event}`)
     }
-    expect(out).toContain('hooks: 12 added, 0 repointed at this checkout, 7 unchanged')
+    expect(out).toContain('hooks: 16 added, 0 repointed at this checkout, 7 unchanged')
   })
 
   it('adds TaskCreated and TaskCompleted to a 17-event install from before the task board and leaves the rest alone', () => {
     const home = freshHome()
     mkdirSync(join(home, '.claude'), { recursive: true })
-    const older = EVENTS.filter(e => !(TASK_EVENTS as readonly string[]).includes(e))
+    const older = EVENTS.filter(e => !([...TASK_EVENTS, ...NEWER_EVENTS] as readonly string[]).includes(e))
     expect(older).toHaveLength(17)
     const settings: any = { hooks: {} }
     for (const event of older) settings.hooks[event] = [{ matcher: '', hooks: [{ type: 'command', command: `bash "${TRACKER_SCRIPT}"` }] }]
@@ -161,7 +164,30 @@ describe('install-hooks.sh', () => {
       expect(after.hooks[event]).toEqual([OUR_GROUP])
       expect(out).toContain(`[add]  ${event}`)
     }
-    expect(out).toContain('hooks: 2 added, 0 repointed at this checkout, 17 unchanged')
+    expect(out).toContain('hooks: 6 added, 0 repointed at this checkout, 17 unchanged')
+  })
+
+  it('adds Elicitation, ElicitationResult, PermissionDenied and TeammateIdle to a 19-event install and leaves the rest alone; never WorktreeCreate', () => {
+    const home = freshHome()
+    mkdirSync(join(home, '.claude'), { recursive: true })
+    const older = EVENTS.filter(e => !(NEWER_EVENTS as readonly string[]).includes(e))
+    expect(older).toHaveLength(19)
+    const settings: any = { hooks: {} }
+    for (const event of older) settings.hooks[event] = [{ matcher: '', hooks: [{ type: 'command', command: `bash "${TRACKER_SCRIPT}"` }] }]
+    writeFileSync(settingsPath(home), JSON.stringify(settings, null, 2))
+
+    const out = runInstaller(home)
+    const after = readSettings(home)
+    expect(Object.keys(after.hooks).sort()).toEqual([...EVENTS].sort())
+    for (const event of older) expect(after.hooks[event]).toEqual(settings.hooks[event])
+    for (const event of NEWER_EVENTS) {
+      expect(after.hooks[event]).toEqual([OUR_GROUP])
+      expect(out).toContain(`[add]  ${event}`)
+    }
+    expect(out).toContain('hooks: 4 added, 0 repointed at this checkout, 19 unchanged')
+    // Why: a command hook on WorktreeCreate replaces git's worktree creation and must print a path
+    expect(after.hooks.WorktreeCreate).toBeUndefined()
+    expect(after.hooks.WorktreeRemove).toBeUndefined()
   })
 
   it('repoints every entry that names a checkout that moved, keeps foreign hooks where they were and adds nothing twice', () => {
@@ -405,7 +431,7 @@ describe('install-hooks.sh --uninstall', () => {
   const foreign = { matcher: 'Bash', hooks: [{ type: 'command', command: 'echo foreign' }] }
   const foreignStop = { hooks: [{ type: 'command', command: 'say done' }] }
 
-  it('after an install on a fresh HOME, removes all 19 events and both status lines and leaves {}', () => {
+  it('after an install on a fresh HOME, removes all 23 events and both status lines and leaves {}', () => {
     const home = freshHome()
     install(home)
     expect(readSettings(home).statusLine).toBeDefined()

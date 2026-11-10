@@ -868,14 +868,21 @@ function reduceEvent(state: OfficeState, action: OfficeAction, env: OfficeEnv): 
    * Claude's line, so no pendingStatus is queued that could replay a stale
    * tool call over a later turn end or needs-you.
    */
-  const mainThreadWorking = (sessionId: string, statusMsg: string, failed: boolean, origin: SessionFields): OfficeResult => {
+  const mainThreadWorking = (sessionId: string, statusMsg: string, failed: boolean, origin: SessionFields, icon: string): OfficeResult => {
     if (sessionId in state.endedSessions) return none
     const ensured = ensureClaude(state, sessionId, origin, env)
     const id = mainId(sessionId)
-    const cur = applyMain(ensured.state, id, { mainState: 'working', statusText: statusMsg, lastFailed: failed }, env)
+    const before = ensured.state.agents.find(a => a.id === id)
+    // Why: an MCP question blocks only the call that asked; other calls of the
+    // batch run beside it, so the hand stays up (the server keeps it too)
+    // until the answer, that call's end or the turn's end lowers it
+    const keepHand = before?.mainState === 'needs-you' && before.needsYou?.kind === 'elicitation'
+    const cur = keepHand
+      ? ensured.state
+      : applyMain(ensured.state, id, { mainState: 'working', statusText: statusMsg, lastFailed: failed }, env)
     const claude = cur.agents.find(a => a.id === id)
     if (!claude) return none
-    return { state: cur, effects: [...ensured.effects, claudeMsg(cur, claude, `${failed ? '❌' : '⚡'} ${statusMsg}`)] }
+    return { state: cur, effects: [...ensured.effects, claudeMsg(cur, claude, `${icon} ${statusMsg}`)] }
   }
 
   switch (action.type) {
@@ -889,8 +896,9 @@ function reduceEvent(state: OfficeState, action: OfficeAction, env: OfficeEnv): 
     case 'agent_working': {
       const id = action.agentId ?? action.agent?.id
       const statusMsg = action.status ?? workMessage()
-      const icon = action.failed ? '❌' : '⚡'
-      const failed = !!action.failed
+      // 🚫 auto mode refused the call (PermissionDenied), ❌ it errored, ⚡ it runs
+      const icon = action.denied ? '🚫' : action.failed ? '❌' : '⚡'
+      const failed = !!action.failed || !!action.denied
 
       if (id) {
         const agent = state.agents.find(a => a.id === id)
@@ -916,11 +924,11 @@ function reduceEvent(state: OfficeState, action: OfficeAction, env: OfficeEnv): 
       // session's own Claude at work. Without one (old hook, sim mode) any
       // worker will do; failing that, the only Claude in the office.
       const origin = { project: action.project, cwd: action.cwd }
-      if (action.sessionId) return mainThreadWorking(action.sessionId, statusMsg, failed, origin)
+      if (action.sessionId) return mainThreadWorking(action.sessionId, statusMsg, failed, origin, icon)
       const workers = state.agents.filter(a => a.state === 'working' && a.id !== BOSS_ID && !isMainAgent(a))
       if (workers.length === 0) {
         const mains = state.agents.filter(a => isMainAgent(a) && a.state !== 'completed')
-        if (mains.length === 1 && mains[0].sessionId) return mainThreadWorking(mains[0].sessionId, statusMsg, failed, origin)
+        if (mains.length === 1 && mains[0].sessionId) return mainThreadWorking(mains[0].sessionId, statusMsg, failed, origin, icon)
         return none
       }
       const target = pickOne(workers, env.random)

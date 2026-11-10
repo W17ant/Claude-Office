@@ -24,6 +24,7 @@
  */
 
 import { officeHttpBase } from './serverUrl'
+import { officeAuthHeaders } from './officeAuth'
 
 // Shape of the optional office.config.json
 type UserConfig = { boss?: { name?: string; sprite?: string; color?: string; emoji?: string } }
@@ -144,7 +145,8 @@ export async function loadRuntimeConfig({
 }: LoadRuntimeConfigOptions = {}): Promise<RuntimeConfig | null> {
   if (typeof fetchImpl !== 'function') return null
   try {
-    const res = await fetchImpl(`${base}/config`, { signal: AbortSignal.timeout(timeoutMs) })
+    // Through an HTTPS proxy name this read needs the office token (src/officeAuth.ts); {} on loopback
+    const res = await fetchImpl(`${base}/config`, { signal: AbortSignal.timeout(timeoutMs), headers: officeAuthHeaders() })
     if (!res.ok) return null
     const body = (await res.json()) as Partial<RuntimeConfig> | null
     if (!body || typeof body !== 'object' || !body.boss || typeof body.boss !== 'object') return null

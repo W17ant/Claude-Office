@@ -9,6 +9,7 @@ import { getEffect } from '../agentManager'
 import { ROLE_TO_CHAR, BOSS_ROLE } from '../config'
 import { getSpritePath, useTheme } from '../theme'
 import { useVariant } from '../incident'
+import { incidentPropFor } from '../incidentAssets'
 import { useWalkFrames, walkFrame } from '../walk'
 import { isMainAgent, isHardNeedsYou, needsYouBadge, needsYouShort } from '../mainState'
 
@@ -183,7 +184,8 @@ const Character: React.FC<CharacterProps> = ({ agent, idleDurationMs = 0, zIndex
   const head = useHeadAnchor(spriteSrc, currentSeason() === 'christmas' && wearsOverlayHat(standingSrc))
   void theme
   const variant = useVariant() // Why: re-render when incident mode flips so the failure bubble shows/hides
-  void variant
+  // Prod is down: each kind of agent grabs its prop (pager, megaphone, ...)
+  const prop = variant === 'incident' ? incidentPropFor(agent.role) : null
 
   // A session's Claude wears its main-thread state: a hand up while it waits on
   // you, a warning on an API error, a broom during a memory wipe, a glass of
@@ -291,6 +293,15 @@ const Character: React.FC<CharacterProps> = ({ agent, idleDurationMs = 0, zIndex
                 // a sprite facing right wears it mirrored so the tip trails behind
                 transform: directionRef.current.endsWith('right') ? 'scaleX(-1)' : undefined,
               }}
+              draggable={false}
+            />
+          )}
+          {/* Prod is down: the prop this kind of agent grabs, held at the hand */}
+          {prop && (
+            <img
+              src={prop}
+              alt=""
+              className={`char-prop${directionRef.current.endsWith('right') ? ' mirrored' : ''}`}
               draggable={false}
             />
           )}
