@@ -172,7 +172,7 @@ const Character: React.FC<CharacterProps> = ({ agent, idleDurationMs = 0, zIndex
   const charBase = getCharBase(agent.role)
   const theme = useTheme() // Why: re-render on theme toggle so sprite path updates
   useWalkFrames() // Why: re-render when this sprite's stride frames turn out to exist
-  useSeasonArt() // Why: re-render when this sprite's festive copy turns out to exist
+  useSeasonArt() // Why: re-render when this sprite's seasonal copy turns out to exist
   const standingSrc = getSpritePath(agent.id, agent.role, charBase, directionRef.current)
   // While walking, the legs move: a four-frame walk cycle (src/walk.ts)
   const spriteSrc = walkFrame(standingSrc, stepping, now)

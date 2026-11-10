@@ -8,11 +8,12 @@
  */
 
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterAll, describe, expect, it } from 'vitest'
+import { SEASON_SUFFIX } from '../src/seasonNames'
 
 const SCRIPT = fileURLToPath(new URL('../scripts/check-assets.mjs', import.meta.url))
 const REPO = fileURLToPath(new URL('..', import.meta.url))
@@ -20,6 +21,10 @@ const REPO = fileURLToPath(new URL('..', import.meta.url))
 // A 1x1 PNG; the script only looks at names and sizes
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64')
 const DIRS = ['front-left', 'front-right', 'rear-left', 'rear-right']
+
+// The real list of season suffixes: the script reads SEASON_SUFFIX out of this file's text
+const SEASON_NAMES_TS = readFileSync(new URL('../src/seasonNames.ts', import.meta.url), 'utf8')
+const SUFFIXES = Object.values(SEASON_SUFFIX)
 
 const tempDirs: string[] = []
 afterAll(() => { for (const d of tempDirs) rmSync(d, { recursive: true, force: true }) })
@@ -143,6 +148,68 @@ export const INCIDENT_ASSETS = {
     const { status, out } = run(fixture({ ...CONSISTENT, 'src/theme.ts': 'export const nothing = 1\n' }))
     expect(status).toBe(1)
     expect(out).toContain('src/theme.ts: could not find OFFICE_CHARACTERS')
+  })
+
+  it('accepts a seasonal copy in every season\'s suffix, and the walk frames beside a sprite or its copy', () => {
+    const files: Record<string, string | Buffer> = { ...CONSISTENT, 'src/seasonNames.ts': SEASON_NAMES_TS }
+    const sprite = 'public/sprites/characters/dev-1-front-left'
+    for (const k of [1, 2, 3, 4]) files[`${sprite}-walk${k}.webp`] = PNG
+    for (const suffix of SUFFIXES) {
+      files[`public/rooms/office-day${suffix}.webp`] = PNG
+      files[`${sprite}${suffix}.webp`] = PNG
+      for (const k of [1, 2, 3, 4]) files[`${sprite}${suffix}-walk${k}.webp`] = PNG
+    }
+    expect(SUFFIXES).toHaveLength(8)
+    const { status, out } = run(fixture(files))
+    expect(status).toBe(0)
+    expect(out).not.toContain('Missing')
+    // Only the fixture's own orphan is left over: none of the 84 .webp files
+    expect(out).toMatch(/Unreferenced — nothing in the code asks for these \(1,/)
+    expect(out).toContain('  sprites/old.png')
+    expect(out).not.toContain('.webp')
+  })
+
+  it('still lists a seasonal-looking file nothing can load', () => {
+    const strays = [
+      'rooms/ghost-autumn.webp',                              // a copy of no original
+      'rooms/office-day-midsummer.webp',                      // not a season
+      'rooms/office-day-xmas-winter.webp',                    // two suffixes: a copy of a copy
+      'rooms/office-day-autumn.png',                          // copies are .webp
+      'sprites/characters/ghost-front-left-winter-walk1.webp', // frames of no sprite
+      'sprites/characters/dev-1-front-left-walk5.webp',       // the cycle has four frames
+    ]
+    const files: Record<string, string | Buffer> = {
+      ...CONSISTENT,
+      'src/seasonNames.ts': SEASON_NAMES_TS,
+      'public/rooms/office-day-autumn.webp': PNG, // a real copy beside them, accepted
+    }
+    for (const rel of strays) files[`public/${rel}`] = PNG
+    const { status, out } = run(fixture(files))
+    // Unreferenced files are listed, not fatal (the script's contract); the missing ones are what fail
+    expect(status).toBe(0)
+    expect(out).toMatch(new RegExp(`Unreferenced — nothing in the code asks for these \\(${strays.length + 1},`))
+    for (const rel of strays) expect(out).toContain(`  ${rel} `)
+    expect(out).not.toContain('  rooms/office-day-autumn.webp')
+  })
+
+  it('without the list of suffixes no file counts as a seasonal copy', () => {
+    const { status, out } = run(fixture({ ...CONSISTENT, 'public/rooms/office-day-xmas.webp': PNG }))
+    expect(status).toBe(0)
+    expect(out).toContain('  rooms/office-day-xmas.webp')
+  })
+
+  it('fails loudly when the list of season suffixes disappears or moves', () => {
+    const emptied = run(fixture({ ...CONSISTENT, 'src/seasonNames.ts': 'export const SEASON_SUFFIX: Record<string, string> = {}\n' }))
+    expect(emptied.status).toBe(1)
+    expect(emptied.out).toContain('src/seasonNames.ts: could not find SEASON_SUFFIX')
+
+    const renamed = run(fixture({ ...CONSISTENT, 'src/seasonNames.ts': 'export const SUFFIXES = { christmas: \'-xmas\' }\n' }))
+    expect(renamed.status).toBe(1)
+    expect(renamed.out).toContain('src/seasonNames.ts: could not find SEASON_SUFFIX')
+
+    const moved = run(fixture({ ...CONSISTENT, 'src/season.ts': 'export const seasonalUrl = (url: string) => url\n' }))
+    expect(moved.status).toBe(1)
+    expect(moved.out).toContain('src/seasonNames.ts: not found beside src/season.ts')
   })
 
   it('this checkout: nothing missing, no unmodelled pattern, within budget', () => {

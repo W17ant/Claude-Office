@@ -38,6 +38,12 @@
  *       src/incidentAssets.ts is probed at runtime and may not exist yet;
  *       it is optional (reported, never fatal). Its `fallback` is a plain
  *       literal and required.
+ *   P5  Seasonal copies: `<name><suffix>.webp` beside a `<name>.png`, for
+ *       every suffix in SEASON_SUFFIX (src/seasonNames.ts: -xmas, -autumn,
+ *       ...). Optional, and only the ones present are counted: every image
+ *       could have eight.
+ *   P6  Walk-cycle frames: `<name>-walk1..4.webp` beside the sprite they
+ *       animate, a `.png` or any season's `.webp` copy. Optional likewise.
  *
  * A template literal that builds a /sprites or /rooms path and is not one
  * of KNOWN_DYNAMIC fails the check: model it here before relying on it.
@@ -78,7 +84,7 @@ const KNOWN_DYNAMIC = new Set([
   '*/*-*.png',                          // theme.ts getSpritePath (P1, P2)
   '/sprites/characters/*-*.png',        // PlacementHelper.tsx (P1)
   '/sprites/office/cats/*.png',         // theme.ts getAngelaCat, OFFICE_CATS_PATHS (P3)
-  '*.webp',                             // season.ts seasonalVariant: name.png -> name-xmas.webp (P5)
+  '*.webp',                             // season.ts seasonalVariant: name.png -> name<suffix>.webp (P5)
   '*-walk*.webp',                       // walk.ts walkFramePaths: name.png -> name-walk1..4.webp (P6)
 ])
 
@@ -230,13 +236,22 @@ if (incident !== null) {
 }
 
 // P5 — seasonal copies (src/season.ts): `<name><suffix>.webp` next to a
-// `<name>.png` the code asks for. Optional: one that exists is referenced
-// through its original; one that does not is simply not drawn yet, so the
-// missing ones are not listed (every sprite could have one).
-const season = readIfExists('src/season.ts')
-const seasonSuffixes = season === null ? [] : anchorOrFail('src/season.ts', 'SEASON_SUFFIX', (() => {
-  const m = /SEASON_SUFFIX[^=]*=\s*\{([^}]*)\}/.exec(season)
-  return m ? [...m[1].matchAll(/'([^']+)'/g)].map(q => q[1]) : null
+// `<name>.png` the code asks for, one suffix per holiday and per season of the
+// year. Optional: one that exists is referenced through its original; one that
+// does not is simply not drawn yet, so the missing ones are not listed (every
+// sprite could have eight).
+// Why src/seasonNames.ts: the one list of suffixes the app itself uses, so a
+// season added there is accepted here with no edit to this script.
+const SEASON_NAMES = 'src/seasonNames.ts'
+const seasonNames = readIfExists(SEASON_NAMES)
+// Why a repo with season.ts but no list fails: the suffixes moved, and reading
+// none would quietly report every seasonal copy as unreferenced
+if (seasonNames === null && existsSync(join(root, 'src/season.ts')))
+  problems.push(`${SEASON_NAMES}: not found beside src/season.ts; update P5 in scripts/check-assets.mjs`)
+const seasonSuffixes = seasonNames === null ? [] : anchorOrFail(SEASON_NAMES, 'SEASON_SUFFIX', (() => {
+  const m = /const SEASON_SUFFIX[^=]*=\s*\{([^}]*)\}/.exec(seasonNames)
+  const suffixes = m ? [...m[1].matchAll(/'([^']+)'/g)].map(q => q[1]) : []
+  return suffixes.length ? suffixes : null
 })())
 
 // ---------------------------------------------------------------------------
@@ -254,14 +269,16 @@ for (const f of files) {
   for (const suffix of seasonSuffixes) {
     if (!f.rel.endsWith(`${suffix}.webp`)) continue
     const base = `${f.rel.slice(0, -`${suffix}.webp`.length)}.png`
-    // Why only beside a known original: a festive copy of nothing would never load
+    // Why only beside a known original: a seasonal copy of nothing would never load
     if (required.has(base) || optional.has(base) || present.has(base)) ref(optional, f.rel, `P5 seasonal copy of ${base}`)
   }
 }
 // P6 — walk-cycle frames (src/walk.ts): `<name>-walk1.webp` .. `-walk4.webp`
-// beside the sprite they animate: a `<name>.png`, or a festive `<name>.webp`
-// (`…-xmas-walk1.webp` beside `…-xmas.webp`). Optional: present ones are
-// referenced through their sprite, missing ones are not listed.
+// beside the sprite they animate: a `<name>.png`, or a seasonal `<name>.webp`
+// (`…-xmas-walk1.webp` beside `…-xmas.webp`, `…-autumn-walk1.webp` beside
+// `…-autumn.webp`). Optional: present ones are referenced through their
+// sprite, missing ones are not listed. No suffix list here: any `.webp` that
+// exists beside the frames will do, and P5 has already vetted the seasonal ones.
 for (const f of files) {
   const m = /^(.*)-walk[1-4]\.webp$/.exec(f.rel)
   if (!m) continue

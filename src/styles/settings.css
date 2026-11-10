@@ -81,7 +81,8 @@
   color: var(--op-fg);
 }
 .office-popover button:focus-visible,
-.office-popover input:focus-visible {
+.office-popover input:focus-visible,
+.office-popover select:focus-visible {
   outline: 1px solid var(--op-accent);
   outline-offset: 1px;
 }
@@ -176,6 +177,24 @@
   color: var(--op-accent);
 }
 .sp-segmented button:disabled { cursor: not-allowed; opacity: 0.45; }
+
+/* A drop-down that sits in a row like .sp-segmented: same chip, same border,
+   and the chosen value in the accent colour like a pressed segment */
+.sp-select {
+  background: var(--op-chip);
+  border: 1px solid var(--op-border);
+  border-radius: 3px;
+  color: var(--op-accent);
+  font: inherit;
+  font-size: 9px;
+  padding: 2px 4px;
+  cursor: pointer;
+  flex-shrink: 0;
+  /* Why: the panel is dark whatever the system says, and this makes the
+     browser draw the arrow and the pop-up list dark to match */
+  color-scheme: dark;
+}
+.sp-select:hover { border-color: var(--op-dim); }
 
 .sp-switch {
   display: inline-flex;

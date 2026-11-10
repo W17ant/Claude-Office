@@ -14,13 +14,16 @@
  * ?video (no server) and while the server has not answered GET /settings.
  *
  * The season is judged once per page load (src/season.ts), so changing it
- * offers a reload rather than swapping every sprite under the user. The boss
- * sprite is a server-side file (office.config.json) and is only pointed at.
+ * offers a reload rather than swapping every sprite under the user. It is a
+ * drop-down, not a row of buttons like its neighbours: Auto, four holidays,
+ * four seasons and Off are ten choices, and the panel is 300 px wide. The
+ * boss sprite is a server-side file (office.config.json) and is only pointed at.
  */
 
 import React, { useEffect, useRef } from 'react'
 import { useTheme, setTheme, type ThemeName } from '../theme'
-import { currentSeason } from '../season'
+import { currentSeason, currentQuarter, seasonHasArt, useSeasonArt, type Season } from '../season'
+import { HOLIDAYS, QUARTERS } from '../seasonNames'
 import {
   readSeasonPreference, saveSeasonPreference, seasonFromUrl,
   type DayNightMode, type SeasonPreference,
@@ -70,6 +73,25 @@ function Segmented<T extends string>({ label, value, choices, onChange, disabled
   )
 }
 
+/**
+ * A drop-down, for a setting with more choices than a row of buttons has room
+ * for. A native <select>: the keyboard, the screen reader and the pop-up list
+ * all come with it, and a list that opens over the panel cannot be clipped by
+ * the panel's own scrolling the way a hand-made one would.
+ */
+function Select<T extends string>({ label, value, groups, onChange, testId }: {
+  label: string; value: T; groups: { label?: string; choices: Choice<T>[] }[]; onChange: (v: T) => void; testId?: string
+}) {
+  const options = (choices: Choice<T>[]) => choices.map(c => <option key={c.value} value={c.value}>{c.label}</option>)
+  return (
+    <select className="sp-select" aria-label={label} value={value} onChange={e => onChange(e.target.value as T)} data-testid={testId}>
+      {groups.map((g, i) => g.label
+        ? <optgroup key={g.label} label={g.label}>{options(g.choices)}</optgroup>
+        : <React.Fragment key={i}>{options(g.choices)}</React.Fragment>)}
+    </select>
+  )
+}
+
 /** An on/off switch. */
 function Switch({ label, on, onChange, disabled = false, testId }: {
   label: string; on: boolean | null; onChange: (v: boolean) => void; disabled?: boolean; testId?: string
@@ -93,7 +115,19 @@ function Switch({ label, on, onChange, disabled = false, testId }: {
 
 const THEMES: Choice<ThemeName>[] = [{ value: 'default', label: 'Default' }, { value: 'office', label: 'Dunder Mifflin' }]
 const DAY_NIGHT: Choice<DayNightMode>[] = [{ value: 'auto', label: 'Auto' }, { value: 'day', label: 'Day' }, { value: 'night', label: 'Night' }]
-const SEASONS: Choice<SeasonPreference>[] = [{ value: 'auto', label: 'Auto' }, { value: 'christmas', label: 'Christmas' }, { value: 'off', label: 'Off' }]
+const SEASON_LABEL: Record<Season, string> = {
+  christmas: 'Christmas', halloween: 'Halloween', easter: 'Easter', valentine: "Valentine's Day",
+  spring: 'Spring', summer: 'Summer', autumn: 'Autumn', winter: 'Winter',
+}
+const seasonChoices = (names: readonly Season[]): Choice<SeasonPreference>[] => names.map(s => ({ value: s, label: SEASON_LABEL[s] }))
+// Why grouped: a holiday and a season behave differently when picked by hand
+// (a holiday keeps the date's season under it, a season shows no holiday)
+const SEASON_GROUPS: { label?: string; choices: Choice<SeasonPreference>[] }[] = [
+  { choices: [{ value: 'auto', label: 'Auto (by date)' }] },
+  { label: 'Holidays', choices: seasonChoices(HOLIDAYS) },
+  { label: 'Seasons', choices: seasonChoices(QUARTERS) },
+  { choices: [{ value: 'off', label: 'Off' }] },
+]
 const LOG_LABEL: Record<LogPromptsLevel, string> = { off: 'Off', summary: 'Summary', full: 'Full' }
 const LOG_HINT: Record<string, string> = {
   off: 'No prompt or reply text is stored or shown — states only.',
@@ -105,17 +139,33 @@ const LOG_HINT: Record<string, string> = {
 const URL_SEASON = typeof location === 'undefined' ? null : seasonFromUrl(location.search)
 const LOADED_SEASON_PREF = readSeasonPreference()
 
+/**
+ * What this page loaded with, top layer first: "Christmas over Winter".
+ * A layer nobody has drawn yet says so, because picking it changes nothing on
+ * screen and that would otherwise read as the setting being broken.
+ * @returns the sentence fragment, and whether any layer in it has no art
+ */
+function lookNow(): { text: string; undrawn: boolean } {
+  const layers = [currentSeason(), currentQuarter()].filter((s): s is Season => s !== null)
+  const undrawn = layers.filter(s => seasonHasArt(s) === false)
+  return {
+    text: layers.map(s => SEASON_LABEL[s] + (undrawn.includes(s) ? ' (no art yet)' : '')).join(' over '),
+    undrawn: undrawn.length > 0,
+  }
+}
+
 const SettingsPanel: React.FC<SettingsPanelProps> = ({
   onClose, anchor, dayNightMode, onDayNightMode, volume, muted, onVolumeChange, onToggleMute, readOnly, simMode,
 }) => {
   const theme = useTheme()
   const server = useServerSettings()
+  useSeasonArt() // Why: re-render when a season turns out to have art or not (the "no art yet" note)
   const [seasonPref, setSeasonPref] = React.useState<SeasonPreference>(LOADED_SEASON_PREF)
   const ref = useRef<HTMLDivElement>(null)
 
   // Focus the dialog on open; Escape or a click elsewhere closes it and hands focus back to the gear
   useEffect(() => {
-    ref.current?.querySelector<HTMLElement>('button, input')?.focus()
+    ref.current?.querySelector<HTMLElement>('button, input, select')?.focus()
     const gear = anchor.current
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     const onDown = (e: MouseEvent) => {
@@ -147,6 +197,12 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         : null
   const serverDisabled = serverBlocked !== null
 
+  // What is in force on this page (the address wins over the stored choice)
+  // and what it looks like, for the note under the season row
+  const seasonInForce = URL_SEASON ?? LOADED_SEASON_PREF
+  const seasonPending = !URL_SEASON && seasonPref !== LOADED_SEASON_PREF
+  const look = seasonInForce === 'off' ? null : lookNow()
+
   return (
     <div className="settings-panel office-popover" role="dialog" aria-modal="false" aria-labelledby="sp-title" ref={ref} data-testid="settings-panel">
       <div className="op-head">
@@ -169,18 +225,23 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
         <div className="sp-row">
           <span className="sp-label">Season</span>
-          <Segmented label="Season" value={seasonPref} choices={SEASONS} onChange={changeSeason} testId="sp-season" />
+          <Select label="Season" value={seasonPref} groups={SEASON_GROUPS} onChange={changeSeason} testId="sp-season" />
         </div>
         {URL_SEASON && (
           <div className="sp-note">The address has <code>?season={URL_SEASON === 'off' ? 'none' : URL_SEASON}</code>, which wins over this.</div>
         )}
-        {!URL_SEASON && seasonPref !== LOADED_SEASON_PREF && (
+        {seasonPending && (
           <div className="sp-note">
             Applies on reload. <button type="button" className="sp-link" onClick={() => location.reload()}>Reload now</button>
           </div>
         )}
-        {!URL_SEASON && seasonPref === 'auto' && seasonPref === LOADED_SEASON_PREF && (
-          <div className="sp-note">Auto: Christmas from 1 December to 6 January{currentSeason() ? ' — on now' : ''}.</div>
+        {!seasonPending && look && seasonInForce === 'auto' && (
+          <div className="sp-note" data-testid="sp-season-now">
+            Auto goes by the date: the four seasons (northern hemisphere), with Christmas, Halloween, Easter and Valentine's Day on top. Now: {look.text}.
+          </div>
+        )}
+        {!seasonPending && look && seasonInForce !== 'auto' && look.undrawn && (
+          <div className="sp-note" data-testid="sp-season-now">Now: {look.text}. A season with no art yet looks like the normal office.</div>
         )}
 
         <div className="sp-row">

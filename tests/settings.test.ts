@@ -7,8 +7,9 @@ import { describe, expect, it } from 'vitest'
 import {
   readSound, saveVolume, saveMuted, readSeasonPreference, saveSeasonPreference, seasonFromUrl,
   readDayNightMode, saveDayNightMode, DEFAULT_VOLUME, VOLUME_KEY, MUTED_KEY, SEASON_KEY, DAY_NIGHT_KEY,
-  type PrefStorage,
+  SEASON_PREFERENCES, type PrefStorage,
 } from '../src/settings'
+import { HOLIDAYS, QUARTERS } from '../src/seasonNames'
 import { recapRows, formatUsd, type RecapStats } from '../src/recap'
 
 /** An in-memory Storage. */
@@ -61,24 +62,36 @@ describe('sound', () => {
 })
 
 describe('season preference', () => {
-  it('defaults to auto, round-trips christmas and off, and ignores junk', () => {
+  it('offers Auto, the four holidays, the four seasons and Off', () => {
+    expect(SEASON_PREFERENCES).toEqual([
+      'auto', 'christmas', 'halloween', 'easter', 'valentine', 'spring', 'summer', 'autumn', 'winter', 'off',
+    ])
+  })
+
+  it('defaults to auto, round-trips every choice, and ignores junk', () => {
     const s = memory()
     expect(readSeasonPreference(s)).toBe('auto')
-    saveSeasonPreference('christmas', s)
-    expect(s.data[SEASON_KEY]).toBe('christmas')
-    expect(readSeasonPreference(s)).toBe('christmas')
-    saveSeasonPreference('off', s)
+    for (const pref of SEASON_PREFERENCES) {
+      saveSeasonPreference(pref, s)
+      expect(s.data[SEASON_KEY]).toBe(pref)
+      expect(readSeasonPreference(s)).toBe(pref)
+    }
+    // SEASON_PREFERENCES ends with Off: a junk write after it changes nothing
+    saveSeasonPreference('midsummer' as never, s)
     expect(readSeasonPreference(s)).toBe('off')
-    saveSeasonPreference('easter' as never, s)
-    expect(readSeasonPreference(s)).toBe('off')
-    expect(readSeasonPreference(memory({ [SEASON_KEY]: 'easter' }))).toBe('auto')
+    expect(readSeasonPreference(memory({ [SEASON_KEY]: 'midsummer' }))).toBe('auto')
+    // The suffix is not the name, and the URL's word for off is not the stored one
+    expect(readSeasonPreference(memory({ [SEASON_KEY]: 'xmas' }))).toBe('auto')
+    expect(readSeasonPreference(memory({ [SEASON_KEY]: 'none' }))).toBe('auto')
     expect(readSeasonPreference(blocked)).toBe('auto')
   })
 
-  it('seasonFromUrl maps ?season=christmas / none and nothing else', () => {
-    expect(seasonFromUrl('?season=christmas')).toBe('christmas')
+  it('seasonFromUrl maps ?season=<a holiday or season> and none, and nothing else', () => {
+    for (const name of [...HOLIDAYS, ...QUARTERS]) expect(seasonFromUrl(`?season=${name}`)).toBe(name)
+    expect(seasonFromUrl('?sim&season=halloween')).toBe('halloween')
     expect(seasonFromUrl('?sim&season=none')).toBe('off')
-    expect(seasonFromUrl('?season=off')).toBeNull()
+    for (const unknown of ['off', 'auto', 'midsummer', 'Christmas', 'xmas', '']) expect(seasonFromUrl(`?season=${unknown}`)).toBeNull()
+    expect(seasonFromUrl('?sim')).toBeNull()
     expect(seasonFromUrl('')).toBeNull()
   })
 })

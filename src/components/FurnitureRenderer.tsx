@@ -18,8 +18,9 @@ interface FurnitureRendererProps {
 function resolveSpriteUrl(sprite: string): string | null {
   // Legacy sprite-sheet format "sheet-name:frame" — no image available
   if (!ASSETS[sprite] && sprite.includes(':')) return null
-  // Why seasonalUrl: in December a desk or plant shows its festive copy
-  // (tinsel, a Christmas tree) once that file exists, else the normal sprite
+  // Why seasonalUrl: a desk or plant shows its seasonal copy (tinsel and a
+  // Christmas tree in December, a pumpkin at Halloween; src/season.ts) once
+  // that file exists, else the normal sprite
   return seasonalUrl(ASSETS[sprite] ? ASSETS[sprite].path : sprite)
 }
 
@@ -75,7 +76,7 @@ const CLICKABLE_TYPES = new Set([
 ])
 
 const FurnitureRenderer: React.FC<FurnitureRendererProps> = ({ items, onItemClick, screens, printJob }) => {
-  useSeasonArt() // Why: memoised; re-render when a festive desk or plant file turns out to exist
+  useSeasonArt() // Why: memoised; re-render when a seasonal desk or plant file turns out to exist
   return (
     <>
       {items.map(item => {

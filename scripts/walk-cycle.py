@@ -17,12 +17,17 @@ rear-left; rear-right is only ever seen standing), so one ChatGPT image, a
        cuts the 12 figures out and writes the 12 frames beside the sprites
 
 Options (both commands):
-  --dir DIR     where the sprites are (default public/sprites/characters)
-  --festive     the Christmas copy instead: animate <name>-<dir>-xmas.webp,
-                write <name>-<dir>-xmas-walk1.webp ..
-  --no-mirror   (cut) never flip a row; for an outfit with words on it
+  --dir DIR      where the sprites are (default public/sprites/characters)
+  --season NAME  a seasonal copy instead (src/season.ts): christmas, halloween,
+                 easter, valentine, spring, summer, autumn or winter. Animates
+                 <name>-<dir><suffix>.webp and writes
+                 <name>-<dir><suffix>-walk1.webp .., e.g. --season autumn reads
+                 MyChar-1-front-left-autumn.webp
+  --festive      the Christmas copy (-xmas.webp): the same as --season christmas
+  --no-mirror    (cut) never flip a row; for an outfit with words on it
 
-  python3 scripts/walk-cycle.py prompt [--festive] prints just the prompt.
+  python3 scripts/walk-cycle.py prompt [--season NAME | --festive] prints just
+  the prompt.
 
 Each frame is drawn on its standing sprite's canvas, its feet where the
 standing pose's feet are, one scale per direction (the row's tallest frame
@@ -76,6 +81,49 @@ FESTIVE_PROMPT_EXTRA = (
     "and any words on the jumper stay the same and read the right way round."
 )
 
+# Each season a sprite can have a copy for, and the suffix that copy's file
+# name carries. Why a copy of SEASON_SUFFIX in src/seasonNames.ts: this script
+# cannot read TypeScript; tests/walk-cycle-script.test.ts fails when the two differ.
+SEASON_SUFFIX = {
+    "christmas": "-xmas",
+    "halloween": "-halloween",
+    "easter": "-easter",
+    "valentine": "-valentine",
+    "spring": "-spring",
+    "summer": "-summer",
+    "autumn": "-autumn",
+    "winter": "-winter",
+}
+# What the prompt calls each outfit ("Keep the ... outfit exactly as it is")
+SEASON_OUTFIT = {
+    "halloween": "Halloween",
+    "easter": "Easter",
+    "valentine": "Valentine's Day",
+    "spring": "spring",
+    "summer": "summer",
+    "autumn": "autumn",
+    "winter": "winter",
+}
+
+
+def prompt_for(season):
+    """The ChatGPT prompt: the everyday one, plus a line that pins a seasonal outfit (season = a name or None)."""
+    if season is None:
+        return PROMPT
+    if season == "christmas":
+        return PROMPT + FESTIVE_PROMPT_EXTRA
+    return PROMPT + (
+        f" Keep the {SEASON_OUTFIT[season]} outfit exactly as it is: same clothes, patterns and colours, "
+        "any hat, costume or accessory, and any words on it stay the same and read the right way round."
+    )
+
+
+def season_of(args):
+    """The season the options ask for (a SEASON_SUFFIX key), or None for the everyday sprite."""
+    if args.festive and args.season not in (None, "christmas"):
+        sys.exit(f"--festive means --season christmas; it cannot go with --season {args.season}")
+    return "christmas" if args.festive else args.season
+
 # ---------------------------------------------------------------------------
 # The magenta key
 # ---------------------------------------------------------------------------
@@ -104,12 +152,13 @@ def key(rgb):
 # prepare
 # ---------------------------------------------------------------------------
 
-def standing_path(sprite_dir, name, d, festive):
-    return sprite_dir / (f"{name}-{d}-xmas.webp" if festive else f"{name}-{d}.png")
+def standing_path(sprite_dir, name, d, season):
+    """The standing sprite to animate: the everyday .png, or a season's .webp copy of it."""
+    return sprite_dir / (f"{name}-{d}{SEASON_SUFFIX[season]}.webp" if season else f"{name}-{d}.png")
 
 
-def prepare(sprite_dir, name, festive):
-    paths = [standing_path(sprite_dir, name, d, festive) for d in DIRS]
+def prepare(sprite_dir, name, season):
+    paths = [standing_path(sprite_dir, name, d, season) for d in DIRS]
     missing = [str(p) for p in paths if not p.exists()]
     if missing:
         sys.exit("Missing standing sprites: " + ", ".join(missing))
@@ -122,11 +171,13 @@ def prepare(sprite_dir, name, festive):
     sheet = Image.new("RGBA", (cw * 3, ch), (255, 0, 255, 255))
     for k, im in enumerate(ims):
         sheet.alpha_composite(im, (k * cw + (cw - im.width) // 2, ch - im.height))
-    out = Path(f"{name}{'-xmas' if festive else ''}-walk-input.png")
+    out = Path(f"{name}{SEASON_SUFFIX[season] if season else ''}-walk-input.png")
     sheet.convert("RGB").save(out)
+    # Why --festive for Christmas: it is the spelling the README documents
+    option = "" if season is None else " --festive" if season == "christmas" else f" --season {season}"
     print(f"Wrote {out}. Upload it to ChatGPT with this prompt, then run:")
-    print(f"  python3 scripts/walk-cycle.py cut <chatgpt-image.png> {name}{' --festive' if festive else ''}\n")
-    print(PROMPT + (FESTIVE_PROMPT_EXTRA if festive else ""))
+    print(f"  python3 scripts/walk-cycle.py cut <chatgpt-image.png> {name}{option}\n")
+    print(prompt_for(season))
 
 
 # ---------------------------------------------------------------------------
@@ -155,18 +206,18 @@ def feet(alpha):
     return top, bottom, (cols[0] + cols[-1]) / 2
 
 
-def cut(sheet_path, sprite_dir, name, festive, no_mirror):
+def cut(sheet_path, sprite_dir, name, season, no_mirror):
     rgba = key(np.asarray(Image.open(sheet_path).convert("RGB")))
     rows = runs((rgba[..., 3] > 128).sum(axis=1) > 2, 40)
     if len(rows) != 3:
         sys.exit(f"Expected 3 rows of figures, found {len(rows)}: ask ChatGPT again for a clean 3 x 4 grid")
-    suffix = "-xmas" if festive else ""
+    suffix = SEASON_SUFFIX[season] if season else ""
     for (y0, y1), d in zip(rows, DIRS):
         band = rgba[y0:y1]
         cols = runs((band[..., 3] > 128).sum(axis=0) > 2, 20)
         if len(cols) != 4:
             sys.exit(f"{d}: expected 4 figures in its row, found {len(cols)}")
-        orig = np.asarray(Image.open(standing_path(sprite_dir, name, d, festive)).convert("RGBA"))
+        orig = np.asarray(Image.open(standing_path(sprite_dir, name, d, season)).convert("RGBA"))
         oh, ow = orig.shape[:2]
         ot, ob, oc = feet(orig[..., 3])
         cells = [band[:, x0:x1] for x0, x1 in cols]
@@ -213,20 +264,23 @@ def main():
     c.add_argument("name")
     c.add_argument("--no-mirror", action="store_true", help="never flip a row (an outfit with words on it)")
     t = sub.add_parser("prompt", help="print the ChatGPT prompt")
-    t.add_argument("--festive", action="store_true")
     for q in (p, c):
         q.add_argument("--dir", default=str(ROOT / "public" / "sprites" / "characters"))
-        q.add_argument("--festive", action="store_true", help="the Christmas copy (-xmas.webp)")
+    for q in (p, c, t):
+        q.add_argument("--season", choices=sorted(SEASON_SUFFIX), metavar="NAME",
+                       help="a seasonal copy (<suffix>.webp): " + ", ".join(SEASON_SUFFIX))
+        q.add_argument("--festive", action="store_true", help="the Christmas copy (-xmas.webp); same as --season christmas")
     a = ap.parse_args()
+    season = season_of(a)
     if a.cmd == "prompt":
-        print(PROMPT + (FESTIVE_PROMPT_EXTRA if a.festive else ""))
+        print(prompt_for(season))
         return
     need_images()
     sprite_dir = Path(a.dir).resolve()
     if a.cmd == "prepare":
-        prepare(sprite_dir, a.name, a.festive)
+        prepare(sprite_dir, a.name, season)
     else:
-        cut(a.sheet, sprite_dir, a.name, a.festive, a.no_mirror)
+        cut(a.sheet, sprite_dir, a.name, season, a.no_mirror)
 
 
 if __name__ == "__main__":
