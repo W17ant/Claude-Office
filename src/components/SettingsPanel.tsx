@@ -26,7 +26,7 @@ import {
   type DayNightMode, type SeasonPreference,
 } from '../settings'
 import {
-  useServerSettings, setAnswerPermissions, setLogPrompts, setAiPaused,
+  useServerSettings, setAnswerPermissions, setLogPrompts, setAiPaused, setNotifyPermissions,
   LOG_PROMPTS_LEVELS, type LogPromptsLevel,
 } from '../serverSettings'
 import '../styles/settings.css'
@@ -209,6 +209,11 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         <div className="sp-row">
           <span className="sp-label" title="Permission dialogs can be answered from a card in the office while Claude waits">Answer permissions here</span>
           <Switch label="Answer permissions here" on={server.answerPermissions} onChange={v => void setAnswerPermissions(v)} disabled={serverDisabled} testId="sp-answer" />
+        </div>
+
+        <div className="sp-row">
+          <span className="sp-label" title="A desktop notification when Claude starts waiting on a permission">Notify on permission waits</span>
+          <Switch label="Notify on permission waits" on={server.notifyPermissions} onChange={v => void setNotifyPermissions(v)} disabled={serverDisabled} testId="sp-notify" />
         </div>
 
         <div className="sp-row">

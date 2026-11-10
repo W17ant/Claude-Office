@@ -13,9 +13,9 @@ import TaskBoard from '../src/components/TaskBoard'
 import { getInteraction } from '../src/interactions'
 import { ROOMS } from '../src/rooms'
 import {
-  BOARD_RECT, COLUMNS, COLUMN_MAX, FX_MS, boardChatLines, boardCounts, boardLabel, cleanBoard, columnView, cycleBoards,
+  BOARD_RECT, COLUMNS, COLUMN_MAX, FX_MS, boardChatLines, boardCounts, boardKey, boardLabel, cleanBoard, columnView, cycleBoards,
   diffBoards, dispatchTaskBoards, getShownBoard, isBlocked, reduceTaskBoards, resetTaskBoards, shownBoard, taskCaption,
-  type BoardTask, type TaskBoardInfo, type TaskBoardsState,
+  teamMembersLine, type BoardTask, type TaskBoardInfo, type TaskBoardsState,
 } from '../src/taskBoard'
 import type { SessionInfo } from '../src/types'
 
@@ -87,7 +87,7 @@ describe('reduceTaskBoards', () => {
     expect(diffBoards(undefined, before)).toEqual({ 1: 'added', 2: 'added', 3: 'added' })
     let s = reduceTaskBoards(EMPTY, one(before), 100)
     s = reduceTaskBoards(s, one(after), 200)
-    expect(s.fx).toEqual({ sessionId: A, at: 200, tasks: { 1: 'started', 2: 'done', 4: 'added' } })
+    expect(s.fx).toEqual({ boardId: A, at: 200, tasks: { 1: 'started', 2: 'done', 4: 'added' } })
     // Another session's board going leaves this change's effects alone; its own going clears them
     expect(reduceTaskBoards(s, one(null, B)).fx).toBe(s.fx)
     expect(reduceTaskBoards(s, one(null, A)).fx).toBeNull()
@@ -217,7 +217,52 @@ describe('TaskBoard (static markup)', () => {
     dispatchTaskBoards(one(board(B, [task('1', 'in_progress')], 2_000)))
     const html = render()
     expect(html).toContain('>beta 1/2</div>')
-    expect(html).toContain('title="Task board: click for the next session"')
+    expect(html).toContain('title="Task board: click for the next board"')
     expect(FX_MS).toBeGreaterThan(1000)
+  })
+})
+
+describe('agent team boards (a team\'s shared task list, keyed by its boardId)', () => {
+  afterEach(() => resetTaskBoards())
+  const TEAM_KEY = 'team:session-aaaaaaaa'
+  const teamBoard = (tasks: BoardTask[], updatedAt = 3_000, members = ['team-lead', 'researcher', 'tester']) =>
+    board(A, tasks, updatedAt, { boardId: TEAM_KEY, team: { name: 'session-aaaaaaaa', members } })
+  const teamEvent = (b: TaskBoardInfo | null) => ({ type: 'task_board' as const, sessionId: A, boardId: TEAM_KEY, board: b })
+
+  it('sits beside the lead session\'s own board as a board of its own; its take-down (board: null) removes only it', () => {
+    let s = reduceTaskBoards(EMPTY, one(board(A, [task('1')], 1_000)), 5)
+    s = reduceTaskBoards(s, teamEvent(teamBoard([task('1', 'in_progress', { owner: 'researcher' })])), 6)
+    expect(s.boards.map(boardKey)).toEqual([TEAM_KEY, A])
+    expect(shownBoard(s)?.team?.name).toBe('session-aaaaaaaa')
+    expect(s.fx).toMatchObject({ boardId: TEAM_KEY })
+    // A click pages to the session's own board and back
+    s = cycleBoards(s)
+    expect(boardKey(shownBoard(s)!)).toBe(A)
+    s = cycleBoards(s)
+    expect(boardKey(shownBoard(s)!)).toBe(TEAM_KEY)
+    s = reduceTaskBoards(s, teamEvent(null), 7)
+    expect(s.boards.map(boardKey)).toEqual([A])
+  })
+
+  it('cleanBoard keeps a team as a name and a list of names, nothing else; the event\'s key wins over the board\'s', () => {
+    const raw = { sessionId: A, boardId: TEAM_KEY, team: { name: 'session-aaaaaaaa', members: ['team-lead', 7, 'tester'], cwd: '/secret' }, tasks: [task('1')], updatedAt: 1 }
+    expect(cleanBoard(raw)?.team).toEqual({ name: 'session-aaaaaaaa', members: ['team-lead', 'tester'] })
+    expect(cleanBoard({ ...raw, team: { name: '' } })).not.toHaveProperty('team')
+    expect(cleanBoard({ ...raw, boardId: 5 })).not.toHaveProperty('boardId')
+    // A team board whose event names the key and whose board forgot it is still filed under the key
+    const s = reduceTaskBoards(EMPTY, teamEvent({ ...teamBoard([task('1')]), boardId: undefined }))
+    expect(s.boards.map(boardKey)).toEqual([TEAM_KEY])
+  })
+
+  it('on the wall: labelled 👥 and the team name, the members in the tooltip, the boss reads it out like any board', () => {
+    dispatchTaskBoards(teamEvent(teamBoard([task('1', 'in_progress', { owner: 'researcher' }), task('2')])))
+    const html = renderToStaticMarkup(createElement(TaskBoard, { sessions: [{ id: A, project: 'alpha' } as SessionInfo], night: 0 }))
+    expect(html).toContain('>👥 session-aaaaaaaa</div>')
+    expect(html).toContain('title="Team session-aaaaaaaa&#x27;s task board (team-lead, researcher, tester)"')
+    expect(boardLabel(teamBoard([task('1')]), [], 0, 2)).toBe('👥 session-aaaaaaaa 1/2')
+    expect(teamMembersLine(teamBoard([task('1')], 1, Array.from({ length: 8 }, (_, i) => `m${i}`)))).toBe('m0, m1, m2, m3, m4, m5 +2')
+    expect(teamMembersLine(board(A, [task('1')]))).toBe('')
+    expect(taskCaption(getShownBoard()!.tasks[0], getShownBoard()!)).toBe('#1 In progress: Doing task 1 · researcher')
+    expect(getInteraction('kanban-board')!.chatMessage).toEqual(boardChatLines(getShownBoard()!))
   })
 })

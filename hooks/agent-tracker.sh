@@ -35,6 +35,20 @@
 #                        TaskUpdate to completed); the office reads the list
 #                        itself from ~/.claude/tasks/<session_id>/, these only
 #                        make it look at once
+#   Elicitation /
+#   ElicitationResult  — an MCP server asks the user something / the answer
+#                        went back: the hand goes up / down (server name only)
+#   PermissionDenied   — auto mode refused a tool call: a "denied" mark on the
+#                        character that asked (tool name only)
+#   TeammateIdle       — an agent-team teammate is going idle: the team's
+#                        task board is read again
+#
+# Deliberately NOT registered: WorktreeCreate (a command hook REPLACES git's
+# worktree creation and must print the new path — registering this script
+# would break every --worktree / isolation: "worktree" run), WorktreeRemove
+# (fires only for worktrees a WorktreeCreate hook made), FileChanged,
+# ConfigChange and InstructionsLoaded (file and settings churn with nothing
+# to draw; ConfigChange can even block a settings change on exit 2).
 #
 # Every event carries the session it came from: sessionId (session_id),
 # project (basename of cwd), cwd and transcriptPath. Two terminals are two

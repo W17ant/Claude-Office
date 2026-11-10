@@ -70,28 +70,45 @@ export function isOfficeToken(value: unknown): value is string {
  * stripped all the same); the other parameters are kept verbatim.
  */
 export function splitTokenFromHash(hash: string): { found: boolean; token: string | null; rest: string } {
+  const { found, value, rest } = splitHashParam(hash, 'token', isOfficeToken)
+  return { found, token: value, rest }
+}
+
+/**
+ * The `<name>=` parameter of a location hash and the hash without it: the
+ * value when `isValid` accepts it, else null, and `found` when the parameter
+ * was there at all (a malformed one is stripped all the same). Shared with
+ * the viewer key's `#viewer=` (src/viewerKey.ts).
+ */
+export function splitHashParam(
+  hash: string,
+  name: string,
+  isValid: (value: string) => boolean,
+): { found: boolean; value: string | null; raw: string | null; rest: string } {
   const body = hash.startsWith('#') ? hash.slice(1) : hash
-  if (!body) return { found: false, token: null, rest: '' }
+  if (!body) return { found: false, value: null, raw: null, rest: '' }
+  const prefix = `${name}=`
   let found = false
-  let token: string | null = null
+  let value: string | null = null
+  let raw: string | null = null
   const kept: string[] = []
   for (const part of body.split('&')) {
-    if (part.startsWith('token=')) {
+    if (part.startsWith(prefix)) {
       found = true
-      const value = part.slice('token='.length)
-      if (isOfficeToken(value)) token = value
+      raw = part.slice(prefix.length)
+      if (isValid(raw)) value = raw
     } else if (part) {
       kept.push(part)
     }
   }
-  return { found, token, rest: found ? kept.join('&') : body }
+  return { found, value, raw, rest: found ? kept.join('&') : body }
 }
 
 // The token when no storage would take it
 let memoryToken: string | null = null
 
 /** localStorage, then sessionStorage — whichever this page may use; touching either can throw. */
-function pageStorages(): TokenStorage[] {
+export function pageStorages(): TokenStorage[] {
   const out: TokenStorage[] = []
   if (typeof window === 'undefined') return out
   for (const pick of [() => window.localStorage, () => window.sessionStorage]) {
@@ -162,6 +179,24 @@ export function captureOfficeToken(
     history.replaceState(history.state, '', `${location.pathname}${location.search}${rest ? `#${rest}` : ''}`)
   } catch { /* an address we may not rewrite: the token is kept either way */ }
   return getOfficeToken(storages)
+}
+
+/**
+ * Take `#token=` out of the address WITHOUT keeping it: for a page where the
+ * office token must not live (a viewer page, plain HTTP off loopback —
+ * src/viewerKey.ts), so a stray office link opened there leaves nothing in
+ * storage and nothing on the WebSocket. Returns whether there was one.
+ */
+export function stripOfficeToken(
+  location: HashLocation = window.location,
+  history: ReplaceHistory = window.history,
+): boolean {
+  const { found, rest } = splitTokenFromHash(location.hash)
+  if (!found) return false
+  try {
+    history.replaceState(history.state, '', `${location.pathname}${location.search}${rest ? `#${rest}` : ''}`)
+  } catch { /* nothing else to do */ }
+  return true
 }
 
 /**

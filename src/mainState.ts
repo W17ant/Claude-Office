@@ -29,9 +29,10 @@ export function isMainAgent(a: Pick<Agent, 'id'>): boolean {
  * question is on its screen (an amber pill; no Claude is seated for it, so no
  * chime and no title-bar hand either way). The other two are soft: `idle` is
  * Claude Code nudging an absent user, `quota` is a usage pause nobody can
- * shorten — no chime and no title-bar hand for those.
+ * shorten — no chime and no title-bar hand for those. `elicitation` (an MCP
+ * server's question, blocking its tool call until answered) is hard too.
  */
-export const HARD_NEEDS_YOU: ReadonlySet<NeedsYouKind> = new Set<NeedsYouKind>(['permission', 'agent-input', 'registry'])
+export const HARD_NEEDS_YOU: ReadonlySet<NeedsYouKind> = new Set<NeedsYouKind>(['permission', 'agent-input', 'registry', 'elicitation'])
 
 export function isHardNeedsYou(needsYou: NeedsYou | undefined): boolean {
   return !!needsYou && HARD_NEEDS_YOU.has(needsYou.kind)
@@ -45,6 +46,7 @@ export function needsYouBadge(kind: NeedsYouKind): string {
     case 'idle':        return '💤'
     case 'quota':       return '⏳'
     case 'registry':    return '✋'
+    case 'elicitation': return '✋'
   }
 }
 
@@ -56,6 +58,7 @@ export function needsYouShort(kind: NeedsYouKind): string {
     case 'idle':        return 'idle prompt'
     case 'quota':       return 'waiting for tokens'
     case 'registry':    return 'waiting in the terminal'
+    case 'elicitation': return 'MCP question'
   }
 }
 
@@ -75,6 +78,9 @@ export function needsYouLabel(needsYou: NeedsYou): string {
       return '⏳ waiting for tokens'
     case 'registry':
       return `✋ ${summary ?? 'waiting in the terminal'}`
+    case 'elicitation':
+      // Only the server's name: the question itself never reaches the office
+      return `✋ ${summary ?? 'an MCP server'} is asking you something`
   }
 }
 

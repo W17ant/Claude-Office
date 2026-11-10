@@ -29,7 +29,11 @@ import {
   type OfficeState, type OfficeAction, type OfficeEffect, type OfficeEnv,
 } from './officeReducer'
 import { BOSS_ROLE } from './config'
-import { officeHttpBase, officeWsUrl } from './serverUrl'
+import { officeHttpBase, officeWsUrl, sameOriginWsUrl } from './serverUrl'
+import { pageViewerKey } from './pageAuth'
+import { officeAuthHeaders } from './officeAuth'
+import { mayCarryOfficeToken } from './viewerKey'
+import ViewerStage from './components/ViewerStage'
 import { pickEvent } from './events'
 import { getInteraction } from './interactions'
 import {
@@ -53,6 +57,17 @@ const params = new URLSearchParams(window.location.search)
 const isHelperMode = params.has('helper')
 const isSimMode = params.has('sim') || params.has('video')
 const isVideoMode = params.has('video')
+// Phone mode: the page holds a viewer key (src/viewerKey.ts, captured in
+// main.tsx). It shows the scene alone (ViewerStage), mounts nothing that
+// calls an API route or needs trust — chat input, permission buttons,
+// settings pills, the AI toggle, the inspector — and talks to the listener it came from.
+// A page served over plain HTTP from a non-loopback address can only be the
+// LAN listener's, so it gets the phone layout too, even without a key (the
+// link opened without its #viewer= part): it says how to fix that instead of
+// drawing the desktop window, which no phone screen fits.
+const isLanPage = !mayCarryOfficeToken(window.location)
+const isViewerMode = !isSimMode && (pageViewerKey !== null || isLanPage)
+const VIEWER_NOTICE = pageViewerKey === null ? 'no viewer key: open the phone link from npm run lan (scan its QR code)' : undefined
 // Why: allow ?theme=office on demo/sim URLs to preload Dunder Mifflin mode
 import { setTheme as _setTheme } from './theme'
 if (params.get('theme') === 'office') { _setTheme('office') }
@@ -718,7 +733,7 @@ const App: React.FC = () => {
   // WebSocket connection
   // ---------------------------------------------------------------------------
 
-  const { sessions, trusted } = useAgentSocket({ onEvent: handleEvent, url: officeWsUrl(), disabled: isSimMode })
+  const { sessions, trusted, connected } = useAgentSocket({ onEvent: handleEvent, url: isViewerMode ? sameOriginWsUrl() : officeWsUrl(), disabled: isSimMode })
   // The server showed this page the office read-only: no office token, or a
   // stale one (src/officeToken.ts). The cards and the chat stop offering
   // answers the server would refuse, and the status strip says how to fix it.
@@ -1403,10 +1418,12 @@ const App: React.FC = () => {
     setAutoTypeText(undefined)
     // Send to server so Claude can read it. ?sim / ?video scripts stay local:
     // their scripted prompts must not reach chat.db or the AI watcher (C36).
-    if (isSimMode) return
+    // A viewer page has no chat input, and the LAN listener has no /chat.
+    if (isSimMode || isViewerMode) return
     fetch(`${officeHttpBase()}/chat`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      // The UI token through an HTTPS proxy name (never the file token on a POST: src/officeAuth.ts)
+      headers: { 'Content-Type': 'application/json', ...officeAuthHeaders({ method: 'POST' }) },
       body: JSON.stringify({ sender: bossCfg.title, text }),
     }).catch(() => {})
   }, [addMsg])
@@ -1447,55 +1464,8 @@ const App: React.FC = () => {
     )
   }
 
-  return (
-    <div className="app-wrapper">
-      <div className="title-bar">
-        <div className="title-bar-dot" style={{ background: '#ff5f57' }} />
-        <div className="title-bar-dot" style={{ background: '#febc2e' }} />
-        <div className="title-bar-dot" style={{ background: '#28c840' }} />
-        <span className="title-bar-text">{titlePrefix}{variant === 'incident' ? '🔥 PROD IS DOWN — AGENT OFFICE' : 'CLAUDE CODE — AGENT OFFICE'}</span>
-        <SessionStrip sessions={sessions} agents={agents} />
-        <button
-          className="title-bar-daynight"
-          onClick={() => setDayNightMode(prev =>
-            prev === 'auto' ? 'day' : prev === 'day' ? 'night' : 'auto'
-          )}
-          title={`Mode: ${dayNightMode}`}
-        >
-          {dayNightMode === 'auto' ? 'AUTO' : dayNightMode === 'day' ? 'DAY' : 'NIGHT'}
-        </button>
-        <span className="title-bar-phase">{getPhaseLabel(effectivePhase)}</span>
-        <button
-          ref={gearRef}
-          type="button"
-          className={`title-bar-gear${settingsOpen ? ' open' : ''}`}
-          onClick={() => setSettingsOpen(o => !o)}
-          aria-label="Settings"
-          aria-expanded={settingsOpen}
-          aria-haspopup="dialog"
-          title="Settings: theme, day/night, season, sound, server settings"
-          data-testid="settings-gear"
-        >
-          ⚙
-        </button>
-      </div>
-      {settingsOpen && (
-        <SettingsPanel
-          onClose={closeSettings}
-          anchor={gearRef}
-          dayNightMode={dayNightMode}
-          onDayNightMode={setDayNightMode}
-          volume={volume}
-          muted={muted}
-          onVolumeChange={handleVolumeChange}
-          onToggleMute={handleToggleMute}
-          readOnly={readOnly}
-          simMode={isSimMode}
-        />
-      )}
-
-      <div className="app-body">
-      <div className="office-view">
+  // The room itself: the desktop window's centre, or all a viewer page shows
+  const scene = (
         <div
           className={`room-container${flickering ? ' flickering' : ''}${variant === 'incident' ? ' incident' : ''}`}
           style={{
@@ -1613,6 +1583,60 @@ const App: React.FC = () => {
           {/* Day/night overlay */}
           <div className={`day-overlay ${effectivePhase}`} />
         </div>
+  )
+
+  if (isViewerMode) return <ViewerStage connected={connected} notice={VIEWER_NOTICE}>{scene}</ViewerStage>
+
+  return (
+    <div className="app-wrapper">
+      <div className="title-bar">
+        <div className="title-bar-dot" style={{ background: '#ff5f57' }} />
+        <div className="title-bar-dot" style={{ background: '#febc2e' }} />
+        <div className="title-bar-dot" style={{ background: '#28c840' }} />
+        <span className="title-bar-text">{titlePrefix}{variant === 'incident' ? '🔥 PROD IS DOWN — AGENT OFFICE' : 'CLAUDE CODE — AGENT OFFICE'}</span>
+        <SessionStrip sessions={sessions} agents={agents} />
+        <button
+          className="title-bar-daynight"
+          onClick={() => setDayNightMode(prev =>
+            prev === 'auto' ? 'day' : prev === 'day' ? 'night' : 'auto'
+          )}
+          title={`Mode: ${dayNightMode}`}
+        >
+          {dayNightMode === 'auto' ? 'AUTO' : dayNightMode === 'day' ? 'DAY' : 'NIGHT'}
+        </button>
+        <span className="title-bar-phase">{getPhaseLabel(effectivePhase)}</span>
+        <button
+          ref={gearRef}
+          type="button"
+          className={`title-bar-gear${settingsOpen ? ' open' : ''}`}
+          onClick={() => setSettingsOpen(o => !o)}
+          aria-label="Settings"
+          aria-expanded={settingsOpen}
+          aria-haspopup="dialog"
+          title="Settings: theme, day/night, season, sound, server settings"
+          data-testid="settings-gear"
+        >
+          ⚙
+        </button>
+      </div>
+      {settingsOpen && (
+        <SettingsPanel
+          onClose={closeSettings}
+          anchor={gearRef}
+          dayNightMode={dayNightMode}
+          onDayNightMode={setDayNightMode}
+          volume={volume}
+          muted={muted}
+          onVolumeChange={handleVolumeChange}
+          onToggleMute={handleToggleMute}
+          readOnly={readOnly}
+          simMode={isSimMode}
+        />
+      )}
+
+      <div className="app-body">
+      <div className="office-view">
+        {scene}
       </div>
 
       <AgentCard agentId={inspectedId} agent={agents.find(a => a.id === inspectedId)} sessions={sessions} onClose={() => setInspectedId(null)} />

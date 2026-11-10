@@ -4,7 +4,7 @@ import { ROLE_TO_CHAR } from '../config'
 import { getSpritePath, useTheme, toggleTheme, getTheme, themedDisplayName } from '../theme'
 import IncidentBadge from './IncidentBadge'
 import { officeHttpBase } from '../serverUrl'
-import { useServerSettings, setAnswerPermissions, setAiPaused } from '../serverSettings'
+import { useServerSettings, setAnswerPermissions, setAiPaused, setNotifyPermissions } from '../serverSettings'
 
 export function getAvatarSrc(role: string, agentId?: string): string {
   const charBase = ROLE_TO_CHAR[role] ?? 'employee-3'
@@ -108,14 +108,21 @@ const SlackChat: React.FC<SlackChatProps> = ({ messages, muted, volume, onToggle
   // The server settings the header shows (src/serverSettings.ts), shared
   // with the Settings panel so a change in either shows in both: the
   // prompt-logging level (shown only), whether permission dialogs may be
-  // answered here (UI token) and the AI chat monitor's pause.
-  const { logPrompts, answerPermissions: answerHere, aiPaused } = useServerSettings()
+  // answered here (UI token), the OS notification on a permission wait and
+  // the AI chat monitor's pause.
+  const { logPrompts, answerPermissions: answerHere, notifyPermissions: notifyHere, aiPaused } = useServerSettings()
   const cronPaused = aiPaused === true
 
   const toggleAnswerHere = useCallback(() => {
     if (answerHere === null) return
     void setAnswerPermissions(!answerHere)
   }, [answerHere])
+
+  // An OS notification when a permission wait starts (notifyPermissions)
+  const toggleNotify = useCallback(() => {
+    if (notifyHere === null) return
+    void setNotifyPermissions(!notifyHere)
+  }, [notifyHere])
 
   const toggleCron = useCallback(() => {
     void setAiPaused(!cronPaused)
@@ -187,10 +194,10 @@ const SlackChat: React.FC<SlackChatProps> = ({ messages, muted, volume, onToggle
         </div>
       </div>
 
-      {/* The two settings pills sit on their own row: with the AI toggle,
+      {/* The settings pills sit on their own row: with the AI toggle,
           mute and volume they no longer fit the 300 px panel, and the
           overflow made the whole window scroll sideways */}
-      {(logPrompts || (!readOnly && answerHere !== null)) && (
+      {(logPrompts || (!readOnly && (answerHere !== null || notifyHere !== null))) && (
         <div className="slack-settings-row">
           {logPrompts && (
             <span className={`slack-logprompts ${logPrompts}`} title={logPromptsHint(logPrompts)} data-testid="log-prompts">
@@ -207,6 +214,18 @@ const SlackChat: React.FC<SlackChatProps> = ({ messages, muted, volume, onToggle
               data-testid="answer-permissions"
             >
               Answer here: {answerHere ? 'on' : 'off'}
+            </span>
+          )}
+          {!readOnly && notifyHere !== null && (
+            <span
+              className={`slack-answer-toggle slack-notify-toggle ${notifyHere ? 'on' : 'off'}`}
+              onClick={toggleNotify}
+              title={notifyHere
+                ? 'A desktop notification (project and tool only) when Claude starts waiting on a permission — click to turn off'
+                : 'No desktop notification when Claude waits on a permission — click to turn on'}
+              data-testid="notify-permissions"
+            >
+              Notify: {notifyHere ? 'on' : 'off'}
             </span>
           )}
         </div>

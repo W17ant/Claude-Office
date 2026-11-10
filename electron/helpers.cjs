@@ -12,6 +12,7 @@
 const fs = require('fs')
 const os = require('os')
 const path = require('path')
+const { updateMenuLabel } = require('./update-check.cjs')
 
 const APP_NAME = 'Agent Office'
 
@@ -543,8 +544,10 @@ function windowTitle(summary) {
 
 /**
  * The tray / right-click menu. `state` is { visible, compact, alwaysOnTop,
- * status }; `actions` supplies toggleWindow, setCompact, setAlwaysOnTop,
- * resetBounds, openInBrowser and quit. Compact mode is always on top, so the
+ * status, update? }; `actions` supplies toggleWindow, setCompact, setAlwaysOnTop,
+ * resetBounds, openInBrowser, quit and (with an update) openUpdate. `update`
+ * is { version, url } from electron/update-check.cjs when a newer release is
+ * out: an "Update available" item under the status line. Compact mode is always on top, so the
  * toggle is shown checked and disabled there. Every window control is here,
  * because on Windows and Linux the frameless window shows no menu bar: this
  * menu (the tray's, and the window's right-click) is the only one there is.
@@ -555,6 +558,11 @@ function trayMenuTemplate(state, actions) {
   return [
     { label: state.status ? `${APP_NAME} — ${state.status}` : APP_NAME, enabled: false },
     { type: 'separator' },
+    // A newer release (electron/update-check.cjs): opens its page in the browser
+    ...(state.update ? [
+      { label: updateMenuLabel(state.update), click: () => actions.openUpdate() },
+      { type: 'separator' },
+    ] : []),
     { label: state.visible ? 'Hide office' : 'Show office', click: () => actions.toggleWindow() },
     { type: 'separator' },
     {
