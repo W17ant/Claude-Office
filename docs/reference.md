@@ -268,6 +268,7 @@ The ⚙ at the right of the title bar opens one panel for the settings that used
 | Season — Auto / Christmas / Off | this browser (`agent-office-season`) | `?season=` wins; applies on reload (see [Christmas](#christmas)) |
 | Sound — mute + volume | this browser (`agent-office-volume`, `agent-office-muted`) | Same as the chat header's controls, now remembered |
 | Answer permissions here | server (`POST /settings`, UI token) | Same as the chat header's **Answer here** pill |
+| Notify on permission waits | server (`POST /settings`, UI token) | Same as the chat header's **Notify** pill: a desktop notification when Claude starts waiting on a permission |
 | Prompt logging — Off / Summary / Full | server (`POST /settings`, UI token) | The header pill shows the level; the panel can change it. Rows already in `chat.db` stay until `/clear` |
 | AI chat monitor | server (`POST /chat/cron-state`) | Same as the header's **AI On / Off** toggle |
 
