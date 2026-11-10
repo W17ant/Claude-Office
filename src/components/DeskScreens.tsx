@@ -11,7 +11,7 @@
  */
 
 import React, { useId } from 'react'
-import type { DeskGeometry, DeskScreen, ScreenMode, ScreenQuad } from '../screens'
+import type { Affine, DeskGeometry, DeskScreen, ScreenMode, ScreenQuad } from '../screens'
 
 // Why: a static picture instead of motion when the viewer asks for less
 const MOVE = !(typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches)
@@ -346,6 +346,43 @@ function Bug() {
   )
 }
 
+const affine = (m: Affine) => `matrix(${m.a} ${m.b} ${m.c} ${m.d} ${m.e} ${m.f})`
+
+/** The laptop: a small screen in the colour of what the monitors show, a few lines on it. */
+function Laptop({ m, mode }: { m: Affine; mode: ScreenMode }) {
+  if (mode === 'idle') return null // the art's own lit screen
+  const fill = mode === 'off' ? '#0b1018' : mode === 'bug' ? '#b91c1c' : '#0d1526'
+  const ink = GLOW[mode] ?? '#94a3b8'
+  return (
+    <g transform={affine(m)}>
+      <rect width={100} height={100} fill={fill} opacity={mode === 'off' ? 0.9 : 1}>
+        {MOVE && mode === 'bug' && <animate attributeName="fill" values="#7f1d1d;#dc2626" dur="1s" calcMode="discrete" repeatCount="indefinite" />}
+      </rect>
+      {mode !== 'off' && [18, 38, 58, 78].map((y, i) => (
+        <rect key={y} x={10} y={y} width={[70, 50, 62, 36][i]} height={9} fill={ink} opacity={0.8}>
+          {MOVE && <animate attributeName="width" values={`${[70, 50, 62, 36][i]};${[40, 66, 30, 58][i]};${[70, 50, 62, 36][i]}`} dur={`${2 + i * 0.4}s`} repeatCount="indefinite" />}
+        </rect>
+      ))}
+    </g>
+  )
+}
+
+/** Keys lighting up under the worker's fingers while it is busy. */
+function Keyboard({ m }: { m: Affine }) {
+  if (!MOVE) return null
+  // Why these: key positions spread over the board, each on its own beat so it reads as typing
+  const keys: Array<[number, number, string]> = [[18, 30, '0.9s'], [42, 55, '0.7s'], [66, 25, '1.1s'], [30, 70, '0.8s'], [78, 60, '1.3s'], [55, 40, '0.6s']]
+  return (
+    <g transform={affine(m)}>
+      {keys.map(([x, y, dur]) => (
+        <rect key={`${x}-${y}`} x={x} y={y} width={9} height={14} fill="#e2e8f0" opacity={0}>
+          <animate attributeName="opacity" values="0;0.85;0;0" keyTimes="0;0.1;0.3;1" dur={dur} repeatCount="indefinite" />
+        </rect>
+      ))}
+    </g>
+  )
+}
+
 // The colour a rear desk glows for what its (unseen) screens show
 const GLOW: Partial<Record<ScreenMode, string>> = {
   bug: '#ef4444', security: '#facc15', code: '#60a5fa', terminal: '#4ade80', diff: '#86efac',
@@ -395,6 +432,8 @@ const DeskScreens: React.FC<Props> = ({ geometry: g, screens, layer }) => {
       {layer === 'front' && (
         <>
           {g.screens.map((q, i) => <Screen key={i} q={q} mode={screens[Math.min(i, 1)]} clipId={`${id}-s${i}`} />)}
+          {g.laptop && <Laptop m={g.laptop} mode={screens[0]} />}
+          {g.keyboard && screens[0] !== 'off' && screens[0] !== 'idle' && screens[0] !== 'bug' && <Keyboard m={g.keyboard} />}
           {bug && g.screens.length >= 2 && (() => {
             // The bug walks from one monitor to the other (across the gap between them) and back
             const [ax, ay] = faceCentre(g.screens[0])

@@ -136,6 +136,14 @@ export function deskScreens(agents: readonly Agent[], typing: ReadonlySet<string
 /** A monitor face: left edge at x0 from y0 down `h`, right edge at x1 from y1 down `h`. */
 export interface ScreenQuad { x0: number; y0: number; x1: number; y1: number; h: number }
 
+/** A 100 x 100 box mapped onto a flat shape in the sprite: (u, v) -> (a u + c v + e, b u + d v + f), u and v 0..100. */
+export interface Affine { a: number; b: number; c: number; d: number; e: number; f: number }
+
+/** `m` reflected left to right across a sprite `w` pixels wide (the right-hand desks are mirror images). */
+export function mirrorAffine(m: Affine, w: number): Affine {
+  return { a: -m.a, b: m.b, c: -m.c, d: m.d, e: w - m.e, f: m.f }
+}
+
 export interface DeskGeometry {
   /** The sprite's size in its own pixels (the overlay's viewBox) */
   w: number
@@ -144,7 +152,17 @@ export interface DeskGeometry {
   screens: ScreenQuad[]
   /** Centre and radii of the glow behind the monitor backs (a rear desk) */
   glow?: { cx: number; cy: number; rx: number; ry: number }
+  /** The open laptop's screen (a front desk) */
+  laptop?: Affine
+  /** The keyboard lying on the desk (a front desk) */
+  keyboard?: Affine
 }
+
+// Measured on standing-desk-left-front.png: the laptop screen leans back a
+// little (its left edge runs 64,291 -> 73,356; its top edge to 146,262), the
+// keyboard lies flat (left corner 245,365, far corner 380,290, near corner 285,387)
+const LAPTOP: Affine = { a: 0.82, b: -0.29, c: 0.09, d: 0.65, e: 64, f: 291 }
+const KEYBOARD: Affine = { a: 1.35, b: -0.75, c: 0.4, d: 0.22, e: 245, f: 365 }
 
 // Measured from the PNGs: the light-blue screen areas of the front desks
 // (their vertical left and right edges), and the dark monitor backs of the
@@ -153,10 +171,12 @@ export const DESK_GEOMETRY: Readonly<Record<string, DeskGeometry>> = {
   'desk-standing-left-front': {
     w: 580, h: 728,
     screens: [{ x0: 69, y0: 142, x1: 221, y1: 70, h: 111 }, { x0: 258, y0: 55, x1: 439, y1: 23, h: 108 }],
+    laptop: LAPTOP, keyboard: KEYBOARD,
   },
   'desk-standing-right-front': {
     w: 580, h: 728,
     screens: [{ x0: 140, y0: 23, x1: 321, y1: 55, h: 108 }, { x0: 358, y0: 70, x1: 510, y1: 142, h: 111 }],
+    laptop: mirrorAffine(LAPTOP, 580), keyboard: mirrorAffine(KEYBOARD, 580),
   },
   'desk-standing-left-rear': { w: 577, h: 703, screens: [], glow: { cx: 337, cy: 165, rx: 210, ry: 140 } },
   'desk-standing-right-rear': { w: 576, h: 704, screens: [], glow: { cx: 240, cy: 165, rx: 210, ry: 140 } },
