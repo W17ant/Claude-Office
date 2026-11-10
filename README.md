@@ -270,6 +270,7 @@ Agents can also message each other directly — see [Agent-to-agent messages](do
 | `127.0.0.1:3333?video` | Video — scripted recording mode |
 | `127.0.0.1:3333?helper` | Placement helper — dev tool for positioning furniture |
 | `127.0.0.1:3333?variant=incident` | Incident — pins "Prod Is Down" on |
+| `<lan ip>:3335/#viewer=…` | Phone — `npm run lan` prints this link and a QR code: the office scene, watch-only, on a phone on your Wi-Fi ([Phone mode](docs/reference.md#phone-mode)) |
 
 ## Tech Stack
 
@@ -306,7 +307,7 @@ Claude-Office/
 
 ## Security
 
-- Server binds to `127.0.0.1` only — not exposed to the network
+- Server binds to `127.0.0.1` only — not exposed to the network. Phone mode is opt-in: `npm run lan` adds a separate watch-only listener on your LAN address (no API routes, its own viewer key, no prompts, commands, paths or task text), and `AGENT_OFFICE_ALLOWED_HOSTS` lets `tailscale serve` reach the loopback server ([Phone mode](docs/reference.md#phone-mode))
 - Agent events, permission answers and wiping the chat need the auth token in `~/.agent-office/auth-token` (`0600` permissions); typing in the chat doesn't
 - The office page gets the token from the link the start script opens; without it the office is read-only
 - Hook requests are signed, so the token never appears on a command line
