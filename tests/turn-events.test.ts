@@ -196,7 +196,7 @@ describe('logPrompts: what of the conversation is kept (GET/POST /settings)', ()
   it('defaults to summary (200 characters), is readable openly and changed with the token, and comes back after a restart from settings.json', async () => {
     const office = await loadOffice()
     offices.push(office)
-    expect((await request(office.server.app).get('/settings')).body).toEqual({ logPrompts: 'summary', answerPermissions: true, logPromptsLevels: ['off', 'summary', 'full'] })
+    expect((await request(office.server.app).get('/settings')).body).toEqual({ logPrompts: 'summary', answerPermissions: true, notifyPermissions: true, logPromptsLevels: ['off', 'summary', 'full'] })
     expect(existsSync(join(office.dir, 'settings.json'))).toBe(false)  // nothing written until a change
 
     office.server.processEvent({ type: 'session_prompt', ...ALPHA, promptId: 'p-1', text: 'p'.repeat(500) })
@@ -212,8 +212,8 @@ describe('logPrompts: what of the conversation is kept (GET/POST /settings)', ()
 
     const set = await postAuthed(office.server, '/settings', { logPrompts: 'off' })
     expect(set.status).toBe(200)
-    expect(set.body).toEqual({ ok: true, logPrompts: 'off', answerPermissions: true })
-    expect(JSON.parse(readFileSync(join(office.dir, 'settings.json'), 'utf8'))).toEqual({ logPrompts: 'off', answerPermissions: true })
+    expect(set.body).toEqual({ ok: true, logPrompts: 'off', answerPermissions: true, notifyPermissions: true })
+    expect(JSON.parse(readFileSync(join(office.dir, 'settings.json'), 'utf8'))).toEqual({ logPrompts: 'off', answerPermissions: true, notifyPermissions: true })
 
     const again = await loadOffice({ dir: office.dir })
     offices.push(again)
@@ -1148,5 +1148,125 @@ describe('POST /event body limit', () => {
     expect(chat.status).toBe(413)
     const settings = await postAuthed(office.server, '/settings', { logPrompts: 'summary', pad: 'z'.repeat(20_000) })
     expect(settings.status).toBe(413)
+  })
+})
+
+/**
+ * The newer hook events (shapes from the hooks reference, never fired here):
+ * Elicitation raises the needs-you hand with the MCP server's name only,
+ * ElicitationResult or that server's call finishing lowers it,
+ * PermissionDenied is a failed + denied agent_working, TeammateIdle a line
+ * in Claude's history (the team board's rescan is server/tasks.js's).
+ */
+describe('MCP questions (Elicitation / ElicitationResult), auto-mode denials, teammates going idle', () => {
+  let office: Office
+  beforeAll(async () => {
+    office = await loadOffice()
+    office.server.processEvent({ type: 'session_started', ...ALPHA, source: 'startup' })
+  })
+  afterAll(() => {
+    vi.useRealTimers()
+    removeOffice(office)
+  })
+
+  it('an Elicitation raises a hard hand naming the server; the question text never lands on the record, even if posted', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      const res = await postEvent(office.server, { type: 'session_needs_you', ...ALPHA, kind: 'elicitation', promptId: 'q-1', summary: 'github', message: 'Please provide your token' })
+      expect(res.status).toBe(200)
+      vi.advanceTimersByTime(DEBOUNCE_MS)
+    } finally {
+      vi.useRealTimers()
+    }
+    expect(main(office, ALPHA.sessionId)).toMatchObject({ state: 'needs-you', needsYou: { kind: 'elicitation', summary: 'github', promptId: 'q-1', since: expect.any(Number) } })
+    expect(main(office, ALPHA.sessionId).needsYou).not.toHaveProperty('message')
+    // GET /sessions without the token, and the agents.json-backed record: the server name, never the question
+    const open = await request(office.server.app).get('/sessions')
+    const session = open.body.sessions.find((s: any) => s.id === ALPHA.sessionId)
+    expect(session.main.needsYou).toEqual({ kind: 'elicitation', summary: 'github', promptId: 'q-1', since: expect.any(Number) })
+    expect(JSON.stringify(open.body)).not.toContain('provide your token')
+  })
+
+  it('a read-only connection gets the elicitation broadcast whole: there is nothing in it to strip', () => {
+    const needsYou = { kind: 'elicitation', summary: 'github', since: 1 }
+    const ev = { type: 'session_needs_you', sessionId: ALPHA.sessionId, kind: 'elicitation', summary: 'github', needsYou, main: { state: 'needs-you', since: 1, waitingOn: 0, needsYou }, timestamp: 1 }
+    expect(office.server.redactForReadOnly(ev)).toEqual(ev)
+  })
+
+  it('main-thread tool calls beside it and another server\'s call finishing leave the hand up; its own answer lowers it', () => {
+    office.server.processEvent({ type: 'agent_working', status: 'reading a.txt', ...ALPHA })
+    expect(main(office, ALPHA.sessionId).state).toBe('needs-you')
+    office.server.processEvent({ type: 'mcp_done', ...ALPHA, server: 'slack', tool: 'post' })
+    expect(main(office, ALPHA.sessionId).state).toBe('needs-you')
+    // Another server's answer does not settle github's question either
+    expect(office.server.processEvent({ type: 'session_elicitation_done', ...ALPHA, server: 'slack', elicitationAction: 'accept' })).toBeNull()
+    expect(main(office, ALPHA.sessionId).state).toBe('needs-you')
+
+    const lowered = office.server.processEvent({ type: 'session_elicitation_done', ...ALPHA, server: 'github', elicitationAction: 'decline' })
+    expect(lowered).toMatchObject({ type: 'session_main', sessionId: ALPHA.sessionId, reason: 'question answered', main: { state: 'working' } })
+    expect(main(office, ALPHA.sessionId)).not.toHaveProperty('needsYou')
+  })
+
+  it('the MCP call finishing lowers it too (server names compared the way tool names spell them); a parked one is withdrawn', () => {
+    raise(office, { ...ALPHA, kind: 'elicitation', promptId: 'q-2', summary: 'my.server' })
+    expect(main(office, ALPHA.sessionId).state).toBe('needs-you')
+    office.server.processEvent({ type: 'mcp_call', ...ALPHA, server: 'my_server', tool: 'login' })
+    office.server.processEvent({ type: 'mcp_done', ...ALPHA, server: 'my_server', tool: 'login' })
+    expect(main(office, ALPHA.sessionId).state).toBe('working')
+
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      office.server.processEvent({ type: 'session_needs_you', ...ALPHA, kind: 'elicitation', promptId: 'q-3', summary: 'github' })
+      expect(office.server.pendingNeedsYou.has(ALPHA.sessionId)).toBe(true)
+      office.server.processEvent({ type: 'mcp_done', ...ALPHA, server: 'github', tool: 'search' })
+      expect(office.server.pendingNeedsYou.has(ALPHA.sessionId)).toBe(false)
+      vi.advanceTimersByTime(DEBOUNCE_MS)
+    } finally {
+      vi.useRealTimers()
+    }
+    expect(main(office, ALPHA.sessionId).state).toBe('working')
+  })
+
+  it('POST /event keeps only a known elicitationAction; the history says what happened, never the answer', async () => {
+    raise(office, { ...ALPHA, kind: 'elicitation', promptId: 'q-4', summary: 'github' })
+    const res = await postEvent(office.server, { type: 'session_elicitation_done', ...ALPHA, server: 'github', elicitationAction: 'sudo', content: { token: 'hunter2' } })
+    expect(res.status).toBe(200)
+    expect(main(office, ALPHA.sessionId).state).toBe('working')
+    const card = await request(office.server.app).get(`/agents/main-${ALPHA.sessionId}`)
+    const texts = card.body.history.map((h: any) => h.text)
+    expect(texts).toContain('github question declined')
+    expect(texts).toContain('github question done')
+    expect(JSON.stringify(card.body)).not.toContain('hunter2')
+  })
+
+  it('PermissionDenied: a failed agent_working that says denied, on the main thread or the worker that asked', async () => {
+    const ev = office.server.processEvent({ type: 'agent_working', ...ALPHA, status: 'denied: Bash (auto mode — Irreversible Local Destruction)', failed: true, denied: true, tool: 'Bash' })
+    expect(ev).toMatchObject({ type: 'agent_working', status: 'denied: Bash (auto mode — Irreversible Local Destruction)', failed: true, denied: true, sessionId: ALPHA.sessionId })
+    const card = await request(office.server.app).get(`/agents/main-${ALPHA.sessionId}`)
+    expect(card.body.history.at(-1)).toMatchObject({ kind: 'failed', tool: 'Bash', text: 'denied: Bash (auto mode — Irreversible Local Destruction)' })
+
+    office.server.processEvent({ type: 'agent_spawned', ...ALPHA, agent: gp('agent-d1', 'deploy things') })
+    office.server.processEvent({ type: 'agent_linked', agentId: 'agent-d1', subagentId: 'sub-d1', ...ALPHA })
+    const worker = office.server.processEvent({ type: 'agent_working', ...ALPHA, agentId: 'sub-d1', agentType: 'general-purpose', status: 'denied: Bash (auto mode)', failed: true, denied: true, tool: 'Bash' })
+    expect(worker).toMatchObject({ agentId: 'agent-d1', failed: true, denied: true })
+    expect(office.server.activeAgents.get('agent-d1')).toMatchObject({ lastError: 'denied: Bash (auto mode)' })
+
+    // Only a real true travels: anything else is a plain status
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    try {
+      const res = await postEvent(office.server, { type: 'agent_working', ...ALPHA, status: 'reading x', denied: 'yes' })
+      expect(res.status).toBe(200)
+    } finally {
+      vi.restoreAllMocks()
+    }
+    expect(office.server.processEvent({ type: 'agent_working', ...ALPHA, status: 'reading y' })).not.toHaveProperty('denied')
+  })
+
+  it('teammate_idle is a known event: a line in Claude\'s history, nothing broadcast of its own', async () => {
+    const res = await postEvent(office.server, { type: 'teammate_idle', ...ALPHA, name: 'researcher' })
+    expect(res.status).toBe(200)
+    expect(office.server.processEvent({ type: 'teammate_idle', ...ALPHA, name: 'tester' })).toBeNull()
+    const card = await request(office.server.app).get(`/agents/main-${ALPHA.sessionId}`)
+    expect(card.body.history.map((h: any) => h.text)).toEqual(expect.arrayContaining(['teammate researcher idle', 'teammate tester idle']))
   })
 })

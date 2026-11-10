@@ -17,7 +17,7 @@ Everything the [README](../README.md) leaves out: how the hooks work, every sett
 
 ## Connect Claude Code
 
-Run the installer (registers the 19 hook events below plus the status line, safe to re-run):
+Run the installer (registers the 23 hook events below plus the status line, safe to re-run):
 
 ```bash
 npm run install-hooks
@@ -124,6 +124,26 @@ Or add the hooks to `~/.claude/settings.json` yourself:
       {
         "hooks": [{ "type": "command", "command": "bash /path/to/Claude-Office/hooks/agent-tracker.sh" }]
       }
+    ],
+    "Elicitation": [
+      {
+        "hooks": [{ "type": "command", "command": "bash /path/to/Claude-Office/hooks/agent-tracker.sh" }]
+      }
+    ],
+    "ElicitationResult": [
+      {
+        "hooks": [{ "type": "command", "command": "bash /path/to/Claude-Office/hooks/agent-tracker.sh" }]
+      }
+    ],
+    "PermissionDenied": [
+      {
+        "hooks": [{ "type": "command", "command": "bash /path/to/Claude-Office/hooks/agent-tracker.sh" }]
+      }
+    ],
+    "TeammateIdle": [
+      {
+        "hooks": [{ "type": "command", "command": "bash /path/to/Claude-Office/hooks/agent-tracker.sh" }]
+      }
     ]
   },
   "statusLine": { "type": "command", "command": "bash /path/to/Claude-Office/hooks/status-line.sh", "padding": 0 },
@@ -141,15 +161,19 @@ Now spawn agents in Claude Code and watch them appear in the office.
 
 **Claude's turn and needs-you.** The other ten events describe the session's own Claude, kept as `main` on each session (`GET /sessions`, the WebSocket snapshot, every `session_*` broadcast): `UserPromptSubmit` is the boss's prompt (`session_prompt` — or, when a background worker reports back, a wake-up that names the worker and carries only its summary line), every main-thread tool call is Claude *working*, `Stop` is the reply (`session_turn_end`: *waiting* when background tasks are still running, else *idle*), `PermissionRequest` and `Notification` (`permission_prompt`, `idle_prompt`, `quota_auto_resume_*`, `agent_needs_input`) make the session *needs-you* with what it waits on, `StopFailure` is an API *error* (rate limit, overloaded, ...), `PreCompact`/`PostCompact` show *compacting*, `CwdChanged` moves the project tag after a `cd`, and `PostModelSwitch` updates the model. A permission wait is shown only once it has lasted 300 ms (a headless `-p` session auto-denies and moves on faster than that), the completion of the call that asked (matched by a hash of its input, so a `git status` finishing beside the `git push` that asked does not count) or the end of that thread's batch (`PostToolBatch`) lowers the hand — for a dialog a subagent raised, the subagent's own next step or its finish does too — and so does Claude Code's session registry leaving *waiting* (the dialog was answered or dismissed in the terminal, an Esc included); a hand nobody answers comes down after ten minutes, restart or not. The hook prints nothing on `UserPromptSubmit` and always exits 0, so nothing is injected into Claude's context and no prompt is ever blocked; the compaction summary and a worker's result are never forwarded. What the office keeps of the conversation is a setting — see `logPrompts` under [Security](#security).
 
+**MCP questions, auto-mode denials, teammates.** Four more events, all with the shapes the [hooks reference](https://code.claude.com/docs/en/hooks) documents (none could be fired on the machine this was built on). `Elicitation` — an MCP server asking you something in the middle of a tool call, a form or a URL to open — raises the session's hand like a permission does (kind `elicitation`: a chime, the amber pill, *✋ github is asking you something*); `ElicitationResult` (you answered, declined or pressed Esc), that MCP call finishing, the turn ending or the ten-minute timeout lowers it, and other tool calls running beside it do not. Only the server's name travels: the question, its URL and its form fields stay in the hook, the answer you typed is never read, and the server drops a question text should anything else post one — so no view, trusted or read-only, ever carries it. `PermissionDenied` (auto mode's classifier refused a call; it never fires for a dialog you deny yourself) is shown like a failed tool call on the character that asked — *🚫 denied: Bash (auto mode — Irreversible Local Destruction)*: the tool's name and the classifier's bracketed category, never the command. `TeammateIdle` (an agent-team teammate finished its turn) makes the server read that team's task list at once (see the task board below). The hook prints nothing on any of them and exits 0 — on these events stdout would answer the MCP question, replace your answer or stop the teammate. Not registered, on purpose: `WorktreeCreate` (a command hook there *replaces* git's worktree creation and must print the new path, so registering the tracker would break `--worktree` and `isolation: "worktree"`), `WorktreeRemove` (fires only for worktrees such a hook made), and `FileChanged`, `ConfigChange` and `InstructionsLoaded` (file and settings churn with nothing to draw).
+
 In the office that record is one Claude per terminal (`main-<session id>`, created by the session's first event or the snapshot, seated by the boss when that desk is free): the boss gets up and hands each prompt over at its desk, it types through the turn with its tool calls as its status line, its reply is a chat row (prompt and reply rows are tagged, under the boss and that session's Claude — never fetched from `GET /chat`), it dozes off 30 s after an idle turn end, holds a glass of water while background workers are still out, sweeps its desk during a compaction, wears a red ⚠ badge after an API error, and raises a hand while it waits on you — a chime, an amber *needs you* pill and a ✋ in front of the window title, all of which go when the server's record moves on (the granted tool, the batch end, the ten-minute timeout, your next prompt). An idle prompt and a quota pause are soft: no chime, no title prefix. Hand-overs, visits and timers are reducer effects (`src/officeReducer.ts`), so every one of these is unit-tested with synthetic events.
 
 **Answer permissions from the office.** What a `PermissionRequest` hook prints decides the dialog, so the office can answer it for you. While a session waits on "Do you want to run this command?" a card appears beside the chat column — *Claude wants to run Bash* / *write probe.txt*, the project and session, the command or path in a monospace box, a thin bar for the time left — with **Allow** (dialog option 1), **Allow & remember** (option 2: the dialog's own suggestion, say *switch this session to accept-edits*, shown in the tooltip; only offered when the dialog made one) and **Deny** (option 3, which tells Claude "Denied from Claude Office" and lets it carry on); with one card up, `y` and `n` work too. The tracker POSTs that one event in the foreground and long-polls `GET /permission/<id>` until the server has an answer, then prints the exact hook output; every other event is still a backgrounded curl. The terminal always wins: Claude Code never cancels the hook when you answer the dialog yourself, so any later activity of the session — the tool running, the batch ending, your next prompt, a new permission request, the session ending — releases the wait and the card fades with *answered in the terminal*. A headless `claude -p` session fires no `Notification` and auto-denies the call the moment the hook returns, so a pending permission expires after **15 s** unless the session is known to be interactive — a `Notification` (`permission_prompt` fires about 6 s in, whenever you are not looking at the terminal) has been seen for it, now or earlier — in which case it may wait **10 minutes**, inside the hook's default 600 s timeout; the card's bar stretches when that happens. The whole thing is a setting, `answerPermissions` (default on, `GET`/`POST /settings`, the **Answer here** toggle in the chat header): the server mirrors it as the marker file `~/.agent-office/answer-permissions`, which the hook checks before deciding to wait, so turning it off costs no round trip and leaves the hook exactly as it was. The hook never answers when the server is down or says nothing, nothing is ever auto-allowed, and who may click is covered under [Security](#security).
 
+**A notification when Claude starts waiting.** When such a permission is created the server also raises one desktop notification through `scripts/notify.sh` (macOS and Linux): *Claude needs you* — `alpha · Bash wants to run a command`. It names the project and the tool and nothing else — never the command line, the path or any other tool input, because notifications show on the lock screen; the card in the office has the detail. It waits out the same 300 ms as the needs-you hand and fires only if the permission is still pending then, so a headless `claude -p` session that auto-denies never notifies, and it sends at most one per session per minute, so a burst of tool calls that each ask raises one banner, not five. It is a setting, `notifyPermissions` (default on, the **Notify** toggle beside **Answer here**); with `answerPermissions` off no permission is created and nothing is notified.
+
 **Signals.** The office also reads what your Bash commands *mean*. The tracker classifies each command (`classify_command` in `hooks/agent-tracker.sh`, after stripping `cd x &&`, env assignments, `sudo`, `npx`, `timeout` and friends, and splitting on `&&`, `||`, `;`, `|`): a **deploy** (`vercel deploy` / `--prod`, `netlify deploy`, `fly deploy`, `railway up`, `gcloud run|app deploy`, `aws … deploy`, `sam`/`serverless deploy`, `kubectl apply|rollout`, `helm upgrade|install`, `terraform apply`, `pulumi up`, `cdk deploy`, `wrangler deploy`, `firebase deploy`, `npm publish`, `gh release create`, `docker push`, a tag push), a **build** (`npm run build*`, `pnpm`/`yarn build`, `vite build`, `tsc`, `next build`, `cargo`/`go build`, `make`, `gradle`, `mvn package`, `docker build`, `webpack`, `esbuild`), a **test run** (`npm test`, `vitest`, `jest`, `pytest`, `cargo`/`go test`, `mvn`/`gradle test`, `rspec`, `phpunit`, `playwright test`) or a **push** (`git push`, to `main`/`master` or not). Its start (PreToolUse), success (PostToolUse) or failure (PostToolUseFailure, with the first meaningful error line, the exit code and a count such as *3 failing*) travels as `signals` on the event that call sends anyway, and the server broadcasts one `signal` per signal right after it, keeps the last 100 in memory (`GET /signals?since=<ms>&sessionId=<id>`, the last 20 in the WebSocket snapshot) and persists nothing. In the office a deploy in flight puts a rocket over the Claude (or worker) that ran it, a deploy that lands gets a cheer and *🚀 api deployed*, a failed deploy opens incident mode at once, a failed build or test run flashes that character red with *❌ tests failed in api — 3 failing*, the next green run posts *✅ tests green again*, and a push to main gets a small celebration; those chat lines are system rows the chat bot never answers. A segment whose exit status the shell hides (`npm test | tail`, `|| true`) is judged by its output instead, `--dry-run` never counts, and a command that names none of the table's programs never even loads the classifier, so ordinary Bash calls cost nothing extra. To teach it a tool, add a row to `SIGNAL_RULES` (programs, the subcommand words that make it count, its kind, the flags that take a value, where the target is) and the program's name to `SIGNAL_PROGRAMS` or `SIGNAL_NO_VERB` beside it, then a line to the table in `tests/hook-script.test.ts`.
 
-**Task board.** The kanban whiteboard on the wall shows the real task list of a session — the one Claude Code keeps with its `TaskCreate` / `TaskUpdate` tools, which the terminal draws as a checklist. Claude Code writes that list to `~/.claude/tasks/<session id>/<n>.json` (`$CLAUDE_CONFIG_DIR/tasks` if you moved it; one file per task with its subject, description, the spinner's *activeForm*, the status and what it is blocked by), and the server reads it from there (`server/tasks.js`): it watches the directory of every session the office knows (`fs.watch` plus a 2 s poll, from the session's first event until it ends), reads it once the writes settle (250 ms) and sends the page a `task_board` only when something changed. `TaskCreated` and `TaskCompleted` (the hook forwards the task id and subject) only make it look at once — nothing fires when a task goes *in progress*, so the files are the truth. On the board, To do post-its are yellow, In progress blue, Done green, one waiting on an unfinished task wears a red pin, and past six a column ends in *+N*; a post-it flashes when Claude picks it up and slides into Done when it is finished, and hovering one shows its subject (the *activeForm* while in progress). The board follows the session whose tasks changed last, with its name in the corner; when several sessions have task lists, click the board to page through them. Clicking it also sends the boss over to read it out — *3 to do, 1 in progress: Fix the parser*. A session without tasks leaves the wall's decorative board exactly as it was. `GET /tasks?sessionId=<id>` lists the boards (the descriptions only with the token, see [Security](#security)). Agent teams (`~/.claude/teams`, a team's shared task list) are not shown yet.
+**Task board.** The kanban whiteboard on the wall shows the real task list of a session — the one Claude Code keeps with its `TaskCreate` / `TaskUpdate` tools, which the terminal draws as a checklist. Claude Code writes that list to `~/.claude/tasks/<session id>/<n>.json` (`$CLAUDE_CONFIG_DIR/tasks` if you moved it; one file per task with its subject, description, the spinner's *activeForm*, the status and what it is blocked by), and the server reads it from there (`server/tasks.js`): it watches the directory of every session the office knows (`fs.watch` plus a 2 s poll, from the session's first event until it ends), reads it once the writes settle (250 ms) and sends the page a `task_board` only when something changed. `TaskCreated` and `TaskCompleted` (the hook forwards the task id and subject) only make it look at once — nothing fires when a task goes *in progress*, so the files are the truth. On the board, To do post-its are yellow, In progress blue, Done green, one waiting on an unfinished task wears a red pin, and past six a column ends in *+N*; a post-it flashes when Claude picks it up and slides into Done when it is finished, and hovering one shows its subject (the *activeForm* while in progress). The board follows the session whose tasks changed last, with its name in the corner; when several sessions have task lists, click the board to page through them. Clicking it also sends the boss over to read it out — *3 to do, 1 in progress: Fix the parser*. A session without tasks leaves the wall's decorative board exactly as it was. `GET /tasks?sessionId=<id>` lists the boards (the descriptions only with the token, see [Security](#security)). **Agent teams** (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`) get a board of their own in the same cycle: Claude Code sets a team up at session start under a session-derived name (`session-` and the first eight characters of the session id), writes its config to `~/.claude/teams/<team>/config.json` (`$CLAUDE_CONFIG_DIR/teams`, `AGENT_OFFICE_TEAMS_DIR`; members, the lead session) and *moves* the lead's task list to `~/.claude/tasks/<team>/`, the team's shared list, in the same file format. The server watches that directory for every session it knows (the team whose config names the session as its lead, else the derived name), the board is labelled *👥 session-1a2b3c4d* with the members' names in its tooltip, and the post-its show who owns them; the board carries `boardId: "team:<team>"` and `team: { name, members }`. Only the members' names are read from the config — never their working directories, pane ids or spawn prompts — and the descriptions follow the same token rule. Built from the agent-teams docs and the Claude Code 2.1.321 binary; never run against a live team.
 
-**Uninstall.** `npm run uninstall-hooks` (or `bash hooks/install-hooks.sh --uninstall`) takes the office back out of `~/.claude/settings.json` (`$CLAUDE_CONFIG_DIR/settings.json` when that is set): it backs the file up (`settings.json.backup.<timestamp>`), removes every hook entry whose command runs `hooks/agent-tracker.sh` — under all 19 events, whatever checkout the path points at, duplicates included — and puts `statusLine` / `subagentStatusLine` back: a status line the installer chained is restored from `~/.agent-office/statusline-prev` (and `subagent-statusline-prev`), which are then deleted; one the installer added is removed. Hooks and settings that are not the office's are not touched, a file with nothing of ours in it is left as it is (exit 0), and one that is not valid JSON is refused with the parse error (exit 1, nothing changed). `--uninstall --no-status-line` removes the hooks only, `--uninstall --status-line-only` the status line only. The plugin install is removed with `/plugin uninstall agent-office` (see below).
+**Uninstall.** `npm run uninstall-hooks` (or `bash hooks/install-hooks.sh --uninstall`) takes the office back out of `~/.claude/settings.json` (`$CLAUDE_CONFIG_DIR/settings.json` when that is set): it backs the file up (`settings.json.backup.<timestamp>`), removes every hook entry whose command runs `hooks/agent-tracker.sh` — under all 23 events, whatever checkout the path points at, duplicates included — and puts `statusLine` / `subagentStatusLine` back: a status line the installer chained is restored from `~/.agent-office/statusline-prev` (and `subagent-statusline-prev`), which are then deleted; one the installer added is removed. Hooks and settings that are not the office's are not touched, a file with nothing of ours in it is left as it is (exit 0), and one that is not valid JSON is refused with the parse error (exit 1, nothing changed). `--uninstall --no-status-line` removes the hooks only, `--uninstall --status-line-only` the status line only. The plugin install is removed with `/plugin uninstall agent-office` (see below).
 
 ### Install as a Claude Code plugin
 
@@ -166,7 +190,7 @@ claude plugin marketplace add W17ant/Claude-Office
 claude plugin install agent-office@agent-office
 ```
 
-`hooks/hooks.json` registers `hooks/agent-tracker.sh` from the installed copy (`${CLAUDE_PLUGIN_ROOT}`) for the same 19 events as the installer, with no matchers (the tracker acts on every tool call, and exits silently on anything it does not act on). `/agent-office:office` checks `http://127.0.0.1:3334/health` and prints how to start the server, which still runs from a clone or from the installed plugin directory (`npm install && npm run build && npm run server`). To remove it: `claude plugin uninstall agent-office@agent-office` (and `claude plugin marketplace remove agent-office` to drop the marketplace too).
+`hooks/hooks.json` registers `hooks/agent-tracker.sh` from the installed copy (`${CLAUDE_PLUGIN_ROOT}`) for the same 23 events as the installer, with no matchers (the tracker acts on every tool call, and exits silently on anything it does not act on). `/agent-office:office` checks `http://127.0.0.1:3334/health` and prints how to start the server, which still runs from a clone or from the installed plugin directory (`npm install && npm run build && npm run server`). To remove it: `claude plugin uninstall agent-office@agent-office` (and `claude plugin marketplace remove agent-office` to drop the marketplace too).
 
 Two things to know. Plugin hooks merge with the ones in your settings, so pick one path: if you ran `npm run install-hooks` earlier, take its hooks out with `npm run uninstall-hooks -- --no-status-line` (the status line stays), or every agent arrives twice; `npm run doctor` warns when both are active, and so does the installer. And a plugin can set [`subagentStatusLine` but not `statusLine`](https://code.claude.com/docs/en/plugins/components#default-settings): the MEMORY meter works without the status line (estimated from the session transcript, marked *est.*); payroll and electricity need it, and `npm run install-status-line`, run from the clone or the installed plugin directory, registers the status line and nothing else. Not `npm run install-hooks`: that registers every hook a second time, next to the plugin's. `claude plugin validate . --strict` runs in CI, and plugins do not load in cloud sessions.
 
@@ -312,6 +336,10 @@ npm run build:electron  # Installer for this OS (.dmg, .exe or .AppImage) in rel
 
 **Tray / menu bar.** The app puts a pixel-art desk in the tray (the menu bar on macOS) and reads `GET /agents` and `GET /sessions` every 5 s: the tooltip says `Agent Office — 2 working, 1 needs you` (or `the office is empty`, `server not reachable`), the window title carries the same line, and on macOS the number of working agents — plus `1!` when a session waits on you — sits beside the icon. Its menu, also on right-click in the window: the status line, **Show/Hide office**, **Compact widget**, **Always on top**, **Reset window size**, **Open in browser** (the same office at `http://127.0.0.1:3334/`, or the `AGENT_OFFICE_PORT` it runs on, opened with the office token through the redirect page `npm run open` uses), **Quit**. On macOS and Windows closing the window keeps the app in the tray (the Dock icon, the tray or opening the app again brings the window back); on Linux, where not every desktop shows a tray, closing the window quits.
 
+**Updates.** There is no auto-updater (the builds are unsigned, and electron-updater needs a signed app on macOS). Instead the packaged app reads `https://api.github.com/repos/W17ant/Claude-Office/releases/latest` when it starts and every 6 hours — unauthenticated, a 10 s timeout, nothing sent but a `User-Agent: Agent-Office/<version>` — and when the release's `tag_name` is newer than the running version (semver, drafts and prereleases ignored) the tray and right-click menus gain **Update available: vX.Y.Z — Download**, which opens that release's page in the browser. Only an `html_url` under `https://github.com/W17ant/Claude-Office/releases/` is ever opened. One native notification is shown per new version; the last version notified about is kept in `update-check.json` in the user-data directory. A failed check (offline, rate-limited) is logged and otherwise silent. A dev run (`npm run dev:electron`) and the screenshot run do not check.
+
+**Notifications.** The app shows no notifications of its own about the office: chat mentions, failed agents and permission waits come from the server it runs, through `scripts/notify.sh`, exactly as they do without the app, so nothing is shown twice. The update notification above is the app's only one.
+
 **Icons.** `scripts/generate-icons.mjs` draws the tray glyph and the app icon as pixel maps and writes the PNGs with no image tooling: `electron/assets/` holds the tray icons and the Linux window icon, `build/icon.png` (512×512) is what electron-builder turns into the `.icns`, `.ico` and Linux icon set. The macOS tray icon is a monochrome template image (`trayTemplate.png` and `@2x`), tinted by the menu bar for light and dark mode. Re-run the script after editing the maps; a test fails when the committed files are stale.
 
 How a build is put together (the `build` section of `package.json`):
@@ -335,6 +363,10 @@ Everything is optional; the defaults are the office as described above. Set thes
 |---|---|---|---|
 | `AGENT_OFFICE_PORT` | `3334` | server, hook, status line, office scripts, `npm run doctor`, Vite dev (proxy and page), desktop app and tray | The office server's port. Not a port (letters, `0`, `70000`)? The server warns and uses 3334, as do Vite and the desktop app; the shell hooks and scripts use the value as given, so fix it rather than rely on that. The page served by the server needs nothing: it talks to the origin it was loaded from |
 | `AGENT_OFFICE_HOST` | `127.0.0.1` | server | The bind address, **IPv4 loopback only**: `127.0.0.1` or `localhost`, and both bind `127.0.0.1` (`localhost` is not left to the resolver, which may answer `::1`). `::1` is refused too, with the reason logged: the office scripts, `npm run doctor`, the desktop app and `/agent-office:office` all dial `127.0.0.1`, which a server on `[::1]` alone would refuse. Anything else (`0.0.0.0`, a LAN address) is refused with the reason logged and the server binds `127.0.0.1` — see [Security](#security) |
+| `AGENT_OFFICE_LAN` | off | server (`npm run lan` sets it) | `1` opens phone mode's **watch-only** second listener on this machine's private Wi-Fi address — see [Phone mode](#phone-mode). The loopback listener is unchanged |
+| `AGENT_OFFICE_LAN_HOST` | the first private (RFC 1918) IPv4 of this machine | server | The LAN listener's address. It must itself be a `10.x`, `172.16–31.x` or `192.168.x` address: `0.0.0.0`, loopback, public addresses and names are refused with the reason logged, and LAN mode stays off |
+| `AGENT_OFFICE_LAN_PORT` | `3335` | server | The LAN listener's port |
+| `AGENT_OFFICE_ALLOWED_HOSTS` | none | server, `npm run open -- --host` (a hint only) | Comma-separated host names (`my-mac.tail1234.ts.net`, optionally `:port`) a local HTTPS proxy such as `tailscale serve` reaches the office by: the loopback listener's Host guard accepts them and the origin allowlist accepts `https://<name>[:port]`. Through such a name every route but the static UI needs a token, and the WebSocket the office token. Host names only — a wildcard, scheme, path or IP address is logged and ignored. Never with `tailscale funnel`. See [Phone mode](#phone-mode) |
 | `AGENT_OFFICE_UI_PORT` | `3333` | `start-office.sh`, `stop-office.sh`, the server's origin allowlist | The Vite dev server's port (`start-office.sh` runs `vite --port`); `npm run dev` always uses 3333 |
 | `AGENT_OFFICE_HOME` | `~/.agent-office` | server, hook, status line, scripts | The runtime dir: auth token, `agents.json`, `chat.db`, inbox files, pid files |
 | `AGENT_OFFICE_EVENT_URL` | `http://localhost:$AGENT_OFFICE_PORT/event` | hook (`agent-tracker.sh`) | The full event URL; wins over `AGENT_OFFICE_PORT` |
@@ -342,7 +374,16 @@ Everything is optional; the defaults are the office as described above. Set thes
 | `AGENT_OFFICE_CONFIG_DIR` | the directory holding `package.json` | server | Where `office.config.json` is read from (see [Customise your character](../README.md#customise-your-character)) |
 | `AGENT_OFFICE_REGISTRY_DIR` | `$CLAUDE_CONFIG_DIR/sessions` | server | Claude Code's session registry, the source of the *not hooked* pills (see [Sessions without hooks](#connect-claude-code)) |
 | `AGENT_OFFICE_TASKS_DIR` | `$CLAUDE_CONFIG_DIR/tasks` | server | Where Claude Code keeps each session's task list, the source of the task board (see [Task board](#connect-claude-code)) |
+| `AGENT_OFFICE_TEAMS_DIR` | `$CLAUDE_CONFIG_DIR/teams` | server | Where Claude Code keeps each agent team's config (its lead session and members); the team's shared task list is read from the tasks directory (see [Task board](#connect-claude-code)) |
 | `CLAUDE_CONFIG_DIR` | `~/.claude` | server, `npm run doctor`, the installer | Claude Code's config dir: the server reads the session registry and the task lists under it, the doctor reads `settings.json` there, and `npm run install-hooks` / `uninstall-hooks` write that `settings.json` (an older installer wrote `~/.claude/settings.json` regardless; the doctor points those entries out) |
+
+**Office settings** live in `~/.agent-office/settings.json`, are read with `GET /settings` (open) and changed with `POST /settings` (the office page's UI token or the office token; a wrong type is a 400):
+
+| Setting | Default | Toggle | What it does |
+|---|---|---|---|
+| `logPrompts` | `summary` | read-only `prompts:` pill in the chat | How much of the boss's prompts and Claude's replies is kept: `off`, `summary` (200 characters) or `full` (2000) — see [Security](#security) |
+| `answerPermissions` | `true` | **Answer here** | Whether a permission dialog may be answered from the office — see [Answer permissions from the office](#connect-claude-code) |
+| `notifyPermissions` | `true` | **Notify** | Whether a permission wait the office could answer raises one desktop notification (project and tool only, at most one per session a minute) |
 
 `office.config.json` (the boss's name, sprite, colour and emoji) is read by the server at runtime and applied by the page on load, so changing it needs a reload, not a rebuild; `GET /config` shows what the server read. Other knobs (`AGENT_OFFICE_STALE_MINUTES`, `AGENT_OFFICE_A2A_LIMIT`, the `CHAT_AI_*` settings) are described where they apply.
 
@@ -350,8 +391,12 @@ Everything is optional; the defaults are the office as described above. Set thes
 
 The server always binds `127.0.0.1` (IPv4 loopback): `AGENT_OFFICE_HOST` may
 spell it `127.0.0.1` or `localhost`, both of which bind `127.0.0.1`, and `::1`
-and anything else are refused with the reason and `127.0.0.1` bound. So it is
-never on the network. The threat it defends against is therefore what else
+and anything else are refused with the reason and `127.0.0.1` bound. So, unless
+you opt into [phone mode](#phone-mode), it is never on the network. (Phone
+mode adds two opt-in exceptions, each with its own rules below: a separate
+watch-only listener on your LAN address, and host names a local HTTPS proxy
+may use to reach the loopback listener. Neither changes anything in this
+section for the loopback listener itself.) The threat it defends against is therefore what else
 runs on the same machine: a malicious npm dependency, or another local user on
 a shared host. Loopback is not user-isolated — any local process can reach the
 port, open the WebSocket and send any `Origin` or `Host` header it likes
@@ -364,7 +409,9 @@ port, open the WebSocket and send any `Origin` or `Host` header it likes
 - **DNS-rebinding pages** — which reach `127.0.0.1` on a GET that carries no
   `Origin` — are kept out by a **Host-header guard**: the first middleware (and
   the WebSocket handler) serve a request only when its `Host` names a loopback
-  host (`localhost`, `127.0.0.1` or `[::1]`, any port); anything else is `421`
+  host (`localhost`, `127.0.0.1` or `[::1]`, any port) — or, when you set it,
+  an `AGENT_OFFICE_ALLOWED_HOSTS` name with exactly its port, whose
+  `https://` origin the allowlist then accepts too; anything else is `421`
   / a `1008` close. A rebinding page's `Host` is still its own domain, so it
   can no longer read the pending command lines, cwds, titles or agent tasks on
   the open GETs.
@@ -380,6 +427,10 @@ A non-loopback bind is refused on purpose, not merely unsupported: the
 read-only view and every open `GET` would hand every agent's task and status
 line to the network, and the token travels in clear HTTP.
 `AGENT_OFFICE_HOST=0.0.0.0` therefore logs that reason and binds `127.0.0.1`.
+Phone mode's LAN listener is the answer to "but I want to see it on my
+phone": a *second* listener that serves no API route, never accepts the
+office token, and carries a stream with that task and status text taken out
+([Phone mode](#phone-mode)).
 
 **The office link.** When the server starts it prints, to its own output only,
 
@@ -459,7 +510,7 @@ requires the token, conversation text requires it, and the rest stay open:
 | **UI token or token** | `POST /permission/:id` (answer a permission dialog), `POST /settings` | The two things the office page itself may change. The server mints a second secret per process, the UI token, and hands it out in one place only: the WebSocket snapshot of a connection that presented the office token. Nobody without the token file can obtain it. It lives in memory, changes on every restart and is compared in constant time |
 | **Open** | every other `GET`, `POST /chat` (a plain line a person typed, and the read-only `/status` · `/agents` · `/help` · `/incident` · `/all-clear` commands), `POST /chat/typing`, `POST /chat/cron-state` | The worst these do is read what the read-only office shows or post a chat line |
 | **Open, but the conversation needs the token** | `GET /chat`, `GET /sessions`, `GET /permissions`, `GET /signals`, the WebSocket | Without the token: no chat rows with `msg_type` `prompt` / `reply`, no `main.lastPrompt` / `main.lastReply`, no permission `detail` / `suggestions`, no signal `command` / `error` / `detail`, and the WebSocket is read-only as above. With it (the office page, the office scripts), they are included |
-| **Open, but the descriptions need the token** | `GET /tasks` (the task boards) | Anyone on loopback gets each session's task subjects, *activeForm*s, states, blockers and owners — as open as an agent's task on `GET /agents`. A task's description is longer text written from the conversation: only a token holder gets it. The `task_board` broadcasts and the snapshot's `taskBoards` never carry it, so a read-only WebSocket gets them unchanged |
+| **Open, but the descriptions need the token** | `GET /tasks` (the task boards) | Anyone on loopback gets each session's (and agent team's) task subjects, *activeForm*s, states, blockers and owners, and a team's member names — as open as an agent's task on `GET /agents`. A task's description is longer text written from the conversation: only a token holder gets it. The `task_board` broadcasts and the snapshot's `taskBoards` never carry it, so a read-only WebSocket gets them unchanged |
 | **Open, but the transcript needs the UI token or the token** | `GET /agents/:id` (the inspector card) | Anyone on loopback gets the card's history, tool counts and stats — tool names and status lines, what `GET /agents` and `GET /sessions` already show. The transcript tail (what the agent said, the commands it ran) and a session Claude's last prompt and reply go only to the office page, which sends the UI token, or a token holder; anyone else gets `transcriptAvailable: false` with the reason `needs the office token`. A wrong token counts as none. With a token the tail still follows `logPrompts` |
 
 - The token is 32 random bytes, checked in constant time. **Request signing:**
@@ -535,10 +586,181 @@ requires the token, conversation text requires it, and the rest stay open:
   is localhost only, and anything on the machine can already read
   `~/.claude/settings.json`.
 
+## Phone mode
+
+Watch the office on a phone mounted next to your monitor. Two ways, both off
+unless you turn them on; pick one.
+
+### Watch-only over Wi-Fi: `npm run lan`
+
+```
+npm run build              # once: the LAN listener serves the built UI
+npm run lan                # the office, plus the phone link and its QR code
+npm run lan -- --rotate    # the same with a new viewer key (old phone links stop working)
+```
+
+`npm run lan` is `npm run server` with `AGENT_OFFICE_LAN=1` (set that yourself
+for `start-office.sh` or any other launcher). The loopback listener on
+`127.0.0.1:3334` is exactly as before; next to it the server opens a
+**second listener on this machine's private LAN address** — the first
+`10.x` / `172.16–31.x` / `192.168.x` IPv4 of a non-internal interface, or
+`AGENT_OFFICE_LAN_HOST`; never `0.0.0.0` — on port 3335
+(`AGENT_OFFICE_LAN_PORT`), and prints, to its own output only,
+
+```
+  Phone (watch-only, this network): http://192.168.1.23:3335/#viewer=<viewer key>
+```
+
+with a QR code of it when the output is a terminal. Scan it with the phone's
+camera. The page takes the key out of the address bar, keeps it in that
+browser's storage for that address, and from then on shows the **phone
+layout**: the office scene alone, the whole room scaled to fit inside the
+screen's safe area and centred — in portrait (the usual way a phone sits on
+a mount) it spans the width, in landscape the height — with no title bar,
+chat, meters, permission cards, settings or inspector: nothing that needs the
+office token or calls an API route, and nothing to scroll. Any page the LAN
+listener serves gets this layout; opened without its `#viewer=` part it says
+so instead of connecting. Open `http://<lan ip>:3335/#viewer=off` to forget
+the key in that browser.
+
+**The viewer key** is a second secret, 32 random bytes in
+`~/.agent-office/lan-viewer-key` (`0600`, kept across restarts with the same
+trust checks as the token file, replaced when they fail, never the office
+token). It opens the LAN listener's WebSocket and nothing else. `npm run lan
+-- --rotate` deletes it before starting, so that start mints a new one; an
+office already running keeps the old key until it restarts.
+
+**What the LAN listener allows.** It is its own server with its own Express
+app and WebSocket server; it shares no route with the loopback listener.
+
+- Every request must carry `Host: <lan ip>:<lan port>` exactly (a
+  DNS-rebinding page, another name, another port: `421`, or a `1008` close on
+  the WebSocket), and an `Origin`, when sent, must be
+  `http://<lan ip>:<lan port>` (`403` / `1008`).
+- HTTP: `GET` / `HEAD` of the built UI's files (the page, its scripts,
+  `/sprites`, `/rooms`). **Every API route is a 404** — `/event`, `/chat`,
+  `/settings`, `/permission`, `/agents`, `/sessions`, `/tasks`, `/a2a`,
+  `/.well-known`, `/health`, `/config` and the rest, any method, with or
+  without a token. So a phone can never post a chat line, answer a
+  permission dialog or change a setting. (The page therefore draws the boss
+  from the bundle, not from `GET /config`.)
+- The WebSocket `/ws` needs the viewer key as the subprotocol
+  `agent-office.viewer.<key>` (constant-time compare); no key or a wrong one
+  is a `1008` close. **The office token is never accepted there** — it would
+  cross the Wi-Fi in clear — and a LAN connection is never trusted and never
+  gets the UI token. The page itself never stores or offers the office token
+  when it was served over plain HTTP from a non-loopback address. At most 8
+  viewers at a time.
+
+**What a phone sees** is a stricter tier than the read-only view
+(`redactForLan` in `server/index.js`, an allowlist per record and per event
+type, so a field added later stays off the Wi-Fi until someone lists it, and
+an event type nobody classified is not sent): agents (name, role, state,
+timings, session), sessions (state, model, counts), a raised hand with its
+kind and tool name, an API error's one-word kind, permission dialogs' tool and
+deadline, signals' kind and exit code, task boards as post-it states and
+counts, health, incident mode, and chat rows as metadata with empty text (so
+a directed message still flies between desks). Taken out, on top of what the
+read-only view already drops: agent task text and status lines, results and
+errors; session cwds, project names, titles and transcript paths; every chat
+message's text, system rows included; a needs-you's summary and notification
+message; a permission's summary and the project / cwd / title on it; a
+signal's target, branch, detail and error; task subjects and *activeForm*s;
+background tasks' descriptions; the registry's session name. The meters
+(`session_status` / `agent_status`: cost, context, model, workers' status
+lines) are not sent at all. Project names go too: a directory name is often a
+client or a product codename, and the scene does not need it.
+
+**What this does not protect.** The LAN listener speaks plain HTTP. Anyone who
+can read your Wi-Fi traffic (an open network, or anyone holding a shared
+WPA2-PSK who captures the handshake) sees what the phone sees and can read the
+viewer key from the WebSocket handshake — and with it watch the same
+stripped scene. That is why the tier is what it is, and why the key opens
+nothing else. Use it on a network you trust, rotate the key if you doubt it,
+and stop `npm run lan` (use `npm run server`) when you do not need it. A
+malicious web page on the phone or any other device cannot use the key it
+does not have, and its WebSocket carries its own `Origin`, which is refused.
+
+### Full control through Tailscale
+
+To see and drive the whole office from a phone — chat, permission cards,
+everything — through [Tailscale](https://tailscale.com), without binding any
+LAN address: Tailscale's HTTPS proxy forwards to the loopback listener, and
+the office accepts its host name.
+
+```
+tailscale serve --bg --https=443 http://127.0.0.1:3334
+AGENT_OFFICE_ALLOWED_HOSTS=my-mac.tail1234.ts.net npm run server
+npm run open -- --host my-mac.tail1234.ts.net
+```
+
+(`tailscale status` or the admin console shows your machine's name; HTTPS
+certificates must be enabled for the tailnet.) The last command checks that
+the office on `127.0.0.1` is yours, then prints
+`https://my-mac.tail1234.ts.net/#token=<the office token>` — and a QR code of
+it on a terminal — without opening anything. Open it on the phone once; the
+page keeps the token as on the desktop and connects back over `wss://` to the
+same name.
+
+What changes: the loopback listener's Host guard also accepts
+`my-mac.tail1234.ts.net` (or `name:port` exactly as listed), and the origin
+allowlist accepts `https://my-mac.tail1234.ts.net`. Entries must be plain
+host names with at least one dot — wildcards, schemes, paths and IP
+addresses are logged and ignored.
+
+**Through the proxy nothing is open.** Every request through the proxy
+arrives from `127.0.0.1`, so on loopback's rules "any local process" would
+mean every device your tailnet lets reach this machine. And the `Host` alone
+cannot tell a proxied request apart: `tailscale serve` routes by the TLS
+name and forwards the client's `Host` unchanged, so a tailnet device could
+send `Host: localhost`. So a request counts as proxied when its `Host` is an
+`AGENT_OFFICE_ALLOWED_HOSTS` name, **or** it carries a header a reverse
+proxy adds — `X-Forwarded-For`, `X-Forwarded-Host`, `X-Forwarded-Proto`,
+`Forwarded`, `Tailscale-User-*` — **or** its peer address is not loopback.
+That is reliable for `tailscale serve`: its proxy (Go's
+`httputil.ReverseProxy` in Rewrite mode) first deletes any client-sent
+`Forwarded` / `X-Forwarded-*`, then always sets `X-Forwarded-Host` and
+`X-Forwarded-For` (and `X-Forwarded-Proto` over HTTPS) on every request it
+relays, tagged and shared nodes included; the `Tailscale-User-*` identity
+headers are set only for tailnet users with a login, so they are extra
+markers, not the key (checked in `ipn/ipnlocal/serve.go` and
+`net/http/httputil/reverseproxy.go`). This holds whether or not
+`AGENT_OFFICE_ALLOWED_HOSTS` is set, so a `tailscale serve` pointed at the
+office without it gets nothing open either (the Host guard refuses its name
+anyway). A proxied request needs the office
+token or the UI token as `Authorization: Bearer` for every route — the open
+`GET`s (`/agents`, `/sessions`, `/tasks`, `/config`, `/health`, ...) and
+`POST /chat` included — and gets a `401` without one; only the built UI's
+static files load without it, so the page can start and read `#token=`. Its
+WebSocket needs the office token and is refused with `1008` without it:
+there is no read-only view through the proxy. The office page sends the
+header itself when it was served over HTTPS from such a name (the UI token
+once the WebSocket handed it over; the office token before that, on reads
+only — a `POST` never carries the file token, so `/clear` typed in the chat
+stays refused as on loopback). A request from loopback with a loopback
+`Host` and none of those headers — the hook, the scripts, the desktop app,
+a browser on this machine — works exactly as before. The office token crosses the tailnet only inside Tailscale's HTTPS.
+
+**Use `tailscale serve`, never `tailscale funnel`.** Funnel publishes the
+proxy on the internet. Tailscale marks each request Funnel relays with
+`Tailscale-Funnel-Request: ?1` and strips that header from anything a
+client sends (`addTailscaleIdentityHeaders` in `ipn/ipnlocal/serve.go`), so
+the office refuses every request carrying it — `403`, or a `1008` close —
+with a log line, whatever its `Host` or token. Treat that as a last line, not
+a reason to try: a mistyped command should never be what stands between the
+internet and your office.
+
+`tailscale serve` forwards the browser's own `Host` header to the backend (it
+sets the outgoing `Host` to the incoming one for a TCP backend, and adds
+`X-Forwarded-*` and, for tailnet users, `Tailscale-User-*` headers) — checked
+against `ipn/ipnlocal/serve.go` in Tailscale's source, and exercised here
+through a stand-in HTTPS proxy that does the same, not against a live
+tailnet. Keep the tailnet to your own devices, or restrict port 443 on this
+machine with an ACL.
+
 ## Roadmap
 
 Open and planned work lives in [GitHub issues](https://github.com/W17ant/Claude-Office/issues). Next up, roughly in order:
 
-- **OS notification** when a permission wait starts, now that the office can answer the dialog itself (`notify.sh` already covers macOS and Linux; the server only calls it for chat mentions and failed agents today)
 - **`npx` one-liner** to start the office without a checkout
 - **Spooky Sprint**, a seasonal variant on the incident-mode axis — art-gated

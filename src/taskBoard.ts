@@ -1,6 +1,7 @@
 /**
  * taskBoard.ts — the kanban whiteboard's state and words: each session's task
- * list as server/tasks.js sends it (a `task_board` broadcast per change,
+ * list — and an agent team's shared one, a board of its own keyed by its
+ * `boardId` (`team:<name>`) — as server/tasks.js sends it (a `task_board` broadcast per change,
  * `taskBoards` on the snapshot), which board the wall shows, what changed
  * (so a post-it can flash or slide), how a column fits on the wall, and the
  * line the boss says at the board.
@@ -28,9 +29,14 @@ export interface BoardTask {
   owner?: string
 }
 
-/** One session's board (server/tasks.js) */
+/** One session's board, or its agent team's (server/tasks.js) */
 export interface TaskBoardInfo {
+  /** The session the board belongs to (a team's: the lead session) */
   sessionId: string
+  /** Only on a team's board: `team:<team name>` (a session's own board goes by its sessionId) */
+  boardId?: string
+  /** Only on a team's board: its name and the members' names (nothing else of the team config) */
+  team?: { name: string; members: string[] }
   project?: string
   tasks: BoardTask[]
   /** Totals per status — larger than `tasks` holds only for a board past the server's cap */
@@ -45,10 +51,15 @@ export type TaskFx = 'started' | 'done' | 'added'
 export interface TaskBoardsState {
   /** Boards with at least one task, the most recently changed first */
   boards: TaskBoardInfo[]
-  /** The session a click on the board chose; the next change on any board lets the newest win again */
+  /** The board (boardKey) a click on the board chose; the next change on any board lets the newest win again */
   pinned: string | null
-  /** The latest change's effects, per task id of that session's board */
-  fx: { sessionId: string; at: number; tasks: Record<string, TaskFx> } | null
+  /** The latest change's effects, per task id of that board (boardKey) */
+  fx: { boardId: string; at: number; tasks: Record<string, TaskFx> } | null
+}
+
+/** Which board this is: a team's boardId, else the session's own board, by its sessionId. */
+export function boardKey(board: Pick<TaskBoardInfo, 'sessionId' | 'boardId'>): string {
+  return board.boardId || board.sessionId
 }
 
 /** How long a post-it's flash / slide counts as fresh (a re-mount after this does not replay it). */
@@ -94,7 +105,16 @@ export function cleanBoard(raw: unknown): TaskBoardInfo | null {
     blockedBy: Array.isArray(t.blockedBy) ? t.blockedBy.filter(id => typeof id === 'string') : [],
   }))
   if (tasks.length === 0) return null
-  return { ...b, sessionId: b.sessionId, tasks, updatedAt: typeof b.updatedAt === 'number' ? b.updatedAt : 0 } as TaskBoardInfo
+  const out = { ...b, sessionId: b.sessionId, tasks, updatedAt: typeof b.updatedAt === 'number' ? b.updatedAt : 0 } as TaskBoardInfo
+  if (typeof out.boardId !== 'string' || !out.boardId) delete out.boardId
+  // A team as the server sends it: a name and a list of names; anything else is dropped
+  const team = b.team as { name?: unknown; members?: unknown } | undefined
+  if (team && typeof team.name === 'string' && team.name) {
+    out.team = { name: team.name, members: Array.isArray(team.members) ? team.members.filter((m): m is string => typeof m === 'string') : [] }
+  } else {
+    delete out.team
+  }
+  return out
 }
 
 function byRecency(a: TaskBoardInfo, b: TaskBoardInfo) {
@@ -119,25 +139,32 @@ export function reduceTaskBoards(prev: TaskBoardsState, event: OfficeEvent, now 
   // Snapshot form: the server's boards replace ours (a reconnect may have missed changes); nothing animates
   if (Array.isArray(event.boards)) {
     const boards = event.boards.map(cleanBoard).filter((b): b is TaskBoardInfo => b !== null).sort(byRecency)
-    const pinned = prev.pinned && boards.some(b => b.sessionId === prev.pinned) ? prev.pinned : null
+    const pinned = prev.pinned && boards.some(b => boardKey(b) === prev.pinned) ? prev.pinned : null
     return { boards, pinned, fx: null }
   }
   const sessionId = event.sessionId
   if (!sessionId) return prev
+  // A team's board is named by the event's boardId (also on the board, absent on a take-down's null)
+  const key = event.boardId || sessionId
   const next = cleanBoard(event.board)
-  const old = prev.boards.find(b => b.sessionId === sessionId)
+  // Why: the event's key wins, so a board is always filed where its take-down will look for it
+  if (next) {
+    if (key === sessionId) delete next.boardId
+    else next.boardId = key
+  }
+  const old = prev.boards.find(b => boardKey(b) === key)
   if (!next && !old) return prev
-  const others = prev.boards.filter(b => b.sessionId !== sessionId)
+  const others = prev.boards.filter(b => boardKey(b) !== key)
   const boards = next ? [...others, next].sort(byRecency) : others
   // The board that changed last is the one on the wall again
-  const fx = next ? { sessionId, at: now, tasks: diffBoards(old, next) } : prev.fx?.sessionId === sessionId ? null : prev.fx
+  const fx = next ? { boardId: key, at: now, tasks: diffBoards(old, next) } : prev.fx?.boardId === key ? null : prev.fx
   return { boards, pinned: null, fx }
 }
 
 /** The board on the wall: the one a click chose, else the one that changed last; null when no session has tasks. */
 export function shownBoard(state: TaskBoardsState): TaskBoardInfo | null {
   if (state.pinned) {
-    const pinned = state.boards.find(b => b.sessionId === state.pinned)
+    const pinned = state.boards.find(b => boardKey(b) === state.pinned)
     if (pinned) return pinned
   }
   return state.boards[0] ?? null
@@ -148,7 +175,7 @@ export function cycleBoards(state: TaskBoardsState): TaskBoardsState {
   if (state.boards.length < 2) return state
   const current = shownBoard(state)
   const i = current ? state.boards.indexOf(current) : -1
-  return { ...state, pinned: state.boards[(i + 1) % state.boards.length].sessionId, fx: null }
+  return { ...state, pinned: boardKey(state.boards[(i + 1) % state.boards.length]), fx: null }
 }
 
 // ---------------------------------------------------------------------------
@@ -228,11 +255,24 @@ export function taskCaption(task: BoardTask, board: TaskBoardInfo): string {
   return `#${task.id} ${text}${task.owner ? ` · ${clip(task.owner, 30)}` : ''}`
 }
 
-/** The tiny label on the board: the session's title or project, and "2/3" while several boards are up. */
+/**
+ * The tiny label on the board: the session's title or project — for an agent
+ * team's board the team's name, after a 👥 — and "2/3" while several boards are up.
+ */
 export function boardLabel(board: TaskBoardInfo, sessions: SessionInfo[] = [], index = 0, total = 1): string {
   const session = sessions.find(s => s.id === board.sessionId)
-  const name = clip(session?.title || session?.project || board.project || session?.registry?.name || board.sessionId.slice(0, 8), 24)
+  const name = board.team
+    ? `👥 ${clip(board.team.name, 22)}`
+    : clip(session?.title || session?.project || board.project || session?.registry?.name || board.sessionId.slice(0, 8), 24)
   return total > 1 ? `${name} ${index + 1}/${total}` : name
+}
+
+/** Who is on a team's board ("team-lead, researcher, tester"), for its tooltip; '' for a session's own board. */
+export function teamMembersLine(board: TaskBoardInfo, max = 6): string {
+  const members = board.team?.members ?? []
+  if (members.length === 0) return ''
+  const shown = members.slice(0, max).map(m => clip(m, 24))
+  return members.length > max ? `${shown.join(', ')} +${members.length - max}` : shown.join(', ')
 }
 
 /**
