@@ -45,6 +45,10 @@ export async function loadOffice(opts: LoadOptions = {}): Promise<Office> {
   const extra = Object.entries({
     AGENT_OFFICE_REGISTRY_DIR: join(dir, 'registry'),
     AGENT_OFFICE_TASKS_DIR: join(dir, 'tasks'),
+    // Why: a test office never pops a real desktop banner (chat mentions,
+    // failed agents, permission waits): notify.sh is swapped for an empty
+    // script. A test that wants to see the arguments passes its own.
+    AGENT_OFFICE_NOTIFY_SCRIPT: '/dev/null',
     AGENT_OFFICE_TEAMS_DIR: join(dir, 'teams'),
     ...(opts.env ?? {}),
   })

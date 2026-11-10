@@ -20,6 +20,7 @@ import {
   historyMark, transcriptEmptyText, transcriptLine, fallbackInspection, promptAndReply, shortSession, derivedNote, cardSide,
 } from '../inspector'
 import { getUiToken } from '../permissions'
+import { officeAuthHeaders } from '../officeAuth'
 import '../styles/inspector.css'
 
 interface AgentCardProps {
@@ -62,7 +63,8 @@ const AgentCard: React.FC<AgentCardProps> = ({ agentId, agent, sessions = [], on
         const token = getUiToken()
         const res = await fetch(inspectUrl(agentId), {
           signal: AbortSignal.timeout(1500),
-          ...(token ? { headers: { Authorization: `Bearer ${token}` } } : {}),
+          // Without the UI token yet, a proxied page still needs one to read (src/officeAuth.ts)
+          headers: token ? { Authorization: `Bearer ${token}` } : officeAuthHeaders(),
         })
         if (cancelled) return
         // A finished worker answers 404 once the server lets it go: keep its last card

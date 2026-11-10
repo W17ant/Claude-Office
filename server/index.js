@@ -33,14 +33,24 @@ import { mountStatus } from './status.js'
 import { mountRegistry } from './sessions.js'
 import { mountTasks } from './tasks.js'
 import { mountPermissions, sanitiseSuggestions, redactPermission } from './permissions.js'
+import { createPermissionNotifier } from './permission-notify.js'
 import { mountHealth, readVersion } from './health.js'
 import { readPort, readUiPort, readHost, loadOfficeConfig, bossFromConfig } from './config.js'
 import { agentTranscriptPath, readTranscript, isTranscriptPath, clampLine } from './transcript.js'
+import {
+  readLanConfig, lanHostOk, lanOriginOk, viewerKeyFrom, viewerKeyMatches, viewerLink, renderQr,
+  parseAllowedHosts, allowedHostMatches, allowedOriginMatches,
+} from './lan.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
-const NOTIFY_SCRIPT = join(__dirname, '..', 'scripts', 'notify.sh')
+// Why: AGENT_OFFICE_NOTIFY_SCRIPT lets the tests swap in a script that records
+// its arguments (or does nothing), so `npm test` never pops real banners and
+// can prove what reaches notify.sh. It is read from the server's own
+// environment, which only whoever starts the office controls.
+const NOTIFY_SCRIPT = process.env.AGENT_OFFICE_NOTIFY_SCRIPT || join(__dirname, '..', 'scripts', 'notify.sh')
 
+/** A desktop notification through scripts/notify.sh (macOS and Linux; a no-op elsewhere). Fire and forget. */
 function sendNotification(title, msg) {
   try {
     const child = execFile('bash', [NOTIFY_SCRIPT, title, msg], { timeout: 3000 })
@@ -106,6 +116,14 @@ const UI_DEV_PORT = readUiPort()
 // when the file is still safe to trust (readTokenFile), so a page that
 // remembered it keeps working after the office restarts. `npm run
 // rotate-token` deletes the file, and the next start writes a new one.
+//
+// Two opt-in exceptions (server/lan.js; docs/reference.md › Phone mode):
+// AGENT_OFFICE_LAN=1 adds a second, watch-only listener on the private LAN
+// address ("The LAN listener" below: static UI + a viewer-key WebSocket,
+// stripped by redactForLan, no API route, never the office token), and
+// AGENT_OFFICE_ALLOWED_HOSTS lets a local HTTPS proxy (tailscale serve) reach
+// this loopback listener under its own host name. The loopback bind itself
+// never changes.
 // ---------------------------------------------------------------------------
 
 const RUNTIME_DIR = process.env.AGENT_OFFICE_HOME || join(homedir(), '.agent-office')
@@ -181,13 +199,25 @@ function repairPrivateModes() {
  * replaced rather than written through.
  */
 function writeTokenFile() {
-  if (readTokenFile() === AUTH_TOKEN) return
+  writeSecretFile(TOKEN_FILE, AUTH_TOKEN, 'token')
+}
+
+/**
+ * Put a secret in a 0600 file the way the token file is written: left alone
+ * when it already holds `value` and passes readTokenFile's trust checks,
+ * otherwise unlinked and created exclusively. Also writes the LAN viewer key.
+ * @param {string} file
+ * @param {string} value
+ * @param {string} what names the file in the warning when the write fails
+ */
+function writeSecretFile(file, value, what) {
+  if (readTokenFile(file) === value) return
   try {
-    try { unlinkSync(TOKEN_FILE) } catch (err) { if (err.code !== 'ENOENT') throw err }
-    writeFileSync(TOKEN_FILE, AUTH_TOKEN, { mode: 0o600, flag: 'wx' })
-    try { chmodSync(TOKEN_FILE, 0o600) } catch {}
+    try { unlinkSync(file) } catch (err) { if (err.code !== 'ENOENT') throw err }
+    writeFileSync(file, value, { mode: 0o600, flag: 'wx' })
+    try { chmodSync(file, 0o600) } catch {}
   } catch (err) {
-    console.warn('[auth] Could not write token file:', err.message)
+    console.warn(`[auth] Could not write ${what} file:`, err.message)
   }
 }
 
@@ -303,8 +333,18 @@ function requireTokenRpc(req, res, next) {
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'])
 const ALLOWED_ORIGIN_PORTS = new Set([String(UI_DEV_PORT), '3333', String(PORT)])
 
+// Opt-in: host names a local HTTPS proxy reaches this listener by —
+// `tailscale serve --https=443 http://127.0.0.1:3334` forwards the browser's
+// own Host (my-mac.tail1234.ts.net). Each one extends the Host guard below
+// and this allowlist (as https://<name>[:port]); nothing else changes: trust
+// still needs the office token, which the page gets from #token= over that
+// HTTPS. Bad entries are logged and ignored (server/lan.js parseAllowedHost).
+const ALLOWED_HOSTS = parseAllowedHosts(process.env.AGENT_OFFICE_ALLOWED_HOSTS)
+if (ALLOWED_HOSTS.length) console.log(`[config] Also answering as ${ALLOWED_HOSTS.map(h => (h.port ? `${h.host}:${h.port}` : h.host)).join(', ')} (AGENT_OFFICE_ALLOWED_HOSTS)`)
+
 function isAllowedOrigin(origin) {
   if (!origin) return true  // no Origin header: curl, the hook script, same-origin GETs
+  if (allowedOriginMatches(origin, ALLOWED_HOSTS)) return true
   try {
     const { protocol, hostname, port } = new URL(origin)
     return protocol === 'http:' && LOOPBACK_HOSTS.has(hostname) && ALLOWED_ORIGIN_PORTS.has(port)
@@ -338,9 +378,13 @@ function hostName(hostHeader) {
   return colon === -1 ? hostHeader : hostHeader.slice(0, colon)
 }
 
-/** A request is served only when its Host names a loopback host; guards against DNS rebinding. */
+/**
+ * A request is served only when its Host names a loopback host (any port) or
+ * an AGENT_OFFICE_ALLOWED_HOSTS name (with its port exactly); guards against
+ * DNS rebinding.
+ */
 function isAllowedHost(hostHeader) {
-  return LOOPBACK_HOSTS.has(hostName(hostHeader))
+  return LOOPBACK_HOSTS.has(hostName(hostHeader)) || allowedHostMatches(hostHeader, ALLOWED_HOSTS)
 }
 
 // ---------------------------------------------------------------------------
@@ -379,6 +423,82 @@ function requireUi(req, res, next) {
 }
 
 // ---------------------------------------------------------------------------
+// Remote hosts — the loopback listener reached through an HTTPS proxy name
+//
+// On loopback the open routes (GET /agents, /sessions, /tasks, POST /chat, ...)
+// are open to any local process by design. Behind `tailscale serve` every
+// request also arrives from 127.0.0.1, but "local" would then mean every
+// device the tailnet lets reach this machine. So a request whose Host is an
+// AGENT_OFFICE_ALLOWED_HOSTS name (not a loopback name) needs the office
+// token or the UI token as a bearer for everything but the built UI's static
+// files, and its WebSocket needs the office token (no read-only tier: that
+// still carries agent tasks and status lines). The office page sends the
+// header itself when it was served that way (src/officeAuth.ts).
+//
+// Tailscale Funnel would put the proxy on the internet. `tailscale serve`
+// marks a Funnel request with `Tailscale-Funnel-Request: ?1` and strips any
+// copy a client sent (ipn/ipnlocal/serve.go, addTailscaleIdentityHeaders),
+// so its presence is a reliable marker: such requests are refused outright,
+// on any Host. No legitimate local client sends it.
+// ---------------------------------------------------------------------------
+
+/** True for a request Tailscale Funnel relayed from the internet. */
+function isFunnelRequest(req) {
+  return req.headers['tailscale-funnel-request'] !== undefined
+}
+
+/** True when the Host is an AGENT_OFFICE_ALLOWED_HOSTS name rather than a loopback one. */
+function isRemoteHost(hostHeader) {
+  return !LOOPBACK_HOSTS.has(hostName(hostHeader)) && allowedHostMatches(hostHeader, ALLOWED_HOSTS)
+}
+
+// The Host alone cannot say a request came through the proxy: `tailscale
+// serve` forwards the client's Host unchanged (it routes by the TLS SNI), so
+// a tailnet device could send `Host: localhost`. What it cannot hide is what
+// serve adds. Its reverse proxy is Go's httputil.ReverseProxy in Rewrite
+// mode, which first deletes any client-sent Forwarded / X-Forwarded-For /
+// -Host / -Proto; serve then always sets X-Forwarded-Host, X-Forwarded-For
+// (every serve web request carries its serveHTTPContext) and, over TLS,
+// X-Forwarded-Proto (addProxyForwardedHeaders in ipn/ipnlocal/serve.go). The
+// Tailscale-User-* identity headers are added only for tailnet users (not
+// tagged nodes, not Funnel), after stripping client copies, so they are
+// extra markers, not the key. Any of these marks a request as proxied —
+// whatever the proxy, configured or not. Nothing of ours sends them (the
+// Vite dev proxy does not set x-forwarded headers), and a local process
+// that adds one only makes itself stricter.
+const PROXY_MARKER_HEADERS = [
+  'x-forwarded-for', 'x-forwarded-host', 'x-forwarded-proto', 'forwarded',
+  'tailscale-user-login', 'tailscale-user-name', 'tailscale-user-profile-pic', 'tailscale-headers-info',
+]
+
+/** A loopback peer address: 127.0.0.0/8, ::1, or 127.x mapped into IPv6. */
+function isLoopbackAddress(addr) {
+  if (typeof addr !== 'string') return false
+  const v4 = addr.startsWith('::ffff:') ? addr.slice(7) : addr
+  return v4.startsWith('127.') || addr === '::1'
+}
+
+/**
+ * True when a request must be treated as coming from beyond this machine,
+ * so it needs a token (see "Remote hosts"): its Host is an
+ * AGENT_OFFICE_ALLOWED_HOSTS name, it carries a header a reverse proxy adds,
+ * or — belt and braces, the listener binds loopback — its peer is not loopback.
+ * @param {import('http').IncomingMessage} req
+ * @returns {boolean}
+ */
+function isRemoteRequest(req) {
+  if (isRemoteHost(req.headers.host)) return true
+  if (PROXY_MARKER_HEADERS.some(name => req.headers[name] !== undefined)) return true
+  return !isLoopbackAddress(req.socket?.remoteAddress)
+}
+
+/** A remote request carries the office token or the UI token as a bearer. */
+function remoteAuthed(req) {
+  const supplied = bearerToken(req)
+  return uiTokenMatches(supplied) || tokenMatches(supplied)
+}
+
+// ---------------------------------------------------------------------------
 // Built UI
 //
 // `vite build` writes the React app, plus everything in public/, to dist/.
@@ -391,6 +511,9 @@ function requireUi(req, res, next) {
 
 const UI_DIR = process.env.AGENT_OFFICE_UI_DIR || join(__dirname, '..', 'dist')
 const UI_AVAILABLE = existsSync(join(UI_DIR, 'index.html'))
+// The built UI's files alone, for a request through a proxy name without a
+// token (see "Remote hosts"): what it does not hold falls to a 401, never to a route
+const remoteStatic = UI_AVAILABLE ? express.static(UI_DIR, { dotfiles: 'ignore', redirect: false }) : null
 
 // ---------------------------------------------------------------------------
 // office.config.json
@@ -1372,12 +1495,17 @@ function clampCount(val, max = Number.MAX_SAFE_INTEGER) {
 // server mirrors it as a marker file: $AGENT_OFFICE_HOME/answer-permissions
 // exists while the setting is on and is removed when it is off. Without the
 // marker the hook's PermissionRequest branch behaves as it always did.
+//
+// notifyPermissions (default true) says whether a permission wait the office
+// could answer also raises one OS notification (server/permission-notify.js):
+// project and tool name only, after the 300 ms needs-you delay, at most one
+// per session a minute.
 // ---------------------------------------------------------------------------
 
 const SETTINGS_FILE = join(RUNTIME_DIR, 'settings.json')
 const ANSWER_MARKER_FILE = join(RUNTIME_DIR, 'answer-permissions')
 const LOG_PROMPTS_LEVELS = new Map([['off', 0], ['summary', 200], ['full', MAX_TEXT_LEN]])
-const settings = { logPrompts: 'summary', answerPermissions: true }
+const settings = { logPrompts: 'summary', answerPermissions: true, notifyPermissions: true }
 
 function loadSettings() {
   if (!existsSync(SETTINGS_FILE)) return
@@ -1386,6 +1514,7 @@ function loadSettings() {
     if (saved && typeof saved === 'object') {
       if (LOG_PROMPTS_LEVELS.has(saved.logPrompts)) settings.logPrompts = saved.logPrompts
       if (typeof saved.answerPermissions === 'boolean') settings.answerPermissions = saved.answerPermissions
+      if (typeof saved.notifyPermissions === 'boolean') settings.notifyPermissions = saved.notifyPermissions
     }
   } catch (err) {
     console.warn('[settings] Could not read settings:', err.message)
@@ -1636,6 +1765,22 @@ app.use((req, res, next) => {
   next()
 })
 
+// Behind an HTTPS proxy name (AGENT_OFFICE_ALLOWED_HOSTS): see "Remote hosts"
+// below. Tailscale Funnel first — never served, whatever the Host
+app.use((req, res, next) => {
+  if (isFunnelRequest(req)) {
+    console.warn(`[security] Refused a Tailscale Funnel request (${req.method} ${req.path}): Funnel is not supported, use tailscale serve`)
+    return res.status(403).json({ error: 'Tailscale Funnel is not supported: use tailscale serve (tailnet only)' })
+  }
+  if (!isRemoteRequest(req)) return next()
+  if (remoteAuthed(req)) return next()
+  // Only the built UI's files go without a token; anything they do not hold is a 401
+  if (remoteStatic && (req.method === 'GET' || req.method === 'HEAD')) {
+    return remoteStatic(req, res, () => unauthorized(res, { error: 'Unauthorized: this office answers its proxy name only with a token' }))
+  }
+  unauthorized(res, { error: 'Unauthorized: this office answers its proxy name only with a token' })
+})
+
 app.use((req, res, next) => (req.path === '/event' ? eventJsonBody : jsonBody)(req, res, next))
 
 // CORS for local dev — only allow known localhost origins
@@ -1692,6 +1837,16 @@ const permissions = mountPermissions(app, {
   // HMAC(token, nonce + permissionId + decision) over the nonce the hook made.
   // A squatter has never seen the token, so it cannot forge this.
   proof: (nonce, id, decision) => createHmac('sha256', AUTH_TOKEN).update(`${nonce}${id}${decision}`).digest('hex'),
+})
+
+// One OS notification when a permission wait starts (server/permission-notify.js):
+// only once it has outlasted the same debounce the needs-you hand waits out,
+// only while it is still pending, and only while the setting is on.
+const permissionNotifier = createPermissionNotifier({
+  notify: sendNotification,
+  isEnabled: () => settings.notifyPermissions,
+  isPending: id => permissions.get(id)?.status === 'pending',
+  delayMs: NEEDS_YOU_DEBOUNCE_MS,
 })
 
 /**
@@ -1966,6 +2121,7 @@ app.post('/event', requireToken, (req, res) => {
       nonce: sanitised.nonce,
       callKey: sanitised.callKey,
     })
+    permissionNotifier.schedule(permission)
     return res.json({ ok: true, permissionId: permission.id, wait })
   }
 
@@ -2466,7 +2622,7 @@ app.get('/signals', (req, res) => {
 /**
  * GET /settings — the office settings (see Settings above). Open.
  * POST /settings — change them: { logPrompts: "off" | "summary" | "full",
- * answerPermissions: boolean }. Needs the UI token (the office page) or the
+ * answerPermissions: boolean, notifyPermissions: boolean }. Needs the UI token (the office page) or the
  * bearer token: it decides what of the conversation is kept and whether a
  * permission dialog may be answered from here.
  */
@@ -2475,7 +2631,7 @@ app.get('/settings', (_req, res) => {
 })
 
 app.post('/settings', requireUi, (req, res) => {
-  const { logPrompts, answerPermissions } = req.body ?? {}
+  const { logPrompts, answerPermissions, notifyPermissions } = req.body ?? {}
   if (logPrompts !== undefined) {
     if (typeof logPrompts !== 'string' || !LOG_PROMPTS_LEVELS.has(logPrompts)) {
       return res.status(400).json({ error: `logPrompts must be one of ${Array.from(LOG_PROMPTS_LEVELS.keys()).join(', ')}` })
@@ -2484,11 +2640,15 @@ app.post('/settings', requireUi, (req, res) => {
   if (answerPermissions !== undefined && typeof answerPermissions !== 'boolean') {
     return res.status(400).json({ error: 'answerPermissions must be true or false' })
   }
+  if (notifyPermissions !== undefined && typeof notifyPermissions !== 'boolean') {
+    return res.status(400).json({ error: 'notifyPermissions must be true or false' })
+  }
   if (logPrompts !== undefined) settings.logPrompts = logPrompts
   if (answerPermissions !== undefined) settings.answerPermissions = answerPermissions
+  if (notifyPermissions !== undefined) settings.notifyPermissions = notifyPermissions
   saveSettings()
   syncAnswerMarker()
-  console.log(`[settings] logPrompts = ${settings.logPrompts}, answerPermissions = ${settings.answerPermissions}`)
+  console.log(`[settings] logPrompts = ${settings.logPrompts}, answerPermissions = ${settings.answerPermissions}, notifyPermissions = ${settings.notifyPermissions}`)
   // A lower level applies to the text already held too (rows in chat.db stay until /clear)
   if (logPrompts !== undefined) retrimAndAnnounce(`logPrompts ${settings.logPrompts}`)
   res.json({ ok: true, ...settings })
@@ -3626,20 +3786,51 @@ wss.on('connection', (ws, req) => {
     return
   }
 
+  if (isFunnelRequest(req)) {
+    console.warn('[security] Refused a Tailscale Funnel WebSocket: Funnel is not supported, use tailscale serve')
+    ws.close(1008, 'Tailscale Funnel is not supported')
+    return
+  }
+
   const trusted = tokenMatches(wsTokenFrom(req))
+  // Through a proxy name the office token is required: no read-only tier (see "Remote hosts")
+  if (!trusted && isRemoteRequest(req)) {
+    console.warn(`[ws] Rejected a proxied connection (Host ${req.headers.host}) without the office token`)
+    ws.close(1008, 'Office token required')
+    return
+  }
   if (trusted) trustedClients.add(ws)
   const ip = req.socket.remoteAddress ?? 'unknown'
   console.log(`[ws] Client connected from ${ip}, ${trusted ? 'trusted' : 'read-only (no office token)'} (total: ${wss.clients.size})`)
 
   // First: what this connection may see, so the page can say so
   ws.send(JSON.stringify({ type: 'auth', trusted }))
+  // Then the current state
+  ws.send(JSON.stringify(buildSnapshot(trusted)))
 
-  // Then the current state: the agents to draw (not MCP transients, not
-  // agents in their completed grace window — a client seats every entry, and
-  // nothing would ever walk those out). A read-only connection gets the same
-  // office without the conversation (redactForReadOnly) and no UI token.
+  ws.on('close', () => {
+    console.log(`[ws] Client disconnected (remaining: ${wss.clients.size})`)
+  })
+
+  ws.on('error', (err) => {
+    console.error(`[ws] Client error:`, err.message)
+  })
+})
+
+/**
+ * The snapshot a connection starts from: the agents to draw (not MCP
+ * transients, not agents in their completed grace window — a client seats
+ * every entry, and nothing would ever walk those out), sessions, meters,
+ * health, pending permissions, signals and task boards. A read-only
+ * connection gets the same office without the conversation
+ * (redactForReadOnly's rules) and no UI token; the LAN tier strips this
+ * further (redactForLan).
+ * @param {boolean} trusted the connection presented the office token
+ * @returns {object}
+ */
+function buildSnapshot(trusted) {
   const pending = permissions.pending()
-  const snapshot = {
+  return {
     type: 'snapshot',
     activeAgents: liveAgents(),
     sessions: Array.from(sessions.values()).map(s => sessionToJSON(s, { withText: trusted })),
@@ -3657,23 +3848,333 @@ wss.on('connection', (ws, req) => {
     taskBoards: tasks.boards(),
     timestamp: Date.now(),
   }
-  ws.send(JSON.stringify(snapshot))
+}
 
-  ws.on('close', () => {
-    console.log(`[ws] Client disconnected (remaining: ${wss.clients.size})`)
-  })
+// ---------------------------------------------------------------------------
+// The LAN tier — what a phone on the Wi-Fi sees (redactForLan)
+//
+// The LAN listener speaks plain HTTP on a shared network: anyone who can
+// sniff the Wi-Fi reads what the phone reads, and can learn the viewer key
+// from the handshake. So the LAN tier is the scene and nothing that names
+// the user's work. It starts from redactForReadOnly and then keeps only
+// listed fields (an allowlist per record and per event type), so a field
+// added to a payload later stays off the Wi-Fi until someone lists it here,
+// and an event type nobody classified is not sent at all.
+// ---------------------------------------------------------------------------
 
-  ws.on('error', (err) => {
-    console.error(`[ws] Client error:`, err.message)
+/** A copy of `obj` with only `keys` (the ones it has). */
+function pick(obj, keys) {
+  const out = {}
+  if (!obj || typeof obj !== 'object') return out
+  for (const key of keys) if (obj[key] !== undefined) out[key] = obj[key]
+  return out
+}
+
+// Agent records: who sits where and in what state. Not task, status /
+// lastStatus, lastError, result, project, cwd, transcriptPath, description.
+const LAN_AGENT_FIELDS = [
+  'id', 'name', 'role', 'agentType', 'background', 'state', 'spawnedAt', 'lastActivityAt', 'completedAt',
+  'sessionId', 'parentId', 'parentSubagentId', 'subagentId', 'server', 'tool', 'unread', 'restored',
+  'tokens', 'durationMs', 'toolUses', 'model',
+]
+// A session's main thread: its state. Not lastPrompt / lastReply.
+const LAN_MAIN_FIELDS = ['state', 'since', 'waitingOn', 'crons', 'promptId', 'beforeCompact', 'lastPromptAt', 'lastReplyAt']
+// A raised hand: that it is up, why (kind) and for which tool. Not summary / message.
+const LAN_NEEDS_YOU_FIELDS = ['kind', 'toolName', 'notificationType', 'promptId', 'since', 'agentId']
+// A session record / lifecycle event. Not project, cwd, oldCwd, title,
+// transcriptPath, lastStatus.
+const LAN_SESSION_FIELDS = [
+  'id', 'sessionId', 'hooked', 'source', 'state', 'startedAt', 'lastActivityAt', 'endedAt', 'reason',
+  'model', 'fromModel', 'switchSource', 'agentCount', 'workingCount', 'agentIds',
+]
+// Claude Code's registry entry. Not name / nameSource (a session name the user typed).
+const LAN_REGISTRY_FIELDS = ['pid', 'status', 'kind', 'version', 'startedAt', 'statusUpdatedAt']
+// A permission dialog: which tool waits and until when. Not summary, detail,
+// suggestions, callKey, project, cwd, sessionTitle.
+const LAN_PERMISSION_FIELDS = ['id', 'sessionId', 'toolName', 'permissionMode', 'promptId', 'agentId', 'createdAt', 'deadline', 'status', 'decidedBy', 'decidedAt']
+// A signal: what kind of thing happened and how it ended. Not target (an app
+// or path name), branch, project, detail, error, command.
+const LAN_SIGNAL_FIELDS = ['type', 'kind', 'exitCode', 'toDefault', 'interrupted', 'sessionId', 'agentId', 'agentName', 'at', 'seq', 'timestamp']
+// The pipeline health numbers the status strip shows
+const LAN_HEALTH_FIELDS = ['status', 'agents', 'clients', 'sessions', 'lastHookAt', 'hooksSeen', 'uiAvailable', 'version', 'uptimeMs']
+// A chat row's metadata; its text is blanked (system rows too)
+const LAN_CHAT_FIELDS = [
+  'type', 'id', 'sender', 'role', 'timestamp', 'is_system', 'isSystem', 'thread_id', 'recipient', 'msg_type',
+  'seen', 'reactions', 'senderId', 'recipientId',
+]
+
+const lanAgent = agent => pick(agent, LAN_AGENT_FIELDS)
+
+/** An API error's kind (rate_limit, overloaded) when it is one word, else 'error'; never its detail. */
+function lanErrorKind(value) {
+  return typeof value === 'string' && /^[a-z0-9_]{1,40}$/i.test(value) ? value : 'error'
+}
+
+function lanMain(main) {
+  if (!main || typeof main !== 'object') return main
+  const out = pick(main, LAN_MAIN_FIELDS)
+  if (main.needsYou) out.needsYou = pick(main.needsYou, LAN_NEEDS_YOU_FIELDS)
+  if (main.error) out.error = { error: lanErrorKind(main.error.error), ...pick(main.error, ['since']) }
+  return out
+}
+
+/** `{ main }` of an event, LAN-shaped, or nothing when it has none. */
+const lanMainOf = payload => (payload.main ? { main: lanMain(payload.main) } : {})
+
+function lanSession(session) {
+  const out = pick(session, LAN_SESSION_FIELDS)
+  if (session?.main) out.main = lanMain(session.main)
+  if (session?.registry) out.registry = pick(session.registry, LAN_REGISTRY_FIELDS)
+  return out
+}
+
+const lanPermission = permission => pick(permission, LAN_PERMISSION_FIELDS)
+const lanSignal = signal => pick(signal, LAN_SIGNAL_FIELDS)
+
+/** A task board as counts and post-it states: no subject, activeForm or project. */
+function lanBoard(board) {
+  if (!board || typeof board !== 'object') return null
+  return {
+    ...pick(board, ['sessionId', 'counts', 'updatedAt']),
+    tasks: (Array.isArray(board.tasks) ? board.tasks : []).map(t => ({ ...pick(t, ['id', 'status', 'blockedBy', 'owner']), subject: '' })),
+  }
+}
+
+/** Fields an event keeps as is, plus the rule for its nested records. */
+const eventFields = (keys, extra = () => ({})) => p => ({ ...pick(p, ['type', 'timestamp', ...keys]), ...extra(p) })
+const sessionEventRule = p => ({ ...pick(p, ['type', 'timestamp']), ...lanSession(p) })
+
+/**
+ * Per event type: the LAN-shaped payload, or null to withhold it. A type not
+ * listed here is withheld (redactForLan). session_tool_done and
+ * task_created / task_completed are hook events that never reach a client
+ * as such (they come out as session_main and task_board).
+ */
+const LAN_EVENT_RULES = {
+  snapshot: s => ({
+    type: 'snapshot',
+    activeAgents: (s.activeAgents ?? []).map(lanAgent),
+    sessions: (s.sessions ?? []).map(lanSession),
+    health: pick(s.health, LAN_HEALTH_FIELDS),
+    mcpServers: s.mcpServers ?? [],
+    pendingPermissions: (s.pendingPermissions ?? []).map(lanPermission),
+    signals: (s.signals ?? []).map(lanSignal),
+    taskBoards: (s.taskBoards ?? []).map(lanBoard).filter(Boolean),
+    timestamp: s.timestamp,
+  }),
+  agent_spawned: eventFields(['sessionId', 'recovered'], p => ({ agent: lanAgent(p.agent) })),
+  agent_working: eventFields(['agentId', 'sessionId', 'failed']),
+  agent_completed: eventFields(['agentId', 'sessionId', 'tokens', 'durationMs', 'toolUses', 'model']),
+  mcp_call: eventFields(['server', 'tool', 'agentId', 'sessionId']),
+  mcp_done: eventFields(['server', 'agentId', 'sessionId', 'reason']),
+  session_started: sessionEventRule,
+  session_ended: sessionEventRule,
+  session_registry: sessionEventRule,
+  session_cwd: sessionEventRule,
+  session_model: sessionEventRule,
+  session_prompt: eventFields(['sessionId', 'promptId', 'isWakeup', 'wakeupAgentId', 'wakeupOfficeId'], lanMainOf),
+  session_turn_end: eventFields(['sessionId', 'promptId', 'crons', 'stopHookActive'], p => ({
+    backgroundTasks: (Array.isArray(p.backgroundTasks) ? p.backgroundTasks : []).map(t => pick(t, ['id', 'type', 'status', 'officeId'])),
+    ...lanMainOf(p),
+  })),
+  session_needs_you: eventFields(['sessionId', 'kind', 'promptId', 'toolName', 'notificationType', 'agentId'], p => ({
+    ...(p.needsYou ? { needsYou: pick(p.needsYou, LAN_NEEDS_YOU_FIELDS) } : {}),
+    ...lanMainOf(p),
+  })),
+  session_error: eventFields(['sessionId', 'promptId'], p => ({ error: lanErrorKind(p.error), ...lanMainOf(p) })),
+  session_compact: eventFields(['sessionId', 'promptId', 'phase', 'trigger'], lanMainOf),
+  session_main: eventFields(['sessionId'], lanMainOf),
+  chat_message: p => ({ ...pick(p, LAN_CHAT_FIELDS), text: '' }),
+  chat_typing: eventFields(['sender']),
+  chat_seen: eventFields(['messageId']),
+  chat_reaction: eventFields(['messageId', 'reactions']),
+  inbox_update: eventFields(['agentId', 'unread']),
+  permission_request: eventFields([], p => ({ permission: lanPermission(p.permission) })),
+  permission_resolved: eventFields(['permissionId', 'sessionId', 'status', 'decidedBy']),
+  permission_extended: eventFields(['permissionId', 'sessionId', 'deadline']),
+  signal: lanSignal,
+  task_board: eventFields(['sessionId'], p => ({ board: lanBoard(p.board) })),
+  health: eventFields([], p => ({ health: pick(p.health, LAN_HEALTH_FIELDS) })),
+  variant_change: eventFields(['variant', 'reason']),
+  // The meters are not drawn on the phone: cost, context, model and each
+  // worker's status line / description stay off the Wi-Fi altogether
+  session_status: () => null,
+  agent_status: () => null,
+}
+
+/**
+ * What a LAN viewer (phone mode) gets of a broadcast or a snapshot: what
+ * redactForReadOnly leaves, cut down to the scene by LAN_EVENT_RULES, or null
+ * when the event is withheld. On top of the read-only rules it removes:
+ *
+ *   agents          task, status / lastStatus, lastError, result, project, cwd,
+ *                   transcriptPath (kept: id, name, role, state, timings,
+ *                   session and parent ids, MCP server / tool name, unread)
+ *   sessions        project, cwd, oldCwd, title, transcriptPath, lastStatus,
+ *                   the registry entry's name (kept: ids, state, model, counts)
+ *   main            lastPrompt / lastReply (already), needsYou.summary and
+ *                   .message, error.detail — a raised hand keeps its kind and
+ *                   tool name; an API error keeps a one-word kind
+ *   session events  text, messageId, title, project, cwd, oldCwd, summary,
+ *                   message, detail, wakeupStatus, each background task's
+ *                   description
+ *   agent events    agent_working.status, agent_completed.result, project
+ *   chat_message    text, system rows included ('' — the row's sender, role
+ *                   and recipient stay, so a directed message still flies)
+ *   permissions     summary, detail, suggestions, callKey, project, cwd,
+ *                   sessionTitle (kept: tool name, deadline, decision)
+ *   signals         target, branch, project, detail, error (kept: kind, exit
+ *                   code, who ran it)
+ *   task boards     subject, activeForm, project (kept: ids, states,
+ *                   blockers, owner, counts)
+ *   snapshot        statuses (meters) and uiToken (never there for read-only)
+ *   withheld        session_status, agent_status, any type not listed
+ *
+ * Project names go too: a directory name is often a client or a product
+ * codename, and the phone's scene does not need it. The office token and the
+ * UI token never reach this tier.
+ * @param {object | null} payload
+ * @returns {object | null}
+ */
+function redactForLan(payload) {
+  if (!payload || typeof payload !== 'object') return null
+  const readOnly = redactForReadOnly(payload)
+  if (!readOnly) return null
+  const rule = Object.hasOwn(LAN_EVENT_RULES, readOnly.type) ? LAN_EVENT_RULES[readOnly.type] : null
+  return rule ? rule(readOnly) : null
+}
+
+// ---------------------------------------------------------------------------
+// The LAN listener — phone mode's watch-only window (AGENT_OFFICE_LAN=1)
+//
+// A second http.Server on the private LAN address (server/lan.js picks it;
+// never 0.0.0.0), with its own Express app and its own WebSocketServer, so
+// nothing about the loopback listener or its trust logic changes. That app
+// has no API routes at all: it checks Host (exactly <lan ip>:<lan port>, so a
+// DNS-rebinding page is a 421) and Origin (only the page it served itself),
+// serves GET / HEAD of the built UI's files and answers everything else 404.
+// Its WebSocket needs the viewer key — a second secret in
+// $AGENT_OFFICE_HOME/lan-viewer-key, 0600, kept across restarts with the
+// same trust checks as the token file — as the subprotocol
+// `agent-office.viewer.<key>`. The office token is never looked at here
+// (it would cross the Wi-Fi in clear), no LAN connection is ever trusted or
+// handed the UI token, and what it gets is redactForLan's tier.
+// ---------------------------------------------------------------------------
+
+const VIEWER_KEY_FILE = join(RUNTIME_DIR, 'lan-viewer-key')
+// Why: a phone or two, plus the overlap while one reconnects; more than this
+// is someone else holding the link
+const LAN_MAX_CLIENTS = 8
+// Why: a viewer never sends anything; 1 KiB bounds what a stray frame costs
+const LAN_MAX_PAYLOAD = 1024
+
+/** The running LAN listener: { server, wss, host, port, key }, or null. */
+let lan = null
+
+/** The static-only Express app of the LAN listener (`state` holds the bound host and port). */
+function createLanApp(state) {
+  const lanApp = express()
+  lanApp.disable('x-powered-by')
+  lanApp.use((req, res, next) => {
+    if (!lanHostOk(req.headers.host, state.host, state.port)) return res.status(421).json({ error: 'Forbidden host' })
+    if (!lanOriginOk(req.headers.origin, state.host, state.port)) return res.status(403).json({ error: 'Forbidden origin' })
+    res.setHeader('X-Content-Type-Options', 'nosniff')
+    res.setHeader('Referrer-Policy', 'no-referrer')
+    next()
   })
-})
+  // Reads of the built UI only: no POST, no OPTIONS, no API route
+  lanApp.use((req, res, next) => (UI_AVAILABLE && (req.method === 'GET' || req.method === 'HEAD') ? next() : res.status(404).json({ error: 'Not found' })))
+  if (UI_AVAILABLE) lanApp.use(express.static(UI_DIR, { dotfiles: 'ignore', redirect: false }))
+  lanApp.use((_req, res) => res.status(404).json({ error: 'Not found' }))
+  lanApp.use(jsonErrorHandler)
+  return lanApp
+}
+
+/** A LAN WebSocket: Host, Origin and the viewer key, then the LAN tier's auth + snapshot. */
+function onLanConnection(state, ws, req) {
+  const ip = req.socket.remoteAddress ?? 'unknown'
+  const refuse = (code, reason) => {
+    console.warn(`[lan] Refused a viewer from ${ip}: ${reason}`)
+    ws.close(code, reason)
+  }
+  if (!lanHostOk(req.headers.host, state.host, state.port)) return refuse(1008, 'Forbidden host')
+  if (!lanOriginOk(req.headers.origin, state.host, state.port)) return refuse(1008, 'Forbidden origin')
+  if (!viewerKeyMatches(viewerKeyFrom(req), state.key)) return refuse(1008, 'Viewer key required')
+  // 1013: "try again later"
+  if (state.wss.clients.size > LAN_MAX_CLIENTS) return refuse(1013, 'Too many viewers')
+  console.log(`[lan] Viewer connected from ${ip} (viewers: ${state.wss.clients.size})`)
+  ws.send(JSON.stringify({ type: 'auth', trusted: false, viewer: true }))
+  ws.send(JSON.stringify(redactForLan(buildSnapshot(false))))
+  ws.on('close', () => console.log(`[lan] Viewer disconnected (viewers: ${state.wss.clients.size})`))
+  ws.on('error', err => console.error('[lan] Viewer error:', err.message))
+}
+
+/**
+ * Open the LAN listener on `host:port` (start() does when AGENT_OFFICE_LAN=1
+ * and the loopback port is bound; tests bind 127.0.0.1:0). The viewer key is
+ * reused from its file when that is still safe to trust, else minted, and
+ * written once the port is bound.
+ * @param {{ host: string, port: number }} opts
+ * @returns {Promise<{ host: string, port: number, key: string, link: string, server: import('http').Server, wss: WebSocketServer }>}
+ */
+export function startLan({ host, port }) {
+  return new Promise((resolve, reject) => {
+    let key = readTokenFile(VIEWER_KEY_FILE)
+    // Why: the viewer key crosses the Wi-Fi in clear; it must never be the office token
+    if (!key || key === AUTH_TOKEN) key = randomBytes(32).toString('hex')
+    const state = { host, port, key, server: null, wss: null }
+    const server = createServer(createLanApp(state))
+    const lanWss = new WebSocketServer({ server, path: '/ws', handleProtocols, maxPayload: LAN_MAX_PAYLOAD })
+    state.server = server
+    state.wss = lanWss
+    lanWss.on('connection', (ws, req) => onLanConnection(state, ws, req))
+    // ws re-emits the server's errors on the WebSocketServer: one handler for both
+    let settled = false
+    const onError = err => {
+      if (!settled) { settled = true; reject(err); return }
+      console.error('[lan]', err.message)
+    }
+    server.on('error', onError)
+    lanWss.on('error', onError)
+    server.listen(port, host, () => {
+      settled = true
+      state.port = server.address().port
+      lan = state
+      writeSecretFile(VIEWER_KEY_FILE, key, 'viewer key')
+      server.once('close', () => { if (lan === state) lan = null })
+      resolve({ host, port: state.port, key, link: viewerLink(host, state.port, key), server, wss: lanWss })
+    })
+  })
+}
+
+/** Close the LAN listener and drop its viewers (with the loopback server, and in tests). */
+function stopLan() {
+  const state = lan
+  if (!state) return
+  lan = null
+  for (const client of state.wss.clients) client.terminate()
+  state.wss.close()
+  state.server.close()
+}
+
+/** The phone link and its QR code, to the server's own output only (like the office link). */
+function printLanBanner({ link }) {
+  console.log(`  Phone (watch-only, this network): ${link}`)
+  // A QR code is only readable on a terminal; a log file gets the link alone
+  const qr = process.stdout.isTTY ? renderQr(link) : null
+  if (qr) console.log(`${qr}\n`)
+  console.log('  Anyone on this network who gets that link can watch the office: agents, states and counts —')
+  console.log('  no prompts, commands, paths, project names or task text. New link: npm run lan -- --rotate')
+  console.log()
+}
 
 /**
  * Broadcast a JSON message to all connected WebSocket clients: trusted ones
- * get the payload as is, read-only ones what redactForReadOnly leaves of it.
- * Each variant is serialised once, the read-only one only when a read-only
- * client is connected. A null payload (processEvent had nothing to say) is
- * skipped rather than sent as "null".
+ * get the payload as is, read-only ones what redactForReadOnly leaves of it,
+ * LAN viewers what redactForLan leaves. Each variant is serialised once, the
+ * read-only and LAN ones only when such a client is connected. A null
+ * payload (processEvent had nothing to say) is skipped rather than sent as
+ * "null".
  */
 function broadcast(payload) {
   if (!payload) return
@@ -3692,6 +4193,17 @@ function broadcast(payload) {
     }
     if (!msg) continue
     client.send(msg)
+    sent++
+  }
+  let lanMsg  // undefined: not built yet; null: withheld from LAN viewers
+  for (const client of lan?.wss.clients ?? []) {
+    if (client.readyState !== WebSocket.OPEN) continue
+    if (lanMsg === undefined) {
+      const redacted = redactForLan(payload)
+      lanMsg = redacted ? JSON.stringify(redacted) : null
+    }
+    if (!lanMsg) break
+    client.send(lanMsg)
     sent++
   }
   if (sent > 0) {
@@ -3803,6 +4315,18 @@ export function start({ port = PORT, host = readHost() } = {}) {
     console.log(`  Agent Office: ${officeLink(base)}${UI_AVAILABLE ? '' : '  (the Vite dev server)'}`)
     console.log('  Open that link once per browser (or run `npm run open`); a bare address shows the office read-only.')
     console.log()
+
+    // Phone mode (opt-in): the watch-only LAN listener, opened only once the
+    // loopback port is ours, so a losing second instance never touches it or
+    // the viewer key. A failure there leaves the office running loopback-only.
+    const lanConfig = readLanConfig(process.env)
+    if (lanConfig.enabled) {
+      if (!UI_AVAILABLE) console.warn('  [lan] The office UI is not built (npm run build): the phone link will show nothing until it is')
+      startLan(lanConfig).then(printLanBanner, err => {
+        console.error(`  [lan] Could not open the LAN listener on ${lanConfig.host}:${lanConfig.port} (${err.code ?? err.message}); the office runs loopback-only`)
+      })
+      httpServer.once('close', stopLan)
+    }
   })
 }
 
@@ -3838,6 +4362,14 @@ export {
   WS_PROTOCOL,
   WS_TOKEN_PROTOCOL_PREFIX,
   redactForReadOnly,
+  redactForLan,
+  LAN_EVENT_RULES,
+  stopLan,
+  VIEWER_KEY_FILE,
+  ALLOWED_HOSTS,
+  isAllowedHost,
+  isRemoteHost,
+  isRemoteRequest,
   officeLink,
   ANSWER_MARKER_FILE,
   PORT,
@@ -3858,6 +4390,7 @@ export {
   TEAMS_DIR,
   pendingNeedsYou,
   permissions,
+  permissionNotifier,
   settings,
   activity,
   processEvent,
