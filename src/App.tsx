@@ -1,4 +1,4 @@
-import { useSeasonArt } from './season'
+import { currentSeason, useSeasonArt } from './season'
 import React, { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from 'react'
 import './styles/office.css'
 import './styles/rooms.css'
@@ -8,6 +8,7 @@ import SlackChat, { ChatMessage, getAvatarSrc } from './components/SlackChat'
 import Character from './components/Character'
 import ResilientImg from './components/ResilientImg'
 import FurnitureRenderer from './components/FurnitureRenderer'
+import AdventCalendar from './components/AdventCalendar'
 import SessionStrip from './components/SessionStrip'
 import Meters from './components/Meters'
 import AgentCard from './components/AgentCard'
@@ -1474,6 +1475,9 @@ const App: React.FC = () => {
               opacity: forcedNight ? 1 : dayNightMode === 'auto' ? nightOpacity : dayNightMode === 'night' ? 1 : 0,
             }}
           />
+
+          {/* The advent calendar on the back wall, 1 December to 6 January */}
+          {currentSeason() === 'christmas' && <AdventCalendar />}
 
           {/* Furniture — apply interactive state overrides */}
           <FurnitureRenderer onItemClick={handleFurnitureClick} items={furnitureItems} />
