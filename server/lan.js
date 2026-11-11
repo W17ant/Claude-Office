@@ -353,7 +353,9 @@ const ID = '[^/]{1,200}'
  *   POST /chat               a chat line typed on the phone;     open
  *                            `/clear` stays refused: it needs
  *                            the office token, which the phone
- *                            never has
+ *                            never has; so does `@<session>
+ *                            <prompt>` (only the Mac's own page
+ *                            may queue a prompt, mayQueuePrompt)
  *   GET  /agents/:id         the inspector card, with the        text needs
  *                            transcript tail the desktop page    the UI token
  *                            sees

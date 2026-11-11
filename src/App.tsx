@@ -35,7 +35,7 @@ import {
 import { BOSS_ROLE } from './config'
 import { officeHttpBase, officeWsUrl, sameOriginWsUrl } from './serverUrl'
 import { isPhoneFullPage, pagePhoneSecret, pageViewerKey } from './pageAuth'
-import { officeAuthHeaders } from './officeAuth'
+import { canQueuePrompts, chatPostHeaders } from './officeAuth'
 import { mayCarryOfficeToken } from './viewerKey'
 import ViewerStage from './components/ViewerStage'
 import PhoneOffice from './components/PhoneOffice'
@@ -799,6 +799,14 @@ const App: React.FC = () => {
   // answers the server would refuse, and the status strip says how to fix it.
   const readOnly = !isSimMode && trusted === false
   const activeSessionCount = sessions.filter(s => s.state === 'active').length
+  // The chat's @-autocomplete: sessions a prompt can be queued for, offered
+  // only where the server would accept one (the trusted loopback page)
+  const canQueue = trusted === true && !isSimMode && !isViewerMode && !isPhoneFull && canQueuePrompts()
+  const mentionKey = canQueue
+    ? sessions.filter(s => s.state === 'active' && s.hooked !== false && s.mention).map(s => s.mention).join('\n')
+    : ''
+  // Why memoised on a string: SlackChat is memoised and sessions change often
+  const chatMentions = useMemo(() => (mentionKey ? Array.from(new Set(mentionKey.split('\n'))) : undefined), [mentionKey])
 
   // ---------------------------------------------------------------------------
   // Rooms — the stage shows one room at a time (src/roomSwitcher.ts)
@@ -1500,8 +1508,9 @@ const App: React.FC = () => {
     if (isSimMode || isViewerMode) return
     fetch(`${officeHttpBase()}/chat`, {
       method: 'POST',
-      // The UI token through an HTTPS proxy name (never the file token on a POST: src/officeAuth.ts)
-      headers: { 'Content-Type': 'application/json', ...officeAuthHeaders({ method: 'POST' }) },
+      // The UI token (never the file token on a POST): through an HTTPS proxy
+      // name, and on loopback so `@<session> <prompt>` may queue (src/officeAuth.ts)
+      headers: { 'Content-Type': 'application/json', ...chatPostHeaders() },
       body: JSON.stringify({ sender: bossCfg.title, text }),
     }).catch(() => {})
   }, [addMsg])
@@ -1851,6 +1860,7 @@ const App: React.FC = () => {
         lastSeenId={lastSeenId}
         onReaction={handleReaction}
         readOnly={readOnly}
+        mentions={chatMentions}
       />
       </div>
       </div>

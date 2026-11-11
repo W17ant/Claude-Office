@@ -157,6 +157,7 @@ function toSessionInfo(id: string, src: SessionPatch, prev?: SessionInfo): Sessi
     main:           src.main           ?? prev?.main,
     hooked:         src.hooked         ?? prev?.hooked,
     registry:       src.registry === null ? undefined : (src.registry ?? prev?.registry),
+    mention:        src.mention        ?? prev?.mention,
   }
 }
 

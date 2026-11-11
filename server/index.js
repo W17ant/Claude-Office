@@ -48,6 +48,7 @@ import {
 } from './lan.js'
 import { loadOrCreateLanCert } from './lan-cert.js'
 import { createRecap, recapLine, isRecapDate, localDate } from './recap.js'
+import { createPromptQueue, parseMention, resolveMention, mentionName, MARKER_DIR_NAME, MAX_PROMPT_LEN, MAX_QUEUED_PER_SESSION } from './prompt-queue.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -105,7 +106,10 @@ const UI_DEV_PORT = readUiPort()
 //                    and POST /chat for a destructive slash command (/clear)
 //   UI token or token  POST /permission/:id (answer a permission dialog) and
 //                    POST /settings — the two things the office page itself
-//                    may change; see UI_TOKEN below
+//                    may change; see UI_TOKEN below — and POST /chat with a
+//                    leading @<session> (queue a prompt for that session),
+//                    which also refuses the phone and a proxied page
+//                    (mayQueuePrompt)
 //   open             every GET, POST /chat (plain lines + read-only /status,
 //                    /agents, /help and the incident toggles), /chat/typing,
 //                    POST /chat/cron-state (the UI's pause button); the
@@ -145,6 +149,19 @@ try { mkdirSync(RUNTIME_DIR, { recursive: true, mode: 0o700 }) } catch {}
 // inbox under here must not be readable by other local users).
 try { chmodSync(RUNTIME_DIR, 0o700) } catch {}
 const TOKEN_FILE = join(RUNTIME_DIR, 'auth-token')
+
+// Chat prompts waiting for a session's next Stop hook (server/prompt-queue.js;
+// "Prompts from the chat" below). Made here, before anything can end a
+// session, because endSession drops a session's queue.
+const PROMPT_QUEUE_DIR = join(RUNTIME_DIR, MARKER_DIR_NAME)
+const promptQueue = createPromptQueue({
+  dir: PROMPT_QUEUE_DIR,
+  onExpire: (sessionId, item) => {
+    const session = sessions.get(sessionId)
+    systemLine(`⌛ A prompt queued for ${session ? mentionName(session) : 'a session'} expired undelivered (its turn never ended within the hour)`)
+    console.log(`[prompt-queue] expired ${item.id} for ${sessionId}`)
+  },
+})
 
 // What the server writes: 32 random bytes as 64 lowercase hex digits
 const TOKEN_PATTERN = /^[0-9a-f]{64}$/
@@ -1093,6 +1110,8 @@ function sessionToJSON(session, { withText = true } = {}) {
     ...record,
     // Sessions restored from an older agents.json predate the flag: hooks made them
     hooked: session.hooked !== false,
+    // What the chat's @-autocomplete offers for it (server/prompt-queue.js)
+    mention: mentionName(session),
     agentCount: live.length,
     workingCount: live.filter(a => a.state === 'working').length,
   }
@@ -1215,6 +1234,7 @@ function endSession(session, reason, now = Date.now()) {
   cancelPendingNeedsYou(session.id)
   clearNeedsYouTimer(session.id)
   releasePermissions(session.id, 'session ended')
+  dropQueuedPrompts(session, 'the session ended')
   if (session.main?.state !== 'idle') console.log(`[main] ${sessionName(session)}: ${session.main?.state ?? 'idle'} -> idle (session ended)`)
   session.main = newMain(now)
   for (const agentId of Array.from(session.agentIds)) {
@@ -1559,6 +1579,9 @@ function syncAnswerMarker() {
  */
 function removeAnswerMarker() {
   try { if (existsSync(ANSWER_MARKER_FILE)) unlinkSync(ANSWER_MARKER_FILE) } catch {}
+  // Why here too: the prompt queue lives in memory, so its markers must not
+  // outlive the office either (server/prompt-queue.js)
+  promptQueue.clearMarkers()
 }
 
 /** Prompt / reply text at the configured logPrompts level: '' when off, else its first N characters. */
@@ -2112,6 +2135,8 @@ app.post('/event', requireToken, (req, res) => {
     backgroundTasks:  sanitiseTasks(body.backgroundTasks),
     crons:            clampCount(body.crons, 1000),
     stopHookActive:   body.stopHookActive === true || undefined,
+    // Stop with a prompt-queue marker: the hook waits for a queued chat prompt (see Prompts from the chat)
+    claim:            body.type === 'session_turn_end' && body.claim === true ? true : undefined,
     batch:            body.batch === true || undefined,
     count:            clampCount(body.count, 1000),
     oldCwd:           clampString(body.oldCwd, 400),
@@ -2166,6 +2191,14 @@ app.post('/event', requireToken, (req, res) => {
     })
     permissionNotifier.schedule(permission)
     return res.json({ ok: true, permissionId: permission.id, wait })
+  }
+
+  // A Stop whose hook saw this session's prompt-queue marker: hand over the
+  // oldest queued chat prompt, with the proof the hook checks before it
+  // prints anything (a squatter on the port cannot make one)
+  if (sanitised.claim && sanitised.nonce && sanitised.sessionId) {
+    const item = deliverQueuedPrompt(sanitised.sessionId)
+    if (item) return res.json({ ok: true, prompt: { id: item.id, text: item.text, proof: promptProof(sanitised.nonce, item) } })
   }
 
   res.json({ ok: true, ...(event?.type === 'agent_spawned' ? { agentId: event.agent.id } : {}) })
@@ -2224,6 +2257,134 @@ function handleSlashCommand(cmd) {
 const PRIVILEGED_COMMANDS = new Set(['/clear'])
 
 // ---------------------------------------------------------------------------
+// Prompts from the chat — `@<session> <prompt>` queues a prompt for a session
+//
+// The trusted office page on this Mac types `@agent-office fix the failing
+// test`; the prompt waits in promptQueue until that session's Stop hook
+// claims it (POST /event with claim, above) and Claude Code carries on with
+// it instead of stopping. server/prompt-queue.js has the whole flow.
+//
+// Who may queue (mayQueuePrompt): a caller holding the UI token (the office
+// page, from its trusted snapshot) or the office token (a local script) —
+// and never one that came in through the phone's full-mode LAN gate (its
+// requests carry the UI token after the hand-over, so lanAdmitted is checked
+// on its own), nor one that reached loopback through an HTTPS proxy name.
+// A queued prompt becomes an instruction a Claude Code session acts on with
+// its permissions; that stays with the machine itself.
+//
+// What the chat shows: the boss's line is stored as a transcript row
+// (msg_type 'prompt'), so read-only and LAN clients never get its text and
+// the chat watcher never answers it; the queued / delivered / refused lines
+// are system rows that name the session and nothing of the prompt.
+// ---------------------------------------------------------------------------
+
+/** A system line in the chat, stored and broadcast. */
+function systemLine(text) {
+  const row = addMessage({ sender: 'system', text, isSystem: true })
+  broadcast({ type: 'chat_message', ...row, isSystem: true })
+  return row
+}
+
+/**
+ * Whether this request may queue a prompt for a session: the office page on
+ * this Mac (UI token) or a token holder, on loopback, not through the phone
+ * gate or a proxy.
+ * @param {import('express').Request} req
+ * @returns {boolean}
+ */
+function mayQueuePrompt(req) {
+  if (lanAdmitted.has(req) || isRemoteRequest(req)) return false
+  const supplied = bearerToken(req)
+  return uiTokenMatches(supplied) || tokenMatches(supplied)
+}
+
+/**
+ * The proof the hook checks before it delivers a prompt: HMAC-SHA256 of the
+ * token over the hook's nonce, the prompt's id and its text. Domain-separated
+ * from the permission proof by its prefix.
+ */
+function promptProof(nonce, item) {
+  return createHmac('sha256', AUTH_TOKEN).update(`office-prompt\n${nonce}\n${item.id}\n${item.text}`).digest('hex')
+}
+
+/**
+ * Claim a session's oldest queued prompt for its Stop hook: the session is
+ * working again (Claude carries on with the prompt, and no UserPromptSubmit
+ * fires for it), and the chat says it was picked up.
+ * @param {string} sessionId
+ * @returns {object | null} the queued item, or null when nothing is waiting
+ */
+function deliverQueuedPrompt(sessionId) {
+  const item = promptQueue.claim(sessionId)
+  if (!item) return null
+  const session = sessions.get(sessionId)
+  const name = session ? mentionName(session) : sessionId
+  if (session) {
+    const now = Date.now()
+    const main = mainOf(session, now)
+    main.lastPrompt = transcriptText(item.text)
+    main.lastPromptAt = now
+    setMainState(session, 'working', 'prompt from the office chat', now)
+    saveAgents()
+    broadcast(mainEvent(session, 'prompt from the office chat', now))
+  }
+  const left = promptQueue.list(sessionId).length
+  systemLine(`📬 ${name} picked up the prompt from the chat${left ? ` (${left} more waiting)` : ''}`)
+  console.log(`[prompt-queue] delivered ${item.id} to ${name}`)
+  return item
+}
+
+/** Forget a session's queued prompts (it ended), saying so in the chat when there were any. */
+function dropQueuedPrompts(session, why) {
+  const n = promptQueue.drop(session.id)
+  if (n) systemLine(`🗑️ ${n === 1 ? 'A prompt' : `${n} prompts`} queued for ${mentionName(session)} dropped: ${why}`)
+}
+
+/**
+ * POST /chat with `@<session> <prompt>` where the mention named a session
+ * (or several): queue it, or say in the chat why not. Answers the request.
+ */
+function queuePromptFromChat(req, res, { sender, text, mention, found }) {
+  if (found.ambiguous) {
+    const names = found.ambiguous.map(s => `@${String(s.id).slice(0, 8)} (${mentionName(s)})`).join(', ')
+    systemLine(`🤔 @${mention.name} matches ${found.ambiguous.length} sessions: ${names}. Use the session id instead.`)
+    return res.status(409).json({ error: 'ambiguous mention' })
+  }
+  const session = found.session
+  const name = mentionName(session)
+  if (!mayQueuePrompt(req)) {
+    systemLine(`🔒 Only the office page on this Mac can queue a prompt for ${name} (not the phone, a page through a proxy, or a page without the office link)`)
+    console.warn(`[prompt-queue] Refused a prompt for ${name} from ${clampString(sender)}: not the trusted office page`)
+    return unauthorized(res, { error: 'Queuing a prompt needs the office page on this machine' })
+  }
+  if (session.hooked === false) {
+    systemLine(`🔌 ${name} has no office hooks, so nothing would deliver the prompt: run npm run install-hooks and restart that session`)
+    return res.status(409).json({ error: 'session has no hooks' })
+  }
+  const added = promptQueue.add(session.id, { text: mention.body, from: clampString(sender) })
+  if (!added.ok) {
+    const why = added.reason === 'too-long' ? `it is ${mention.body.length} characters, the limit is ${MAX_PROMPT_LEN}`
+      : added.reason === 'full' ? `${MAX_QUEUED_PER_SESSION} prompts are already waiting for it`
+      : 'the session id is not one the hook can claim'
+    systemLine(`✋ Not queued for ${name}: ${why}`)
+    return res.status(added.reason === 'too-long' ? 413 : added.reason === 'full' ? 429 : 409).json({ error: `not queued: ${added.reason}` })
+  }
+  // The boss's line, as a transcript row (see above): at the logPrompts level, none when off
+  const shown = transcriptText(text)
+  if (shown) {
+    const row = addMessage({ sender: clampString(sender), role: 'boss', text: shown, msgType: 'prompt' })
+    broadcast({ type: 'chat_message', ...row })
+  }
+  const busy = session.main?.state === 'working'
+  const when = busy
+    ? 'it gets it when its current turn ends'
+    : 'it is not working now, so it gets it when its next turn ends (the office cannot start a turn by itself: give it any prompt in its terminal)'
+  systemLine(`📨 Queued for ${name}${added.position > 1 ? ` (#${added.position} in line)` : ''}: ${when}`)
+  console.log(`[prompt-queue] queued ${added.item.id} for ${name} (${added.position} waiting)`)
+  return res.json({ ok: true, queued: { sessionId: session.id, id: added.item.id, position: added.position } })
+}
+
+// ---------------------------------------------------------------------------
 // Chat — user messages from the office UI
 // ---------------------------------------------------------------------------
 
@@ -2258,6 +2419,15 @@ app.post('/chat', (req, res) => {
       broadcast({ type: 'chat_message', ...sysMsg, isSystem: true })
       return res.json({ ok: true })
     }
+  }
+
+  // `@<session> <prompt>`: a prompt for that session, not a chat line (see
+  // Prompts from the chat). A mention that names no session (`@claude`) is
+  // an ordinary line.
+  const mention = parseMention(text)
+  if (mention) {
+    const found = resolveMention(sessions.values(), mention.name)
+    if (found) return queuePromptFromChat(req, res, { sender, text, mention, found })
   }
 
   const msg = addMessage({
@@ -4660,6 +4830,13 @@ export function start({ port = PORT, host = readHost() } = {}) {
     // The marker tracks the live office: (re)write it now, per the setting,
     // and the shutdown handlers above remove it when we stop.
     syncAnswerMarker()
+    // A previous run's prompt-queue markers mean nothing to this one
+    promptQueue.clearMarkers()
+    // Why a minute: expiry is an hour, so a minute late is nothing; the
+    // claim path prunes on its own as well
+    const pruneTimer = setInterval(() => promptQueue.prune(), 60_000)
+    pruneTimer.unref?.()
+    httpServer.once('close', () => clearInterval(pruneTimer))
     // The registry roster runs with the server (and stops with it, so a
     // test's closed server leaves no poll behind)
     registry.start()
@@ -4767,6 +4944,8 @@ export {
   isRemoteRequest,
   officeLink,
   ANSWER_MARKER_FILE,
+  PROMPT_QUEUE_DIR,
+  promptQueue,
   PORT,
   UI_DEV_PORT,
   CONFIG_DIR,

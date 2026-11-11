@@ -61,7 +61,15 @@
 # the Python's stdout into a variable and only ever exits 0, so nothing of
 # the office leaks into the conversation.
 #
-# PermissionRequest is the one event that may print: what a PermissionRequest
+# Stop prints only when a prompt was queued for the session in the office chat
+# (`@<session> <prompt>`, server/prompt-queue.js): the Python sees the
+# session's marker file, the event is POSTed in the foreground with a nonce,
+# and when the office answers with a prompt and a proof over that nonce the
+# script prints {"decision": "block", "reason": ...}, so Claude carries on
+# with the prompt instead of stopping. Each claim removes the prompt it gets,
+# so this never loops. Without the marker, Stop is backgrounded as always.
+#
+# PermissionRequest is the other event that may print: what a PermissionRequest
 # hook writes on stdout answers the dialog. When the office is allowed to
 # answer (the marker file $AGENT_OFFICE_HOME/answer-permissions exists — the
 # server keeps it in step with its answerPermissions setting) the event is
@@ -143,12 +151,23 @@ TRACKER_PY="$(CDPATH= cd -P -- "$(dirname -- "$TRACKER_SRC")" && pwd)/agent-trac
 # project Claude is working in) off sys.path. The token and the event URL go
 # in through the environment (never argv) so the Python can sign the POST in
 # this one process — the common path spends no extra process on signing.
-# Line 1 is the event, line 2 its POST signature ("ts<US>sig", or empty), and
-# line 3 is `wait` for a PermissionRequest the office may answer.
+# Line 1 is the event, line 2 its POST signature ("ts<US>sig", or empty),
+# line 3 is `wait` for a PermissionRequest the office may answer or `claim`
+# for a Stop with a queued chat prompt, and line 4 that claim's nonce.
 PY_OUT=$(printf '%s' "$PAYLOAD" | OFFICE_TOKEN="$TOKEN" OFFICE_POST_URL="$SERVER_URL" python3 -I "$TRACKER_PY")
 EVENT_JSON=$(printf '%s\n' "$PY_OUT" | sed -n 1p)
 POST_SIG_LINE=$(printf '%s\n' "$PY_OUT" | sed -n 2p)
 WAIT_FLAG=$(printf '%s\n' "$PY_OUT" | sed -n 3p)
+CLAIM_NONCE=$(printf '%s\n' "$PY_OUT" | sed -n 4p)
+# Why strip a trailing CR from each line: Python on Windows may end its
+# lines with CRLF. The signature covers the body without one, and a `claim`
+# the wrapper failed to recognise would still be POSTed (in the background)
+# with claim: true, so the office would hand its prompt to a request nobody
+# reads. No-ops elsewhere.
+EVENT_JSON=${EVENT_JSON%$'\r'}
+POST_SIG_LINE=${POST_SIG_LINE%$'\r'}
+WAIT_FLAG=${WAIT_FLAG%$'\r'}
+CLAIM_NONCE=${CLAIM_NONCE%$'\r'}
 
 # If Python produced no output, nothing to send
 if [ -z "$EVENT_JSON" ]; then
@@ -267,6 +286,23 @@ elif mode == 'poll':
                     dec = {'behavior': 'deny', 'message': 'Denied from Claude Office', 'interrupt': False}
                 out = json.dumps({'hookSpecificOutput': {'hookEventName': 'PermissionRequest', 'decision': dec}})
     print('\x1f'.join([status, '1' if late else '0', out]))
+elif mode == 'prompt':
+    # A queued chat prompt from the Stop claim: printed as the Stop hook's
+    # block decision only once the office proves it holds the token, over
+    # this hook's nonce, the prompt's id and its exact text. The wording
+    # around the text is built here, never taken from the server.
+    p = r.get('prompt') if isinstance(r.get('prompt'), dict) else {}
+    pid, text, proof = str(p.get('id') or ''), p.get('text'), str(p.get('proof') or '')
+    token = os.environ.get('OFFICE_TOKEN', '')
+    nonce = os.environ.get('OFFICE_NONCE', '')
+    if token and nonce and pid and isinstance(text, str) and text.strip():
+        text = text[:2000]
+        msg = ('office-prompt\n' + nonce + '\n' + pid + '\n' + text).encode('utf-8', 'replace')
+        expected = hmac.new(token.encode(), msg, hashlib.sha256).hexdigest()
+        if hmac.compare_digest(expected, proof):
+            reason = ('The user queued this prompt for this session in the Claude Office chat '
+                      'while you were working. Treat it as their next message:\n\n' + text)
+            print(json.dumps({'decision': 'block', 'reason': reason}))
 PYREPLY
 
 # PermissionRequest the office may answer: POST in the foreground, then poll
@@ -324,6 +360,26 @@ print("\x1f".join([str(d.get("nonce") or ""), json.dumps(d.get("suggestions") or
 
 if [ "$WAIT_FLAG" = "wait" ]; then
     answer_from_office
+    exit 0
+fi
+
+# Stop with a prompt queued in the office chat (the Python saw the session's
+# marker): POST in the foreground and, when the office hands over a prompt
+# with a valid proof, print the block decision that makes Claude carry on
+# with it. One request, bounded at 2 s; the server down or silent, or a
+# reply without a valid proof, prints nothing and the turn ends as usual.
+claim_prompt() {
+    local reply
+    reply=$(printf '%s' "$EVENT_JSON" | curl -sf -X POST "$SERVER_URL" \
+        -H "Content-Type: application/json" \
+        -H "X-Office-Timestamp: $POST_TS" -H "X-Office-Signature: $POST_SIG" \
+        --data-binary @- --max-time 2 2>/dev/null) || return 0
+    printf '%s' "$reply" | OFFICE_TOKEN="$TOKEN" OFFICE_NONCE="$CLAIM_NONCE" python3 -I -c "$PY_REPLY" prompt
+    return 0
+}
+
+if [ "$WAIT_FLAG" = "claim" ] && [ -n "$CLAIM_NONCE" ] && [ -n "$POST_SIG" ]; then
+    claim_prompt
     exit 0
 fi
 

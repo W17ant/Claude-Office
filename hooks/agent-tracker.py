@@ -4,7 +4,8 @@
 # payload on stdin. Prints line 1: the event JSON (nothing at all for a payload
 # the office ignores), line 2: its POST signature ("ts<US>sig", or empty
 # without a token), and line 3: `wait` for a PermissionRequest the office may
-# answer. OFFICE_TOKEN and OFFICE_POST_URL come in through the environment,
+# answer, or `claim` for a Stop with a prompt queued in the office chat (line
+# 4: the claim's nonce). OFFICE_TOKEN and OFFICE_POST_URL come in through the environment,
 # never argv. Standard library only.
 #
 # Why a file of its own and not a heredoc inside the .sh (it was one until
@@ -165,16 +166,20 @@ def one_line(value, limit):
     # Labels: whitespace collapsed, then clamped
     return ' '.join(str(value if value is not None else '').split())[:limit]
 
-def emit_session(event, wait=False):
+def emit_session(event, wait=False, claim=''):
     pid = d.get('prompt_id')
     if pid:
         event['promptId'] = str(pid)[:80]
     if SESSION.get('sessionId'):
         emit(event)
-        # A second line tells the wrapper to POST this one in the foreground
-        # and wait for the office's answer (PermissionRequest only)
+        # A third line tells the wrapper to POST this one in the foreground
+        # and wait for the office's answer: `wait` (PermissionRequest) or
+        # `claim` (Stop with a queued chat prompt), the claim's nonce on a fourth
         if wait:
             print('wait')
+        elif claim:
+            print('claim')
+            print(claim)
     sys.exit(0)
 
 # UserPromptSubmit {prompt, prompt_id, permission_mode} — the boss's prompt.
@@ -219,13 +224,30 @@ if hook_event == 'Stop':
             'description': one_line(task.get('description'), 120),
         })
     crons = d.get('session_crons')
-    emit_session({
+    event = {
         'type':            'session_turn_end',
         'text':            clamp(d.get('last_assistant_message'), 2000),
         'backgroundTasks': tasks,
         'crons':           len(crons) if isinstance(crons, list) else 0,
         'stopHookActive':  bool(d.get('stop_hook_active')),
-    })
+    }
+    # A prompt queued for this session in the office chat (server/prompt-queue.js):
+    # the server keeps an empty marker <office home>/prompt-queue/<session id>
+    # while one waits. Only then does this Stop claim it, in the foreground,
+    # with a fresh nonce the office must sign its answer over; every other
+    # Stop costs one stat and stays backgrounded. The id becomes a file name,
+    # so only the shape Claude Code uses is looked up (no '/' or '..').
+    # Why also with stop_hook_active: each claim removes the prompt it gets,
+    # so a run of continuations ends when the queue (at most 5) is empty.
+    sid = SESSION.get('sessionId', '')
+    claim = ''
+    if re.fullmatch(r'[A-Za-z0-9_-]{1,80}', sid):
+        home = os.environ.get('AGENT_OFFICE_HOME') or os.path.join(os.path.expanduser('~'), '.agent-office')
+        if os.path.exists(os.path.join(home, 'prompt-queue', sid)):
+            claim = os.urandom(16).hex()
+            event['claim'] = True
+            event['nonce'] = claim
+    emit_session(event, claim=claim)
 
 # PermissionRequest {tool_name, tool_input, permission_suggestions} — Claude
 # is waiting for the user's answer (no tool_use_id). In -p mode the call is
