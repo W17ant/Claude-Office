@@ -239,3 +239,21 @@
 @media (prefers-reduced-motion: reduce) {
   .ph-night { transition: none; }
 }
+
+/* Clickable doors on the stage (src/components/DoorLinks.tsx): invisible until
+   pointed at or focused, then a warm outline says where the click goes */
+.door-link {
+  position: absolute;
+  z-index: 2; /* Why 2: over the room picture and its wall props, under the characters */
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  cursor: pointer;
+}
+.door-link:hover,
+.door-link:focus-visible {
+  outline: none;
+  background: rgba(255, 214, 120, 0.12);
+  box-shadow: inset 0 0 0 2px rgba(255, 214, 120, 0.75), 0 0 12px rgba(255, 214, 120, 0.35);
+}

@@ -40,6 +40,16 @@ const GLASS = [
   { x: 152, y: 292, ux: 436, uy: -170, vx: 0, vy: 348 }, // the long window wall on the left
   { x: 672, y: 112, ux: 208, uy: 88, vx: 0, vy: 273 }, // the window in the back wall
 ]
+// The two ceiling lights hang in front of the glass: their outlines (bar,
+// tube and both rods, a couple of pixels out), so the sky is not drawn over them
+const LIGHTS_IN_FRONT = [
+  'M 331 256 L 362 244 L 568 329 L 564 354 L 549 372 L 343 287 L 331 270 Z',
+  'M 371 158 L 382 158 L 382 262 L 371 262 Z',
+  'M 515 215 L 525 215 L 525 332 L 515 332 Z',
+  'M 663 162 L 692 148 L 899 239 L 895 259 L 871 274 L 678 192 L 663 176 Z',
+  'M 702 60 L 714 60 L 714 172 L 702 172 Z',
+  'M 847 120 L 858 120 L 858 232 L 847 232 Z',
+]
 const BOTTLE = { x: 835, y: 365, w: 35, h: 55 } // the water cooler's upturned bottle
 // The bell (without its rope: a copied rope would swing beside the painted one), and where it hangs from
 const BELL = { x: 917, y: 322, w: 44, h: 45, pivotX: 50, pivotY: 6 }
@@ -71,10 +81,16 @@ const LIGHTS: Array<[number, number, number, number]> = Array.from({ length: 44 
 
 function TvScreen({ mode }: { mode: TvMode }) {
   const label = (text: string, colour: string) => (
-    <text x={44} y={52} fontFamily="monospace" fontWeight="bold" fontSize={12} fill={colour}>{text}</text>
+    // Why textLength: at 12 px monospace "DEPLOYING" ran 9 px past the screen's edge;
+    // squeezed to 52 it ends at 96, inside the screen clip
+    <text x={44} y={52} fontFamily="monospace" fontWeight="bold" fontSize={12} fill={colour} textLength={Math.min(52, text.length * 7.2)} lengthAdjust="spacingAndGlyphs">{text}</text>
   )
   return (
     <g transform={`matrix(${TV.a} ${TV.b} ${TV.c} ${TV.d} ${TV.e} ${TV.f})`}>
+      {/* Why: the dashboard's chart is drawn 150 wide and scrolls sideways; without
+          this it ran past the screen onto the TV's frame and the wall */}
+      <clipPath id="room-life-tv-screen"><rect width={100} height={100} /></clipPath>
+      <g clipPath="url(#room-life-tv-screen)">
       {mode === 'dashboard' && (
         <>
           <rect width={100} height={100} fill="#0b1220" />
@@ -121,6 +137,7 @@ function TvScreen({ mode }: { mode: TvMode }) {
           {label('ROLLBACK', '#fecaca')}
         </>
       )}
+      </g>
     </g>
   )
 }
@@ -131,8 +148,13 @@ function TvScreen({ mode }: { mode: TvMode }) {
 
 function City({ night, clipId }: { night: number; clipId: string }) {
   return (
-    <g clipPath={`url(#${clipId})`}>
-      <clipPath id={clipId}>{GLASS.map((g, i) => <path key={i} d={glassPath(g)} />)}</clipPath>
+    // Why a mask, not a clip: the sky shows through the glass but not through
+    // the ceiling lights hanging in front of it, which a clip can't cut out
+    <g mask={`url(#${clipId})`}>
+      <mask id={clipId} maskUnits="userSpaceOnUse" x={0} y={0} width={ROOM_W} height={ROOM_H}>
+        {GLASS.map((g, i) => <path key={i} d={glassPath(g)} fill="#fff" />)}
+        {LIGHTS_IN_FRONT.map((d, i) => <path key={`l${i}`} d={d} fill="#000" />)}
+      </mask>
       {/* Night: office windows across the city flick on and off; a plane crosses */}
       {night > 0.05 && (
         <g opacity={night}>

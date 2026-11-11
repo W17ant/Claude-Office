@@ -55,6 +55,7 @@ import TaskBoard from './components/TaskBoard'
 import { dispatchTaskBoards } from './taskBoard'
 import RoomBackdrop from './components/RoomBackdrop'
 import RoomSwitcher from './components/RoomSwitcher'
+import DoorLinks from './components/DoorLinks'
 import { ROOMS, OFFICE_ROOM, findSpot, type RoomId } from './rooms'
 import { openRoomSet, previewAllRooms } from './roomAccess'
 import { roomOf } from './roomTransfer'
@@ -1614,6 +1615,9 @@ const App: React.FC = () => {
             dayImage={getRoomImage('day')}
             nightImage={getRoomImage('night')}
           />}
+
+          {/* The doors in the picture: a click shows the room behind it (the office's door the corridor, the corridor's the rooms) */}
+          <DoorLinks room={viewRoom} open={OPEN_ROOMS} onOpen={setPickedRoom} />
 
           {/* Furniture — apply interactive state overrides */}
           {officeInView && <FurnitureRenderer onItemClick={handleFurnitureClick} items={furnitureItems} screens={deskScreenModes} printJob={printedPage} />}
