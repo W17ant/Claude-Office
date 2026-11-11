@@ -292,3 +292,24 @@ describe('which room an agent belongs in (src/roomRules.ts)', () => {
     expect(dwellMs('team')).toBeLessThan(dwellMs('needs-you'))
   })
 })
+
+describe('clickable doors (DoorLinks)', () => {
+  it('every door between drawn rooms has a clickable area standing on its doorway', () => {
+    for (const id of DRAWN_ROOMS) {
+      for (const c of ROOMS[id].connections) {
+        const where = `${id} -> ${c.toRoom}`
+        expect(c.door, where).toBeDefined()
+        const d = c.door!
+        expect(d.x, where).toBeGreaterThanOrEqual(0)
+        expect(d.y, where).toBeGreaterThanOrEqual(0)
+        expect(d.x + d.w, where).toBeLessThanOrEqual(100)
+        expect(d.y + d.h, where).toBeLessThanOrEqual(100)
+        // Why: the walking point is the doorway's threshold, so the picture's
+        // door is above it: across it, and with its foot within a few percent
+        expect(c.position.x, where).toBeGreaterThan(d.x)
+        expect(c.position.x, where).toBeLessThan(d.x + d.w)
+        expect(Math.abs(d.y + d.h - c.position.y), where).toBeLessThan(2.5)
+      }
+    }
+  })
+})

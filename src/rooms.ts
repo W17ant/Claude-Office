@@ -58,6 +58,12 @@ export interface RoomConnection {
   label?: string
   exitFacing?: SpriteFacing   // agent direction when leaving through this door
   entryFacing?: SpriteFacing  // agent direction when arriving through this door
+  /**
+   * The door itself in the room's picture (% of the stage, top-left corner and
+   * size), so clicking it shows the room it leads to (src/components/DoorLinks.tsx).
+   * Measured on the day art; the Dunder Mifflin copies have their doors in the same place.
+   */
+  door?: { x: number; y: number; w: number; h: number }
 }
 
 export interface AgentSpot {
@@ -165,7 +171,7 @@ export const ROOMS: Record<RoomId, Room> = {
     ],
     connections: [
       // The office's one door: it leads to the corridor, and through it to every other room
-      { toRoom: 'corridor', position: { x: 67.5, y: 48.9 }, label: 'Corridor', exitFacing: 'rear-right', entryFacing: 'front-right' },
+      { toRoom: 'corridor', position: { x: 67.5, y: 48.9 }, label: 'Corridor', exitFacing: 'rear-right', entryFacing: 'front-right', door: { x: 64.8, y: 21.8, w: 7.7, h: 27.3 } },
     ],
     agentSpots: [
       // Desk spots
@@ -303,10 +309,10 @@ export const ROOMS: Record<RoomId, Room> = {
     height: 600,
     furniture: [],
     connections: [
-      { toRoom: 'main-office', position: { x: 86.4, y: 66 }, label: 'Office', exitFacing: 'rear-right', entryFacing: 'front-left' },
-      { toRoom: 'meeting-room', position: { x: 31, y: 51.5 }, label: 'Meeting Room', exitFacing: 'rear-left', entryFacing: 'front-right' },
-      { toRoom: 'server-room', position: { x: 62.3, y: 54 }, label: 'Server Room', exitFacing: 'rear-right', entryFacing: 'front-left' },
-      { toRoom: 'lunch-room', position: { x: 74.2, y: 59.3 }, label: 'Lunch Room', exitFacing: 'rear-right', entryFacing: 'front-left' },
+      { toRoom: 'main-office', position: { x: 86.4, y: 66 }, label: 'Office', exitFacing: 'rear-right', entryFacing: 'front-left', door: { x: 83.2, y: 36.8, w: 9.1, h: 30.2 } },
+      { toRoom: 'meeting-room', position: { x: 31, y: 51.5 }, label: 'Meeting Room', exitFacing: 'rear-left', entryFacing: 'front-right', door: { x: 25, y: 22.9, w: 9, h: 28.4 } },
+      { toRoom: 'server-room', position: { x: 62.3, y: 54 }, label: 'Server Room', exitFacing: 'rear-right', entryFacing: 'front-left', door: { x: 58.8, y: 23.8, w: 8.9, h: 29.8 } },
+      { toRoom: 'lunch-room', position: { x: 74.2, y: 59.3 }, label: 'Lunch Room', exitFacing: 'rear-right', entryFacing: 'front-left', door: { x: 70.8, y: 30.4, w: 9, h: 28.2 } },
     ],
     landmarks: [
       { id: 'front-door', kind: 'front-door', label: 'Lift', x: 14.5, y: 63 },
@@ -356,7 +362,7 @@ export const ROOMS: Record<RoomId, Room> = {
       { id: 'meet-chair-8', type: 'meeting-chair', sprite: 'meeting-chair-rear-left', x: 63.3, y: 63.5, zIndex: 73 },
     ],
     connections: [
-      { toRoom: 'corridor', position: { x: 68, y: 51.5 }, label: 'Corridor', exitFacing: 'rear-right', entryFacing: 'front-left' },
+      { toRoom: 'corridor', position: { x: 68, y: 51.5 }, label: 'Corridor', exitFacing: 'rear-right', entryFacing: 'front-left', door: { x: 64.8, y: 21.8, w: 8.4, h: 28.4 } },
     ],
     agentSpots: [
       { id: 'meet-1', type: 'meeting-seat', x: 33.3, y: 64.4, facing: 'down', spriteFacing: 'front-right', zIndex: 40 },
@@ -418,7 +424,7 @@ export const ROOMS: Record<RoomId, Room> = {
       { id: 'srv-cart', type: 'crash-cart', sprite: 'crash-cart', x: 79.8, y: 66.2, zIndex: 45 },
     ],
     connections: [
-      { toRoom: 'corridor', position: { x: 68.5, y: 53 }, label: 'Corridor', exitFacing: 'rear-right', entryFacing: 'front-left' },
+      { toRoom: 'corridor', position: { x: 68.5, y: 53 }, label: 'Corridor', exitFacing: 'rear-right', entryFacing: 'front-left', door: { x: 64.6, y: 24, w: 9.4, h: 29.6 } },
     ],
     agentSpots: [
       { id: 'srv-1', type: 'standing', x: 49.8, y: 47.6, facing: 'up', spriteFacing: 'rear-left', zIndex: 50 },
@@ -480,7 +486,7 @@ export const ROOMS: Record<RoomId, Room> = {
       { id: 'lunch-chair-8', type: 'cafe-chair', sprite: 'cafe-chair-rear-right', x: 56.8, y: 75.4, zIndex: 76 },
     ],
     connections: [
-      { toRoom: 'corridor', position: { x: 68.3, y: 52.3 }, label: 'Corridor', exitFacing: 'rear-right', entryFacing: 'front-left' },
+      { toRoom: 'corridor', position: { x: 68.3, y: 52.3 }, label: 'Corridor', exitFacing: 'rear-right', entryFacing: 'front-left', door: { x: 64.8, y: 21.5, w: 8.8, h: 30.1 } },
     ],
     agentSpots: [
       { id: 'lunch-water', type: 'water', x: 54.2, y: 50.1, facing: 'up', spriteFacing: 'rear-right', zIndex: 45 },
