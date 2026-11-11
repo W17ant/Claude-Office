@@ -54,13 +54,18 @@ for (const name of readdirSync(HOOKS).filter(n => /\.(sh|py)$/.test(n))) {
 // 2. The hook against a stub office
 // ---------------------------------------------------------------------------
 const posts = []
+// Each POST's X-Office-Signature ('' when unsigned): tells a failing claim's cause apart
+const signed = []
 // The token the claim run (3. below) signs with and the stub proves it holds
 const TOKEN = 'smoke-token'
 const PROMPT = { id: 'abcd1234abcd1234', text: 'run the smoke test — twice' }
 const server = createServer((req, res) => {
   let body = ''
   req.setEncoding('utf8').on('data', c => { body += c }).on('end', () => {
-    if (req.method === 'POST' && req.url === '/event') posts.push(body)
+    if (req.method === 'POST' && req.url === '/event') {
+      posts.push(body)
+      signed.push(typeof req.headers['x-office-signature'] === 'string' ? req.headers['x-office-signature'] : '')
+    }
     let reply = { ok: true }
     try {
       const event = JSON.parse(body)
@@ -150,7 +155,17 @@ try {
   const out = JSON.parse(claim.stdout)
   if (out.decision !== 'block' || !String(out.reason).endsWith(`\n\n${PROMPT.text}`)) fail(`the Stop claim printed the wrong decision: ${claim.stdout.slice(0, 300)}`)
 } catch {
-  fail(`the Stop claim printed no block decision: ${JSON.stringify(claim.stdout.slice(0, 300))}`)
+  // Say which step broke: no POST at all, a POST without claim (the marker
+  // was not seen), an unsigned one (no token read), or a reply not acted on.
+  // A backgrounded POST lands after the hook exits, so give it a moment.
+  for (let waited = 0; posts.length < 2 && waited < 3000; waited += 50) await new Promise(res => setTimeout(res, 50))
+  let seen = 'no POST reached the stub'
+  if (posts.length >= 2) {
+    let claimed = false
+    try { claimed = JSON.parse(posts[posts.length - 1]).claim === true } catch {}
+    seen = `the POST had claim=${claimed}, signature=${JSON.stringify(signed[signed.length - 1])}`
+  }
+  fail(`the Stop claim printed no block decision: ${JSON.stringify(claim.stdout.slice(0, 300))} (${seen})`)
 }
 
 server.close()
