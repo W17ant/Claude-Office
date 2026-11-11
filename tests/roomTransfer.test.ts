@@ -8,12 +8,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   reduceOffice, stepOffice, initialOfficeState, mcpWorkerId,
-  MAIN_ROOM, DOOR_TARGET, BOSS_ID, CLAUDE_ID, MIN_VISIBLE_TIME, MCP_LINGER_MS, HANDOVER_MAX_MS,
+  MAIN_ROOM, DOOR_TARGET, BOSS_ID, CLAUDE_ID, MIN_VISIBLE_TIME, MCP_LINGER_MS, SHOUT_MS,
+  moveAgentsForEvent, bossErrandGate,
   type OfficeState, type OfficeEnv, type OfficeEffect, type OfficeAction, type AgentMeta,
 } from '../src/officeReducer'
 import {
   beginTransfer, stepTransfer, planRoomMoves, heldSpotIds, roomOf, inOffice,
-  CORRIDOR_PACE, TRANSFER_MAX_MS, FRONT_DOOR,
+  CORRIDOR_PACE, TRANSFER_MAX_MS, FRONT_DOOR, standInside,
 } from '../src/roomTransfer'
 import { DWELL_MS, LUNCH_IDLE_MS, MEETING_MIN_WORKERS } from '../src/roomRules'
 import { ROOMS, ROOM_IDS, HUB_ROOM, OFFICE_ROOM, doorTo, findSpot, type RoomId } from '../src/rooms'
@@ -761,12 +762,11 @@ describe('the lunch room: breaks, and a Claude with nothing to do', () => {
     const lunch = settle(office, at(t1)).state
     expect(claudeOf(lunch, 's1')).toMatchObject({ room: 'lunch-room', state: 'idle', visitSpotId: 'lunch-1' })
 
-    // The prompt reaches it there: no hand-over walk for the boss (nobody is at that desk)
+    // The prompt reaches it there: the boss shouts it from his desk and Claude hears it in the lunch room
     const boss = agent(lunch, BOSS_ID)!
     const prompted = reduceOffice(lunch, { type: 'session_prompt', ...S1, text: 'back to work', promptId: 'p1' }, at(t1 + 1000))
-    expect(agent(prompted.state, BOSS_ID)).toEqual(boss)
-    expect(prompted.state.handoverSeq).toBe(lunch.handoverSeq)
-    expect(claudeOf(prompted.state, 's1')).toMatchObject({ mainState: 'working', room: 'lunch-room' })
+    expect(agent(prompted.state, BOSS_ID)).toEqual({ ...boss, callout: { kind: 'shout', text: 'back to work', seq: lunch.shoutSeq + 1 } })
+    expect(claudeOf(prompted.state, 's1')).toMatchObject({ mainState: 'working', room: 'lunch-room', callout: { kind: 'heard', text: '!' } })
 
     const home = settle(settle(prompted.state, at(t1 + 1000)).state, at(t1 + 1000 + DWELL_MS.home)).state
     expect(claudeOf(home, 's1')).toMatchObject({ room: 'main-office', state: 'working', position: claudeOf(home, 's1')!.deskPosition })
@@ -778,43 +778,37 @@ describe('the lunch room: breaks, and a Claude with nothing to do', () => {
 // ---------------------------------------------------------------------------
 
 describe('the office keeps its own business', () => {
-  it('the boss hand-over is unchanged with rooms open: same walk, same line, same timers', () => {
+  it('the shouted prompt is the same with rooms open: nobody walks, one timer for the bubble', () => {
     const prompt: OfficeAction = { type: 'session_prompt', ...S1, text: 'Fix the flaky test please', promptId: 'p1' }
-    const withRooms = reduceOffice(sessionOffice(0, env()), prompt, env())
+    const office = sessionOffice(0, env())
+    const withRooms = reduceOffice(office, prompt, env())
     const before = reduceOffice(sessionOffice(0, closed()), prompt, closed())
 
     expect(agent(withRooms.state, BOSS_ID)).toEqual(agent(before.state, BOSS_ID))
     expect(claudeOf(withRooms.state, 's1')).toEqual(claudeOf(before.state, 's1'))
     expect(withRooms.effects).toEqual(before.effects)
-    expect(withRooms.state.handoverSeq).toBe(1)
+    expect(withRooms.state.shoutSeq).toBe(1)
 
-    const boss = agent(withRooms.state, BOSS_ID)!
-    const claude = claudeOf(withRooms.state, 's1')!
-    expect(boss.state).toBe('walking-to-manager')
-    expect(boss.targetPosition).toEqual({ x: claude.deskPosition.x + 4, y: claude.deskPosition.y + 2 })
-    expect(withRooms.effects).toContainEqual({ kind: 'schedule', action: { type: 'handover_over', seq: 1 }, delayMs: HANDOVER_MAX_MS })
-
-    // He gets there, says it, and goes back to his own desk: he never leaves the office
-    const arrived = settle(withRooms.state).state
-    expect(agent(arrived, BOSS_ID)).toMatchObject({ state: 'talking-to-manager', room: 'main-office' })
-    const home = settle(reduceOffice(arrived, { type: 'handover_over', seq: 1 }, env()).state).state
-    expect(agent(home, BOSS_ID)).toMatchObject({ state: 'working', room: 'main-office', position: boss.deskPosition })
+    // He stays at his desk in the office: only the bubble is new
+    expect(agent(withRooms.state, BOSS_ID)).toEqual({ ...agent(office, BOSS_ID)!, callout: { kind: 'shout', text: 'Fix the flaky test please', seq: 1 } })
+    expect(withRooms.effects.filter(e => e.kind === 'schedule')).toEqual([{ kind: 'schedule', action: { type: 'shout_over', seq: 1 }, delayMs: SHOUT_MS }])
+    expect(stepOffice(withRooms.state, DT, env()).changed).toBe(false)
   })
 
-  it('the hand-over is skipped while that Claude is in another room or walking between rooms', () => {
+  it('a Claude in another room or walking between rooms hears the shout where it is, and the boss stays put', () => {
     const prompt: OfficeAction = { type: 'session_prompt', ...S1, text: 'one more thing', promptId: 'p2' }
     // Sitting in the meeting room
     const { state, now } = inMeeting()
     const there = reduceOffice(state, prompt, at(now))
-    expect(agent(there.state, BOSS_ID)).toEqual(agent(state, BOSS_ID))
-    expect(claudeOf(there.state, 's1')!.mainState).toBe('working')        // the prompt itself still lands
+    expect(agent(there.state, BOSS_ID)).toMatchObject({ ...agent(state, BOSS_ID), callout: { kind: 'shout' } })
+    expect(claudeOf(there.state, 's1')).toMatchObject({ mainState: 'working', room: 'meeting-room', callout: { kind: 'heard' } })
 
     // On its way there
     const up = stepOffice(sessionOffice(3), DT, at(T0 + DWELL_MS.team)).state
     expect(claudeOf(up, 's1')!.state).toBe('changing-room')
     const walking = reduceOffice(up, prompt, at(T0 + DWELL_MS.team))
-    expect(agent(walking.state, BOSS_ID)).toEqual(agent(up, BOSS_ID))
-    expect(claudeOf(walking.state, 's1')!.state).toBe('changing-room')    // it finishes the walk it is on
+    expect(agent(walking.state, BOSS_ID)!.position).toEqual(agent(up, BOSS_ID)!.position)
+    expect(claudeOf(walking.state, 's1')).toMatchObject({ state: 'changing-room', callout: { kind: 'heard' } })   // it finishes the walk it is on
   })
 
   it('the rules never move the boss or the ?sim Claude, however long they sit', () => {
@@ -847,6 +841,128 @@ describe('the office keeps its own business', () => {
     expect(inOffice({ ...base, room: 'meeting-room' })).toBe(false)
     expect(inOffice({ ...base, visitSpotId: 'meet-1' })).toBe(false)                 // has got up, not yet through the door
     expect(inOffice({ ...base, type: 'mcp' })).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The boss follows the stage (boss_go)
+// ---------------------------------------------------------------------------
+
+describe('the boss follows the room on the stage', () => {
+  const go = (room: RoomId): OfficeAction => ({ type: 'boss_go', room })
+  const boss = (s: OfficeState) => agent(s, BOSS_ID)!
+  /** Ray casting: is the point on the floor polygon */
+  const onFloor = (p: { x: number; y: number }, poly: { x: number; y: number }[]) => {
+    let inside = false
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const a = poly[i], b = poly[j]
+      if ((a.y > p.y) !== (b.y > p.y) && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x) inside = !inside
+    }
+    return inside
+  }
+
+  it('where he stands in each room is a step in from the door, on its floor', () => {
+    for (const id of ROOM_IDS.filter(r => r !== OFFICE_ROOM)) {
+      const spot = standInside(id)
+      expect(onFloor(spot, ROOMS[id].walkableArea!), id).toBe(true)
+      const from = doorTo(id, id === HUB_ROOM ? OFFICE_ROOM : HUB_ROOM)!
+      expect(dist(spot, from), id).toBeGreaterThan(2)
+      expect(dist(spot, from), id).toBeLessThan(15)
+    }
+  })
+
+  it('picking the meeting room walks him out of the office, along the corridor and in at its door, where he stands', () => {
+    const office = emptyOffice()
+    const { state, effects } = reduceOffice(office, go('meeting-room'), env())
+    expect(effects).toEqual([])
+    expect(boss(state)).toMatchObject({ state: 'changing-room', room: OFFICE_ROOM, targetPosition: door(OFFICE_ROOM) })
+    expect(state.meta[BOSS_ID]).toMatchObject({ sentTo: 'meeting-room', transfer: { to: 'meeting-room', why: 'drop-in', leg: 'to-door' } })
+
+    const seen = walk(state, s => !s.meta[BOSS_ID].transfer)
+    const rooms = seen.map(s => roomOf(boss(s)))
+    expect(rooms).toContain(HUB_ROOM)                                   // through the corridor, no teleport
+    expect(rooms.indexOf(HUB_ROOM)).toBeLessThan(rooms.indexOf('meeting-room'))
+    const there = seen[seen.length - 1]
+    expect(boss(there)).toMatchObject({ room: 'meeting-room', state: 'idle', position: standInside('meeting-room'), spriteFacing: 'front-left' })
+    expect(there.meta[BOSS_ID]).toMatchObject({ sentTo: 'meeting-room', arrivedAtDeskAt: null })
+    // He keeps his desk: nobody else may take it while he is out
+    expect(boss(there).assignedSpotId).toBe('spot-1')
+    expect(heldSpotIds(there.agents).has('spot-1')).toBe(true)
+  })
+
+  it('the room rules leave him where he was sent, however long he stands there, and he takes no coffee break', () => {
+    const there = settle(reduceOffice(emptyOffice(), go('lunch-room'), env()).state).state
+    expect(boss(there)).toMatchObject({ room: 'lunch-room', state: 'idle' })
+    const later = settle(there, at(T0 + LUNCH_IDLE_MS * 3 + BREAK_MIN_DESK_TIME, { random: () => 0 })).state
+    expect(boss(later)).toMatchObject({ room: 'lunch-room', state: 'idle', position: standInside('lunch-room') })
+    expect(later.meta[BOSS_ID].wish).toBeUndefined()
+    // A fire drill in the office is not his business while he is out
+    expect(moveAgentsForEvent(later.agents, { x: 67.5, y: 48.9 }, 'Fire Drill', env()).movedIds).not.toContain(BOSS_ID)
+  })
+
+  it('back to the office: he walks back the same way and sits down at his desk', () => {
+    const there = settle(reduceOffice(emptyOffice(), go('server-room'), env()).state).state
+    const { state } = reduceOffice(there, go(OFFICE_ROOM), env())
+    expect(state.meta[BOSS_ID]).toMatchObject({ transfer: { to: OFFICE_ROOM, why: 'return' } })
+    expect(state.meta[BOSS_ID].sentTo).toBeUndefined()
+    const seen = walk(state, s => !s.meta[BOSS_ID].transfer)
+    expect(seen.map(s => roomOf(boss(s)))).toContain(HUB_ROOM)
+    const home = seen[seen.length - 1]
+    const desk = spot('spot-1')
+    expect(boss(home)).toMatchObject({ room: OFFICE_ROOM, state: 'working', position: { x: desk.x, y: desk.y }, spriteFacing: desk.spriteFacing })
+    expect(home.meta[BOSS_ID].arrivedAtDeskAt).toBe(T0)
+  })
+
+  it('the corridor: he steps out of the office door and stands in the hallway (never taken for a leaver)', () => {
+    const there = settle(reduceOffice(emptyOffice(), go(HUB_ROOM), env()).state).state
+    expect(boss(there)).toMatchObject({ room: HUB_ROOM, state: 'idle', position: standInside(HUB_ROOM) })
+    // Then on to the lunch room: straight along the corridor and in
+    const lunch = settle(reduceOffice(there, go('lunch-room'), env()).state).state
+    expect(boss(lunch)).toMatchObject({ room: 'lunch-room', position: standInside('lunch-room') })
+  })
+
+  it('a new pick mid-walk turns him round from where he is', () => {
+    const { state } = reduceOffice(emptyOffice(), go('meeting-room'), env())
+    const partWay = frames(state, 10)[9]
+    expect(roomOf(boss(partWay))).toBe(OFFICE_ROOM)                    // still crossing the office
+    const { state: back } = reduceOffice(partWay, go(OFFICE_ROOM), env())
+    const seen = walk(back, s => !s.meta[BOSS_ID].transfer)
+    expect(seen.every(s => roomOf(boss(s)) === OFFICE_ROOM)).toBe(true) // never went through the door
+    expect(boss(seen[seen.length - 1])).toMatchObject({ state: 'working', position: boss(state).deskPosition })
+  })
+
+  it('nothing happens when he is already there or on his way, or the room is not in use', () => {
+    const office = emptyOffice()
+    expect(reduceOffice(office, go(OFFICE_ROOM), env()).state).toBe(office)
+    const { state: going } = reduceOffice(office, go('meeting-room'), env())
+    expect(reduceOffice(going, go('meeting-room'), env()).state).toBe(going)
+    // The office alone (no rooms in use), or a room that is closed
+    expect(reduceOffice(office, go('meeting-room'), closed()).state).toBe(office)
+    const noLunch = openRoomSet([OFFICE_ROOM, HUB_ROOM, 'meeting-room'])
+    expect(reduceOffice(office, go('lunch-room'), env({ openRooms: noLunch })).state).toBe(office)
+    // On an errand in the office (walking to the plant): picking the office again does not cut it short
+    const errand = { ...office, agents: office.agents.map(a => (a.id === BOSS_ID ? { ...a, state: 'walking-to-desk' as const, targetPosition: { x: 70, y: 60 } } : a)) }
+    expect(reduceOffice(errand, go(OFFICE_ROOM), env()).state).toBe(errand)
+  })
+
+  it('he shouts a prompt from wherever he is standing', () => {
+    const live = settle(reduceOffice(liveOffice(), { type: 'session_started', ...S1 }, env()).state).state
+    const there = settle(reduceOffice(live, go('meeting-room'), env()).state).state
+    const { state } = reduceOffice(there, { type: 'session_prompt', ...S1, text: 'ship it' }, env())
+    expect(boss(state)).toEqual({ ...boss(there), callout: { kind: 'shout', text: 'ship it', seq: 1 } })
+    expect(claudeOf(state, 's1')).toMatchObject({ room: OFFICE_ROOM, callout: { kind: 'heard' } })
+  })
+
+  it('bossErrandGate: an errand goes at once at home, waits while he walks back, and fetches him from elsewhere', () => {
+    const office = emptyOffice()
+    expect(bossErrandGate(office)).toBe('go')
+    const { state: going } = reduceOffice(office, go('meeting-room'), env())
+    expect(bossErrandGate(going)).toBe('fetch')
+    const there = settle(going).state
+    expect(bossErrandGate(there)).toBe('fetch')
+    const { state: coming } = reduceOffice(there, go(OFFICE_ROOM), env())
+    expect(bossErrandGate(coming)).toBe('wait')
+    expect(bossErrandGate(settle(coming).state)).toBe('go')
   })
 })
 

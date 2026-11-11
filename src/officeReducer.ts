@@ -18,11 +18,17 @@
  * directly (randomness and path-finding come in through `OfficeEnv`), so the
  * whole lifecycle is unit-testable in plain Node.
  *
+ * The boss follows the stage. Picking a room on the floor plan or a door
+ * (src/App.tsx) dispatches boss_go: he walks out by his room's door, along
+ * the corridor and in at the other room's door (src/roomTransfer.ts, the
+ * walk every agent takes) and stands just inside it; back in the office he
+ * sits down at his desk again.
+ *
  * Sessions. Every Claude Code terminal gets its own Claude (`main-<sessionId>`,
  * src/mainState.ts), created on the first event from that session or by the
  * snapshot and seated by the boss when that desk is free. It acts out the
- * turn: session_prompt (the boss walks over and hands the prompt across, Claude
- * types), main-thread agent_working (its status line), session_turn_end (its
+ * turn: session_prompt (the boss shouts the prompt across the office from
+ * wherever he is, Claude looks up and types), main-thread agent_working (its status line), session_turn_end (its
  * reply in the chat, then idle — asleep after 30 s — or waiting on background
  * workers), session_needs_you (hand up, chime, amber pill), session_error,
  * session_compact (memory wipe), session_cwd / session_model (pill tags), and
@@ -38,10 +44,10 @@
  */
 
 import { Agent, AgentScene, OfficeEvent, Position, SignalEvent, SnapshotAgent, ServerHealth, SessionInfo, SessionMain, MainState, NeedsYou, AGENT_CONFIGS } from './types'
-import { ROOMS, AgentSpot, HUB_ROOM, getFreeSpot, type RoomId } from './rooms'
+import { ROOMS, AgentSpot, HUB_ROOM, OFFICE_ROOM, getFreeSpot, type RoomId } from './rooms'
 import {
   beginTransfer, stepTransfer, settleTransfer, planRoomMoves, heldSpotIds, roomOf, inOffice,
-  FRONT_DOOR, type Transfer,
+  FRONT_DOOR, standInside, type Transfer,
 } from './roomTransfer'
 import { LUNCH_ROOM, SERVER_ROOM } from './roomRules'
 import {
@@ -91,10 +97,24 @@ export const CLAUDE_HOME_SPOT = 'spot-2'
 export const ARRIVAL_THRESHOLD = 0.3
 /** Minimum time (ms) an agent stays visible after spawning before it may leave */
 export const MIN_VISIBLE_TIME = 30_000
-/** How long the boss stands at Claude's desk after handing a prompt over */
-export const HANDOVER_DWELL_MS = 3_000
-/** Safety net: the boss returns to his desk this long after setting off, wherever he got to */
-export const HANDOVER_MAX_MS = 15_000
+/**
+ * How long a shouted prompt's bubble (and the "!" over the Claude that heard
+ * it) stays up. Why 3.2 s: Character.tsx's speech bubble lasts BUBBLE_MS =
+ * 3.2 s, so the callout is cleared as the bubble fades and not before.
+ */
+export const SHOUT_MS = 3_200
+/**
+ * How much of the prompt the boss shouts. Why 48: the bubble is 180 px wide
+ * at 9 px monospace (~32 characters a line), so 48 is at most two lines over
+ * his head; the whole prompt is in the chat anyway.
+ */
+export const SHOUT_MAX_CHARS = 48
+/**
+ * What he shouts when the page may not show the prompt: read-only and
+ * phone / LAN pages get session_prompt without its text (server/index.js
+ * redactForReadOnly, LAN_EVENT_RULES), and so does an office with logPrompts off
+ */
+export const SHOUT_NO_TEXT = '!'
 /** A session's Claude keeps its desk this long after session_ended (a resume within it stays seated) */
 export const SESSION_CLAUDE_GRACE_MS = 10_000
 
@@ -138,8 +158,8 @@ export interface AgentMeta {
   lobbySlot?: number
   /** A session's Claude: the main state to go back to when the memory wipe is over */
   beforeCompact?: MainState
-  /** The boss: walking back to his desk from a hand-over (a new prompt may turn him round) */
-  homeFromHandover?: boolean
+  /** The boss: the room the person sent him to (boss_go); unset while he is at home in the office. Room rules leave him alone meanwhile */
+  sentTo?: RoomId
   /** Changing room right now (src/roomTransfer.ts); the ordinary walking code leaves the agent alone meanwhile */
   transfer?: Transfer
   /** The room the rules want it in and since when: it sets off once that has held for the rule's dwell */
@@ -188,8 +208,8 @@ export interface OfficeState {
   recentChatKeys: string[]
   /** Sessions whose session_ended arrived, with when: their Claude leaves after the grace unless a resume clears it */
   endedSessions: Record<string, number>
-  /** Bumped per boss hand-over, so a stale handover_over cannot cut a newer visit short */
-  handoverSeq: number
+  /** Bumped per shouted prompt (the bell on the wall rings on each), so a stale shout_over cannot clear a newer shout */
+  shoutSeq: number
   /** Connection + the server's health report (the status strip) */
   health: HealthState
   /** Build and test runs whose last run failed (`session|family|target` -> when), for the "green again" line */
@@ -216,8 +236,10 @@ export interface OfficeEnv {
 export type OfficeAction =
   | OfficeEvent
   | { type: 'a2a_visit_over'; agentId: string }
-  /** The boss has said his piece at Claude's desk (seq guards against a stale timer) */
-  | { type: 'handover_over'; seq: number }
+  /** A shouted prompt's bubble has had its time: clear the callouts of this shout and older ones */
+  | { type: 'shout_over'; seq: number }
+  /** The person picked a room on the stage (floor plan, door): the boss walks there (back to his desk for the office) */
+  | { type: 'boss_go'; room: RoomId }
   /**
    * session_ended's grace is over: that session's Claude clocks out. `endedAt`
    * is the end it was scheduled for (the timer is never cancelled), so the
@@ -394,7 +416,7 @@ function bossReply(agentName: string, random: () => number): string {
 export function initialOfficeState(agents: Agent[], now: number): OfficeState {
   const meta: Record<string, AgentMeta> = {}
   for (const a of agents) meta[a.id] = newMeta(now, true)
-  return { agents, lobby: [], pendingStatus: {}, meta, recentChatKeys: [], endedSessions: {}, handoverSeq: 0, health: initialHealth(now), redRuns: {} }
+  return { agents, lobby: [], pendingStatus: {}, meta, recentChatKeys: [], endedSessions: {}, shoutSeq: 0, health: initialHealth(now), redRuns: {} }
 }
 
 // ---------------------------------------------------------------------------
@@ -849,48 +871,24 @@ function ensureClaude(state: OfficeState, sessionId: string, info: SessionFields
 }
 
 /**
- * The boss gets up and hands the prompt over at Claude's desk: walking-to-
- * manager → (stepOffice, on arrival) talking-to-manager with `bubble` as the
- * speech bubble → handover_over → back to his desk. Only a seated boss (or
- * one already on such a visit, or on his way back from one) goes; a Claude
- * without a desk gets no visit.
+ * The boss shouts the prompt across the office: he stays where he is (at his
+ * desk, mid-errand, in another room) and a speech bubble with the start of
+ * the prompt pops over him, while the Claude it is for gets a "!" over its
+ * head wherever it sits. Nobody walks, so nothing waits on a walk: one
+ * shout_over after SHOUT_MS clears both. A boss on his way out of the
+ * building (completed) says nothing.
  */
-function bossHandover(state: OfficeState, claude: Agent, bubble: string, env: OfficeEnv): OfficeResult {
-  const boss = state.agents.find(a => a.id === BOSS_ID)
-  const free = boss && (boss.state === 'working' || boss.state === 'idle' || boss.state === 'walking-to-manager' || boss.state === 'talking-to-manager'
-    || walkingHomeFromHandover(state, boss))
-  if (!boss || !free || !claude.assignedSpotId) return { state, effects: [] }
-  // Why: the hand-over happens at Claude's desk. One sitting in another room
-  // (or on its way to or from it) is not there to take it. A prompt ends the
-  // idle spell or the wait on the user that took it there, so it walks back by
-  // itself; a team meeting keeps it until the team shrinks (src/roomRules.ts)
-  if (claude.visitSpotId || claude.state === 'changing-room') return { state, effects: [] }
-  const seq = state.handoverSeq + 1
-  const spot = { x: claude.deskPosition.x + 4, y: claude.deskPosition.y + 2 }
-  const effects: OfficeEffect[] = [{ kind: 'schedule', action: { type: 'handover_over', seq }, delayMs: HANDOVER_MAX_MS }]
-  let next: Agent
-  if (near(boss.position, spot, 1)) {
-    // Already there (a second prompt in quick succession): just say the new line
-    next = { ...boss, state: 'talking-to-manager', statusText: bubble, targetPosition: { ...spot }, pathQueue: [] }
-    effects.push({ kind: 'schedule', action: { type: 'handover_over', seq }, delayMs: HANDOVER_DWELL_MS })
-  } else {
-    next = { ...walkTo(boss, spot, bubble, env), state: 'walking-to-manager' }
-  }
-  const meta = state.meta[BOSS_ID]?.homeFromHandover ? { ...state.meta, [BOSS_ID]: { ...state.meta[BOSS_ID], homeFromHandover: false } } : state.meta
+function bossShout(state: OfficeState, claude: Agent, bubble: string): OfficeResult {
+  const seq = state.shoutSeq + 1
+  const agents = state.agents.map(a => {
+    if (a.id === BOSS_ID && a.state !== 'completed') return { ...a, callout: { kind: 'shout' as const, text: bubble, seq } }
+    if (a.id === claude.id) return { ...a, callout: { kind: 'heard' as const, text: '!', seq } }
+    return a
+  })
   return {
-    state: { ...state, handoverSeq: seq, meta, agents: state.agents.map(a => (a.id === BOSS_ID ? next : a)) },
-    effects,
+    state: { ...state, shoutSeq: seq, agents },
+    effects: [{ kind: 'schedule', action: { type: 'shout_over', seq }, delayMs: SHOUT_MS }],
   }
-}
-
-/**
- * The boss is on the walk back from a hand-over: a follow-up prompt ("yes",
- * "continue") a second after the last one turns him round, as it would have
- * a second earlier or once he sits down. Any other walk to his desk — back
- * from a fire drill, from an errand the person sent him on — runs its course.
- */
-function walkingHomeFromHandover(state: OfficeState, boss: Agent): boolean {
-  return boss.state === 'walking-to-desk' && state.meta[boss.id]?.homeFromHandover === true && near(boss.targetPosition, boss.deskPosition)
 }
 
 /**
@@ -1402,7 +1400,7 @@ function reduceEvent(state: OfficeState, action: OfficeAction, env: OfficeEnv): 
       return { state: r.state, effects: [...r.effects, claudeMsg(cur, claude, '👋 clocked out')] }
     }
 
-    // ── The boss hands a prompt over; Claude starts typing ─────────────────
+    // ── The boss shouts the prompt across the office; Claude starts typing ─
     case 'session_prompt': {
       const sid = action.sessionId
       if (!sid) return none
@@ -1430,22 +1428,26 @@ function reduceEvent(state: OfficeState, action: OfficeAction, env: OfficeEnv): 
         const boss = cfgFor(BOSS_ROLE)
         effects.push({ kind: 'msg', sender: boss.title, role: BOSS_ROLE, color: boss.color, text: action.text, agentId: BOSS_ID, tag: 'prompt' })
       }
-      const handover = bossHandover(cur, claude, summary ?? '📝 new prompt', env)
-      cur = handover.state
-      effects.push(...handover.effects)
+      const shout = bossShout(cur, claude, summarise(action.text, SHOUT_MAX_CHARS) ?? SHOUT_NO_TEXT)
+      cur = shout.state
+      effects.push(...shout.effects)
       cur = applyMain(cur, id, { mainState: serverState ?? 'working', statusText: summary ? `✍ ${summary}` : '✍ working on a prompt' }, env)
       effects.push({ kind: 'sfx', sfx: 'typing' })
       return { state: cur, effects }
     }
 
-    case 'handover_over': {
-      if (action.seq !== state.handoverSeq) return none
-      const boss = state.agents.find(a => a.id === BOSS_ID)
-      if (!boss || (boss.state !== 'walking-to-manager' && boss.state !== 'talking-to-manager')) return none
-      // Marked as the walk home from a hand-over until he sits down (stepOffice), so a prompt meanwhile turns him round
-      const meta = { ...state.meta, [BOSS_ID]: { ...(state.meta[BOSS_ID] ?? newMeta(env.now, true)), homeFromHandover: true } }
-      return { state: { ...state, meta, agents: state.agents.map(a => (a.id === BOSS_ID ? walkTo(a, a.deskPosition, 'back to work', env) : a)) }, effects: [] }
+    case 'shout_over': {
+      // Why "this shout and older": a timer is never cancelled, so each one
+      // clears its own callouts; a newer shout's stay up for their own time
+      if (!state.agents.some(a => a.callout && a.callout.seq <= action.seq)) return none
+      return {
+        state: { ...state, agents: state.agents.map(a => (a.callout && a.callout.seq <= action.seq ? { ...a, callout: undefined } : a)) },
+        effects: [],
+      }
     }
+
+    case 'boss_go':
+      return sendBoss(state, action.room, env)
 
     // ── The turn is over: reply in the chat, then idle or waiting on workers ─
     case 'session_turn_end': {
@@ -1708,7 +1710,7 @@ export function stepOffice(state: OfficeState, dt: number, env: OfficeEnv): Step
 
         if (agent.state === 'new-hire' || agent.state === 'walking-to-desk') {
           if (isAtDesk || agent.state === 'new-hire') {
-            setMeta(agent.id, { arrivedAtDeskAt: now, onBreak: false, ...(m.homeFromHandover ? { homeFromHandover: false } : {}) })
+            setMeta(agent.id, { arrivedAtDeskAt: now, onBreak: false })
             if (agent.assignedSpotId === 'spot-filing') effects.push({ kind: 'furniture', id: 'filing-1', state: 'open' })
             // A worker's status that arrived while they were walking in applies now (C13)
             const pending = pendingStatus[agent.id]
@@ -1724,11 +1726,6 @@ export function stepOffice(state: OfficeState, dt: number, env: OfficeEnv): Step
             updated = { ...agent, position }
             changed = true
           }
-        } else if (agent.state === 'walking-to-manager') {
-          // The boss has reached Claude's desk: say the line (SpeechBubble), then handover_over sends him back
-          updated = { ...agent, position, state: 'talking-to-manager' }
-          effects.push({ kind: 'schedule', action: { type: 'handover_over', seq: state.handoverSeq }, delayMs: HANDOVER_DWELL_MS })
-          changed = true
         } else if (agent.state === 'completed' && isAtDoor) {
           if (moved) { updated = { ...agent, position }; changed = true }
         } else if (agent.state === 'coffee-break') {
@@ -1900,6 +1897,68 @@ export function moveAgentsForEvent(agents: Agent[], target: Position, statusText
     return walkTo(a, target, (isMainAgent(a) && a.statusText) || statusText, env)
   })
   return { agents: next, movedIds }
+}
+
+// ---------------------------------------------------------------------------
+// The boss follows the stage
+// ---------------------------------------------------------------------------
+
+/**
+ * Send the boss to the room the person put on the stage (boss_go). Elsewhere
+ * he walks out by his room's door, along the corridor and in at the other's
+ * (the room-change walk every agent takes, src/roomTransfer.ts), to stand
+ * just inside it; for the office he walks back and sits down at his desk.
+ * He sets off from wherever he is, so a new pick mid-walk turns him round.
+ * Nothing happens when he is already there or on his way, so an errand or a
+ * fire drill in the office is not cut short by picking the office again, nor
+ * when the room is not in use (the office alone: nowhere to go).
+ * @param state the office
+ * @param room the room now on the stage
+ * @param env the reducer's environment (`openRooms` decides what exists)
+ * @returns the office with the boss on his way, or `state` itself
+ */
+export function sendBoss(state: OfficeState, room: RoomId, env: OfficeEnv): OfficeResult {
+  const none: OfficeResult = { state, effects: [] }
+  const boss = state.agents.find(a => a.id === BOSS_ID)
+  if (!boss || boss.state === 'completed') return none
+  const home = room === OFFICE_ROOM
+  if (!home && !env.openRooms?.has(room)) return none
+  const m = state.meta[BOSS_ID] ?? newMeta(env.now, true)
+  if ((m.sentTo ?? OFFICE_ROOM) === room) return none
+
+  const moving = home
+    ? beginTransfer(boss, OFFICE_ROOM, boss.deskPosition, 'return', env)
+    : beginTransfer(boss, room, standInside(room), 'drop-in', env)
+  const statusText = home ? 'back to my desk' : `off to the ${ROOMS[room].name.toLowerCase()}`
+  // Why clear the break: a boss on his Red Bull run who is sent elsewhere drops it
+  const meta: AgentMeta = { ...m, transfer: moving.transfer, sentTo: home ? undefined : room, wish: undefined, onBreak: false, breakStartedAt: null, arrivedAtDeskAt: null }
+  return {
+    state: {
+      ...state,
+      meta: { ...state.meta, [BOSS_ID]: meta },
+      agents: state.agents.map(a => (a.id === BOSS_ID ? { ...moving.agent, state: 'changing-room' as const, statusText } : a)),
+    },
+    effects: [],
+  }
+}
+
+/**
+ * Whether the boss can run an errand in the office right now (App.tsx's
+ * furniture clicks). The furniture is only clickable while the office is on
+ * the stage, and that sends him home, so he is usually there or on his way:
+ * - go: he is in the office and not changing room; send him to the furniture
+ * - wait: he is on his way back to the office; try again shortly
+ * - fetch: he is elsewhere and not coming back; send him home (boss_go) first,
+ *   and while waiting for him it means the person sent him off again: drop it
+ * @param state the office
+ * @returns what the errand should do
+ */
+export function bossErrandGate(state: OfficeState): 'go' | 'wait' | 'fetch' {
+  const boss = state.agents.find(a => a.id === BOSS_ID)
+  if (!boss) return 'fetch'
+  const m = state.meta[BOSS_ID]
+  if (m?.transfer) return m.transfer.to === OFFICE_ROOM ? 'wait' : 'fetch'
+  return roomOf(boss) === OFFICE_ROOM && !m?.sentTo ? 'go' : 'fetch'
 }
 
 /** After an event: those who went (and were not sent elsewhere since) walk back to their desks */

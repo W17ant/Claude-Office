@@ -100,15 +100,20 @@ const Character: React.FC<CharacterProps> = ({ agent, idleDurationMs = 0, zIndex
 
   // While a speech bubble shows, the speaker is lifted above every other
   // character (they are stacked by y, up to ~95) and under the incident tint
-  // (100), so tags and bubbles of whoever stands in front cannot cover it
-  const bubbleText = shouldShowBubble(agent.state) && agent.statusText ? agent.statusText : null
+  // (100), so tags and bubbles of whoever stands in front cannot cover it.
+  // The boss shouting a prompt across the office is agent.callout (src/officeReducer.ts bossShout)
+  const shout = agent.callout?.kind === 'shout' ? agent.callout : null
+  const bubbleText = shout?.text ?? (shouldShowBubble(agent.state) && agent.statusText ? agent.statusText : null)
+  // Why the shout's number in the key: the same words shouted twice ("yes", "yes") pop a new bubble
+  const bubbleKey = shout ? `shout-${shout.seq}` : bubbleText
   const [speaking, setSpeaking] = useState(false)
   useEffect(() => {
     if (!bubbleText) { setSpeaking(false); return }
     setSpeaking(true)
     const timer = setTimeout(() => setSpeaking(false), BUBBLE_MS)
     return () => clearTimeout(timer)
-  }, [bubbleText])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bubbleKey])
 
   const isMoving = agent.state === 'new-hire' || agent.state === 'walking-to-desk' || agent.state === 'walking-to-manager' ||
     agent.state === 'coffee-break' || agent.state === 'completed' || agent.state === 'changing-room'
@@ -217,7 +222,10 @@ const Character: React.FC<CharacterProps> = ({ agent, idleDurationMs = 0, zIndex
   const scene = agent.state !== 'completed' ? agent.scene : undefined
   let effectSrc: string | null = null
   let badge: { text: string; cls: string } | null = null
-  if (isTyping) effectSrc = '/sprites/effects/typing.png'
+  // The Claude a prompt was shouted at looks up: a "!" for as long as the boss's bubble shows
+  const heard = agent.callout?.kind === 'heard' && !needsYou && mainState !== 'error'
+  if (heard) badge = { text: agent.callout!.text, cls: 'heard' }
+  else if (isTyping) effectSrc = '/sprites/effects/typing.png'
   else if (needsYou) badge = { text: needsYouBadge(needsYou.kind), cls: hardNeedsYou ? 'needs-you' : 'soft' }
   else if (mainState === 'error') badge = { text: '⚠', cls: 'error' }
   else if (scene) effectSrc = SCENE_SPRITES[scene.kind]
@@ -271,8 +279,8 @@ const Character: React.FC<CharacterProps> = ({ agent, idleDurationMs = 0, zIndex
       )}
 
       {bubbleText && (
-        // The boss handing a prompt over at Claude's desk (purple bubble); any other visitor keeps the plain one
-        <SpeechBubble key={bubbleText} text={bubbleText} isManager={agent.role === BOSS_ROLE} duration={BUBBLE_MS} />
+        // The boss shouting a prompt (purple bubble); any other speaker keeps the plain one
+        <SpeechBubble key={bubbleKey ?? undefined} text={bubbleText} isManager={agent.role === BOSS_ROLE} duration={BUBBLE_MS} />
       )}
 
       <div

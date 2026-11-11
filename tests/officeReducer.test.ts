@@ -25,8 +25,9 @@ import {
   MIN_VISIBLE_TIME,
   A2A_VISIT_MS,
   CLAUDE_HOME_SPOT,
-  HANDOVER_DWELL_MS,
-  HANDOVER_MAX_MS,
+  SHOUT_MS,
+  SHOUT_MAX_CHARS,
+  SHOUT_NO_TEXT,
   SESSION_CLAUDE_GRACE_MS,
   HOOK_WARN_MS,
   initialHealth,
@@ -1035,137 +1036,114 @@ describe("a Claude's status line survives its walks", () => {
   })
 })
 
-describe('session_prompt: the boss hands the prompt over, Claude types', () => {
-  it("walks the boss to Claude's desk with the prompt as his line, posts the prompt as his chat row, and starts Claude working", () => {
-    const office = sessionOffice()
-    const claude = claudeOf(office, 's1')!
-    const { state, effects } = reduceOffice(office, { type: 'session_prompt', ...S1, text: 'Fix the flaky purity test in tests/officeReducer.test.ts please', promptId: 'p1' }, env())
+describe('session_prompt: the boss shouts the prompt across the office, Claude types', () => {
+  const PROMPT = 'Fix the flaky purity test in tests/officeReducer.test.ts please'
 
+  it('the boss stays put and shouts the start of the prompt; Claude gets a "!", the prompt is his chat row, Claude starts working', () => {
+    const office = sessionOffice()
+    const bossBefore = agent(office, BOSS_ID)!
+    const { state, effects } = reduceOffice(office, { type: 'session_prompt', ...S1, text: PROMPT, promptId: 'p1' }, env())
+
+    // Nobody walks: same place, same state, same target, just a bubble
     const boss = agent(state, BOSS_ID)!
-    expect(boss.state).toBe('walking-to-manager')
-    expect(boss.targetPosition).toEqual({ x: claude.deskPosition.x + 4, y: claude.deskPosition.y + 2 })
-    expect(boss.statusText).toBe('Fix the flaky purity test in tests/officeReducer.test.ts pl…')   // 60 chars for a bubble
-    expect(state.handoverSeq).toBe(1)
+    expect({ ...boss, callout: undefined }).toEqual({ ...bossBefore, callout: undefined })
+    expect(boss.callout).toEqual({ kind: 'shout', text: PROMPT.slice(0, SHOUT_MAX_CHARS - 1) + '…', seq: 1 })
+    expect(boss.callout!.text.length).toBe(SHOUT_MAX_CHARS)
+    expect(state.shoutSeq).toBe(1)
 
     const c = claudeOf(state, 's1')!
+    expect(c.callout).toEqual({ kind: 'heard', text: '!', seq: 1 })
     expect(c.mainState).toBe('working')
     expect(c.state).toBe('working')
-    expect(c.statusText).toBe('✍ Fix the flaky purity test in tests/officeReducer.test.ts pl…')
+    expect(c.statusText).toBe('✍ Fix the flaky purity test in tests/officeReducer.test.ts pl…')   // the status line keeps 60
 
-    expect(msgs(effects)).toEqual([expect.objectContaining({ sender: BOSS_NAME, role: 'boss', text: 'Fix the flaky purity test in tests/officeReducer.test.ts please', tag: 'prompt', agentId: BOSS_ID })])
+    expect(msgs(effects)).toEqual([expect.objectContaining({ sender: BOSS_NAME, role: 'boss', text: PROMPT, tag: 'prompt', agentId: BOSS_ID })])
     expect(sfx(effects)).toEqual(['typing'])
-    expect(effects).toContainEqual({ kind: 'schedule', action: { type: 'handover_over', seq: 1 }, delayMs: HANDOVER_MAX_MS })
+    // The one timer: the bubble's; nothing waits on a walk
+    expect(effects.filter(e => e.kind === 'schedule')).toEqual([{ kind: 'schedule', action: { type: 'shout_over', seq: 1 }, delayMs: SHOUT_MS }])
 
-    // He arrives, says his line (talking-to-manager drives the speech bubble) and the dwell is scheduled
-    const { state: arrived, effects: walk } = settle(state)
-    expect(agent(arrived, BOSS_ID)!.state).toBe('talking-to-manager')
-    expect(walk).toContainEqual({ kind: 'schedule', action: { type: 'handover_over', seq: 1 }, delayMs: HANDOVER_DWELL_MS })
+    // Frames go by: nobody moves (the office was settled)
+    expect(stepOffice(state, 3, env()).changed).toBe(false)
 
-    // A stale timer is ignored; the right one sends him back to his desk
-    expect(reduceOffice(arrived, { type: 'handover_over', seq: 0 }, env()).state).toBe(arrived)
-    const { state: back } = reduceOffice(arrived, { type: 'handover_over', seq: 1 }, env())
-    expect(agent(back, BOSS_ID)!.state).toBe('walking-to-desk')
-    expect(agent(back, BOSS_ID)!.targetPosition).toEqual(agent(back, BOSS_ID)!.deskPosition)
-    const { state: home } = settle(back)
-    expect(agent(home, BOSS_ID)!.state).toBe('working')
-    expect(claudeOf(home, 's1')!.state).toBe('working')        // Claude kept typing throughout
+    // The timer clears both callouts; a second one finds nothing to do
+    const { state: after } = reduceOffice(state, { type: 'shout_over', seq: 1 }, env())
+    expect(agent(after, BOSS_ID)!.callout).toBeUndefined()
+    expect(claudeOf(after, 's1')!.callout).toBeUndefined()
+    expect(claudeOf(after, 's1')!.state).toBe('working')
+    expect(reduceOffice(after, { type: 'shout_over', seq: 1 }, env()).state).toBe(after)
   })
 
-  it('a second prompt while the boss is still over there just gives him the new line, with a new sequence', () => {
-    const office = sessionOffice()
-    const { state: s1 } = reduceOffice(office, { type: 'session_prompt', ...S1, text: 'first' }, env())
-    const { state: there } = settle(s1)
-    const { state: s2, effects } = reduceOffice(there, { type: 'session_prompt', ...S1, text: 'second' }, env())
-    expect(agent(s2, BOSS_ID)!.state).toBe('talking-to-manager')
-    expect(agent(s2, BOSS_ID)!.statusText).toBe('second')
-    expect(s2.handoverSeq).toBe(2)
-    expect(effects).toContainEqual({ kind: 'schedule', action: { type: 'handover_over', seq: 2 }, delayMs: HANDOVER_DWELL_MS })
-    expect(reduceOffice(s2, { type: 'handover_over', seq: 1 }, env()).state).toBe(s2)
-  })
-
-  it('a prompt while the boss walks back from the last hand-over turns him round with the new line', () => {
+  it("a second prompt before the first bubble is gone: a new shout, and the first one's timer leaves it up", () => {
     const { state: s1 } = reduceOffice(sessionOffice(), { type: 'session_prompt', ...S1, text: 'first' }, env())
-    const { state: there } = settle(s1)
-    const visitSpot = { ...agent(there, BOSS_ID)!.position }
-    const { state: leaving } = reduceOffice(there, { type: 'handover_over', seq: 1 }, env())
-    // Twenty frames on he is well on his way home, but not there
-    let walking = leaving
-    for (let i = 0; i < 20; i++) walking = stepOffice(walking, 1, env()).state
-    const boss = agent(walking, BOSS_ID)!
-    expect(boss.state).toBe('walking-to-desk')
-    expect(Math.hypot(boss.position.x - visitSpot.x, boss.position.y - visitSpot.y)).toBeGreaterThan(1)
-
-    const { state: s2, effects } = reduceOffice(walking, { type: 'session_prompt', ...S1, text: 'yes, continue' }, env())
-    expect(s2.handoverSeq).toBe(2)
-    expect(effects).toContainEqual({ kind: 'schedule', action: { type: 'handover_over', seq: 2 }, delayMs: HANDOVER_MAX_MS })
-    expect(agent(s2, BOSS_ID)!.state).toBe('walking-to-manager')
-    expect(agent(s2, BOSS_ID)!.statusText).toBe('yes, continue')
-    expect(agent(s2, BOSS_ID)!.targetPosition).toEqual(visitSpot)
-    const { state: back, effects: walk } = settle(s2)
-    expect(agent(back, BOSS_ID)!.state).toBe('talking-to-manager')
-    expect(walk).toContainEqual({ kind: 'schedule', action: { type: 'handover_over', seq: 2 }, delayMs: HANDOVER_DWELL_MS })
-
-    // A frame after he set off he is still beside Claude: he just says the new line
-    const { state: s3 } = reduceOffice(stepOffice(leaving, 1, env()).state, { type: 'session_prompt', ...S1, text: 'and the docs' }, env())
-    expect(agent(s3, BOSS_ID)!.state).toBe('talking-to-manager')
-    expect(agent(s3, BOSS_ID)!.statusText).toBe('and the docs')
-
-    // Once he has sat down the walk home is over: the mark is cleared
-    const { state: home } = settle(leaving)
-    expect(agent(home, BOSS_ID)!.state).toBe('working')
-    expect(home.meta[BOSS_ID].homeFromHandover).toBe(false)
+    const { state: s2, effects } = reduceOffice(s1, { type: 'session_prompt', ...S1, text: 'first' }, env())
+    expect(s2.shoutSeq).toBe(2)
+    expect(agent(s2, BOSS_ID)!.callout).toEqual({ kind: 'shout', text: 'first', seq: 2 })
+    expect(effects).toContainEqual({ kind: 'schedule', action: { type: 'shout_over', seq: 2 }, delayMs: SHOUT_MS })
+    expect(reduceOffice(s2, { type: 'shout_over', seq: 1 }, env()).state).toBe(s2)
+    const { state: s3 } = reduceOffice(s2, { type: 'shout_over', seq: 2 }, env())
+    expect(agent(s3, BOSS_ID)!.callout).toBeUndefined()
   })
 
-  it('a prompt while the boss walks back from a fire drill or an errand does not turn him round', () => {
+  it('two sessions: each shout marks its own Claude, and each timer clears only its own shout', () => {
+    const S2 = { sessionId: 's2', project: 'api', cwd: '/home/me/api' }
+    const two = settle(reduceOffice(sessionOffice(), { type: 'session_started', ...S2 }, env()).state).state
+    const { state: s1 } = reduceOffice(two, { type: 'session_prompt', ...S1, text: 'one' }, env())
+    const { state: s2 } = reduceOffice(s1, { type: 'session_prompt', ...S2, text: 'two' }, env())
+    expect(claudeOf(s2, 's1')!.callout).toEqual({ kind: 'heard', text: '!', seq: 1 })
+    expect(claudeOf(s2, 's2')!.callout).toEqual({ kind: 'heard', text: '!', seq: 2 })
+    expect(agent(s2, BOSS_ID)!.callout).toMatchObject({ text: 'two', seq: 2 })
+    const { state: s3 } = reduceOffice(s2, { type: 'shout_over', seq: 1 }, env())
+    expect(claudeOf(s3, 's1')!.callout).toBeUndefined()
+    expect(claudeOf(s3, 's2')!.callout).toEqual({ kind: 'heard', text: '!', seq: 2 })
+    expect(agent(s3, BOSS_ID)!.callout).toMatchObject({ seq: 2 })
+  })
+
+  it('he shouts from wherever he is: on a fire drill or an errand he keeps walking where he was going', () => {
     const office = sessionOffice()
-    const { agents, movedIds } = moveAgentsForEvent(office.agents, { x: 67.5, y: 48.9 }, 'Fire Drill', env())
-    const atDrill = settle({ ...office, agents }).state
-    const returning = { ...atDrill, agents: returnAgentsFromEvent(atDrill.agents, movedIds, env()) }
-    expect(agent(returning, BOSS_ID)!.state).toBe('walking-to-desk')
-    const { state } = reduceOffice(returning, { type: 'session_prompt', ...S1, text: 'go' }, env())
-    expect(state.handoverSeq).toBe(0)
-    expect(agent(state, BOSS_ID)!.state).toBe('walking-to-desk')
-    expect(agent(state, BOSS_ID)!.statusText).toBe('back to work')
+    const { agents } = moveAgentsForEvent(office.agents, { x: 67.5, y: 48.9 }, 'Fire Drill', env())
+    const atDrill = { ...office, agents }
+    const before = agent(atDrill, BOSS_ID)!
+    const { state } = reduceOffice(atDrill, { type: 'session_prompt', ...S1, text: 'go' }, env())
+    const boss = agent(state, BOSS_ID)!
+    expect(boss).toEqual({ ...before, callout: { kind: 'shout', text: 'go', seq: 1 } })
     expect(claudeOf(state, 's1')!.mainState).toBe('working')
 
-    // Walking home from a hand-over, but the person sent him off somewhere else (the coffee machine)
-    const { state: there } = settle(reduceOffice(office, { type: 'session_prompt', ...S1, text: 'first' }, env()).state)
-    const { state: leaving } = reduceOffice(there, { type: 'handover_over', seq: 1 }, env())
-    const errand = { ...leaving, agents: leaving.agents.map(a => (a.id === BOSS_ID ? { ...a, targetPosition: { x: 73.5, y: 56.7 }, statusText: 'coffee time' } : a)) }
-    const { state: s2 } = reduceOffice(errand, { type: 'session_prompt', ...S1, text: 'second' }, env())
-    expect(s2.handoverSeq).toBe(1)
-    expect(agent(s2, BOSS_ID)!.statusText).toBe('coffee time')
+    // On a coffee break too
+    const onBreak = { ...office, agents: office.agents.map(a => (a.id === BOSS_ID ? { ...a, state: 'coffee-break' as const } : a)) }
+    const { state: s2 } = reduceOffice(onBreak, { type: 'session_prompt', ...S1, text: 'go' }, env())
+    expect(agent(s2, BOSS_ID)).toMatchObject({ state: 'coffee-break', callout: { kind: 'shout', text: 'go' } })
   })
 
-  it('a wake-up from a background worker is a note on Claude, not a walk', () => {
+  it('a wake-up from a background worker is a note on Claude, not a shout', () => {
     const office = sessionOffice(1)
     // The hook names the subagent id; the server adds the office id when it knows the worker
     const { state, effects } = reduceOffice(office, { type: 'session_prompt', ...S1, isWakeup: true, wakeupAgentId: 'a4b69979afca21afd', wakeupOfficeId: 'w1', text: 'tests pass' }, env())
     expect(agent(state, BOSS_ID)!.state).toBe('working')
-    expect(state.handoverSeq).toBe(0)
+    expect(agent(state, BOSS_ID)!.callout).toBeUndefined()
+    expect(state.shoutSeq).toBe(0)
     const c = claudeOf(state, 's1')!
     expect(c.mainState).toBe('working')
     expect(c.statusText).toBe('📬 w1 reported back')
+    expect(c.callout).toBeUndefined()
     expect(msgs(effects)).toEqual([expect.objectContaining({ sender: 'Claude', text: '📬 w1 reported back' })])
     expect(sfx(effects)).toEqual([])
   })
 
-  it('with logPrompts off the text is absent: no prompt row, a generic bubble, Claude still works', () => {
+  it('without the text (read-only and phone pages, logPrompts off): no prompt row, a bare "!" shout, Claude still works', () => {
     const office = sessionOffice()
-    const { state, effects } = reduceOffice(office, { type: 'session_prompt', ...S1, text: '' }, env())
-    expect(msgs(effects)).toEqual([])
-    expect(agent(state, BOSS_ID)!.statusText).toBe('📝 new prompt')
-    expect(claudeOf(state, 's1')!.statusText).toBe('✍ working on a prompt')
-    expect(claudeOf(state, 's1')!.mainState).toBe('working')
+    for (const text of ['', undefined]) {
+      const { state, effects } = reduceOffice(office, { type: 'session_prompt', ...S1, text }, env())
+      expect(msgs(effects)).toEqual([])
+      expect(agent(state, BOSS_ID)!.callout).toEqual({ kind: 'shout', text: SHOUT_NO_TEXT, seq: 1 })
+      expect(claudeOf(state, 's1')!.callout).toEqual({ kind: 'heard', text: '!', seq: 1 })
+      expect(claudeOf(state, 's1')!.statusText).toBe('✍ working on a prompt')
+      expect(claudeOf(state, 's1')!.mainState).toBe('working')
+    }
   })
 
-  it('the boss only goes when he is at his desk; Claude works either way', () => {
-    const office = sessionOffice()
-    const onBreak = { ...office, agents: office.agents.map(a => (a.id === BOSS_ID ? { ...a, state: 'coffee-break' as const } : a)) }
-    const { state } = reduceOffice(onBreak, { type: 'session_prompt', ...S1, text: 'go' }, env())
-    expect(agent(state, BOSS_ID)!.state).toBe('coffee-break')
-    expect(state.handoverSeq).toBe(0)
-    expect(claudeOf(state, 's1')!.mainState).toBe('working')
+  it('the bubble is the start of the prompt on one line', () => {
+    const { state } = reduceOffice(sessionOffice(), { type: 'session_prompt', ...S1, text: '  fix\n\n  the   build  ' }, env())
+    expect(agent(state, BOSS_ID)!.callout!.text).toBe('fix the build')
   })
 })
 

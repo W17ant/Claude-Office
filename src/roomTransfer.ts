@@ -34,6 +34,12 @@
  * `planRoomMoves` asks src/roomRules.ts about every settled agent and starts
  * the walks. A visitor keeps its own desk: the seat it takes elsewhere is
  * `Agent.visitSpotId`, so the way back can never find the desk gone.
+ *
+ * ── The boss ───────────────────────────────────────────────────────────────
+ * The boss is pinned to the office by the rules, but follows the person
+ * around the building: a room picked on the stage sends him there by the same
+ * walk (`drop-in`, src/officeReducer.ts sendBoss), to `standInside` that
+ * room, and `planRoomMoves` leaves him alone while he is out (`sentTo`).
  */
 
 import type { Agent, Position } from './types'
@@ -55,6 +61,8 @@ export type TransferWhy =
   | 'return'
   /** A coffee / water break in the lunch room */
   | 'break'
+  /** The boss, sent to a room the person put on the stage: he stands just inside its door */
+  | 'drop-in'
 
 export interface Transfer {
   /** The room it is going to */
@@ -93,6 +101,48 @@ export const FRONT_DOOR: Position = { x: ROOMS[HUB_ROOM].entryPoint.x, y: ROOMS[
 const FRAMES_PER_SECOND = 60
 
 /**
+ * How far into a room the boss stands when he drops in: this share of the
+ * way from its door to the middle of its floor.
+ * Why 0.25: far enough that he is clearly in the room and off the doormat,
+ * near enough that he stays clear of the furniture in the middle (the meeting
+ * table, the lunch tables, the racks' aisle); tests/roomTransfer.test.ts
+ * checks the spot is on each room's floor.
+ */
+export const BOSS_STEP_IN = 0.25
+
+/**
+ * Rooms where the step in from the door lands on furniture, with a spot
+ * placed by hand instead. Why the meeting room: its table runs from the
+ * middle of the floor up to the door, so a quarter of the way in is the
+ * table's end; to the right of the door, in front of the TV, the floor is clear.
+ */
+const STAND_SPOTS: Partial<Record<RoomId, Position>> = {
+  'meeting-room': { x: 73.5, y: 57.5 },
+}
+
+/**
+ * Where the boss stands when he drops in on a room: a step in from the door
+ * he came in by (for the corridor, the office's door: he comes from there or
+ * passes it on his way), or the spot placed by hand in STAND_SPOTS.
+ * @param room the room he was sent to (not the office: there he sits at his desk)
+ * @returns the spot, on the room's floor
+ */
+export function standInside(room: RoomId): Position {
+  const placed = STAND_SPOTS[room]
+  if (placed) return { ...placed }
+  const door = doorTo(room, room === HUB_ROOM ? OFFICE_ROOM : HUB_ROOM) ?? ROOMS[room].entryPoint
+  const floor = ROOMS[room].walkableArea
+  if (!floor || floor.length === 0) return { ...door }
+  // Why the corners' average: every room is the same isometric box, so it is the floor's middle
+  const mid = {
+    x: floor.reduce((sum, p) => sum + p.x, 0) / floor.length,
+    y: floor.reduce((sum, p) => sum + p.y, 0) / floor.length,
+  }
+  const round = (n: number) => Math.round(n * 10) / 10
+  return { x: round(door.x + (mid.x - door.x) * BOSS_STEP_IN), y: round(door.y + (mid.y - door.y) * BOSS_STEP_IN) }
+}
+
+/**
  * The room an agent is in. Agents made before rooms existed (old fixtures,
  * a stored snapshot) carry no room and are in the office.
  * @param agent the agent
@@ -105,7 +155,7 @@ export function roomOf(agent: Pick<Agent, 'room'>): RoomId {
 /**
  * Whether an agent is at home in the office: in the room, and not holding a
  * seat somewhere else. Everything the office does to a seated agent (fire
- * drills, the boss's hand-over, a colleague dropping by) asks this first.
+ * drills, the coffee machine, a colleague dropping by) asks this first.
  * @param agent the agent
  * @returns true when office-only behaviour may touch it
  */
@@ -226,6 +276,7 @@ export function stepTransfer(agent: Agent, t: Transfer, dt: number, env: OfficeE
  * - visit: sits down in the seat it was given, in whatever it was doing
  * - return: sits down at its own desk again
  * - break: stands at the counter for the length of a break
+ * - drop-in: the boss stands where he was sent, idle
  * @param agent the agent, at its target
  * @param why the transfer's reason
  * @param pending a status that arrived while it was walking (applied on sitting down)
@@ -234,6 +285,16 @@ export function stepTransfer(agent: Agent, t: Transfer, dt: number, env: OfficeE
  */
 export function settleTransfer(agent: Agent, why: TransferWhy, pending: PendingStatus | undefined, now: number): { agent: Agent; meta: Partial<AgentMeta>; usedPending: boolean } {
   if (why === 'arrive' || why === 'leave') return { agent, meta: {}, usedPending: false }
+  if (why === 'drop-in') {
+    // Standing just inside, facing into the room the way its door's arrivals do;
+    // idle (no typing, no props), and not at his desk, so no coffee break is due
+    const door = ROOMS[roomOf(agent)].connections.find(c => c.toRoom === HUB_ROOM)
+    return {
+      agent: { ...agent, state: 'idle', spriteFacing: door?.entryFacing ?? 'front-left' },
+      meta: { arrivedAtDeskAt: null, idleSince: null, onBreak: false, breakStartedAt: null },
+      usedPending: false,
+    }
+  }
   const seat = findSpot(why === 'return' ? agent.assignedSpotId : agent.visitSpotId)?.spot
   const facing = seat?.spriteFacing ?? agent.spriteFacing
   if (why === 'break') {
@@ -321,7 +382,8 @@ export function planRoomMoves(
   let taken: Set<string> | null = null
   const next = agents.map(agent => {
     const m = nextMeta[agent.id]
-    if (!m || m.transfer || m.onBreak || !agent.assignedSpotId) return agent
+    // Why sentTo: the person sent the boss out (he follows the stage); the rules would only walk him home
+    if (!m || m.transfer || m.onBreak || m.sentTo || !agent.assignedSpotId) return agent
     if (agent.state !== 'working' && agent.state !== 'idle') return agent
 
     const current = roomOf(agent)
