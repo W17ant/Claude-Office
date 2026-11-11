@@ -1,5 +1,5 @@
 import { currentSeason, useSeasonArt } from '../season'
-import { HAT_SRC, useHeadAnchor, wearsOverlayHat } from '../hat'
+import { HAT_SRC, halloweenPiece, useHeadAnchor, wearsOverlayHat, type HalloweenPiece } from '../hat'
 import React, { useRef, useState, useEffect } from 'react'
 import { Agent, AgentState } from '../types'
 import SpeechBubble from './SpeechBubble'
@@ -181,7 +181,16 @@ const Character: React.FC<CharacterProps> = ({ agent, idleDurationMs = 0, zIndex
   // Who wears it (NO_HAT) is decided by the standing sprite's name, which a
   // walk frame's name would not match; where it sits is measured on the frame
   // actually drawn, so the hat bobs with the head through the walk cycle.
-  const head = useHeadAnchor(spriteSrc, currentSeason() === 'christmas' && wearsOverlayHat(standingSrc))
+  // At Halloween it is a witch hat or a mask instead (src/hat.ts halloweenPiece);
+  // a mask covers the face, so from behind there is nothing to draw
+  const season = currentSeason()
+  const facingAway = directionRef.current.startsWith('rear')
+  const santa = season === 'christmas' && wearsOverlayHat(standingSrc)
+  const spooky: HalloweenPiece | null = season === 'halloween' ? halloweenPiece(standingSrc) : null
+  const piece: HalloweenPiece | null = santa
+    ? { kind: 'hat', src: HAT_SRC, scale: HAT_SCALE, offset: HAT_SINK }
+    : spooky && !(spooky.kind === 'mask' && facingAway) ? spooky : null
+  const head = useHeadAnchor(spriteSrc, piece !== null)
   void theme
   const variant = useVariant() // Why: re-render when incident mode flips so the failure bubble shows/hides
   // Prod is down: each kind of agent grabs its prop (pager, megaphone, ...)
@@ -280,17 +289,20 @@ const Character: React.FC<CharacterProps> = ({ agent, idleDurationMs = 0, zIndex
             }}
             draggable={false}
           />
-          {head && (
+          {head && piece && (
             <img
-              src={HAT_SRC}
+              src={piece.src}
               alt=""
               className="char-hat"
               style={{
-                left: `${(head.x - (head.width * HAT_SCALE) / 2) * 100}%`,
-                width: `${head.width * HAT_SCALE * 100}%`,
-                bottom: `${(1 - head.top - HAT_SINK) * 100}%`,
-                // Why: the hat is drawn for a head turned to the viewer's left;
-                // a sprite facing right wears it mirrored so the tip trails behind
+                left: `${(head.x - (head.width * piece.scale) / 2) * 100}%`,
+                width: `${head.width * piece.scale * 100}%`,
+                // A hat's bottom edge sits at the forehead; a mask's top edge at the hair
+                ...(piece.kind === 'hat'
+                  ? { bottom: `${(1 - head.top - piece.offset) * 100}%` }
+                  : { top: `${(head.top + piece.offset) * 100}%` }),
+                // Why: every piece is drawn for a head turned to the viewer's left;
+                // a sprite facing right wears it mirrored (a hat's tip trails behind)
                 transform: directionRef.current.endsWith('right') ? 'scaleX(-1)' : undefined,
               }}
               draggable={false}

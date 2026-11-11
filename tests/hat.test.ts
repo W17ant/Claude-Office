@@ -1,7 +1,7 @@
 /** hat.ts - finding a sprite's head from its alpha channel. */
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { headAnchorFromAlpha, wearsOverlayHat } from '../src/hat'
+import { HALLOWEEN_PIECE_SRCS, halloweenPiece, headAnchorFromAlpha, wearsOverlayHat } from '../src/hat'
 import { SEASON_SUFFIX } from '../src/seasonNames'
 
 /** An alpha map of w x h with opaque rectangles [x0, y0, x1, y1) */
@@ -56,5 +56,37 @@ describe('wearsOverlayHat', () => {
   it('a suffix that is no season is not taken off the name', () => {
     // "Claude-1-front-left-midsummer" is then the character's name, and nobody by that name is in NO_HAT
     expect(wearsOverlayHat('/sprites/characters/Claude-1-front-left-midsummer.webp')).toBe(true)
+  })
+})
+
+describe('halloweenPiece', () => {
+  it('the leads in full costume wear nothing on top: Claude, the boss, Michael, Dwight, Jim and Pam', () => {
+    for (const name of ['Claude-1', 'Me-1']) expect(halloweenPiece(`/sprites/characters/${name}-front-left-halloween.webp`)).toBeNull()
+    for (const name of ['michael-scott', 'dwight-schrute', 'jim-halpert', 'pam-beesly']) {
+      expect(halloweenPiece(`/sprites/office/characters/${name}-rear-right.png`)).toBeNull()
+    }
+  })
+
+  it('everyone else gets a hat or a mask, the same one on every sprite and in every season copy', () => {
+    const piece = halloweenPiece('/sprites/characters/dev-1-front-left.png')
+    expect(piece).not.toBeNull()
+    for (const src of ['/sprites/characters/dev-1-rear-right.png', '/sprites/characters/dev-1-front-right-autumn.webp']) {
+      expect(halloweenPiece(src)).toEqual(piece)
+    }
+  })
+
+  it('a character a hat sits wrong on (NO_HAT: ponytails, big hair) gets a mask, never the hat', () => {
+    for (const name of ['employee-2', 'Frontend-dev-1']) expect(halloweenPiece(`/sprites/characters/${name}-front-left.png`)?.kind).toBe('mask')
+    expect(halloweenPiece('/sprites/office/characters/erin-hannon-front-left.png')?.kind).toBe('mask')
+  })
+
+  it('both casts get a mix: the hat and more than one mask', () => {
+    const cast = ['dev-1', 'dev-2', 'employee-1', 'employee-3', 'explore-1', 'security-audit-1', 'andy-bernard', 'angela-martin', 'kevin-malone', 'oscar-martinez', 'stanley-hudson', 'creed-bratton', 'kelly-kapoor', 'ryan-howard', 'toby-flenderson', 'phyllis-vance']
+    const srcs = new Set(cast.map(n => halloweenPiece(`/sprites/x/${n}-front-left.png`)!.src))
+    expect(srcs.size).toBeGreaterThanOrEqual(4)
+  })
+
+  it('every piece it can pick exists', () => {
+    for (const src of HALLOWEEN_PIECE_SRCS) expect(readFileSync(new URL(`../public${src}`, import.meta.url)).length).toBeGreaterThan(1000)
   })
 })

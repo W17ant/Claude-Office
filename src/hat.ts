@@ -38,6 +38,79 @@ export function wearsOverlayHat(src: string): boolean {
   return !NO_HAT.has(file.replace(FACING_AND_SEASON, ''))
 }
 
+// ---------------------------------------------------------------------------
+// Halloween: a witch hat or a mask for everyone not in a full costume
+// ---------------------------------------------------------------------------
+
+/**
+ * Characters with a whole Halloween costume of their own (`-halloween` copies
+ * of every sprite): Claude the vampire, the boss the wizard, and the Dunder
+ * Mifflin leads (Michael's monster, Dwight's dark lord, Jim's three-hole
+ * punch, Pam's cat). Nothing is worn on top of those.
+ */
+const FULL_HALLOWEEN_COSTUME = new Set(['Claude-1', 'Me-1', 'michael-scott', 'dwight-schrute', 'jim-halpert', 'pam-beesly'])
+
+/** Something worn over a sprite at Halloween, placed from the measured head. */
+export interface HalloweenPiece {
+  /** A hat sits on the hair (bottom edge at the forehead); a mask covers the face (top edge at the hair) */
+  kind: 'hat' | 'mask'
+  src: string
+  /** Width as a multiple of the measured head width */
+  scale: number
+  /**
+   * A hat: how far below the top of the hair its bottom edge sits; a mask:
+   * how far below the top of the hair its top edge sits. Fractions of the
+   * sprite's height, like HeadAnchor.top.
+   */
+  offset: number
+}
+
+// Why these numbers: tuned on every cast sprite facing the viewer (both
+// casts), the same way as the Santa hat. Masks that are a whole head
+// (pumpkin, skull, the hooded ghost, the pale rubber mask with hair) start at
+// the top of the hair and are a little wider than the head; the hockey mask
+// and the Frankenstein half mask cover only the face and the brow.
+const WITCH_HAT: HalloweenPiece = { kind: 'hat', src: '/sprites/effects/witch-hat.png', scale: 1.3, offset: 0.12 }
+const MASKS: readonly HalloweenPiece[] = [
+  { kind: 'mask', src: '/sprites/effects/mask-pumpkin.png', scale: 1.0, offset: 0 },
+  { kind: 'mask', src: '/sprites/effects/mask-skull.png', scale: 0.95, offset: 0.01 },
+  { kind: 'mask', src: '/sprites/effects/mask-ghost.png', scale: 1.05, offset: -0.01 },
+  { kind: 'mask', src: '/sprites/effects/mask-pale.png', scale: 1.1, offset: -0.02 },
+  { kind: 'mask', src: '/sprites/effects/mask-hockey.png', scale: 0.8, offset: 0.05 },
+  // Why lower than the others: its flat top is hair, so its eye holes have to land on the eyes
+  { kind: 'mask', src: '/sprites/effects/mask-frankenstein.png', scale: 1.0, offset: 0.055 },
+]
+
+/** Every image a Halloween piece can use (for the asset check and the tests) */
+export const HALLOWEEN_PIECE_SRCS: readonly string[] = [WITCH_HAT.src, ...MASKS.map(m => m.src)]
+
+/** A small stable hash of a name, so a character keeps its piece on every sprite and every load */
+function nameHash(name: string): number {
+  let h = 0
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0
+  return h
+}
+
+/**
+ * What a character wears over its sprite at Halloween: nothing for the ones
+ * in a full costume, a mask for those whose hair a hat sits wrong on (NO_HAT),
+ * and for everyone else the witch hat or one of the six masks, picked from the
+ * character's name so it never changes between sprites or reloads. A mask
+ * covers the face, so it is only drawn while the sprite faces the viewer;
+ * from behind the character just shows the back of its head.
+ * @param src the standing sprite URL being drawn
+ * @returns the piece, or null when nothing is worn
+ */
+export function halloweenPiece(src: string): HalloweenPiece | null {
+  const name = src.slice(src.lastIndexOf('/') + 1).replace(FACING_AND_SEASON, '')
+  if (FULL_HALLOWEEN_COSTUME.has(name)) return null
+  const h = nameHash(name)
+  if (NO_HAT.has(name)) return MASKS[h % MASKS.length]
+  // Why one in seven: the hat is one choice among the hat and six masks
+  const pick = h % (MASKS.length + 1)
+  return pick === MASKS.length ? WITCH_HAT : MASKS[pick]
+}
+
 /** Where the hat goes, as fractions of the sprite's width and height. */
 export interface HeadAnchor {
   /** Centre of the head, 0..1 from the left */

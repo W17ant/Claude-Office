@@ -449,7 +449,7 @@
   display: block;
 }
 
-/* The sprite and what is worn on it (the December hat, src/hat.ts) move as one */
+/* The sprite and what is worn on it (the December hat, the Halloween hat or mask: src/hat.ts) move as one */
 .char-sprite-stack {
   position: relative;
 }
