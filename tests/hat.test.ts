@@ -104,6 +104,10 @@ describe('maskOnEyes', () => {
     expect(maskOnEyes(big, { x: 0.5, y: 0.2, spacing: 0.2 }, false)).toEqual({ left: 0.5, top: 0.2, width: 0.6, shiftX: -0.6, shiftY: -0.5 })
   })
 
+  it('a width set by hand in the eye table (/?maskhelper) wins over the one worked out from the spacing', () => {
+    expect(maskOnEyes(mask, { x: 0.5, y: 0.2, spacing: 0.2, width: 0.62 }, false)!.width).toBe(0.62)
+  })
+
   it('a sprite facing right wears it mirrored, so the holes flip with it', () => {
     expect(maskOnEyes(mask, { x: 0.5, y: 0.2, spacing: 0.2 }, true)!.shiftX).toBeCloseTo(-0.4)
   })

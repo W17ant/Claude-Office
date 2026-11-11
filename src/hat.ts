@@ -234,7 +234,9 @@ export function maskOnEyes(piece: HalloweenPiece, eye: EyeLine | undefined, mirr
   // Why the clamp: a sprite whose pupils sit unusually close (a turned head)
   // must not get a doll-sized mask, nor a huge one for wide-set eyes
   // (0.75 of the sprite's width is a big head's full width with its hair)
-  const width = Math.min(0.75, Math.max(0.35, (eye.spacing / piece.eyes.spacing) * (piece.eyes.size ?? 1)))
+  // Why a hand-set width wins: some faces are drawn turned or with hair over
+  // the eyes, and the eye spacing alone sizes those masks wrong (/?maskhelper)
+  const width = eye.width ?? Math.min(0.75, Math.max(0.35, (eye.spacing / piece.eyes.spacing) * (piece.eyes.size ?? 1)))
   const holeX = mirrored ? 1 - piece.eyes.x : piece.eyes.x
   return { left: eye.x, top: eye.y, width, shiftX: -holeX, shiftY: -piece.eyes.y }
 }
