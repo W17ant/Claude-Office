@@ -12,6 +12,7 @@
 import { useEffect, useState } from 'react'
 import { SEASON_SUFFIX_PATTERN } from './seasonNames'
 import type { EyeLine } from './eyes'
+import type { HatKind, HatNudge } from './hatFit'
 
 export const HAT_SRC = '/sprites/effects/santa-hat.png'
 
@@ -81,7 +82,7 @@ export interface HalloweenPiece {
 // eyes instead. Masks that are a whole head (pumpkin, skull, the hooded
 // ghost, the pale rubber mask with hair) start at the top of the hair; the
 // hockey mask and the Frankenstein half mask cover only the face and brow.
-const WITCH_HAT: HalloweenPiece = { kind: 'hat', src: '/sprites/effects/witch-hat.png', scale: 1.3, offset: 0.12 }
+export const WITCH_HAT: HalloweenPiece = { kind: 'hat', src: '/sprites/effects/witch-hat.png', scale: 1.3, offset: 0.12 }
 const MASKS: readonly HalloweenPiece[] = [
   { kind: 'mask', src: '/sprites/effects/mask-pumpkin.png', scale: 1.0, offset: 0, eyes: { x: 0.62, y: 0.45, spacing: 0.35 } },
   { kind: 'mask', src: '/sprites/effects/mask-skull.png', scale: 0.95, offset: 0.01, eyes: { x: 0.63, y: 0.51, spacing: 0.37 } },
@@ -92,6 +93,12 @@ const MASKS: readonly HalloweenPiece[] = [
   // Why size 1.35: its eye holes are wide-set, so by the eye spacing alone it only covered the eyes, not the head
   { kind: 'mask', src: '/sprites/effects/mask-frankenstein.png', scale: 1.0, offset: 0.055, eyes: { x: 0.56, y: 0.72, spacing: 0.43, size: 1.35 } },
 ]
+
+// Why 1.2: the fur band overhangs the head a little on each side, like a
+// real hat; tuned on all 30+ cast sprites (wider looked like a sombrero).
+// Why 0.13: the band sits 13% of the sprite's height below the top of the
+// hair, at the forehead, so the hat is worn rather than balanced on the hair
+export const SANTA_HAT: HalloweenPiece = { kind: 'hat', src: HAT_SRC, scale: 1.2, offset: 0.13 }
 
 /** Every image a Halloween piece can use (for the asset check and the tests) */
 export const HALLOWEEN_PIECE_SRCS: readonly string[] = [WITCH_HAT.src, ...MASKS.map(m => m.src)]
@@ -235,8 +242,44 @@ export function maskOnEyes(piece: HalloweenPiece, eye: EyeLine | undefined, mirr
   // must not get a doll-sized mask, nor a huge one for wide-set eyes
   // (0.75 of the sprite's width is a big head's full width with its hair)
   // Why a hand-set width wins: some faces are drawn turned or with hair over
-  // the eyes, and the eye spacing alone sizes those masks wrong (/?maskhelper)
+  // the eyes, and the eye spacing alone sizes those masks wrong (/?fithelper)
   const width = eye.width ?? Math.min(0.75, Math.max(0.35, (eye.spacing / piece.eyes.spacing) * (piece.eyes.size ?? 1)))
   const holeX = mirrored ? 1 - piece.eyes.x : piece.eyes.x
   return { left: eye.x, top: eye.y, width, shiftX: -holeX, shiftY: -piece.eyes.y }
+}
+
+/**
+ * A sprite's key in the hand-set tables (src/eyes.ts, src/hatFit.ts): its
+ * file name without the extension or a season suffix.
+ * @param src a standing sprite URL (`.png` or a seasonal `.webp`)
+ * @returns e.g. `dev-1-front-left`
+ */
+export function spriteKey(src: string): string {
+  const file = src.slice(src.lastIndexOf('/') + 1)
+  return file.replace(new RegExp(`((${SEASON_SUFFIX_PATTERN})\\.webp|\\.png)$`), '')
+}
+
+/** Which hat table (src/hatFit.ts) a piece is tuned in, or null for a mask */
+export function hatKindOf(piece: HalloweenPiece): HatKind | null {
+  if (piece.src === SANTA_HAT.src) return 'santa'
+  if (piece.src === WITCH_HAT.src) return 'witch'
+  return null
+}
+
+/**
+ * Where a hat goes on a measured head, with that sprite's hand-set nudge if it
+ * has one: centred on the head, as wide as the head times the hat's scale,
+ * its bottom edge `offset` below the top of the hair. Fractions of the sprite.
+ * @param head the measured head
+ * @param piece the hat
+ * @param nudge the sprite's entry in src/hatFit.ts, if any
+ * @returns left, width and bottom (from the sprite's bottom edge)
+ */
+export function hatOnHead(head: HeadAnchor, piece: HalloweenPiece, nudge?: HatNudge): { left: number; width: number; bottom: number } {
+  const width = head.width * piece.scale * (nudge?.size ?? 1)
+  return {
+    left: head.x + (nudge?.dx ?? 0) - width / 2,
+    width,
+    bottom: 1 - head.top - piece.offset - (nudge?.dy ?? 0),
+  }
 }

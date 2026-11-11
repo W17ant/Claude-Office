@@ -65,11 +65,11 @@ import { startRoomsDemo } from './roomsDemo'
 // Placement helper — loaded via ?helper query param
 // ---------------------------------------------------------------------------
 const PlacementHelper = lazy(() => import('./components/PlacementHelper'))
-// /?maskhelper: place and size each Halloween mask by hand (src/eyes.ts)
-const MaskHelper = lazy(() => import('./components/MaskHelper'))
+// /?fithelper (or the older /?maskhelper): place and size each worn accessory by hand (src/eyes.ts, src/hatFit.ts)
+const FitHelper = lazy(() => import('./components/FitHelper'))
 const params = new URLSearchParams(window.location.search)
 const isHelperMode = params.has('helper')
-const isMaskHelper = params.has('maskhelper')
+const isFitHelper = params.has('fithelper') || params.has('maskhelper')
 const isSimMode = params.has('sim') || params.has('video')
 const isVideoMode = params.has('video')
 // Phone mode: the page holds a viewer key (src/viewerKey.ts, captured in
@@ -1547,10 +1547,10 @@ const App: React.FC = () => {
   // Render — helper mode renders PlacementHelper in place of the full app
   // ---------------------------------------------------------------------------
 
-  if (isMaskHelper) {
+  if (isFitHelper) {
     return (
       <Suspense fallback={<div style={{ color: '#666', padding: 20 }}>Loading mask helper...</div>}>
-        <MaskHelper />
+        <FitHelper />
       </Suspense>
     )
   }

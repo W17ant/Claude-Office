@@ -1,6 +1,7 @@
 import { currentSeason, useSeasonArt } from '../season'
-import { HAT_SRC, halloweenPiece, maskOnEyes, useHeadAnchor, wearsOverlayHat, type HalloweenPiece } from '../hat'
+import { SANTA_HAT, halloweenPiece, hatKindOf, hatOnHead, maskOnEyes, spriteKey, useHeadAnchor, wearsOverlayHat, type HalloweenPiece } from '../hat'
 import { EYES } from '../eyes'
+import { HAT_FIT } from '../hatFit'
 import React, { useRef, useState, useEffect } from 'react'
 import { Agent, AgentState } from '../types'
 import SpeechBubble from './SpeechBubble'
@@ -189,14 +190,16 @@ const Character: React.FC<CharacterProps> = ({ agent, idleDurationMs = 0, zIndex
   const santa = season === 'christmas' && wearsOverlayHat(standingSrc)
   const spooky: HalloweenPiece | null = season === 'halloween' ? halloweenPiece(standingSrc) : null
   const piece: HalloweenPiece | null = santa
-    ? { kind: 'hat', src: HAT_SRC, scale: HAT_SCALE, offset: HAT_SINK }
+    ? SANTA_HAT
     : spooky && !(spooky.kind === 'mask' && facingAway) ? spooky : null
   const head = useHeadAnchor(spriteSrc, piece !== null)
   // A mask on a listed sprite goes by its eye holes (src/eyes.ts), not by the head
   const facingRight = directionRef.current.endsWith('right')
-  const onEyes = piece?.kind === 'mask'
-    ? maskOnEyes(piece, EYES[standingSrc.slice(standingSrc.lastIndexOf('/') + 1).replace(/\.png$/, '')], facingRight)
-    : null
+  const key = spriteKey(standingSrc)
+  const onEyes = piece?.kind === 'mask' ? maskOnEyes(piece, EYES[key], facingRight) : null
+  // A hat goes on the measured head, nudged by hand for this sprite if it needs it (src/hatFit.ts)
+  const hatKind = piece ? hatKindOf(piece) : null
+  const onHead = head && piece?.kind === 'hat' ? hatOnHead(head, piece, hatKind ? HAT_FIT[hatKind][key] : undefined) : null
   void theme
   const variant = useVariant() // Why: re-render when incident mode flips so the failure bubble shows/hides
   // Prod is down: each kind of agent grabs its prop (pager, megaphone, ...)
@@ -310,7 +313,24 @@ const Character: React.FC<CharacterProps> = ({ agent, idleDurationMs = 0, zIndex
               draggable={false}
             />
           )}
-          {head && piece && !onEyes && (
+          {piece && onHead && (
+            <img
+              src={piece.src}
+              alt=""
+              className="char-hat"
+              style={{
+                left: `${onHead.left * 100}%`,
+                width: `${onHead.width * 100}%`,
+                bottom: `${onHead.bottom * 100}%`,
+                // Why: every piece is drawn for a head turned to the viewer's left;
+                // a sprite facing right wears it mirrored (a hat's tip trails behind)
+                transform: facingRight ? 'scaleX(-1)' : undefined,
+              }}
+              draggable={false}
+            />
+          )}
+          {/* A mask on a sprite with no eye data (a custom one): its top edge at the hair */}
+          {head && piece?.kind === 'mask' && !onEyes && (
             <img
               src={piece.src}
               alt=""
@@ -318,13 +338,8 @@ const Character: React.FC<CharacterProps> = ({ agent, idleDurationMs = 0, zIndex
               style={{
                 left: `${(head.x - (head.width * piece.scale) / 2) * 100}%`,
                 width: `${head.width * piece.scale * 100}%`,
-                // A hat's bottom edge sits at the forehead; a mask's top edge at the hair
-                ...(piece.kind === 'hat'
-                  ? { bottom: `${(1 - head.top - piece.offset) * 100}%` }
-                  : { top: `${(head.top + piece.offset) * 100}%` }),
-                // Why: every piece is drawn for a head turned to the viewer's left;
-                // a sprite facing right wears it mirrored (a hat's tip trails behind)
-                transform: directionRef.current.endsWith('right') ? 'scaleX(-1)' : undefined,
+                top: `${(head.top + piece.offset) * 100}%`,
+                transform: facingRight ? 'scaleX(-1)' : undefined,
               }}
               draggable={false}
             />
@@ -343,14 +358,6 @@ const Character: React.FC<CharacterProps> = ({ agent, idleDurationMs = 0, zIndex
     </div>
   )
 }
-
-// Why 1.2: the fur band overhangs the head a little on each side, like a
-// real hat; tuned on all 30+ cast sprites (wider looked like a sombrero)
-const HAT_SCALE = 1.2
-// Why 0.13: the band sits 13% of the sprite's height below the top of the
-// hair, at the forehead, so the hat is worn rather than balanced on the hair
-// (less floated above the chibi heads' volume of hair)
-const HAT_SINK = 0.13
 
 // Why: the animation tick re-renders App up to 60 times a second while anyone
 // walks; an agent whose object did not change keeps its previous render

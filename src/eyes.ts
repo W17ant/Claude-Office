@@ -9,7 +9,7 @@
  * characters that can wear a mask are listed (not the ones in full costume),
  * and only the front poses (a mask is not drawn from behind). A sprite not
  * listed (a custom one) gets its mask placed from the measured head instead.
- * Each entry can be nudged and sized by hand in /?maskhelper, which exports
+ * Each entry can be nudged and sized by hand in /?fithelper, which exports
  * this table again.
  */
 
@@ -22,7 +22,7 @@ export interface EyeLine {
   spacing: number
   /**
    * The mask's width, 0..1 of the sprite's width, when it was sized by hand
-   * (/?maskhelper); without it the mask is sized from `spacing`
+   * (/?fithelper); without it the mask is sized from `spacing`
    */
   width?: number
 }

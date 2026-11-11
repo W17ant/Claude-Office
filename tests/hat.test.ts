@@ -1,7 +1,8 @@
 /** hat.ts - finding a sprite's head from its alpha channel. */
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { HALLOWEEN_PIECE_SRCS, halloweenPiece, headAnchorFromAlpha, maskOnEyes, wearsOverlayHat } from '../src/hat'
+import { HALLOWEEN_PIECE_SRCS, SANTA_HAT, WITCH_HAT, halloweenPiece, hatKindOf, hatOnHead, headAnchorFromAlpha, maskOnEyes, spriteKey, wearsOverlayHat } from '../src/hat'
+import { HAT_FIT } from '../src/hatFit'
 import { EYES } from '../src/eyes'
 import { SEASON_SUFFIX } from '../src/seasonNames'
 
@@ -124,6 +125,51 @@ describe('maskOnEyes', () => {
       expect(e.y, name).toBeLessThan(0.4)
       expect(e.x, name).toBeGreaterThan(0.1)
       expect(e.x, name).toBeLessThan(0.9)
+    }
+  })
+})
+
+describe('hatOnHead', () => {
+  const head = { x: 0.5, top: 0.1, width: 0.4 }
+  const hat = { kind: 'hat' as const, src: '/x.png', scale: 1.5, offset: 0.1 }
+
+  it('centres the hat on the head, scale times its width, its bottom edge offset below the top of the hair', () => {
+    const on = hatOnHead(head, hat)
+    expect(on.width).toBeCloseTo(0.6)
+    expect(on.left).toBeCloseTo(0.2)
+    expect(on.bottom).toBeCloseTo(0.8)
+  })
+
+  it('a hand-set nudge moves it (down is positive) and sizes it about its centre', () => {
+    const on = hatOnHead(head, hat, { dx: 0.05, dy: 0.02, size: 0.5 })
+    expect(on.width).toBeCloseTo(0.3)
+    expect(on.left).toBeCloseTo(0.55 - 0.15)
+    expect(on.bottom).toBeCloseTo(0.78)
+  })
+})
+
+describe('the hand-set tables', () => {
+  it('a sprite is keyed without its folder, extension or season suffix', () => {
+    expect(spriteKey('/sprites/characters/dev-1-front-left.png')).toBe('dev-1-front-left')
+    expect(spriteKey('/sprites/office/characters/kevin-malone-rear-right-xmas.webp')).toBe('kevin-malone-rear-right')
+    expect(spriteKey('/sprites/characters/dev-1-front-left-winter.webp')).toBe('dev-1-front-left')
+  })
+
+  it('each hat has its own table; a mask has none', () => {
+    expect(hatKindOf(SANTA_HAT)).toBe('santa')
+    expect(hatKindOf(WITCH_HAT)).toBe('witch')
+    expect(hatKindOf(halloweenPiece('/sprites/characters/employee-2-front-left.png')!)).toBeNull()
+  })
+
+  it('every hat nudge is a small move on a real sprite name', () => {
+    for (const table of Object.values(HAT_FIT)) {
+      for (const [key, n] of Object.entries(table)) {
+        expect(key, key).toMatch(/-(front|rear)-(left|right)$/)
+        expect(Math.abs(n.dx), key).toBeLessThan(0.3)
+        expect(Math.abs(n.dy), key).toBeLessThan(0.3)
+        expect(n.size, key).toBeGreaterThan(0.4)
+        expect(n.size, key).toBeLessThan(2.5)
+      }
     }
   })
 })
