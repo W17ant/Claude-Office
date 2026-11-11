@@ -2,7 +2,7 @@
  * SettingsPanel - one place for the office's settings, opened from the gear
  * in the title bar.
  *
- *   This browser   theme (src/theme.ts), day/night, season, sound — kept in
+ *   This browser   theme (src/theme.ts), day/night, season, sound, ambience — kept in
  *                  localStorage (src/settings.ts; the theme in its own key)
  *   Office server  answer permissions, prompt logging (POST /settings with
  *                  the UI token) and the AI chat monitor (POST
@@ -44,6 +44,9 @@ interface SettingsPanelProps {
   muted: boolean
   onVolumeChange: (v: number) => void
   onToggleMute: () => void
+  /** The ambient office bed on/off (src/sounds.ts); it follows volume and mute */
+  ambience: boolean
+  onAmbienceChange: (on: boolean) => void
   /** No office token: the server settings are shown but cannot be changed */
   readOnly: boolean
   /** ?sim / ?video: there is no server to change */
@@ -155,7 +158,7 @@ function lookNow(): { text: string; undrawn: boolean } {
 }
 
 const SettingsPanel: React.FC<SettingsPanelProps> = ({
-  onClose, anchor, dayNightMode, onDayNightMode, volume, muted, onVolumeChange, onToggleMute, readOnly, simMode,
+  onClose, anchor, dayNightMode, onDayNightMode, volume, muted, onVolumeChange, onToggleMute, ambience, onAmbienceChange, readOnly, simMode,
 }) => {
   const theme = useTheme()
   const server = useServerSettings()
@@ -260,6 +263,11 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             />
             <span className="sp-value">{muted ? 'muted' : `${Math.round(volume * 100)}%`}</span>
           </div>
+        </div>
+
+        <div className="sp-row">
+          <span className="sp-label" title="A quiet office room tone under the few event sounds; plays at the volume above">Ambience</span>
+          <Switch label="Ambience" on={ambience} onChange={onAmbienceChange} testId="sp-ambience" />
         </div>
       </section>
 

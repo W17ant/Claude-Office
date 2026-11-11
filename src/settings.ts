@@ -1,6 +1,6 @@
 /**
  * settings.ts - the page's own preferences, remembered per browser in
- * localStorage: sound (volume + mute), season and day/night mode.
+ * localStorage: sound (volume + mute, ambience on/off), season and day/night mode.
  *
  * These are this browser's choices, not the office's: the server settings
  * (answer permissions, prompt logging, the AI chat monitor) live in
@@ -23,6 +23,7 @@ export interface PrefStorage {
 
 export const VOLUME_KEY = 'agent-office-volume'
 export const MUTED_KEY = 'agent-office-muted'
+export const AMBIENCE_KEY = 'agent-office-ambience'
 export const SEASON_KEY = 'agent-office-season'
 export const DAY_NIGHT_KEY = 'agent-office-daynight'
 
@@ -84,6 +85,21 @@ export function saveVolume(volume: number, storage: PrefStorage | null = pageSto
 /** Remember whether the office is muted. */
 export function saveMuted(muted: boolean, storage: PrefStorage | null = pageStorage()): void {
   write(MUTED_KEY, muted ? '1' : '0', storage)
+}
+
+/**
+ * Whether the ambient office bed is on (src/sounds.ts). It plays at the main
+ * volume and goes with mute; this only turns it off while keeping the event cues.
+ * @returns true unless '0' is stored — Why default on: the bed replaced the
+ *   bleeps as the office's sound, so a first visit hears it
+ */
+export function readAmbience(storage: PrefStorage | null = pageStorage()): boolean {
+  return read(AMBIENCE_KEY, storage) !== '0'
+}
+
+/** Remember the Ambience setting. */
+export function saveAmbience(on: boolean, storage: PrefStorage | null = pageStorage()): void {
+  write(AMBIENCE_KEY, on ? '1' : '0', storage)
 }
 
 // ---------------------------------------------------------------------------

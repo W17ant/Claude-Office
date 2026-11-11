@@ -1,11 +1,11 @@
 /**
  * settings.test.ts - the page's remembered preferences (src/settings.ts:
- * sound, season, day/night) and the Today popover's rows (src/recap.ts).
+ * sound, ambience, season, day/night) and the Today popover's rows (src/recap.ts).
  */
 
 import { describe, expect, it } from 'vitest'
 import {
-  readSound, saveVolume, saveMuted, readSeasonPreference, saveSeasonPreference, seasonFromUrl,
+  readSound, saveVolume, saveMuted, readAmbience, saveAmbience, AMBIENCE_KEY, readSeasonPreference, saveSeasonPreference, seasonFromUrl,
   readDayNightMode, saveDayNightMode, DEFAULT_VOLUME, VOLUME_KEY, MUTED_KEY, SEASON_KEY, DAY_NIGHT_KEY,
   SEASON_PREFERENCES, type PrefStorage,
 } from '../src/settings'
@@ -58,6 +58,30 @@ describe('sound', () => {
     expect(readSound(blocked)).toEqual({ volume: DEFAULT_VOLUME, muted: false })
     expect(() => { saveVolume(0.7, blocked); saveMuted(true, blocked) }).not.toThrow()
     expect(readSound(null)).toEqual({ volume: DEFAULT_VOLUME, muted: false })
+  })
+})
+
+describe('ambience', () => {
+  it('is on by default, and on for anything but a stored off', () => {
+    expect(readAmbience(memory())).toBe(true)
+    expect(readAmbience(memory({ [AMBIENCE_KEY]: 'junk' }))).toBe(true)
+    expect(readAmbience(memory({ [AMBIENCE_KEY]: '0' }))).toBe(false)
+  })
+
+  it('round-trips, separately from volume and mute', () => {
+    const s = memory()
+    saveAmbience(false, s)
+    expect(s.data).toEqual({ [AMBIENCE_KEY]: '0' })
+    expect(readAmbience(s)).toBe(false)
+    expect(readSound(s)).toEqual({ volume: DEFAULT_VOLUME, muted: false })
+    saveAmbience(true, s)
+    expect(readAmbience(s)).toBe(true)
+  })
+
+  it('a storage that throws reads as on and swallows writes', () => {
+    expect(readAmbience(blocked)).toBe(true)
+    expect(readAmbience(null)).toBe(true)
+    expect(() => saveAmbience(false, blocked)).not.toThrow()
   })
 })
 

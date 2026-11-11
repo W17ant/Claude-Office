@@ -19,7 +19,8 @@ export interface Interaction {
   chatMessage: string | string[]
   furnitureState?: { id: string; state: string; revertAfter?: number }
   cooldown: number
-  sound?: string
+  /** Why only 'bell': the one item the owner clicks to make a sound (src/sounds.ts) */
+  sound?: 'bell'
 }
 
 function pick(arr: string[]): string {
@@ -55,7 +56,6 @@ export function getInteraction(furnitureId: string, board: TaskBoardInfo | null 
         chatMessage: ['brewing a fresh pot', 'coffee time!', 'fueling up', 'who else needs coffee?'],
         furnitureState: { id: 'coffee', state: 'on', revertAfter: 10000 },
         cooldown: 15000,
-        sound: 'coffee',
       }
 
     // Filing cabinet

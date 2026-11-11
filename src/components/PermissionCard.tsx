@@ -28,7 +28,7 @@ import {
   answerPermission, describeSuggestions, fadeLabel, permissionTitle, FADE_MS,
   type PermissionAction, type PermissionCardState, type PermissionDecision,
 } from '../permissions'
-import { playBell } from '../sounds'
+import { playNeedsYou } from '../sounds'
 
 interface PermissionCardsProps {
   cards: PermissionCardState[]
@@ -46,13 +46,16 @@ function isTyping(target: EventTarget | null): boolean {
 }
 
 const PermissionCards: React.FC<PermissionCardsProps> = ({ cards, dispatch, readOnly = false, explainRemember = false }) => {
-  // One bell per card id, however many times the list re-renders or a deadline moves
+  // One chime per card id, however many times the list re-renders or a deadline moves.
+  // Why the needs-you chime, not the bell: a card is Claude waiting on you; the
+  // reducer's needs-you for the same wait lands inside the chime's cooldown, so
+  // the two make one sound (src/sounds.ts CUE_COOLDOWN_MS)
   const rungRef = useRef<Set<string>>(new Set())
   useEffect(() => {
     for (const card of cards) {
       if (card.resolved || rungRef.current.has(card.id)) continue
       rungRef.current.add(card.id)
-      playBell()
+      playNeedsYou()
     }
   }, [cards])
 

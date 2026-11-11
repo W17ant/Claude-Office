@@ -232,8 +232,9 @@ getPhaseLabel
 | `setVolume` / `getVolume` | Clamps to [0,1]; getter returns set value |
 | `toggleMute` | Mutes when on; restores previous volume when unmuting; returns boolean |
 | `isMuted` | Returns true when volume is 0 |
-| Guard behaviour | `playTyping`, `playCoffee`, `playAlarm`, `playPowerDown`, `playKeyboardClatter` do not throw when `masterVolume === 0` |
-| `playAmbientHum` / `stopAmbient` | Do not throw; idempotent (calling stop when not running is safe) |
+| Event cues | `playNeedsYou`, `playAlarm`, `playError`, `playCelebration`, `playBell` are silent when muted, play once per cooldown (`cueAllowed`), and use sine tones only |
+| Ambient bed | `playAmbientHum` / `stopAmbient` wait for a gesture (`unlockAudio` / `attachAmbience`), follow mute, Ambience and a hidden tab, and survive a stop/restart race |
+| Policy | `incidentHasCue`, `ambienceGain`, `nextTextureDelayMs`, `loopedBrownNoise` (seamless loop) |
 
 ### Test cases (unit) — effort: **XS (2 hours)**
 
@@ -243,9 +244,9 @@ setVolume(2) → getVolume() === 1 (clamp max)
 setVolume(-1) → getVolume() === 0 (clamp min)
 toggleMute when volume > 0 → isMuted() === true
 toggleMute twice → restores original volume
-playTyping with masterVolume === 0 → does not throw
-playAmbientHum called twice → second call is no-op
-stopAmbient when not running → does not throw
+playNeedsYou twice inside 8 s → one chime
+playAmbientHum before any gesture → no AudioContext
+incidentHasCue('event') → false (a random event's mini-incident is silent)
 ```
 
 ---
@@ -293,7 +294,6 @@ all ASSETS paths start with '/'
 
 ```
 RANDOM_EVENTS — every item has id, name, slackAnnouncement, duration, type
-RANDOM_EVENTS — 'fire-drill' has sound === 'alarm'
 DRAMA_CONVERSATIONS — every conversation has messages.length >= 1
 pickEvent() — returns a defined object with an 'id' field (run 100 times)
 pickEvent() — both 'deploy-success' and 'deploy-fail' appear across 200 calls

@@ -319,7 +319,7 @@ describe('office: what a signal shows', () => {
     const red = apply(office(), [sig('test_start'), sig('test_failed', { detail: '3 failing', error: 'FAIL tests/a.test.ts' })])
     expect(claude(red.state).scene?.kind).toBe('red')
     expect(lines(red.effects)).toEqual([{ text: '❌ tests failed in api — 3 failing', isSystem: true }])
-    expect(sounds(red.effects)).toEqual(['error'])
+    expect(sounds(red.effects)).toEqual([])  // a red run is routine; repeated ones open an incident, which has the cue
     const green = apply(red.state, [sig('test_ok')])
     expect(lines(green.effects)).toEqual([{ text: '✅ tests green again in api', isSystem: true }])
     expect(lines(apply(green.state, [sig('test_ok')]).effects)).toEqual([])
@@ -333,11 +333,11 @@ describe('office: what a signal shows', () => {
     ])
   })
 
-  it('a push to main gets a small celebration; any other push, nothing', () => {
+  it('a push to main gets a small celebration (a line and a scene, no sound); any other push, nothing', () => {
     const main = apply(office(), [sig('push'), sig('push_done', { branch: 'main', toDefault: true })])
     expect(claude(main.state).scene?.kind).toBe('pushed')
     expect(lines(main.effects)).toEqual([{ text: '🎉 pushed to main · api', isSystem: true }])
-    expect(sounds(main.effects)).toEqual(['notification'])
+    expect(sounds(main.effects)).toEqual([])
     const feature = apply(office(), [sig('push_done', { branch: 'feature/x', toDefault: false })])
     expect(claude(feature.state).scene).toBeUndefined()
     expect(feature.effects).toEqual([])

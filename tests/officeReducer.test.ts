@@ -177,7 +177,7 @@ describe('lobby when every desk is taken (C29)', () => {
     expect(w9.targetPosition).toEqual(lobbyPosition(0))
     expect(state.lobby).toEqual(['w9'])
     expect(texts(effects)).toEqual(['waiting for a desk...'])
-    expect(sfx(effects)).toEqual(['doorOpen'])
+    expect(sfx(effects)).toEqual([])                         // arrivals are seen, not heard
 
     // It walks to its lobby spot and stays there, not at a desk
     const { state: settled } = settle(state)
@@ -279,7 +279,7 @@ describe('snapshot reconciliation (C35)', () => {
     expect(agent(state, 'w2')!.state).toBe('completed')
     expect(agent(state, 'w3')!.state).toBe('completed')
     expect(state.lobby).toEqual([])
-    expect(sfx(effects)).toEqual(['doorOpen'])              // only the newcomer's door; no celebrations
+    expect(sfx(effects)).toEqual([])                        // no door sound, and no celebrations for silent departures
     expect(texts(effects)).toEqual(['📋 new work'])         // no boss replies for silent departures
 
     // w1 is still here: not re-walked, fields refreshed
@@ -510,10 +510,10 @@ describe('all-move office events (C32)', () => {
 // ---------------------------------------------------------------------------
 
 describe('lifecycle chat lines are not duplicated', () => {
-  it('live: the server posts "starting:" and "done:", the office only adds sounds and the boss reply', () => {
+  it('live: the server posts "starting:" and "done:", the office only adds the done cheer and the boss reply', () => {
     const { effects: spawned } = reduceOffice(emptyOffice(), spawn('a1', 'debugger', 'fix the bug'), env({ live: true }))
     expect(texts(spawned)).toEqual([])
-    expect(sfx(spawned)).toEqual(['doorOpen'])
+    expect(sfx(spawned)).toEqual([])
     const late = env({ now: T0 + MIN_VISIBLE_TIME + 1, live: true })
     const { effects: done } = reduceOffice(fullOffice(1), { type: 'agent_completed', agentId: 'w1', result: 'all green' }, late)
     expect(texts(done)).toHaveLength(1)
@@ -684,7 +684,7 @@ describe('one Claude per session', () => {
     expect(c.assignedSpotId).toBe(CLAUDE_HOME_SPOT)
     expect(c.state).toBe('new-hire')
     expect(c.mainState).toBeUndefined()
-    expect(sfx(effects)).toEqual(['doorOpen'])
+    expect(sfx(effects)).toEqual([])
     expect(msgs(effects)).toEqual([expect.objectContaining({ sender: 'Claude', role: 'assistant', text: '🤖 clocked in · office', agentId: mainId('s1') })])
 
     // It walks in and sits down idle (nothing heard from its main thread yet), not typing
@@ -1053,7 +1053,7 @@ describe('session_prompt: the boss hands the prompt over, Claude types', () => {
     expect(c.statusText).toBe('✍ Fix the flaky purity test in tests/officeReducer.test.ts pl…')
 
     expect(msgs(effects)).toEqual([expect.objectContaining({ sender: BOSS_NAME, role: 'boss', text: 'Fix the flaky purity test in tests/officeReducer.test.ts please', tag: 'prompt', agentId: BOSS_ID })])
-    expect(sfx(effects)).toEqual(['typing'])
+    expect(sfx(effects)).toEqual([])                         // no typing bleeps
     expect(effects).toContainEqual({ kind: 'schedule', action: { type: 'handover_over', seq: 1 }, delayMs: HANDOVER_MAX_MS })
 
     // He arrives, says his line (talking-to-manager drives the speech bubble) and the dwell is scheduled
