@@ -307,7 +307,7 @@ describe('with the corridor open the front door is the way in and out', () => {
     expect(hired).toMatchObject({ state: 'new-hire', room: 'corridor', assignedRoom: 'main-office', position: FRONT_DOOR })
     expect(hired.targetPosition).toEqual(hubDoor('main-office'))
     expect(state.meta.w1.transfer).toMatchObject({ to: 'main-office', leg: 'corridor', why: 'arrive', target: hired.deskPosition })
-    expect(sfx(effects)).toContain('doorOpen')
+    expect(sfx(effects)).toEqual([])  // arrivals are seen, not heard
 
     // Down the corridor, then handed into the office at its door, still a new hire
     const steps = walk(state, s => roomOf(agent(s, 'w1')!) === OFFICE_ROOM)
@@ -380,7 +380,7 @@ describe('the server room: one worker per MCP server while its calls run', () =>
     expect(w.targetPosition).toEqual(hubDoor('server-room'))
     expect(state.meta[GH]).toMatchObject({ mcpBusy: ['s1'], mcpIdleSince: null })
     expect(state.meta[GH].transfer).toMatchObject({ to: 'server-room', leg: 'corridor', why: 'arrive' })
-    expect(effects).toEqual([{ kind: 'sfx', sfx: 'doorOpen' }])
+    expect(effects).toEqual([])
 
     const steps = walk(state, s => agent(s, GH)!.state === 'working')
     expect([...new Set(steps.map(s => roomOf(agent(s, GH)!)))]).toEqual(['corridor', 'server-room'])
@@ -696,7 +696,7 @@ describe('the lunch room: breaks, and a Claude with nothing to do', () => {
     const w = agent(off.state, 'w1')!
     expect(w).toMatchObject({ state: 'changing-room', room: 'main-office', visitSpotId: 'lunch-water', targetPosition: door('main-office') })
     expect(off.state.meta.w1.transfer).toMatchObject({ to: 'lunch-room', why: 'break' })
-    expect(sfx(off.effects)).toContain('coffee')
+    expect(sfx(off.effects)).toEqual([])  // a break is seen, not heard
 
     // The boss keeps his break at the office machine
     expect(roomOf(agent(off.state, BOSS_ID)!)).toBe(OFFICE_ROOM)

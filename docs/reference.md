@@ -12,6 +12,7 @@ Everything the [README](../README.md) leaves out: how the hooks work, every sett
 - [Seasons](#seasons)
 - [Christmas](#christmas)
 - [Settings panel](#settings-panel)
+- [Sound](#sound)
 - [End-of-day recap](#end-of-day-recap)
 - [Incident mode — Prod Is Down](#incident-mode--prod-is-down)
 - [Agent-to-agent messages](#agent-to-agent-messages)
@@ -326,12 +327,31 @@ The ⚙ at the right of the title bar opens one panel for the settings that used
 | Day / night — Auto / Day / Night | this browser (`agent-office-daynight`) | Same as the AUTO / DAY / NIGHT button in the title bar, now remembered |
 | Season — Auto / a holiday (Christmas, Halloween, Easter, Valentine's Day) / a season (Spring, Summer, Autumn, Winter) / Off | this browser (`agent-office-season`) | A drop-down, ten choices being too many for a row of buttons. Auto goes by the date (northern-hemisphere seasons: pick yours by hand south of the equator). `?season=` wins; applies on reload. The note under it says what is on now and whether it has art yet (see [Seasons](#seasons)) |
 | Sound — mute + volume | this browser (`agent-office-volume`, `agent-office-muted`) | Same as the chat header's controls, now remembered |
+| Ambience — On / Off | this browser (`agent-office-ambience`) | The quiet office bed under the event sounds (see [Sound](#sound)); it plays at the volume above and goes with mute, so this only turns it off while keeping the event sounds |
 | Answer permissions here | server (`POST /settings`, UI token) | Same as the chat header's **Answer here** pill |
 | Notify on permission waits | server (`POST /settings`, UI token) | Same as the chat header's **Notify** pill: a desktop notification when Claude starts waiting on a permission |
 | Prompt logging — Off / Summary / Full | server (`POST /settings`, UI token) | The header pill shows the level; the panel can change it. Rows already in `chat.db` stay until `/clear` |
 | AI chat monitor | server (`POST /chat/cron-state`) | Same as the header's **AI On / Off** toggle |
 
 The chat header's pills stay as they were and show the same state: both read one store (`src/serverSettings.ts`), so a change in either shows in both. The server settings are disabled, with the reason, on a read-only page (no office token, so no UI token — the server would refuse), under `?sim` / `?video` (no server) and until the server has answered. The boss sprite is not in the panel: it is `boss.sprite` in `office.config.json`, read when the server starts. The panel's open animation is off under `prefers-reduced-motion`.
+
+## Sound
+
+Everything you hear is made in code with Web Audio (`src/sounds.ts`); there are no audio files. The office is an ambient bed plus a few soft cues for what matters.
+
+**The ambient bed** loops while the page is open: room tone (brown noise low-passed at 300 Hz), air from the vents (a band of the same noise around 700 Hz, swelling slowly every ~14 s), a barely-there 50/100 Hz mains hum, and every 25–70 s something distant and muffled — typing two desks over, a drawer closing, paper shuffled. It starts after your first click, tap or key on the page (browsers keep audio locked until then), fades in over a few seconds, plays at the main volume, and fades out and stops entirely when you mute, turn **Ambience** off in Settings, or switch to another tab. At dusk and night it is about 5 dB quieter and the distant noises come half as often. Measured offline it sits near -48 dBFS RMS at 50 % volume, about 20 dB under the cues. It costs one 6 s noise buffer made once, looping buffer sources, a few oscillators and filters — no per-sample JavaScript.
+
+**Event cues** are soft sine notes with a gentle attack, never square-wave bleeps:
+
+| Cue | When | Sound | At most once per |
+|---|---|---|---|
+| Needs you | A session starts waiting on a person (a permission, a question, an MCP elicitation), or a permission card appears | E5 → A5, rising | 8 s — the card and the session's hand for one wait make one chime |
+| Incident | Incident mode opens from real failures (three red runs in five minutes, a failed deploy) or `/incident` | E4 → C4 → A3, once | 60 s |
+| Error | A session hits an API error | A3 → F3 | 15 s |
+| Celebration | A deploy lands, or an agent finishes its task | C5 E5 G5 C6 arpeggio | 20 s — a burst of finishing subagents is one cheer |
+| Bell | You click the bell and the boss rings it | two soft metallic strikes, C6 then A5 | (the bell's own 20 s cooldown) |
+
+Silent on purpose: arrivals and departures, typing, coffee and water breaks, pushes to main, a single red build or test run (repeated ones open an incident), the end of an incident, the random office events and the mini-incidents they start, and an incident restored by a reload or forced by `?variant=incident`. Each of these still shows in the room and the chat.
 
 ## End-of-day recap
 
@@ -830,6 +850,14 @@ app and WebSocket server; it shares no route with the loopback listener.
   gets the UI token. The page itself never stores or offers the office token
   when it was served over plain HTTP from a non-loopback address. At most 8
   viewers at a time.
+- The one thing a phone sends on that WebSocket is a **furniture tap**:
+  tapping a plant, the coffee machine, the bell and so on sends the item's
+  name, and the server passes it to every open office page, so the boss's
+  errand plays on the desktop as well as the phone (and a tap on the desktop
+  plays on the phone). The name must be one of the office's fifteen
+  interactive items (`SHARED_INTERACTIONS`), a frame is at most 1 KiB, and
+  one tap a second per connection is passed on; anything else is dropped
+  unread. A tap changes nothing the server keeps.
 
 **What a phone sees** is a stricter tier than the read-only view
 (`redactForLan` in `server/index.js`, an allowlist per record and per event

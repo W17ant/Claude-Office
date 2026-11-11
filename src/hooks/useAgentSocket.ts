@@ -81,6 +81,12 @@ export interface AgentSocketResult {
    * (an older server never does)
    */
   trusted: boolean | null
+  /**
+   * Send a furniture tap to the server, which tells every open office page
+   * (the phone's included) so the boss's errand plays on all of them.
+   * Dropped while the socket is closed: a tap is only worth sharing live.
+   */
+  shareInteraction: (item: string) => void
 }
 
 // ---------------------------------------------------------------------------
@@ -472,5 +478,10 @@ export function useAgentSocket(options: AgentSocketOptions = {}): AgentSocketRes
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [disabled])
 
-  return { connected, mcpServers, events, offline, sessions, trusted }
+  const shareInteraction = useCallback((item: string) => {
+    const ws = wsRef.current
+    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'interact', item }))
+  }, [])
+
+  return { connected, mcpServers, events, offline, sessions, trusted, shareInteraction }
 }
