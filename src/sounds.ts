@@ -39,7 +39,7 @@ import type { IncidentReason } from './incident'
 // ===========================================================================
 
 /** The event cues that still make a sound. */
-export type Cue = 'needsYou' | 'alarm' | 'error' | 'celebration' | 'bell'
+export type Cue = 'needsYou' | 'alarm' | 'error' | 'celebration' | 'bell' | 'prompt' | 'reply'
 
 /**
  * Minimum gap between two plays of the same cue, in ms.
@@ -55,6 +55,10 @@ export const CUE_COOLDOWN_MS: Readonly<Record<Cue, number>> = {
   error: 15_000,
   celebration: 20_000,
   bell: 0,
+  // Why 3 s / 6 s: one pop per prompt even when several sessions get one at
+  // once, and one "your turn" per burst of sessions finishing together
+  prompt: 3_000,
+  reply: 6_000,
 }
 
 /**
@@ -275,6 +279,22 @@ export function playCelebration() {
     [659.25, 0.09, 0.5, 0.04],   // E5
     [783.99, 0.18, 0.5, 0.04],   // G5
     [1046.5, 0.27, 0.9, 0.035],  // C6
+  ])
+}
+
+/** A prompt went out (the boss shouts it): one quick soft rising pop, G4 → D5. */
+export function playPrompt() {
+  playCue('prompt', [
+    [392, 0, 0.25, 0.03],     // G4
+    [587.33, 0.07, 0.4, 0.03], // D5
+  ])
+}
+
+/** Claude has replied and it is your turn: two soft falling notes, A5 → E5 ("done"). */
+export function playReply() {
+  playCue('reply', [
+    [880, 0, 0.5, 0.035],      // A5
+    [659.25, 0.14, 0.8, 0.035], // E5
   ])
 }
 

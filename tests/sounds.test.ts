@@ -22,6 +22,10 @@ describe('cue cooldowns', () => {
     const last = { needsYou: 1_000 }
     expect(cueAllowed('needsYou', 1_000 + CUE_COOLDOWN_MS.needsYou - 1, last)).toBe(false)
     expect(cueAllowed('needsYou', 1_000 + CUE_COOLDOWN_MS.needsYou, last)).toBe(true)
+    // The prompt and reply cues have their own short windows, so a burst of sessions makes one sound
+    expect(CUE_COOLDOWN_MS.prompt).toBeGreaterThan(0)
+    expect(CUE_COOLDOWN_MS.reply).toBeGreaterThan(0)
+    expect(cueAllowed('reply', 1_000 + CUE_COOLDOWN_MS.reply - 1, { reply: 1_000 })).toBe(false)
   })
 
   it('cooldowns are per cue: a cheer does not hold back a needs-you chime', () => {

@@ -43,9 +43,9 @@ export const MEETING_STAY_WORKERS = 2
 /**
  * Nothing to do for this long: off to the lunch room.
  * Why 2 minutes: a Claude between turns dozes at its desk after 30 s and is
- * usually given the next prompt within a minute or two, and the boss hands
- * that prompt over at its desk. Leaving sooner would have it away for most
- * hand-overs; two minutes means the person has probably stepped away too.
+ * usually given the next prompt within a minute or two, which it should hear
+ * at its desk. Leaving sooner would have it away for most prompts; two
+ * minutes means the person has probably stepped away too.
  */
 export const LUNCH_IDLE_MS = 120_000
 
