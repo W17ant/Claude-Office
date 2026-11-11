@@ -809,6 +809,14 @@ app and WebSocket server; it shares no route with the loopback listener.
   gets the UI token. The page itself never stores or offers the office token
   when it was served over plain HTTP from a non-loopback address. At most 8
   viewers at a time.
+- The one thing a phone sends on that WebSocket is a **furniture tap**:
+  tapping a plant, the coffee machine, the bell and so on sends the item's
+  name, and the server passes it to every open office page, so the boss's
+  errand plays on the desktop as well as the phone (and a tap on the desktop
+  plays on the phone). The name must be one of the office's fifteen
+  interactive items (`SHARED_INTERACTIONS`), a frame is at most 1 KiB, and
+  one tap a second per connection is passed on; anything else is dropped
+  unread. A tap changes nothing the server keeps.
 
 **What a phone sees** is a stricter tier than the read-only view
 (`redactForLan` in `server/index.js`, an allowlist per record and per event
