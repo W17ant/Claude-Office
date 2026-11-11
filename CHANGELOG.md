@@ -2,6 +2,10 @@
 
 All notable changes to Claude Office. Numbers refer to pull requests.
 
+## Unreleased
+
+- Every season has its art now: Halloween, Easter and Valentine's Day, and spring, summer, autumn and winter, each with the office decorated by day and night in both themes (bunting, wreaths, the view through the windows), seasonal desks (a jack-o'-lantern, an egg basket, a rose, tulips, lemonade, cocoa, a snow globe) and the three plants dressed for it (bats, eggs, hearts, blossom, tropical flowers, autumn leaves, frost). 49 WebP files, drawn in ChatGPT from the existing art and fitted back onto each original. Winter is plain winter, with nothing of Christmas in it. At Halloween Claude dresses as a vampire and the boss as a wizard, and in the Dunder Mifflin theme Michael is Frankenstein's monster, Dwight a dark lord, Jim a three-hole punch and Pam a cat (all four sides and their walk cycles). Everyone else wears a witch hat or a mask (pumpkin, skull, hooded ghost, hockey, pale rubber, Frankenstein), placed on each head the way the Santa hat is and kept the same for a character on every sprite (`halloweenPiece` in `src/hat.ts`); a mask is not drawn from behind. A mask sits on the wearer's eyes from a per-sprite table (`src/eyes.ts`), and a hat (Santa or witch) can be nudged per sprite (`src/hatFit.ts`); the Santa hat's bobble hangs at the back of the head on the front poses too (it hung over the face); `/?fithelper` shows every sprite wearing each piece large, to move, size and tilt each one by hand (arrows, + / -, [ / ]), and exports both tables. `BUDGET_BYTES` goes to 70 MB.
+
 ## 1.2.0 — 2026-11-10
 
 - A custom sprite can walk too: `scripts/walk-cycle.py` makes the image to give ChatGPT (`prepare`, which also prints the prompt), then cuts its 3 × 4 sheet into the four-frame cycle beside the sprites (`cut`, with `--festive` for the Christmas copy). README › Creating a custom sprite › Make it walk.

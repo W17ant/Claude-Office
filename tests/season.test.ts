@@ -209,7 +209,7 @@ describe('the page this module loaded in', () => {
   it('the Christmas-only pieces ask for Christmas by name, so no other season hangs the advent calendar or hands out Santa hats', () => {
     const src = (rel: string) => readFileSync(new URL(`../src/${rel}`, import.meta.url), 'utf8')
     expect(src('App.tsx')).toContain("currentSeason() === 'christmas' && <AdventCalendar")
-    expect(src('components/Character.tsx')).toContain("currentSeason() === 'christmas' && wearsOverlayHat(")
+    expect(src('components/Character.tsx')).toContain("season === 'christmas' && wearsOverlayHat(")
   })
 })
 
