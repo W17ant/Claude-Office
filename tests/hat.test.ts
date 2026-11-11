@@ -1,7 +1,7 @@
 /** hat.ts - finding a sprite's head from its alpha channel. */
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { HALLOWEEN_PIECE_SRCS, SANTA_HAT, WITCH_HAT, halloweenPiece, hatKindOf, hatMirrored, hatOnHead, headAnchorFromAlpha, maskOnEyes, spriteKey, wearsOverlayHat } from '../src/hat'
+import { HALLOWEEN_PIECE_SRCS, SANTA_HAT, WITCH_HAT, halloweenPiece, hatKindOf, hatMirrored, hatOnHead, pieceTransform, headAnchorFromAlpha, maskOnEyes, spriteKey, wearsOverlayHat } from '../src/hat'
 import { HAT_FIT } from '../src/hatFit'
 import { EYES } from '../src/eyes'
 import { SEASON_SUFFIX } from '../src/seasonNames'
@@ -97,12 +97,12 @@ describe('maskOnEyes', () => {
   const mask = { kind: 'mask' as const, src: '/x.png', scale: 1, offset: 0, eyes: { x: 0.6, y: 0.5, spacing: 0.4 } }
 
   it('puts the mask\'s eye holes on the eyes, sized so the holes are as far apart as the pupils', () => {
-    expect(maskOnEyes(mask, { x: 0.5, y: 0.2, spacing: 0.2 }, false)).toEqual({ left: 0.5, top: 0.2, width: 0.5, shiftX: -0.6, shiftY: -0.5 })
+    expect(maskOnEyes(mask, { x: 0.5, y: 0.2, spacing: 0.2 }, false)).toEqual({ left: 0.5, top: 0.2, width: 0.5, shiftX: -0.6, shiftY: -0.5, rot: 0 })
   })
 
   it('a mask with a size factor grows around its holes (the holes stay on the eyes)', () => {
     const big = { ...mask, eyes: { ...mask.eyes, size: 1.2 } }
-    expect(maskOnEyes(big, { x: 0.5, y: 0.2, spacing: 0.2 }, false)).toEqual({ left: 0.5, top: 0.2, width: 0.6, shiftX: -0.6, shiftY: -0.5 })
+    expect(maskOnEyes(big, { x: 0.5, y: 0.2, spacing: 0.2 }, false)).toEqual({ left: 0.5, top: 0.2, width: 0.6, shiftX: -0.6, shiftY: -0.5, rot: 0 })
   })
 
   it('a width set by hand in the eye table (/?maskhelper) wins over the one worked out from the spacing', () => {
@@ -187,5 +187,22 @@ describe('hatMirrored', () => {
     // from behind it was already at the back
     expect(hatMirrored(SANTA_HAT, false, true)).toBe(false)
     expect(hatMirrored(SANTA_HAT, true, true)).toBe(true)
+  })
+})
+
+describe('pieceTransform', () => {
+  it('shifts a mask onto the eyes, tilts it in screen terms, then mirrors the art', () => {
+    expect(pieceTransform({ shiftX: -0.6, shiftY: -0.5, rot: 4 }, true)).toBe('translate(-60%, -50%) rotate(4deg) scaleX(-1)')
+  })
+
+  it('a hat with no tilt facing left needs no transform', () => {
+    expect(pieceTransform({ rot: 0 }, false)).toBeUndefined()
+    expect(pieceTransform({ rot: -3 }, false)).toBe('rotate(-3deg)')
+  })
+
+  it('a hand-set tilt travels from the tables', () => {
+    expect(hatOnHead({ x: 0.5, top: 0.1, width: 0.4 }, WITCH_HAT, { dx: 0, dy: 0, size: 1, rot: 5 }).rot).toBe(5)
+    const mask = { kind: 'mask' as const, src: '/x.png', scale: 1, offset: 0, eyes: { x: 0.6, y: 0.5, spacing: 0.4 } }
+    expect(maskOnEyes(mask, { x: 0.5, y: 0.2, spacing: 0.2, rot: -2 }, false)!.rot).toBe(-2)
   })
 })

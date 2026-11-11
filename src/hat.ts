@@ -96,9 +96,9 @@ const MASKS: readonly HalloweenPiece[] = [
   { kind: 'mask', src: '/sprites/effects/mask-hockey.png', scale: 0.8, offset: 0.05, eyes: { x: 0.66, y: 0.51, spacing: 0.38 } },
   // Why lower than the others: its flat top is hair, so its eye holes have to land on the eyes
   // Why size 1.35: its eye holes are wide-set, so by the eye spacing alone it only covered the eyes, not the head
-  // Why y 0.8: the art's hair and forehead were stretched 1.75x upward so its flat top reaches
-  // the top of the wearer's head (it stopped mid-hair); the holes are where 0.72 put them before
-  { kind: 'mask', src: '/sprites/effects/mask-frankenstein.png', scale: 1.0, offset: 0.055, eyes: { x: 0.56, y: 0.8, spacing: 0.43, size: 1.35 } },
+  // Why x 0.5, y 0.9 and not the holes' own 0.56, 0.72: placed by eye, higher and a little
+  // further back on the head, its flat top up on the hair and its lower edge at the eyes
+  { kind: 'mask', src: '/sprites/effects/mask-frankenstein.png', scale: 1.0, offset: 0.055, eyes: { x: 0.5, y: 0.9, spacing: 0.43, size: 1.35 } },
 ]
 
 // Why 1.2: the fur band overhangs the head a little on each side, like a
@@ -243,9 +243,9 @@ export function useHeadAnchor(src: string, enabled: boolean): HeadAnchor | null 
  * @param piece the mask (with its eye holes measured)
  * @param eye the character's eye line
  * @param mirrored whether the sprite faces right (the mask is drawn for the left, so its holes flip)
- * @returns left, top and width of the mask as fractions, and the shift, or null without eye data
+ * @returns left, top and width of the mask as fractions, the shift and the hand-set tilt in degrees, or null without eye data
  */
-export function maskOnEyes(piece: HalloweenPiece, eye: EyeLine | undefined, mirrored: boolean): { left: number; top: number; width: number; shiftX: number; shiftY: number } | null {
+export function maskOnEyes(piece: HalloweenPiece, eye: EyeLine | undefined, mirrored: boolean): { left: number; top: number; width: number; shiftX: number; shiftY: number; rot: number } | null {
   if (!eye || !piece.eyes) return null
   // Why the clamp: a sprite whose pupils sit unusually close (a turned head)
   // must not get a doll-sized mask, nor a huge one for wide-set eyes
@@ -254,7 +254,7 @@ export function maskOnEyes(piece: HalloweenPiece, eye: EyeLine | undefined, mirr
   // the eyes, and the eye spacing alone sizes those masks wrong (/?fithelper)
   const width = eye.width ?? Math.min(0.75, Math.max(0.35, (eye.spacing / piece.eyes.spacing) * (piece.eyes.size ?? 1)))
   const holeX = mirrored ? 1 - piece.eyes.x : piece.eyes.x
-  return { left: eye.x, top: eye.y, width, shiftX: -holeX, shiftY: -piece.eyes.y }
+  return { left: eye.x, top: eye.y, width, shiftX: -holeX, shiftY: -piece.eyes.y, rot: eye.rot ?? 0 }
 }
 
 /**
@@ -282,14 +282,15 @@ export function hatKindOf(piece: HalloweenPiece): HatKind | null {
  * @param head the measured head
  * @param piece the hat
  * @param nudge the sprite's entry in src/hatFit.ts, if any
- * @returns left, width and bottom (from the sprite's bottom edge)
+ * @returns left, width and bottom (from the sprite's bottom edge), and the hand-set tilt in degrees
  */
-export function hatOnHead(head: HeadAnchor, piece: HalloweenPiece, nudge?: HatNudge): { left: number; width: number; bottom: number } {
+export function hatOnHead(head: HeadAnchor, piece: HalloweenPiece, nudge?: HatNudge): { left: number; width: number; bottom: number; rot: number } {
   const width = head.width * piece.scale * (nudge?.size ?? 1)
   return {
     left: head.x + (nudge?.dx ?? 0) - width / 2,
     width,
     bottom: 1 - head.top - piece.offset - (nudge?.dy ?? 0),
+    rot: nudge?.rot ?? 0,
   }
 }
 
@@ -303,4 +304,21 @@ export function hatOnHead(head: HeadAnchor, piece: HalloweenPiece, nudge?: HatNu
  */
 export function hatMirrored(piece: HalloweenPiece, facingRight: boolean, facingAway: boolean): boolean {
   return piece.flipFront && !facingAway ? !facingRight : facingRight
+}
+
+/**
+ * The CSS transform for a worn piece: a mask's shift (its eye holes onto the
+ * eyes), then its hand-set tilt, then the mirroring. Why this order: CSS
+ * applies the list right to left, so the art is mirrored first and the tilt
+ * is in screen terms, as it was set in /?fithelper on that very sprite.
+ * @param o the placement (maskOnEyes or hatOnHead)
+ * @param mirrored whether the piece is drawn mirrored
+ * @returns the transform, or undefined when there is nothing to do
+ */
+export function pieceTransform(o: { shiftX?: number; shiftY?: number; rot: number }, mirrored: boolean): string | undefined {
+  const parts: string[] = []
+  if (o.shiftX !== undefined && o.shiftY !== undefined) parts.push(`translate(${o.shiftX * 100}%, ${o.shiftY * 100}%)`)
+  if (o.rot) parts.push(`rotate(${o.rot}deg)`)
+  if (mirrored) parts.push('scaleX(-1)')
+  return parts.length ? parts.join(' ') : undefined
 }

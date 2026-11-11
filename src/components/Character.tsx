@@ -1,5 +1,5 @@
 import { currentSeason, useSeasonArt } from '../season'
-import { SANTA_HAT, halloweenPiece, hatKindOf, hatMirrored, hatOnHead, maskOnEyes, spriteKey, useHeadAnchor, wearsOverlayHat, type HalloweenPiece } from '../hat'
+import { SANTA_HAT, halloweenPiece, hatKindOf, hatMirrored, hatOnHead, maskOnEyes, pieceTransform, spriteKey, useHeadAnchor, wearsOverlayHat, type HalloweenPiece } from '../hat'
 import { EYES } from '../eyes'
 import { HAT_FIT } from '../hatFit'
 import React, { useRef, useState, useEffect } from 'react'
@@ -308,7 +308,7 @@ const Character: React.FC<CharacterProps> = ({ agent, idleDurationMs = 0, zIndex
                 top: `${onEyes.top * 100}%`,
                 width: `${onEyes.width * 100}%`,
                 // Why translate in the mask's own size: it puts the eye holes, not the corner, on the eyes
-                transform: `translate(${onEyes.shiftX * 100}%, ${onEyes.shiftY * 100}%)${facingRight ? ' scaleX(-1)' : ''}`,
+                transform: pieceTransform(onEyes, facingRight),
               }}
               draggable={false}
             />
@@ -324,7 +324,9 @@ const Character: React.FC<CharacterProps> = ({ agent, idleDurationMs = 0, zIndex
                 bottom: `${onHead.bottom * 100}%`,
                 // Why: drawn for a head turned to the viewer's left; mirrored to
                 // face right, and so its back stays at the back (hatMirrored)
-                transform: hatMirrored(piece, facingRight, facingAway) ? 'scaleX(-1)' : undefined,
+                transform: pieceTransform(onHead, hatMirrored(piece, facingRight, facingAway)),
+                // Why: a hat tilts about where it sits on the head
+                transformOrigin: '50% 100%',
               }}
               draggable={false}
             />

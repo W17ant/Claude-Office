@@ -25,6 +25,8 @@ export interface EyeLine {
    * (/?fithelper); without it the mask is sized from `spacing`
    */
   width?: number
+  /** The mask's tilt in degrees (clockwise), when set by hand (/?fithelper) */
+  rot?: number
 }
 
 /** By standing sprite name without its extension: `<character>-front-left` / `-front-right` */

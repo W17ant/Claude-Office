@@ -7,6 +7,7 @@
  *
  *   arrow keys    move it (Shift: ten times further)
  *   + / -         make it bigger / smaller (Shift: faster)
+ *   [ / ]         tilt it anticlockwise / clockwise, 1 degree (Shift: 5)
  *   0             back to the table's value for this sprite
  *
  * Edits are kept in this browser (localStorage) until exported. **Export**
@@ -17,7 +18,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { ROLE_TO_CHAR } from '../config'
 import { EYES, type EyeLine } from '../eyes'
-import { SANTA_HAT, WITCH_HAT, halloweenPiece, hatMirrored, hatOnHead, maskOnEyes, useHeadAnchor, wearsOverlayHat, type HalloweenPiece } from '../hat'
+import { SANTA_HAT, WITCH_HAT, halloweenPiece, hatMirrored, hatOnHead, maskOnEyes, pieceTransform, useHeadAnchor, wearsOverlayHat, type HalloweenPiece } from '../hat'
 import { HAT_FIT, type HatKind, type HatNudge } from '../hatFit'
 import { SEASON_SUFFIX } from '../seasonNames'
 import { getAllOfficeCharacters } from '../theme'
@@ -28,6 +29,8 @@ const STORE = 'agent-office.fit-tuning'
 const STEP = 0.004
 // Why 4%: a visible but controllable change in size per press
 const GROW = 1.04
+// Why 1 degree: at office size a degree or two is all a head's tilt needs
+const TURN = 1
 const CARD_H = 320
 const DIRS = ['/sprites/characters', '/sprites/office/characters']
 const FACINGS = ['front-left', 'front-right', 'rear-left', 'rear-right']
@@ -54,7 +57,7 @@ const n3 = (v: number) => v.toFixed(3)
 export function exportEyes(table: Record<string, EyeLine>): string {
   const lines = Object.keys(table).sort().map(k => {
     const e = table[k]
-    return `  '${k}': { x: ${n3(e.x)}, y: ${n3(e.y)}, spacing: ${n3(e.spacing)}${e.width !== undefined ? `, width: ${n3(e.width)}` : ''} },`
+    return `  '${k}': { x: ${n3(e.x)}, y: ${n3(e.y)}, spacing: ${n3(e.spacing)}${e.width !== undefined ? `, width: ${n3(e.width)}` : ''}${e.rot ? `, rot: ${e.rot}` : ''} },`
   })
   return `export const EYES: Readonly<Record<string, EyeLine>> = {\n${lines.join('\n')}\n}\n`
 }
@@ -62,8 +65,8 @@ export function exportEyes(table: Record<string, EyeLine>): string {
 /** src/hatFit.ts's table as TypeScript; a nudge that moves nothing is left out */
 export function exportHatFit(table: Record<HatKind, Record<string, HatNudge>>): string {
   const kind = (k: HatKind) => Object.keys(table[k]).sort()
-    .filter(s => { const v = table[k][s]; return n3(v.dx) !== '0.000' || n3(v.dy) !== '0.000' || n3(v.size) !== '1.000' })
-    .map(s => { const v = table[k][s]; return `    '${s}': { dx: ${n3(v.dx)}, dy: ${n3(v.dy)}, size: ${n3(v.size)} },` })
+    .filter(s => { const v = table[k][s]; return n3(v.dx) !== '0.000' || n3(v.dy) !== '0.000' || n3(v.size) !== '1.000' || !!v.rot })
+    .map(s => { const v = table[k][s]; return `    '${s}': { dx: ${n3(v.dx)}, dy: ${n3(v.dy)}, size: ${n3(v.size)}${v.rot ? `, rot: ${v.rot}` : ''} },` })
   return `export const HAT_FIT: Readonly<Record<HatKind, Readonly<Record<string, HatNudge>>>> = {\n  santa: {\n${kind('santa').map(l => `${l}\n`).join('')}  },\n  witch: {\n${kind('witch').map(l => `${l}\n`).join('')}  },\n}\n`
 }
 
@@ -133,7 +136,7 @@ const MaskOn: React.FC<{ piece: HalloweenPiece; eye: EyeLine; right: boolean }> 
   return (
     <img src={piece.src} alt="" draggable={false} style={{
       ...overlayStyle, left: `${on.left * 100}%`, top: `${on.top * 100}%`, width: `${on.width * 100}%`,
-      transform: `translate(${on.shiftX * 100}%, ${on.shiftY * 100}%)${right ? ' scaleX(-1)' : ''}`,
+      transform: pieceTransform(on, right),
     }} />
   )
 }
@@ -146,7 +149,7 @@ const HatOn: React.FC<{ piece: HalloweenPiece; src: string; nudge?: HatNudge; ri
   return (
     <img src={piece.src} alt="" draggable={false} style={{
       ...overlayStyle, left: `${on.left * 100}%`, width: `${on.width * 100}%`, bottom: `${on.bottom * 100}%`,
-      transform: hatMirrored(piece, right, away) ? 'scaleX(-1)' : undefined,
+      transform: pieceTransform(on, hatMirrored(piece, right, away)), transformOrigin: '50% 100%',
     }} />
   )
 }
@@ -183,8 +186,14 @@ const FitHelper: React.FC = () => {
       const grow = e.shiftKey ? GROW ** 3 : GROW
       const move = ({ ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] } as Record<string, [number, number]>)[e.key]
       const resize = e.key === '+' || e.key === '=' ? grow : e.key === '-' || e.key === '_' ? 1 / grow : null
+      const turn = e.key === '[' || e.key === '{' ? -TURN : e.key === ']' || e.key === '}' ? TURN : 0
+      const by = e.shiftKey ? 5 : 1
       if (e.key === '0') {
         setEdits(prev => { const t = { ...prev[tab] }; delete t[picked]; return { ...prev, [tab]: t } })
+      } else if (turn) {
+        const cur = tab === 'mask' ? eyeOf(picked) : nudgeOf(tab, picked)
+        const next = { ...cur, rot: Math.round(((cur.rot ?? 0) + turn * by) * 10) / 10 }
+        setEdits(prev => ({ ...prev, [tab]: { ...prev[tab], [picked]: next } }))
       } else if (tab === 'mask' && (move || resize)) {
         const cur = eyeOf(picked)
         const piece = halloweenPiece(asFile(picked))
@@ -223,7 +232,7 @@ const FitHelper: React.FC = () => {
             {label} ({lists[t].length})
           </button>
         ))}
-        {' '}&middot; click one, then arrows move, + / - size (Shift: faster), 0 resets &middot; {count} edited &middot;{' '}
+        {' '}&middot; click one, then arrows move, + / - size, [ / ] tilt (Shift: faster), 0 resets &middot; {count} edited &middot;{' '}
         <button type="button" onClick={doExport}>Export tables</button>{' '}
         <button type="button" onClick={() => { setEdits(NO_EDITS); setOut('') }}>Discard edits</button>
         {picked && <span style={{ marginLeft: 12, color: '#ffd54a' }}>{picked}</span>}
