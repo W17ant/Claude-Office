@@ -185,6 +185,7 @@ const PAYLOADS: Record<string, Message> = {
     health: { status: 'ok', agents: 1, clients: 1, sessions: 1, lastHookAt: 1, hooksSeen: 3, uiAvailable: true, version: '1.1.2', uptimeMs: 5 },
     mcpServers: ['github'], pendingPermissions: [PERMISSION], uiToken: `${SECRET}ui`, signals: [SIGNAL], taskBoards: [BOARD], timestamp: 1,
   },
+  office_interaction: { type: 'office_interaction', item: 'plant-1', by: 'phone', timestamp: 1 },
   agent_spawned: { type: 'agent_spawned', agent: AGENT, project: `${SECRET}proj`, cwd: `/x/${SECRET}`, sessionId: SID, timestamp: 1 },
   agent_working: { type: 'agent_working', agentId: 'a1', status: `running: ${SECRET}`, failed: true, sessionId: SID, project: `${SECRET}proj`, timestamp: 1 },
   agent_completed: { type: 'agent_completed', agentId: 'a1', result: `${SECRET} done`, tokens: 5, durationMs: 9, sessionId: SID, timestamp: 1 },

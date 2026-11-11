@@ -118,6 +118,25 @@ describe('WebSocket /ws', () => {
     const snapshot = await client.next(m => m.type === 'snapshot')
     expect(snapshot.type).toBe('snapshot')
   })
+
+  it('a furniture tap from one page reaches the others; anything off the list, or too soon after, is dropped', async () => {
+    const tapper = await connect(url)
+    const watcher = await connect(url)
+    clients.push(tapper.ws, watcher.ws)
+    await watcher.next(m => m.type === 'snapshot')
+
+    tapper.ws.send(JSON.stringify({ type: 'interact', item: 'plant-1' }))
+    expect(await watcher.next(m => m.type === 'office_interaction')).toMatchObject({ item: 'plant-1', by: 'office' })
+
+    // Unknown item, a second tap inside the 1 s gap, and junk: none of them is passed on
+    tapper.ws.send(JSON.stringify({ type: 'interact', item: 'rm -rf' }))
+    tapper.ws.send(JSON.stringify({ type: 'interact', item: 'bell' }))
+    tapper.ws.send('not json')
+    const seen: Message[] = []
+    watcher.ws.on('message', raw => { const m = JSON.parse(raw.toString()); if (m.type === 'office_interaction') seen.push(m) })
+    await new Promise(r => setTimeout(r, 200))
+    expect(seen).toEqual([])
+  })
 })
 
 describe('HTTP origin check', () => {

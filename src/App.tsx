@@ -414,7 +414,14 @@ const App: React.FC = () => {
   const [inspectedId, setInspectedId] = useState<string | null>(null)
   const handleCharacterClick = useCallback((id: string) => setInspectedId(prev => (prev === id ? null : id)), [])
 
-  const handleFurnitureClick = useCallback((itemId: string) => {
+  // Why a ref: the socket that shares a tap is set up further down (useAgentSocket)
+  const shareInteractionRef = useRef<(item: string) => void>(() => {})
+  /**
+   * A piece of furniture was tapped: the boss walks over and does the errand.
+   * A tap on this page is also shared, so every open page (the phone's
+   * included) plays it; `fromElsewhere` is a tap another page shared.
+   */
+  const handleFurnitureClick = useCallback((itemId: string, fromElsewhere = false) => {
     const interaction = getInteraction(itemId)
     if (!interaction) return
 
@@ -423,6 +430,9 @@ const App: React.FC = () => {
     const lastUsed = interactionCooldowns.current.get(itemId) ?? 0
     if (now - lastUsed < interaction.cooldown) return
     interactionCooldowns.current.set(itemId, now)
+    // Why after the cooldown: a tap that does nothing here is not worth sharing,
+    // and the server's echo of our own tap then lands inside the cooldown
+    if (!fromElsewhere) shareInteractionRef.current(itemId)
 
     // Walk boss to the item. The route is computed once, so the watch below is
     // timed against the walk he actually takes (detours and jitter included)
@@ -513,6 +523,9 @@ const App: React.FC = () => {
     schedule(checkArrival, 200)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+  // Why a ref: handleEvent (set up later) plays taps shared by other pages through it
+  const handleFurnitureClickRef = useRef(handleFurnitureClick)
+  handleFurnitureClickRef.current = handleFurnitureClick
 
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -744,6 +757,8 @@ const App: React.FC = () => {
     // snapshot also hands over the UI token and the pending list, then goes
     // on to the office reducer as before
     if (isPermissionEvent(action)) { dispatchPermissions(action); return }
+    // Another page tapped a piece of furniture: the same errand plays here
+    if (action.type === 'office_interaction') { handleFurnitureClickRef.current(action.item, true); return }
     if (action.type === 'snapshot') { setUiToken(action.uiToken); dispatchPermissions(action) }
     // Incident mode: count failed tool calls, hear what the Bash commands
     // meant (a failed deploy opens it, a green run closes it), and apply
@@ -788,7 +803,7 @@ const App: React.FC = () => {
   // WebSocket connection
   // ---------------------------------------------------------------------------
 
-  const { sessions, trusted, connected } = useAgentSocket({
+  const { sessions, trusted, connected, shareInteraction } = useAgentSocket({
     onEvent: handleEvent,
     // Why same-origin on the phone too: the phone secret may only go back to the listener that served the page
     url: isViewerMode || isPhoneFull ? sameOriginWsUrl() : officeWsUrl(),
@@ -797,6 +812,7 @@ const App: React.FC = () => {
   // The server showed this page the office read-only: no office token, or a
   // stale one (src/officeToken.ts). The cards and the chat stop offering
   // answers the server would refuse, and the status strip says how to fix it.
+  shareInteractionRef.current = shareInteraction
   const readOnly = !isSimMode && trusted === false
   const activeSessionCount = sessions.filter(s => s.state === 'active').length
 
