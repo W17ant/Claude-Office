@@ -99,6 +99,11 @@ describe('maskOnEyes', () => {
     expect(maskOnEyes(mask, { x: 0.5, y: 0.2, spacing: 0.2 }, false)).toEqual({ left: 0.5, top: 0.2, width: 0.5, shiftX: -0.6, shiftY: -0.5 })
   })
 
+  it('a mask with a size factor grows around its holes (the holes stay on the eyes)', () => {
+    const big = { ...mask, eyes: { ...mask.eyes, size: 1.2 } }
+    expect(maskOnEyes(big, { x: 0.5, y: 0.2, spacing: 0.2 }, false)).toEqual({ left: 0.5, top: 0.2, width: 0.6, shiftX: -0.6, shiftY: -0.5 })
+  })
+
   it('a sprite facing right wears it mirrored, so the holes flip with it', () => {
     expect(maskOnEyes(mask, { x: 0.5, y: 0.2, spacing: 0.2 }, true)!.shiftX).toBeCloseTo(-0.4)
   })

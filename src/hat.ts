@@ -67,9 +67,11 @@ export interface HalloweenPiece {
   /**
    * A mask's eye holes as fractions of its own image (midpoint and the
    * distance between them), measured on the art, so on a listed sprite
-   * (src/eyes.ts) the holes are put on the character's eyes
+   * (src/eyes.ts) the holes are put on the character's eyes. `size` scales
+   * the mask up around its holes when matching the eye spacing alone leaves
+   * it too small for the head (holes set wide on a small mask)
    */
-  eyes?: { x: number; y: number; spacing: number }
+  eyes?: { x: number; y: number; spacing: number; size?: number }
 }
 
 // Why these numbers: tuned on every cast sprite facing the viewer (both
@@ -87,7 +89,8 @@ const MASKS: readonly HalloweenPiece[] = [
   { kind: 'mask', src: '/sprites/effects/mask-pale.png', scale: 1.1, offset: -0.02, eyes: { x: 0.69, y: 0.57, spacing: 0.32 } },
   { kind: 'mask', src: '/sprites/effects/mask-hockey.png', scale: 0.8, offset: 0.05, eyes: { x: 0.66, y: 0.51, spacing: 0.38 } },
   // Why lower than the others: its flat top is hair, so its eye holes have to land on the eyes
-  { kind: 'mask', src: '/sprites/effects/mask-frankenstein.png', scale: 1.0, offset: 0.055, eyes: { x: 0.56, y: 0.72, spacing: 0.43 } },
+  // Why size 1.35: its eye holes are wide-set, so by the eye spacing alone it only covered the eyes, not the head
+  { kind: 'mask', src: '/sprites/effects/mask-frankenstein.png', scale: 1.0, offset: 0.055, eyes: { x: 0.56, y: 0.72, spacing: 0.43, size: 1.35 } },
 ]
 
 /** Every image a Halloween piece can use (for the asset check and the tests) */
@@ -231,7 +234,7 @@ export function maskOnEyes(piece: HalloweenPiece, eye: EyeLine | undefined, mirr
   // Why the clamp: a sprite whose pupils sit unusually close (a turned head)
   // must not get a doll-sized mask, nor a huge one for wide-set eyes
   // (0.75 of the sprite's width is a big head's full width with its hair)
-  const width = Math.min(0.75, Math.max(0.35, eye.spacing / piece.eyes.spacing))
+  const width = Math.min(0.75, Math.max(0.35, (eye.spacing / piece.eyes.spacing) * (piece.eyes.size ?? 1)))
   const holeX = mirrored ? 1 - piece.eyes.x : piece.eyes.x
   return { left: eye.x, top: eye.y, width, shiftX: -holeX, shiftY: -piece.eyes.y }
 }
