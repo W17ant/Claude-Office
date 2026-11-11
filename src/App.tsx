@@ -19,7 +19,7 @@ import PermissionCards from './components/PermissionCard'
 import { isPermissionEvent, reducePermissions, setUiToken, type PermissionAction, type PermissionCardState } from './permissions'
 import StatusStrip from './components/StatusStrip'
 import SettingsPanel from './components/SettingsPanel'
-import { readSound, saveVolume, saveMuted, readDayNightMode, saveDayNightMode, type DayNightMode } from './settings'
+import { readSound, saveVolume, saveMuted, readAmbience, saveAmbience, readDayNightMode, saveDayNightMode, type DayNightMode } from './settings'
 import { Agent, AGENT_CONFIGS } from './types'
 import { getCurrentPhase, getPhaseLabel, type DayPhase } from './daylight'
 import { useAgentSocket } from './hooks/useAgentSocket'
@@ -97,12 +97,14 @@ const phoneHasSecret = pagePhoneSecret !== null
 // Why: allow ?theme=office on demo/sim URLs to preload Dunder Mifflin mode
 import { setTheme as _setTheme } from './theme'
 if (params.get('theme') === 'office') { _setTheme('office') }
-// Why at module load: the ambient hum starts on mount and must start at the
-// remembered level (or stay off when the last visit muted it) — src/settings.ts
+// Why at module load: the ambient bed starts on mount and must start at the
+// remembered level (or stay off when the last visit muted it or turned
+// Ambience off) — src/settings.ts
 {
   const sound = readSound()
   sfx.setVolume(sound.volume)
   if (sound.muted) sfx.toggleMute()
+  sfx.setAmbience(readAmbience())
 }
 // Why: ?variant=incident pins incident mode on (auto-exit off) for screenshots
 if (params.get('variant') === 'incident') { pinIncidentFromUrl() }
@@ -477,10 +479,9 @@ const App: React.FC = () => {
       if (verdict === 'late') { walkBackToDesk(); return }
       if (verdict === 'redirected') return
 
-      // Play sound if specified
+      // Why only the bell: it is the one the owner rings on purpose; the rest of
+      // the furniture is seen, not heard (src/sounds.ts)
       if (interaction.sound === 'bell') { sfx.playBell(); setBellRings(n => n + 1) }
-      else if (interaction.sound === 'notification') sfx.playNotification()
-      else if (interaction.sound === 'coffee') sfx.playCoffee()
 
       // Show effect above boss
       setBossEffect(interaction.effect)
@@ -595,14 +596,8 @@ const App: React.FC = () => {
         case 'sfx':
           if (sfx.isMuted()) break
           switch (fx.sfx) {
-            case 'doorOpen':    sfx.playDoorOpen(); break
-            case 'typing':      sfx.playTyping(); break
             case 'celebration': sfx.playCelebration(); break
-            case 'coffee':      sfx.playCoffee(); break
-            case 'alarm':       sfx.playAlarm(); break
             case 'error':       sfx.playError(); break
-            case 'powerDown':   sfx.playPowerDown(); break
-            case 'notification': sfx.playNotification(); break
             case 'needsYou':    sfx.playNeedsYou(); break
           }
           break
@@ -670,10 +665,10 @@ const App: React.FC = () => {
       const delay = t.exited ? 600 : 0
       const lines = incidentTransitionLines(t, agentsRef.current)
       setTimeout(() => { for (const line of lines) addMsg('system', 'default', '#8b8d91', line, true) }, delay)
-      if (!sfx.isMuted()) {
-        if (t.entered) sfx.playAlarm()
-        if (t.exited) sfx.playCelebration()
-      }
+      // Why only on a real entry, and nothing on the all-clear: a random
+      // event's mini-incident or a reload is not news (incidentHasCue), and
+      // the end of one is good news that needs no sound
+      if (sfx.incidentHasCue(t.entered)) sfx.playAlarm()
     })
     // Pinned by ?variant=incident or restored from localStorage: announce once on mount
     const current = getIncident()
@@ -1339,18 +1334,7 @@ const App: React.FC = () => {
       // deploy-success ends one (the transition subscriber posts the chat lines)
       dispatchIncident({ type: 'random-event', id: event.id, at: Date.now() })
 
-      // Play associated sound
-      if (event.sound && !sfx.isMuted()) {
-        switch (event.sound) {
-          case 'alarm':        sfx.playAlarm(); break
-          case 'celebration':  sfx.playCelebration(); break
-          case 'doorOpen':     sfx.playDoorOpen(); break
-          case 'error':        sfx.playError(); break
-          case 'powerDown':    sfx.playPowerDown(); break
-          case 'notification': sfx.playNotification(); break
-          case 'coffee':       sfx.playCoffee(); break
-        }
-      }
+      // Why no sound: random events are office colour, not news (src/sounds.ts)
 
       // Manager message from boss
       if (event.managerMessage) {
@@ -1434,47 +1418,17 @@ const App: React.FC = () => {
   }, [addMsg])
 
   // ---------------------------------------------------------------------------
-  // Ambient office sounds
+  // Ambient office bed (src/sounds.ts)
   // ---------------------------------------------------------------------------
 
+  // Why one mount effect: sounds.ts decides when the bed actually plays — after
+  // the first click or key (autoplay rules), while sound and Ambience are on
+  // and the tab is visible — and follows mute and volume itself
   useEffect(() => {
-    // Start ambient hum (only if not muted)
-    if (!sfx.isMuted()) {
-      // Delay slightly to let AudioContext resume after first user interaction
-      const startTimer = setTimeout(() => {
-        sfx.playAmbientHum()
-      }, 2000)
-      return () => {
-        clearTimeout(startTimer)
-        sfx.stopAmbient()
-      }
-    }
-    return () => sfx.stopAmbient()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    const detach = sfx.attachAmbience()
+    sfx.playAmbientHum()
+    return () => { detach(); sfx.stopAmbient() }
   }, [])
-
-  // Keyboard clatter every 2-4 seconds when agents are working
-  useEffect(() => {
-    const interval = setInterval(() => {
-      if (sfx.isMuted()) return
-      const working = agentsRef.current.filter(a => a.state === 'working')
-      if (working.length === 0) return
-      sfx.playKeyboardClatter()
-    }, 2000 + Math.random() * 2000)
-    return () => clearInterval(interval)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  // Stop/start ambient when mute changes (the mount effect above owns the first start)
-  const mutedEffectRanRef = useRef(false)
-  useEffect(() => {
-    if (!mutedEffectRanRef.current) { mutedEffectRanRef.current = true; return }
-    if (muted) {
-      sfx.stopAmbient()
-    } else {
-      sfx.playAmbientHum()
-    }
-  }, [muted])
 
   // ---------------------------------------------------------------------------
   // Misc handlers
@@ -1487,8 +1441,17 @@ const App: React.FC = () => {
     : dayNightMode === 'auto' ? dayPhase
     : dayNightMode === 'day' ? 'morning' : 'night'
   const isNight = effectivePhase === 'night' || effectivePhase === 'dusk'
+  // The bed is quieter at dusk and night (src/sounds.ts NIGHT_FACTOR)
+  useEffect(() => { sfx.setAmbienceNight(isNight) }, [isNight])
 
   const [volume, setVolume] = useState(sfx.getVolume())
+  const [ambience, setAmbienceOn] = useState(sfx.isAmbienceOn())
+
+  const handleAmbienceChange = useCallback((on: boolean) => {
+    sfx.setAmbience(on)
+    setAmbienceOn(on)
+    saveAmbience(on)
+  }, [])
 
   const handleToggleMute = useCallback(() => {
     const nowMuted = sfx.toggleMute()
@@ -1776,6 +1739,8 @@ const App: React.FC = () => {
             muted={muted}
             onVolumeChange={handleVolumeChange}
             onToggleMute={handleToggleMute}
+            ambience={ambience}
+            onAmbienceChange={handleAmbienceChange}
             readOnly={readOnly}
             simMode={false}
           />
@@ -1827,6 +1792,8 @@ const App: React.FC = () => {
           muted={muted}
           onVolumeChange={handleVolumeChange}
           onToggleMute={handleToggleMute}
+          ambience={ambience}
+          onAmbienceChange={handleAmbienceChange}
           readOnly={readOnly}
           simMode={isSimMode}
         />

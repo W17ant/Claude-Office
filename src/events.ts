@@ -1,4 +1,5 @@
-// Random office events that trigger periodically
+// Random office events that trigger periodically. Silent on purpose: they
+// are office colour, not news (src/sounds.ts keeps sound for real events)
 
 export interface RandomOfficeEvent {
   id: string
@@ -9,7 +10,6 @@ export interface RandomOfficeEvent {
   targetPosition?: { x: number; y: number }
   agentMessages?: string[]
   managerMessage?: string
-  sound?: 'alarm' | 'celebration' | 'doorOpen' | 'error' | 'powerDown' | 'notification' | 'coffee'
 }
 
 export const RANDOM_EVENTS: RandomOfficeEvent[] = [
@@ -22,7 +22,6 @@ export const RANDOM_EVENTS: RandomOfficeEvent[] = [
     targetPosition: { x: 114, y: 105 },
     managerMessage: 'Fire drill! Move it!',
     agentMessages: ['not again...', 'I was in the zone!', 'my coffee!', 'save the codebase!'],
-    sound: 'alarm',
   },
   {
     id: 'pizza',
@@ -33,7 +32,6 @@ export const RANDOM_EVENTS: RandomOfficeEvent[] = [
     targetPosition: { x: 114, y: 105 },
     managerMessage: 'Pizza in the lobby!',
     agentMessages: ['PIZZA!', 'finally some good news', 'pineapple?!', 'dibs on pepperoni'],
-    sound: 'celebration',
   },
   {
     id: 'standup',
@@ -44,7 +42,6 @@ export const RANDOM_EVENTS: RandomOfficeEvent[] = [
     targetPosition: { x: 411, y: 417 },
     managerMessage: 'Standup! What did you ship?',
     agentMessages: ['worked on the thing', 'still debugging', 'blocked by review', 'deployed to staging', 'fixed 3 bugs, created 5'],
-    sound: 'notification',
   },
   {
     id: 'deploy',
@@ -54,7 +51,6 @@ export const RANDOM_EVENTS: RandomOfficeEvent[] = [
     type: 'slack-only',
     managerMessage: 'Hold your breath...',
     agentMessages: ['oh no', 'please dont break', 'I forgot to run tests', 'YOLO', 'checking rollback plan'],
-    sound: 'notification',
   },
   {
     id: 'deploy-success',
@@ -64,7 +60,6 @@ export const RANDOM_EVENTS: RandomOfficeEvent[] = [
     type: 'slack-only',
     managerMessage: 'We did it!',
     agentMessages: ['lets go!', 'ship it!', 'nice work team', 'time for beer'],
-    sound: 'celebration',
   },
   {
     id: 'deploy-fail',
@@ -74,7 +69,6 @@ export const RANDOM_EVENTS: RandomOfficeEvent[] = [
     type: 'slack-only',
     managerMessage: 'WHO PUSHED THAT?!',
     agentMessages: ['wasnt me', 'oh no oh no oh no', 'checking logs', 'its always DNS', 'reverting...'],
-    sound: 'error',
   },
   {
     id: 'power-flicker',
@@ -83,7 +77,6 @@ export const RANDOM_EVENTS: RandomOfficeEvent[] = [
     duration: 3000,
     type: 'visual-only',
     agentMessages: ['did the lights just...', 'CTRL+S CTRL+S', 'my unsaved changes!', 'git commit NOW'],
-    sound: 'powerDown',
   },
   {
     id: 'birthday',
@@ -94,7 +87,6 @@ export const RANDOM_EVENTS: RandomOfficeEvent[] = [
     targetPosition: { x: 287, y: 129 },
     managerMessage: 'Happy birthday!',
     agentMessages: ['cake!', 'happy birthday!', '🎉🎉🎉', 'is it gluten free?', 'make a wish'],
-    sound: 'celebration',
   },
   {
     id: 'who-broke-build',
@@ -104,7 +96,6 @@ export const RANDOM_EVENTS: RandomOfficeEvent[] = [
     type: 'slack-only',
     managerMessage: 'Nobody leaves until this is fixed.',
     agentMessages: ['checking git blame...', 'not me', 'was it the merge?', 'flaky test maybe?', 'I blame the intern'],
-    sound: 'error',
   },
   {
     id: 'friday',
@@ -114,7 +105,6 @@ export const RANDOM_EVENTS: RandomOfficeEvent[] = [
     type: 'slack-only',
     managerMessage: 'No deploys on Friday.',
     agentMessages: ['TGIF', 'pub?', 'one more PR...', 'leaving at 5 sharp', 'weekend!'],
-    sound: 'celebration',
   },
   {
     id: 'printer-jam',
@@ -124,7 +114,6 @@ export const RANDOM_EVENTS: RandomOfficeEvent[] = [
     type: 'single-agent',
     targetPosition: { x: 424, y: 132 },
     agentMessages: ['why do we still have a printer', 'PC LOAD LETTER?!', 'who even prints things', 'its 2026...'],
-    sound: 'error',
   },
   {
     id: 'slack-down',
@@ -133,7 +122,6 @@ export const RANDOM_EVENTS: RandomOfficeEvent[] = [
     duration: 3000,
     type: 'slack-only',
     agentMessages: ['the irony', 'time to use email', 'carrier pigeon time', 'actually kind of peaceful'],
-    sound: 'notification',
   },
 ]
 
@@ -223,7 +211,6 @@ export const OFFICE_EVENTS: RandomOfficeEvent[] = [
     targetPosition: { x: 114, y: 105 },
     managerMessage: 'The fire is shooting at us!',
     agentMessages: ['FIRE!', 'oh my god oh my god', 'save Bandit!', 'I declare BANKRUPTCY!', 'get the defibrillator!'],
-    sound: 'alarm',
   },
   {
     id: 'cpr-training',
@@ -233,7 +220,6 @@ export const OFFICE_EVENTS: RandomOfficeEvent[] = [
     type: 'slack-only',
     managerMessage: 'ah ah ah ah, stayin\' alive, stayin\' alive',
     agentMessages: ['is he... dead?', 'Dwight is cutting the face off', 'I learned this from ER', 'ah ah ah ah'],
-    sound: 'notification',
   },
   {
     id: 'golden-ticket',
@@ -243,7 +229,6 @@ export const OFFICE_EVENTS: RandomOfficeEvent[] = [
     type: 'slack-only',
     managerMessage: 'It was my idea. It was all me.',
     agentMessages: ['I blame Kevin', 'Willy Wonka time', 'that was all Michael', 'who approved this'],
-    sound: 'celebration',
   },
   {
     id: 'jim-prank',
@@ -253,7 +238,6 @@ export const OFFICE_EVENTS: RandomOfficeEvent[] = [
     type: 'slack-only',
     managerMessage: 'JIM!',
     agentMessages: ['not again', 'it\'s always Jim', 'identity theft is not a joke', 'Pam, help'],
-    sound: 'notification',
   },
   {
     id: 'parkour',
@@ -263,7 +247,6 @@ export const OFFICE_EVENTS: RandomOfficeEvent[] = [
     type: 'visual-only',
     managerMessage: 'PARKOUR!',
     agentMessages: ['parkour!', 'PAR-KOUR', 'Michael no', 'this is going to end badly'],
-    sound: 'celebration',
   },
   {
     id: 'schrute-bucks',
@@ -272,7 +255,6 @@ export const OFFICE_EVENTS: RandomOfficeEvent[] = [
     duration: 3000,
     type: 'slack-only',
     agentMessages: ['what\'s the conversion rate?', 'do I look like I need extra incentive?', 'I\'ll take Stanley nickels instead', 'where\'s my raise?'],
-    sound: 'notification',
   },
   {
     id: 'kevins-chili',
@@ -282,7 +264,6 @@ export const OFFICE_EVENTS: RandomOfficeEvent[] = [
     type: 'slack-only',
     managerMessage: 'the only thing left to do is to scoop it up...',
     agentMessages: ['NOOO', 'it took him all morning', 'carpet is ruined', 'I told him to use two pans'],
-    sound: 'error',
   },
   {
     id: 'printer-jam-dm',
@@ -292,7 +273,6 @@ export const OFFICE_EVENTS: RandomOfficeEvent[] = [
     type: 'single-agent',
     targetPosition: { x: 424, y: 132 },
     agentMessages: ['Sabre printers strike again', 'I TOLD them', 'time to call Nellie', 'warranty expired'],
-    sound: 'error',
   },
   {
     id: 'dundies',
@@ -302,7 +282,6 @@ export const OFFICE_EVENTS: RandomOfficeEvent[] = [
     type: 'slack-only',
     managerMessage: 'You\'re gonna laugh, you\'re gonna cry...',
     agentMessages: ['Bushiest Beaver award time', 'Please no again', 'dibs on Best Dad', 'I\'m taking Pam to Chili\'s'],
-    sound: 'celebration',
   },
   {
     id: 'pretzel-day',
@@ -313,7 +292,6 @@ export const OFFICE_EVENTS: RandomOfficeEvent[] = [
     targetPosition: { x: 287, y: 129 },
     managerMessage: 'You don\'t understand. It\'s pretzel day.',
     agentMessages: ['best day of the year', 'worth every calorie', 'Stanley\'s been waiting all year', 'all the toppings'],
-    sound: 'celebration',
   },
   {
     id: 'bears-beets',
@@ -322,12 +300,11 @@ export const OFFICE_EVENTS: RandomOfficeEvent[] = [
     duration: 3000,
     type: 'slack-only',
     agentMessages: ['false. black bear.', 'Bears, beets, Battlestar Galactica', 'identity theft is not a joke, Jim', 'fact: bears eat beets'],
-    sound: 'notification',
   },
 ]
 
 // Incident-mode events — SAME ids as RANDOM_EVENTS so EVENT_TARGETS in App.tsx
-// resolves without new entries; only the copy and sounds change. deploy-fail /
+// resolves without new entries; only the copy changes. deploy-fail /
 // who-broke-build start a mini-incident and deploy-success ends one (incident.ts).
 export const INCIDENT_EVENTS: RandomOfficeEvent[] = [
   {
@@ -339,7 +316,6 @@ export const INCIDENT_EVENTS: RandomOfficeEvent[] = [
     targetPosition: { x: 114, y: 105 },
     managerMessage: 'joining the bridge. who has context?',
     agentMessages: ['joining the bridge', 'is this the sev1?', 'muting myself, kids are asleep'],
-    sound: 'alarm',
   },
   {
     id: 'pizza',
@@ -350,7 +326,6 @@ export const INCIDENT_EVENTS: RandomOfficeEvent[] = [
     targetPosition: { x: 114, y: 105 },
     managerMessage: 'eat fast',
     agentMessages: ['incident pizza hits different', 'second pizza of the night', 'eating over the keyboard, sorry'],
-    sound: 'celebration',
   },
   {
     id: 'standup',
@@ -361,7 +336,6 @@ export const INCIDENT_EVENTS: RandomOfficeEvent[] = [
     targetPosition: { x: 411, y: 417 },
     managerMessage: 'go around the room',
     agentMessages: ['error rate 40% and dropping', 'rollback halfway', 'I need a DBA', 'still not DNS. probably DNS.'],
-    sound: 'notification',
   },
   {
     id: 'deploy',
@@ -371,7 +345,6 @@ export const INCIDENT_EVENTS: RandomOfficeEvent[] = [
     type: 'slack-only',
     managerMessage: 'hold',
     agentMessages: ['please', 'watching the graph', 'if this fails we roll back the rollback'],
-    sound: 'notification',
   },
   {
     id: 'deploy-success',
@@ -381,7 +354,6 @@ export const INCIDENT_EVENTS: RandomOfficeEvent[] = [
     type: 'slack-only',
     managerMessage: 'starting the all-clear timer',
     agentMessages: ['breathing again', 'graph is flat', 'who wants the postmortem doc'],
-    sound: 'celebration',
   },
   {
     id: 'deploy-fail',
@@ -391,7 +363,6 @@ export const INCIDENT_EVENTS: RandomOfficeEvent[] = [
     type: 'slack-only',
     managerMessage: 'ok. ok. ok.',
     agentMessages: ['of course', 'migration was not reversible', 'checking the backup'],
-    sound: 'error',
   },
   {
     id: 'power-flicker',
@@ -400,7 +371,6 @@ export const INCIDENT_EVENTS: RandomOfficeEvent[] = [
     duration: 3000,
     type: 'visual-only',
     agentMessages: ['was that us?', 'the DC is also having a night'],
-    sound: 'powerDown',
   },
   {
     id: 'birthday',
@@ -411,7 +381,6 @@ export const INCIDENT_EVENTS: RandomOfficeEvent[] = [
     targetPosition: { x: 287, y: 129 },
     managerMessage: 'brief them, then sleep',
     agentMessages: ['handover doc is 3 lines', 'good luck', 'it is Tuesday there'],
-    sound: 'notification',
   },
   {
     id: 'who-broke-build',
@@ -421,7 +390,6 @@ export const INCIDENT_EVENTS: RandomOfficeEvent[] = [
     type: 'slack-only',
     managerMessage: 'blameless. find the commit, not the person.',
     agentMessages: ['4f2a1c is bad', 'a1b2c3 is good', 'it was the config change', 'I blame DNS'],
-    sound: 'error',
   },
   {
     id: 'friday',
@@ -431,7 +399,6 @@ export const INCIDENT_EVENTS: RandomOfficeEvent[] = [
     type: 'slack-only',
     managerMessage: 'never again',
     agentMessages: ['never again', 'we said that last time', 'read-only Fridays from now on'],
-    sound: 'notification',
   },
   {
     id: 'printer-jam',
@@ -441,7 +408,6 @@ export const INCIDENT_EVENTS: RandomOfficeEvent[] = [
     type: 'single-agent',
     targetPosition: { x: 424, y: 132 },
     agentMessages: ['it is 400 pages', 'PC LOAD STACKTRACE', 'unplug it'],
-    sound: 'error',
   },
   {
     id: 'slack-down',
@@ -450,7 +416,6 @@ export const INCIDENT_EVENTS: RandomOfficeEvent[] = [
     duration: 3000,
     type: 'slack-only',
     agentMessages: ['of course it is', 'tweet it', 'carrier pigeon time'],
-    sound: 'notification',
   },
 ]
 
