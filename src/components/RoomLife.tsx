@@ -10,7 +10,7 @@
  *   - the city through the windows: office lights flicking on and off and a
  *     plane's blinking light at night, clouds drifting by day
  *   - the water cooler: bubbles while someone is at it or waiting
- *   - the bell: rings (swings, with sound waves) when the boss hands Claude a
+ *   - the bell: rings (swings, with sound waves) when the boss shouts Claude a
  *     prompt or rings it himself
  *   - the fire extinguisher: rattles and glows red while prod is down
  * The bell and the extinguisher are the room art's own pixels, copied out
@@ -285,7 +285,7 @@ const RoomLife: React.FC<Props> = ({ tv, night, incident, waterBusy, bellKey, da
       {ringing > 0 && MOVE && (
         // Why its own svg, keyed by the ring: SMIL time starts when its svg is created,
         // so a fresh one makes the waves start now, not at page load
-        <svg key={ringing} viewBox={`0 0 ${ROOM_W} ${ROOM_H}`} preserveAspectRatio="none" aria-hidden="true"
+        <svg key={`waves-${ringing}`} viewBox={`0 0 ${ROOM_W} ${ROOM_H}`} preserveAspectRatio="none" aria-hidden="true"
           style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 2 }}>
           {[0, 0.35].map(begin => (
             <path key={begin} d={`M ${BELL.x + BELL.w + 4} ${BELL.y + 6} q 8 14 0 28`} fill="none" stroke="#fde68a" strokeWidth={2.5} strokeLinecap="round" opacity={0}>
@@ -296,7 +296,7 @@ const RoomLife: React.FC<Props> = ({ tv, night, incident, waterBusy, bellKey, da
         </svg>
       )}
       {ringing > 0 && (
-        <Crop key={ringing} box={BELL} day={dayImage} night={nightImage} nightLevel={night} className="bell-ring" clipPath={BELL_SHAPE} />
+        <Crop key={`bell-${ringing}`} box={BELL} day={dayImage} night={nightImage} nightLevel={night} className="bell-ring" clipPath={BELL_SHAPE} />
       )}
       {incident && (
         <Crop box={EXTINGUISHER} day={dayImage} night={nightImage} nightLevel={night} className="extinguisher-alarm" clipPath="inset(0 round 30%)" />

@@ -51,6 +51,7 @@ export interface Agent {
   waitingOn?: number        // background workers a finished turn still waits for
   model?: string            // the session's model (session_model / session_started)
   scene?: AgentScene        // a signal's scene on the character that ran the command
+  callout?: Callout         // the boss shouting a prompt across the office, and the Claude that heard it
 }
 
 /**
@@ -99,6 +100,18 @@ export interface AgentScene {
   kind: 'shipping' | 'shipped' | 'red' | 'pushed'
   until: number
   label?: string
+}
+
+/**
+ * A prompt shouted across the office (src/officeReducer.ts bossShout): the
+ * boss's speech bubble (`shout`, the start of the prompt or a bare "!") and
+ * the "!" over the Claude it was meant for (`heard`). `seq` is the shout's
+ * number, so the timer that clears it cannot clear a newer one.
+ */
+export interface Callout {
+  kind: 'shout' | 'heard'
+  text: string
+  seq: number
 }
 
 /** What a session's main thread (its Claude) is doing — the server's `main.state` */

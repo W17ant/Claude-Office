@@ -28,7 +28,7 @@ import * as sfx from './sounds'
 import { findWaypointPath } from './agentManager'
 import {
   reduceOffice, stepOffice, initialOfficeState,
-  moveAgentsForEvent, returnAgentsFromEvent, pickSingleEventAgent, walkDurationMs, errandWaitMs, checkErrand,
+  moveAgentsForEvent, returnAgentsFromEvent, pickSingleEventAgent, walkDurationMs, errandWaitMs, checkErrand, bossErrandGate,
   MAIN_ROOM, BOSS_ID, CLAUDE_ID, CLAUDE_ROLE,
   type OfficeState, type OfficeAction, type OfficeEffect, type OfficeEnv,
 } from './officeReducer'
@@ -58,7 +58,7 @@ import RoomSwitcher from './components/RoomSwitcher'
 import DoorLinks from './components/DoorLinks'
 import { ROOMS, OFFICE_ROOM, findSpot, type RoomId } from './rooms'
 import { openRoomSet, previewAllRooms } from './roomAccess'
-import { roomOf } from './roomTransfer'
+import { roomOf, TRANSFER_MAX_MS } from './roomTransfer'
 import { switcherModel, viewableRoom } from './roomSwitcher'
 import { startRoomsDemo } from './roomsDemo'
 
@@ -436,92 +436,115 @@ const App: React.FC = () => {
     // and the server's echo of our own tap then lands inside the cooldown
     if (!fromElsewhere) shareInteractionRef.current(itemId)
 
-    // Walk boss to the item. The route is computed once, so the watch below is
-    // timed against the walk he actually takes (detours and jitter included)
-    const target = interaction.walkTo
-    const bossNow = agentsRef.current.find(a => a.id === BOSS_ID)
-    if (!bossNow) return
-    const path = computePath(bossNow.position, target)
-    const waitMs = errandWaitMs(walkDurationMs(bossNow.position, path, target))
-    updateAgents(prev => prev.map(a => {
-      if (a.id !== BOSS_ID) return a
-      return {
-        ...a,
-        state: 'walking-to-desk' as const,
-        targetPosition: target,
-        pathQueue: path,
-        statusText: Array.isArray(interaction.chatMessage)
-          ? interaction.chatMessage[Math.floor(Math.random() * interaction.chatMessage.length)]
-          : interaction.chatMessage,
-      }
-    }))
-
-    const walkBackToDesk = () => {
+    // The errand itself: walk to the item, watch for him to get there, then the effect
+    const runErrand = () => {
+      // Walk boss to the item. The route is computed once, so the watch below is
+      // timed against the walk he actually takes (detours and jitter included)
+      const target = interaction.walkTo
+      const bossNow = agentsRef.current.find(a => a.id === BOSS_ID)
+      if (!bossNow) return
+      const path = computePath(bossNow.position, target)
+      const waitMs = errandWaitMs(walkDurationMs(bossNow.position, path, target))
       updateAgents(prev => prev.map(a => {
         if (a.id !== BOSS_ID) return a
         return {
           ...a,
           state: 'walking-to-desk' as const,
-          targetPosition: { ...a.deskPosition },
-          pathQueue: computePath(a.position, a.deskPosition),
-          statusText: 'back to work',
+          targetPosition: target,
+          pathQueue: path,
+          statusText: Array.isArray(interaction.chatMessage)
+            ? interaction.chatMessage[Math.floor(Math.random() * interaction.chatMessage.length)]
+            : interaction.chatMessage,
         }
       }))
-    }
 
-    // Watch for him to get there (checkErrand decides): on arrival trigger the
-    // effects; if he is still on his way well after the walk should have taken,
-    // give up and send him back to his desk rather than leave him at the item
-    const startedAt = Date.now()
-    const checkArrival = () => {
-      const verdict = checkErrand(agentsRef.current.find(a => a.id === BOSS_ID), target, Date.now() - startedAt, waitMs)
-      if (verdict === 'walking') { schedule(checkArrival, 200); return }
-      if (verdict === 'late') { walkBackToDesk(); return }
-      if (verdict === 'redirected') return
-
-      // Why only the bell: it is the one the owner rings on purpose; the rest of
-      // the furniture is seen, not heard (src/sounds.ts)
-      if (interaction.sound === 'bell') { sfx.playBell(); setBellRings(n => n + 1) }
-
-      // Show effect above boss
-      setBossEffect(interaction.effect)
-      schedule(() => setBossEffect(null), interaction.duration)
-
-      // Post chat message
-      const msg = Array.isArray(interaction.chatMessage)
-        ? interaction.chatMessage[Math.floor(Math.random() * interaction.chatMessage.length)]
-        : interaction.chatMessage
-      const bossCfg = AGENT_CONFIGS[BOSS_ROLE] ?? AGENT_CONFIGS['default']
-      // Use setMessages directly to avoid addMsg dependency ordering
-      setMessages(prev => [...prev.slice(-50), {
-        id: makeMsgId(),
-        sender: bossCfg.title,
-        senderSprite: BOSS_ROLE,
-        senderColor: bossCfg.color,
-        text: msg,
-        channel: 'office-general',
-        timestamp: timeNow(),
-      }])
-
-      // Furniture state change
-      if (interaction.furnitureState) {
-        const fs = interaction.furnitureState
-        setFurnitureStates(prev => ({ ...prev, [fs.id]: fs.state }))
-        if (fs.revertAfter) {
-          schedule(() => {
-            setFurnitureStates(prev => {
-              const next = { ...prev }
-              delete next[fs.id]
-              return next
-            })
-          }, fs.revertAfter)
-        }
+      const walkBackToDesk = () => {
+        // Why: the person picked another room meanwhile; his room change owns the walk now
+        if (bossErrandGate(officeRef.current!) !== 'go') return
+        updateAgents(prev => prev.map(a => {
+          if (a.id !== BOSS_ID) return a
+          return {
+            ...a,
+            state: 'walking-to-desk' as const,
+            targetPosition: { ...a.deskPosition },
+            pathQueue: computePath(a.position, a.deskPosition),
+            statusText: 'back to work',
+          }
+        }))
       }
 
-      // Walk boss back to desk after effect
-      schedule(walkBackToDesk, interaction.duration + 500)
+      // Watch for him to get there (checkErrand decides): on arrival trigger the
+      // effects; if he is still on his way well after the walk should have taken,
+      // give up and send him back to his desk rather than leave him at the item
+      const startedAt = Date.now()
+      const checkArrival = () => {
+        const verdict = checkErrand(agentsRef.current.find(a => a.id === BOSS_ID), target, Date.now() - startedAt, waitMs)
+        if (verdict === 'walking') { schedule(checkArrival, 200); return }
+        if (verdict === 'late') { walkBackToDesk(); return }
+        if (verdict === 'redirected') return
+
+        // Why only the bell: it is the one the owner rings on purpose; the rest of
+        // the furniture is seen, not heard (src/sounds.ts)
+        if (interaction.sound === 'bell') { sfx.playBell(); setBellRings(n => n + 1) }
+
+        // Show effect above boss
+        setBossEffect(interaction.effect)
+        schedule(() => setBossEffect(null), interaction.duration)
+
+        // Post chat message
+        const msg = Array.isArray(interaction.chatMessage)
+          ? interaction.chatMessage[Math.floor(Math.random() * interaction.chatMessage.length)]
+          : interaction.chatMessage
+        const bossCfg = AGENT_CONFIGS[BOSS_ROLE] ?? AGENT_CONFIGS['default']
+        // Use setMessages directly to avoid addMsg dependency ordering
+        setMessages(prev => [...prev.slice(-50), {
+          id: makeMsgId(),
+          sender: bossCfg.title,
+          senderSprite: BOSS_ROLE,
+          senderColor: bossCfg.color,
+          text: msg,
+          channel: 'office-general',
+          timestamp: timeNow(),
+        }])
+
+        // Furniture state change
+        if (interaction.furnitureState) {
+          const fs = interaction.furnitureState
+          setFurnitureStates(prev => ({ ...prev, [fs.id]: fs.state }))
+          if (fs.revertAfter) {
+            schedule(() => {
+              setFurnitureStates(prev => {
+                const next = { ...prev }
+                delete next[fs.id]
+                return next
+              })
+            }, fs.revertAfter)
+          }
+        }
+
+        // Walk boss back to desk after effect
+        schedule(walkBackToDesk, interaction.duration + 500)
+      }
+      schedule(checkArrival, 200)
     }
-    schedule(checkArrival, 200)
+
+    // The boss follows the stage (sendBoss): when he is still out in another
+    // room or on his way back, he comes back first and then does the errand.
+    // Why the cap: a room change is bounded by TRANSFER_MAX_MS; past it (or
+    // when the person sends him off again meanwhile) the errand is dropped
+    const gate = bossErrandGate(officeRef.current!)
+    if (gate !== 'go') {
+      if (gate === 'fetch') handleEventRef.current({ type: 'boss_go', room: OFFICE_ROOM })
+      const waitStarted = Date.now()
+      const waitForBoss = () => {
+        const verdict = bossErrandGate(officeRef.current!)
+        if (verdict === 'go') runErrand()
+        else if (verdict === 'wait' && Date.now() - waitStarted < TRANSFER_MAX_MS + 5_000) schedule(waitForBoss, 200)
+      }
+      schedule(waitForBoss, 200)
+      return
+    }
+    runErrand()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   // Why a ref: handleEvent (set up later) plays taps shared by other pages through it
@@ -599,6 +622,8 @@ const App: React.FC = () => {
             case 'celebration': sfx.playCelebration(); break
             case 'error':       sfx.playError(); break
             case 'needsYou':    sfx.playNeedsYou(); break
+            case 'prompt':      sfx.playPrompt(); break
+            case 'reply':       sfx.playReply(); break
           }
           break
         case 'title':
@@ -820,6 +845,14 @@ const App: React.FC = () => {
   const [pickedRoom, setPickedRoom] = useState<RoomId>(OFFICE_ROOM)
   const viewRoom = viewableRoom(pickedRoom, OPEN_ROOMS)
   const officeInView = viewRoom === OFFICE_ROOM
+  // Picking a room (the floor plan, a door in the picture) shows it at once,
+  // and the boss follows: he walks there through the doors and the corridor
+  // and turns up a moment later (officeReducer sendBoss); the office sends
+  // him back to his desk
+  const pickRoom = useCallback((room: RoomId) => {
+    setPickedRoom(room)
+    handleEvent({ type: 'boss_go', room: viewableRoom(room, OPEN_ROOMS) })
+  }, [handleEvent])
 
   // ?sim: MCP calls and a three-worker session, so the server room
   // and the meeting room have somebody in them too (src/roomsDemo.ts)
@@ -1590,13 +1623,13 @@ const App: React.FC = () => {
             night={forcedNight ? 1 : dayNightMode === 'auto' ? nightOpacity : dayNightMode === 'night' ? 1 : 0}
             incident={variant === 'incident'}
             waterBusy={waterBusy(officeAgents, WATER_SPOTS)}
-            bellKey={(officeRef.current?.handoverSeq ?? 0) + bellRings}
+            bellKey={(officeRef.current?.shoutSeq ?? 0) + bellRings}
             dayImage={getRoomImage('day')}
             nightImage={getRoomImage('night')}
           />}
 
           {/* The doors in the picture: a click shows the room behind it (the office's door the corridor, the corridor's the rooms) */}
-          <DoorLinks room={viewRoom} open={OPEN_ROOMS} onOpen={setPickedRoom} />
+          <DoorLinks room={viewRoom} open={OPEN_ROOMS} onOpen={pickRoom} />
 
           {/* Furniture — apply interactive state overrides */}
           {officeInView && <FurnitureRenderer onItemClick={handleFurnitureClick} items={furnitureItems} screens={deskScreenModes} printJob={printedPage} />}
@@ -1812,7 +1845,7 @@ const App: React.FC = () => {
               officeIncident: variant === 'incident',
             })}
             theme={theme}
-            onSelect={setPickedRoom}
+            onSelect={pickRoom}
           />
         )}
       </div>
