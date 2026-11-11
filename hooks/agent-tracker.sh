@@ -242,7 +242,10 @@ EOF
 IFS= read -r -d '' PY_REPLY <<'PYREPLY' || true
 import json, os, sys, time, hmac, hashlib
 try:
-    r = json.loads(sys.stdin.read() or '{}')
+    # Why bytes: the reply is UTF-8 JSON, and a text read decodes it with the
+    # locale's code page (cp1252 on Windows), which turns a queued prompt's
+    # non-ASCII text into other characters and its proof into a mismatch
+    r = json.loads(sys.stdin.buffer.read().decode('utf-8', 'replace') or '{}')
 except Exception:
     r = {}
 if not isinstance(r, dict):
