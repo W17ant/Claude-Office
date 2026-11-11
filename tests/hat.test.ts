@@ -1,7 +1,8 @@
 /** hat.ts - finding a sprite's head from its alpha channel. */
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { HALLOWEEN_PIECE_SRCS, halloweenPiece, headAnchorFromAlpha, wearsOverlayHat } from '../src/hat'
+import { HALLOWEEN_PIECE_SRCS, halloweenPiece, headAnchorFromAlpha, maskOnEyes, wearsOverlayHat } from '../src/hat'
+import { EYES } from '../src/eyes'
 import { SEASON_SUFFIX } from '../src/seasonNames'
 
 /** An alpha map of w x h with opaque rectangles [x0, y0, x1, y1) */
@@ -88,5 +89,32 @@ describe('halloweenPiece', () => {
 
   it('every piece it can pick exists', () => {
     for (const src of HALLOWEEN_PIECE_SRCS) expect(readFileSync(new URL(`../public${src}`, import.meta.url)).length).toBeGreaterThan(1000)
+  })
+})
+
+describe('maskOnEyes', () => {
+  const mask = { kind: 'mask' as const, src: '/x.png', scale: 1, offset: 0, eyes: { x: 0.6, y: 0.5, spacing: 0.4 } }
+
+  it('puts the mask\'s eye holes on the eyes, sized so the holes are as far apart as the pupils', () => {
+    expect(maskOnEyes(mask, { x: 0.5, y: 0.2, spacing: 0.2 }, false)).toEqual({ left: 0.5, top: 0.2, width: 0.5, shiftX: -0.6, shiftY: -0.5 })
+  })
+
+  it('a sprite facing right wears it mirrored, so the holes flip with it', () => {
+    expect(maskOnEyes(mask, { x: 0.5, y: 0.2, spacing: 0.2 }, true)!.shiftX).toBeCloseTo(-0.4)
+  })
+
+  it('stays a sensible size, and without eye data the head placement is used instead (null)', () => {
+    expect(maskOnEyes(mask, { x: 0.5, y: 0.2, spacing: 0.9 }, false)!.width).toBe(0.75)
+    expect(maskOnEyes(mask, { x: 0.5, y: 0.2, spacing: 0.01 }, false)!.width).toBe(0.35)
+    expect(maskOnEyes(mask, undefined, false)).toBeNull()
+  })
+
+  it('every listed eye line is on the face: in the top half, inside the sprite', () => {
+    for (const [name, e] of Object.entries(EYES)) {
+      expect(e.y, name).toBeGreaterThan(0.05)
+      expect(e.y, name).toBeLessThan(0.4)
+      expect(e.x, name).toBeGreaterThan(0.1)
+      expect(e.x, name).toBeLessThan(0.9)
+    }
   })
 })

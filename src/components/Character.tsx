@@ -1,5 +1,6 @@
 import { currentSeason, useSeasonArt } from '../season'
-import { HAT_SRC, halloweenPiece, useHeadAnchor, wearsOverlayHat, type HalloweenPiece } from '../hat'
+import { HAT_SRC, halloweenPiece, maskOnEyes, useHeadAnchor, wearsOverlayHat, type HalloweenPiece } from '../hat'
+import { EYES } from '../eyes'
 import React, { useRef, useState, useEffect } from 'react'
 import { Agent, AgentState } from '../types'
 import SpeechBubble from './SpeechBubble'
@@ -191,6 +192,11 @@ const Character: React.FC<CharacterProps> = ({ agent, idleDurationMs = 0, zIndex
     ? { kind: 'hat', src: HAT_SRC, scale: HAT_SCALE, offset: HAT_SINK }
     : spooky && !(spooky.kind === 'mask' && facingAway) ? spooky : null
   const head = useHeadAnchor(spriteSrc, piece !== null)
+  // A mask on a listed sprite goes by its eye holes (src/eyes.ts), not by the head
+  const facingRight = directionRef.current.endsWith('right')
+  const onEyes = piece?.kind === 'mask'
+    ? maskOnEyes(piece, EYES[standingSrc.slice(standingSrc.lastIndexOf('/') + 1).replace(/\.png$/, '')], facingRight)
+    : null
   void theme
   const variant = useVariant() // Why: re-render when incident mode flips so the failure bubble shows/hides
   // Prod is down: each kind of agent grabs its prop (pager, megaphone, ...)
@@ -289,7 +295,22 @@ const Character: React.FC<CharacterProps> = ({ agent, idleDurationMs = 0, zIndex
             }}
             draggable={false}
           />
-          {head && piece && (
+          {piece && onEyes && (
+            <img
+              src={piece.src}
+              alt=""
+              className="char-hat"
+              style={{
+                left: `${onEyes.left * 100}%`,
+                top: `${onEyes.top * 100}%`,
+                width: `${onEyes.width * 100}%`,
+                // Why translate in the mask's own size: it puts the eye holes, not the corner, on the eyes
+                transform: `translate(${onEyes.shiftX * 100}%, ${onEyes.shiftY * 100}%)${facingRight ? ' scaleX(-1)' : ''}`,
+              }}
+              draggable={false}
+            />
+          )}
+          {head && piece && !onEyes && (
             <img
               src={piece.src}
               alt=""

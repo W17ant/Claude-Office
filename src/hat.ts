@@ -11,6 +11,7 @@
 
 import { useEffect, useState } from 'react'
 import { SEASON_SUFFIX_PATTERN } from './seasonNames'
+import type { EyeLine } from './eyes'
 
 export const HAT_SRC = '/sprites/effects/santa-hat.png'
 
@@ -63,22 +64,30 @@ export interface HalloweenPiece {
    * sprite's height, like HeadAnchor.top.
    */
   offset: number
+  /**
+   * A mask's eye holes as fractions of its own image (midpoint and the
+   * distance between them), measured on the art, so on a listed sprite
+   * (src/eyes.ts) the holes are put on the character's eyes
+   */
+  eyes?: { x: number; y: number; spacing: number }
 }
 
 // Why these numbers: tuned on every cast sprite facing the viewer (both
-// casts), the same way as the Santa hat. Masks that are a whole head
-// (pumpkin, skull, the hooded ghost, the pale rubber mask with hair) start at
-// the top of the hair and are a little wider than the head; the hockey mask
-// and the Frankenstein half mask cover only the face and the brow.
+// casts), the same way as the Santa hat. They place a mask from the head on a
+// sprite not listed in src/eyes.ts (a custom one); on a listed sprite the
+// mask's eye holes (`eyes`, measured on each mask's art) go on the character's
+// eyes instead. Masks that are a whole head (pumpkin, skull, the hooded
+// ghost, the pale rubber mask with hair) start at the top of the hair; the
+// hockey mask and the Frankenstein half mask cover only the face and brow.
 const WITCH_HAT: HalloweenPiece = { kind: 'hat', src: '/sprites/effects/witch-hat.png', scale: 1.3, offset: 0.12 }
 const MASKS: readonly HalloweenPiece[] = [
-  { kind: 'mask', src: '/sprites/effects/mask-pumpkin.png', scale: 1.0, offset: 0 },
-  { kind: 'mask', src: '/sprites/effects/mask-skull.png', scale: 0.95, offset: 0.01 },
-  { kind: 'mask', src: '/sprites/effects/mask-ghost.png', scale: 1.05, offset: -0.01 },
-  { kind: 'mask', src: '/sprites/effects/mask-pale.png', scale: 1.1, offset: -0.02 },
-  { kind: 'mask', src: '/sprites/effects/mask-hockey.png', scale: 0.8, offset: 0.05 },
+  { kind: 'mask', src: '/sprites/effects/mask-pumpkin.png', scale: 1.0, offset: 0, eyes: { x: 0.62, y: 0.45, spacing: 0.35 } },
+  { kind: 'mask', src: '/sprites/effects/mask-skull.png', scale: 0.95, offset: 0.01, eyes: { x: 0.63, y: 0.51, spacing: 0.37 } },
+  { kind: 'mask', src: '/sprites/effects/mask-ghost.png', scale: 1.05, offset: -0.01, eyes: { x: 0.59, y: 0.45, spacing: 0.28 } },
+  { kind: 'mask', src: '/sprites/effects/mask-pale.png', scale: 1.1, offset: -0.02, eyes: { x: 0.69, y: 0.57, spacing: 0.32 } },
+  { kind: 'mask', src: '/sprites/effects/mask-hockey.png', scale: 0.8, offset: 0.05, eyes: { x: 0.66, y: 0.51, spacing: 0.38 } },
   // Why lower than the others: its flat top is hair, so its eye holes have to land on the eyes
-  { kind: 'mask', src: '/sprites/effects/mask-frankenstein.png', scale: 1.0, offset: 0.055 },
+  { kind: 'mask', src: '/sprites/effects/mask-frankenstein.png', scale: 1.0, offset: 0.055, eyes: { x: 0.56, y: 0.72, spacing: 0.43 } },
 ]
 
 /** Every image a Halloween piece can use (for the asset check and the tests) */
@@ -205,4 +214,24 @@ export function useHeadAnchor(src: string, enabled: boolean): HeadAnchor | null 
     return () => { live = false }
   }, [src, enabled])
   return anchor
+}
+
+/**
+ * Where a mask goes on a sprite whose eyes are listed (src/eyes.ts): its
+ * width makes its eye holes as far apart as the character's eyes, and its
+ * eye holes' midpoint lands on theirs. Fractions of the sprite's box; the
+ * `shift` is a translate in the mask's own size, so no sprite size is needed.
+ * @param piece the mask (with its eye holes measured)
+ * @param eye the character's eye line
+ * @param mirrored whether the sprite faces right (the mask is drawn for the left, so its holes flip)
+ * @returns left, top and width of the mask as fractions, and the shift, or null without eye data
+ */
+export function maskOnEyes(piece: HalloweenPiece, eye: EyeLine | undefined, mirrored: boolean): { left: number; top: number; width: number; shiftX: number; shiftY: number } | null {
+  if (!eye || !piece.eyes) return null
+  // Why the clamp: a sprite whose pupils sit unusually close (a turned head)
+  // must not get a doll-sized mask, nor a huge one for wide-set eyes
+  // (0.75 of the sprite's width is a big head's full width with its hair)
+  const width = Math.min(0.75, Math.max(0.35, eye.spacing / piece.eyes.spacing))
+  const holeX = mirrored ? 1 - piece.eyes.x : piece.eyes.x
+  return { left: eye.x, top: eye.y, width, shiftX: -holeX, shiftY: -piece.eyes.y }
 }
