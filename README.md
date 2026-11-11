@@ -2,13 +2,34 @@
 
 A pixel art virtual office that visualizes your AI agents working in real-time. Watch Claude Code agents spawn, sit at desks, take coffee breaks, and chat in a Slack-inspired office chat panel — all rendered in an isometric pixel art office.
 
+## Update — rooms, seasons and a quieter office
+
+**What's new**
+- **Four more rooms** — a corridor, a meeting room, a server room and a lunch room. Click a door in the picture (or the floor plan in the corner) and the stage goes there; your boss walks over through the corridor
+- **The office follows the calendar** — spring, summer, autumn and winter all year round, with Christmas, Halloween, Easter and Valentine's Day on top: decorated rooms, desks and plants in both themes
+- **Halloween costumes** — Claude is a vampire and the boss a wizard; in Dunder Mifflin mode Michael, Dwight, Jim and Pam dress up and everyone else wears a mask or a witch hat
+- **The boss shouts the prompt** from where he stands instead of walking it over; the Claude it's for gets a "!"
+- **Prompts from the chat** — type `@agent-office fix the failing test` in the office chat and that session picks it up when its turn ends
+- **A quieter soundtrack** — a soft ambient office instead of bleeps, with gentle cues for a prompt sent, a reply in and Claude needing you (turn the ambience off in Settings)
+- **Your phone** — `npm run lan` prints a QR code; taps on the phone (water a plant, ring the bell) play on the desktop too
+- The full list is in the [CHANGELOG](CHANGELOG.md)
+
+### The rooms
+![The corridor with its five doors, the meeting room, the server room with its racks, and the lunch room](docs/images/rooms.png)
+
+### Every season
+![The office at Christmas, Halloween, Easter, Valentine's Day, and in spring, summer, autumn and winter](docs/images/seasons.png)
+
+### Halloween in Dunder Mifflin mode
+![The Scranton office decorated for Halloween, with masks and a witch hat on the staff](docs/images/halloween-dunder-mifflin.png)
+
 ## Update — 1.1: the level-up
 
 > We had 12 hours and 90 % of our 20x plan still to use 😂 so I asked Claude to level up Claude Office (using Fable 5.1 <img src="docs/images/claude-crab.gif" height="36" alt="" align="absmiddle"> and <img src="docs/images/ultracode.svg" height="20" alt="ultracode" align="absmiddle">).
 
 **What's new**
 - **A Claude for every terminal** — each Claude Code session gets its own pill, model badge and Claude at a desk
-- **Claude acts out the turn** — the boss walks your prompt over, Claude types, naps when it's done
+- **Claude acts out the turn** — the boss shouts your prompt across the office, Claude types, naps when it's done
 - **✋ Needs you** — a permission prompt raises Claude's hand with a chime, and you can click **Allow** right in the office
 - **Click anyone** — an inspector card shows what they're doing, every tool they've called and what they've said
 - **Prod Is Down** — a failed deploy turns the office red; a 🚀 for deploys, a 🎉 for pushes to main, ❌ for failing tests
@@ -18,7 +39,7 @@ A pixel art virtual office that visualizes your AI agents working in real-time. 
 - Plus three bug hunts, a security pass and 972 tests — the full list is in the [CHANGELOG](CHANGELOG.md)
 
 ### Claude's turn, start to nap
-![The boss hands the prompt to Claude, workers come and go, Claude holds a glass of water while a worker is out, then falls asleep](docs/images/claudes-turn.gif)
+![The boss shouts the prompt from his desk, Claude gets a '!' and starts typing, a worker comes in to help and leaves, then Claude replies](docs/images/claudes-turn.gif)
 
 ### Click a character
 ![Inspector card: the task, tools used with a failed call in red, tokens and model, and the end of the agent's own transcript](docs/images/inspector.png)
@@ -121,10 +142,10 @@ Toggle it off any time with `/the-office` again — state persists in `localStor
 - Boss character (you) with an energy drink, Claude with coffee
 - Random office events: pizza deliveries, fire drills, power flickers, printer jams
 - Day/night cycle with smooth transitions
-- Seasons: the office follows the calendar, spring, summer, autumn and winter all year round with Christmas, Halloween, Easter and Valentine's Day on top. Christmas is drawn; the other seven are wired up and show the normal office until their art is added — see [Seasons](docs/reference.md#seasons)
+- Seasons: the office follows the calendar, spring, summer, autumn and winter all year round with Christmas, Halloween, Easter and Valentine's Day on top, every one drawn in both themes — see [Seasons](docs/reference.md#seasons)
 - **Settings** (the ⚙ in the title bar): theme, day/night, season, sound and the server settings in one panel — see [Settings](docs/reference.md#settings-panel)
 - **Today** (bottom-right of the status strip): the day's sessions, agents, tasks, deploys, failures, incidents and payroll, kept across restarts — or `/recap` in the chat
-- **More rooms, arriving with their art**: a corridor, a meeting room, a server room and a lunch room are built and stay closed until each is drawn; `?sim&rooms=all` previews them on placeholders — see [Rooms](docs/reference.md#rooms)
+- **More rooms**: a corridor, a meeting room, a server room and a lunch room; click a door or the floor plan to go there and the boss follows — see [Rooms](docs/reference.md#rooms)
 
 **AI-Powered Office Chat**
 - Back-and-forth conversation with Claude through the office chat panel
