@@ -4,7 +4,7 @@ All notable changes to Claude Office. Numbers refer to pull requests.
 
 ## Unreleased
 
-- Every season has its art now: Halloween, Easter and Valentine's Day, and spring, summer, autumn and winter, each with the office decorated by day and night in both themes (bunting, wreaths, the view through the windows), seasonal desks (a jack-o'-lantern, an egg basket, a rose, tulips, lemonade, cocoa, a snow globe) and the three plants dressed for it (bats, eggs, hearts, blossom, tropical flowers, autumn leaves, frost). 49 WebP files, drawn in ChatGPT from the existing art and fitted back onto each original. Winter is plain winter, with nothing of Christmas in it. `BUDGET_BYTES` goes to 70 MB.
+- Every season has its art now: Halloween, Easter and Valentine's Day, and spring, summer, autumn and winter, each with the office decorated by day and night in both themes (bunting, wreaths, the view through the windows), seasonal desks (a jack-o'-lantern, an egg basket, a rose, tulips, lemonade, cocoa, a snow globe) and the three plants dressed for it (bats, eggs, hearts, blossom, tropical flowers, autumn leaves, frost). 49 WebP files, drawn in ChatGPT from the existing art and fitted back onto each original. Winter is plain winter, with nothing of Christmas in it. At Halloween Claude dresses as a vampire and the boss as a wizard (all four sides and their walk cycles), as they turn elf and Santa at Christmas; the rest of the cast stays in everyday clothes. `BUDGET_BYTES` goes to 70 MB.
 
 ## 1.2.0 — 2026-11-10
 
