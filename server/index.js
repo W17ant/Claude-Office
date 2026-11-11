@@ -3897,6 +3897,8 @@ wss.on('connection', (ws, req) => {
   // Then the current state
   ws.send(JSON.stringify(buildSnapshot(trusted)))
 
+  ws.on('message', data => onClientInteraction(ws, data, 'office'))
+
   ws.on('close', () => {
     console.log(`[ws] Client disconnected (remaining: ${wss.clients.size})`)
   })
@@ -4052,6 +4054,7 @@ const LAN_EVENT_RULES = {
     timestamp: s.timestamp,
   }),
   agent_spawned: eventFields(['sessionId', 'recovered'], p => ({ agent: lanAgent(p.agent) })),
+  office_interaction: eventFields(['item', 'by']),
   agent_working: eventFields(['agentId', 'sessionId', 'failed']),
   agent_completed: eventFields(['agentId', 'sessionId', 'tokens', 'durationMs', 'toolUses', 'model']),
   mcp_call: eventFields(['server', 'tool', 'agentId', 'sessionId']),
@@ -4154,7 +4157,8 @@ const VIEWER_KEY_FILE = join(RUNTIME_DIR, 'lan-viewer-key')
 // Why: a phone or two, plus the overlap while one reconnects; more than this
 // is someone else holding the link
 const LAN_MAX_CLIENTS = 8
-// Why: a viewer never sends anything; 1 KiB bounds what a stray frame costs
+// Why: a viewer only ever sends a tap on the office's furniture (onClientInteraction, a few
+// dozen bytes); 1 KiB bounds what a stray frame costs
 const LAN_MAX_PAYLOAD = 1024
 
 /**
@@ -4198,6 +4202,7 @@ function onLanConnection(state, ws, req) {
   console.log(`[lan] Viewer connected from ${ip} (viewers: ${state.wss.clients.size})`)
   ws.send(JSON.stringify({ type: 'auth', trusted: false, viewer: true }))
   ws.send(JSON.stringify(redactForLan(buildSnapshot(false))))
+  ws.on('message', data => onClientInteraction(ws, data, 'phone'))
   ws.on('close', () => console.log(`[lan] Viewer disconnected (viewers: ${state.wss.clients.size})`))
   ws.on('error', err => console.error('[lan] Viewer error:', err.message))
 }
@@ -4428,6 +4433,7 @@ function onLanFullUpgrade(state, req, socket, head) {
     // Why no uiToken: the phone's requests are authorised by the phone secret
     // at the gate; the UI token stays on this machine
     ws.send(JSON.stringify(omit(buildSnapshot(true), ['uiToken'])))
+    ws.on('message', data => onClientInteraction(ws, data, 'phone'))
     ws.on('close', () => console.log(`[lan] Phone disconnected (phones: ${state.wss.clients.size})`))
     ws.on('error', err => console.error('[lan] Phone error:', err.message))
   })
@@ -4556,6 +4562,41 @@ function printLanBanner({ link, full, fingerprint, certReused, certReason }) {
  * payload (processEvent had nothing to say) is skipped rather than sent as
  * "null".
  */
+// ---------------------------------------------------------------------------
+// Shared furniture taps — every open office page plays the same errand
+// ---------------------------------------------------------------------------
+
+// The furniture the boss can be sent to (src/interactions.ts getInteraction).
+// Why a fixed list: a tap is the one thing a watch-only phone may send, so it
+// can only ever name one of these; anything else is dropped unread
+const SHARED_INTERACTIONS = new Set([
+  'plant-1', 'plant-2', 'plant-3', 'plant-4', 'plant-5', 'coffee', 'filing-1', 'printer-1', 'whiteboard',
+  'fire-extinguisher', 'water-cooler', 'bell', 'kanban-board', 'ship-it-poster', 'tv-monitor',
+])
+// Why 1 s per connection: faster than anyone taps, slow enough that a looping
+// page can't flood the other screens (each page's own cooldowns do the rest)
+const INTERACTION_GAP_MS = 1000
+const lastInteraction = new WeakMap()
+
+/**
+ * A page tapped a piece of furniture: tell every page, so the boss's errand
+ * (watering a plant, ringing the bell) plays on the desktop and the phone
+ * alike. Purely cosmetic: it changes nothing the server keeps.
+ * @param {import('ws').WebSocket} ws the sending connection
+ * @param {Buffer | string} data the frame: JSON naming the tapped `item`, with type "interact"
+ * @param {'office' | 'phone'} by which kind of page sent it
+ */
+function onClientInteraction(ws, data, by) {
+  if (data.length > 256) return
+  let msg
+  try { msg = JSON.parse(String(data)) } catch { return }
+  if (msg?.type !== 'interact' || !SHARED_INTERACTIONS.has(msg.item)) return
+  const now = Date.now()
+  if (now - (lastInteraction.get(ws) ?? 0) < INTERACTION_GAP_MS) return
+  lastInteraction.set(ws, now)
+  broadcast({ type: 'office_interaction', item: msg.item, by, timestamp: now })
+}
+
 function broadcast(payload) {
   if (!payload) return
   const full = JSON.stringify(payload)

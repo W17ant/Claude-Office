@@ -230,6 +230,8 @@ export type OfficeAction =
   | { type: 'scene_over'; agentId: string; until: number }
   /** An MCP server worker has had nothing to do for MCP_LINGER_MS (`idleSince` guards against a call that came in since) */
   | { type: 'mcp_worker_leave'; agentId: string; idleSince: number }
+  /** Another open page (the phone, another tab) tapped a piece of furniture: play the same errand here */
+  | { type: 'office_interaction'; item: string; by?: 'office' | 'phone' }
 
 /**
  * The event sounds the reducer can ask for (src/sounds.ts). Why only three:
