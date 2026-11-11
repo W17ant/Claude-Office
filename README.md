@@ -316,7 +316,7 @@ Agents can also message each other directly — see [Agent-to-agent messages](do
 | `http://<lan ip>:3335/#viewer=…` | Phone, watch-only — `npm run lan` prints this link and a QR code: the office scene alone, on a phone on your Wi-Fi ([Phone mode](docs/reference.md#phone-mode)) |
 | `https://<lan ip>:3335/#phone=…` | Phone, full office — `npm run lan -- --full` prints this link, a QR code and a certificate fingerprint to compare on the first visit: chat, permission cards you can answer, meters, settings and the inspector, over HTTPS only ([Phone mode](docs/reference.md#phone-mode)) |
 | `127.0.0.1:3333?season=christmas` | Christmas — the festive office any day (on by itself 1 Dec – 6 Jan) |
-| `127.0.0.1:3333?season=autumn` | Any season or holiday by name, any day: `spring`, `summer`, `autumn`, `winter`, `halloween`, `easter`, `valentine` (only Christmas has art so far: [Seasons](docs/reference.md#seasons)) |
+| `127.0.0.1:3333?season=autumn` | Any season or holiday by name, any day: `spring`, `summer`, `autumn`, `winter`, `halloween`, `easter`, `valentine` ([Seasons](docs/reference.md#seasons)) |
 | `127.0.0.1:3333?season=none` | No seasonal art, whatever the date |
 
 The theme, day/night mode, season and sound are also in **Settings** (the ⚙ at the right of the title bar) and are remembered per browser; a `?theme=` or `?season=` in the address still wins over what is stored there.

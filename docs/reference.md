@@ -291,7 +291,7 @@ The office follows the calendar all year round: one of the four seasons is alway
 
 The four seasons are the meteorological ones (whole months) for the **northern hemisphere**. South of the equator, pick your season by hand in [Settings](#settings-panel): it stays until you change it.
 
-**Only Christmas has art so far.** The other seven are wired up and waiting for their files; until a season is drawn the office looks exactly as it does without it.
+**All eight have art for the office:** the room (day and night, in both themes), the four desks and the three plants. Christmas also dresses the cast (jumpers, the elf and Santa, hats) and hangs the advent calendar; the other seven leave the characters as they are. The corridor, meeting, server and lunch rooms keep their normal pictures in every season.
 
 **The lookup.** A seasonal image is an optional copy saved next to the one it replaces, `<name><suffix>.webp` beside `<name>.png` (`src/season.ts`), and the first file that exists wins:
 
