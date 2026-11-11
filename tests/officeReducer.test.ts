@@ -178,7 +178,7 @@ describe('lobby when every desk is taken (C29)', () => {
     expect(w9.targetPosition).toEqual(lobbyPosition(0))
     expect(state.lobby).toEqual(['w9'])
     expect(texts(effects)).toEqual(['waiting for a desk...'])
-    expect(sfx(effects)).toEqual(['doorOpen'])
+    expect(sfx(effects)).toEqual([])                         // arrivals are seen, not heard
 
     // It walks to its lobby spot and stays there, not at a desk
     const { state: settled } = settle(state)
@@ -280,7 +280,7 @@ describe('snapshot reconciliation (C35)', () => {
     expect(agent(state, 'w2')!.state).toBe('completed')
     expect(agent(state, 'w3')!.state).toBe('completed')
     expect(state.lobby).toEqual([])
-    expect(sfx(effects)).toEqual(['doorOpen'])              // only the newcomer's door; no celebrations
+    expect(sfx(effects)).toEqual([])                        // no door sound, and no celebrations for silent departures
     expect(texts(effects)).toEqual(['📋 new work'])         // no boss replies for silent departures
 
     // w1 is still here: not re-walked, fields refreshed
@@ -511,10 +511,10 @@ describe('all-move office events (C32)', () => {
 // ---------------------------------------------------------------------------
 
 describe('lifecycle chat lines are not duplicated', () => {
-  it('live: the server posts "starting:" and "done:", the office only adds sounds and the boss reply', () => {
+  it('live: the server posts "starting:" and "done:", the office only adds the done cheer and the boss reply', () => {
     const { effects: spawned } = reduceOffice(emptyOffice(), spawn('a1', 'debugger', 'fix the bug'), env({ live: true }))
     expect(texts(spawned)).toEqual([])
-    expect(sfx(spawned)).toEqual(['doorOpen'])
+    expect(sfx(spawned)).toEqual([])
     const late = env({ now: T0 + MIN_VISIBLE_TIME + 1, live: true })
     const { effects: done } = reduceOffice(fullOffice(1), { type: 'agent_completed', agentId: 'w1', result: 'all green' }, late)
     expect(texts(done)).toHaveLength(1)
@@ -685,7 +685,7 @@ describe('one Claude per session', () => {
     expect(c.assignedSpotId).toBe(CLAUDE_HOME_SPOT)
     expect(c.state).toBe('new-hire')
     expect(c.mainState).toBeUndefined()
-    expect(sfx(effects)).toEqual(['doorOpen'])
+    expect(sfx(effects)).toEqual([])
     expect(msgs(effects)).toEqual([expect.objectContaining({ sender: 'Claude', role: 'assistant', text: '🤖 clocked in · office', agentId: mainId('s1') })])
 
     // It walks in and sits down idle (nothing heard from its main thread yet), not typing
@@ -1058,7 +1058,7 @@ describe('session_prompt: the boss shouts the prompt across the office, Claude t
     expect(c.statusText).toBe('✍ Fix the flaky purity test in tests/officeReducer.test.ts pl…')   // the status line keeps 60
 
     expect(msgs(effects)).toEqual([expect.objectContaining({ sender: BOSS_NAME, role: 'boss', text: PROMPT, tag: 'prompt', agentId: BOSS_ID })])
-    expect(sfx(effects)).toEqual(['typing'])
+    expect(sfx(effects)).toEqual(['prompt'])                  // a soft pop, no typing bleeps
     // The one timer: the bubble's; nothing waits on a walk
     expect(effects.filter(e => e.kind === 'schedule')).toEqual([{ kind: 'schedule', action: { type: 'shout_over', seq: 1 }, delayMs: SHOUT_MS }])
 
@@ -1158,6 +1158,7 @@ describe('session_turn_end: the reply, then idle or waiting', () => {
     expect(c.waitingOn).toBeUndefined()
     expect(state.meta[mainId('s1')].idleSince).toBe(T0 + 5000)     // sleeping.png after 30 s (getEffect)
     expect(msgs(effects)).toEqual([expect.objectContaining({ sender: 'Claude', text: 'All 289 tests pass.', tag: 'reply', agentId: mainId('s1') })])
+    expect(sfx(effects)).toEqual(['reply'])                        // your turn: a soft two-note cue
 
     // The next prompt wakes it: the timer is cleared
     const { state: again } = reduceOffice(state, { type: 'session_prompt', ...S1, text: 'more' }, env({ now: T0 + 9000 }))
@@ -1181,6 +1182,7 @@ describe('session_turn_end: the reply, then idle or waiting', () => {
     expect(c.statusText).toBe('⏳ waiting on 2 background workers')
     expect(state.meta[mainId('s1')].idleSince).toBeNull()        // waiting is not asleep
     expect(texts(effects)).toEqual(['Kicked off two reviewers.'])
+    expect(sfx(effects)).toEqual([])                               // not over yet: no "your turn" cue
 
     // The server's own count wins when it sends one
     const { state: one } = reduceOffice(sessionOffice(), { type: 'session_turn_end', ...S1, backgroundTasks: [], main: { state: 'waiting', waitingOn: 1 } }, env())

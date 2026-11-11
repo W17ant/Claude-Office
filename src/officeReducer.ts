@@ -252,8 +252,17 @@ export type OfficeAction =
   | { type: 'scene_over'; agentId: string; until: number }
   /** An MCP server worker has had nothing to do for MCP_LINGER_MS (`idleSince` guards against a call that came in since) */
   | { type: 'mcp_worker_leave'; agentId: string; idleSince: number }
+  /** Another open page (the phone, another tab) tapped a piece of furniture: play the same errand here */
+  | { type: 'office_interaction'; item: string; by?: 'office' | 'phone' }
 
-export type SfxName = 'doorOpen' | 'typing' | 'celebration' | 'coffee' | 'alarm' | 'error' | 'powerDown' | 'notification' | 'needsYou'
+/**
+ * The event sounds the reducer can ask for (src/sounds.ts). Why only three:
+ * the office is an ambient bed plus a few cues for what matters — someone
+ * needs you, something broke, something shipped. Doors, typing, coffee runs,
+ * pushes and single red test runs are seen, not heard (repeated failures open
+ * an incident, which has its own cue).
+ */
+export type SfxName = 'celebration' | 'error' | 'needsYou' | 'prompt' | 'reply'
 
 export type OfficeEffect =
   /** `agentId` names the character that shows the typing bubble before the line; `tag` marks a prompt / reply row */
@@ -515,7 +524,7 @@ function spawnAgent(state: OfficeState, raw: SpawnFields, env: OfficeEnv, announ
   const role = raw.role ?? 'general-purpose'
   const task = raw.task
   const cfg = cfgFor(role)
-  const effects: OfficeEffect[] = [{ kind: 'sfx', sfx: 'doorOpen' }]
+  const effects: OfficeEffect[] = []
   const common = {
     sessionId: raw.sessionId,
     project: raw.project,
@@ -693,7 +702,7 @@ function mcpCall(state: OfficeState, server: string, tool: string | undefined, s
       meta: { ...state.meta, [id]: arriving.meta },
       pendingStatus: { ...state.pendingStatus, [id]: { status, failed: false } },
     },
-    effects: [{ kind: 'sfx', sfx: 'doorOpen' }],
+    effects: [],
   }
 }
 
@@ -974,7 +983,7 @@ function reduceSignal(state: OfficeState, action: SignalEvent, env: OfficeEnv): 
   if (family === 'push') {
     if (outcome === 'ok' && action.toDefault) {
       scene('pushed', SCENE_MS.pushed)
-      effects.push(systemMsg(`🎉 pushed to ${action.branch ?? 'main'}${where ? ` · ${where}` : ''}`), { kind: 'sfx', sfx: 'notification' })
+      effects.push(systemMsg(`🎉 pushed to ${action.branch ?? 'main'}${where ? ` · ${where}` : ''}`))
     }
     return { state: cur, effects }
   }
@@ -987,7 +996,9 @@ function reduceSignal(state: OfficeState, action: SignalEvent, env: OfficeEnv): 
     scene('red', SCENE_MS.red)
     const redRuns = Object.fromEntries(Object.entries({ ...cur.redRuns, [key]: env.now }).slice(-MAX_RED_RUNS))
     cur = { ...cur, redRuns }
-    effects.push(systemMsg(`❌ ${what} failed${where ? ` in ${where}` : ''}${why ? ` — ${why}` : ''}`), { kind: 'sfx', sfx: 'error' })
+    // Why no sound: a red run is routine mid-task; three in five minutes open
+    // an incident, and that has its cue (src/sounds.ts)
+    effects.push(systemMsg(`❌ ${what} failed${where ? ` in ${where}` : ''}${why ? ` — ${why}` : ''}`))
     return { state: cur, effects }
   }
   if (!(key in cur.redRuns)) return { state: cur, effects }
@@ -1430,9 +1441,10 @@ function reduceEvent(state: OfficeState, action: OfficeAction, env: OfficeEnv): 
       }
       const shout = bossShout(cur, claude, summarise(action.text, SHOUT_MAX_CHARS) ?? SHOUT_NO_TEXT)
       cur = shout.state
-      effects.push(...shout.effects)
+      // Why a sound here: the boss no longer walks over, so the shout is the one
+      // sign a prompt went out; the cue is a soft pop (src/sounds.ts playPrompt)
+      effects.push(...shout.effects, { kind: 'sfx', sfx: 'prompt' })
       cur = applyMain(cur, id, { mainState: serverState ?? 'working', statusText: summary ? `✍ ${summary}` : '✍ working on a prompt' }, env)
-      effects.push({ kind: 'sfx', sfx: 'typing' })
       return { state: cur, effects }
     }
 
@@ -1466,6 +1478,9 @@ function reduceEvent(state: OfficeState, action: OfficeAction, env: OfficeEnv): 
       cur = next === 'waiting'
         ? applyMain(cur, id, { mainState: 'waiting', waitingOn, statusText: waitingText(waitingOn) }, env)
         : applyMain(cur, id, { mainState: next, statusText: next === 'idle' ? 'turn over — idle' : undefined, since: action.main?.since }, env)
+      // Why only when it goes idle: Claude has answered and it is your turn; a turn
+      // that ends with background work still running is not over yet
+      if (next === 'idle') effects.push({ kind: 'sfx', sfx: 'reply' })
       return { state: cur, effects }
     }
 
@@ -1784,7 +1799,6 @@ export function stepOffice(state: OfficeState, dt: number, env: OfficeEnv): Step
           const lunchMsg = useWater ? waterMessage() : coffeeMessage()
           effects.push(
             { kind: 'msg', sender: updated.name, role: updated.role, color: cfgFor(updated.role).color, text: `${useWater ? '💧' : '☕'} ${lunchMsg}` },
-            { kind: 'sfx', sfx: 'coffee' },
           )
           const out = beginTransfer({ ...updated, visitSpotId: lunchSpot.id }, LUNCH_ROOM, { x: lunchSpot.x, y: lunchSpot.y }, 'break', env)
           setMeta(agent.id, { onBreak: false, arrivedAtDeskAt: null, transfer: out.transfer })
@@ -1796,7 +1810,6 @@ export function stepOffice(state: OfficeState, dt: number, env: OfficeEnv): Step
         const breakIcon = isBoss ? '🥫' : (useWater ? '💧' : '☕')
         effects.push(
           { kind: 'msg', sender: updated.name, role: updated.role, color: cfgFor(updated.role).color, text: `${breakIcon} ${breakMsg}` },
-          { kind: 'sfx', sfx: 'coffee' },
         )
         const breakTarget = { x: breakSpot.x, y: breakSpot.y }
         updated = {
