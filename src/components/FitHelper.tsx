@@ -224,7 +224,8 @@ const FitHelper: React.FC = () => {
   const TABS: Array<[Tab, string]> = [['mask', 'Halloween masks'], ['witch', 'Witch hat'], ['santa', 'Santa hat']]
 
   return (
-    <div style={{ background: '#15171c', color: '#ddd', minHeight: '100vh', padding: 12, font: '13px system-ui, sans-serif' }}>
+    // Why its own scroll box: index.html gives body `overflow: hidden` (the office is one fixed-size stage), so the page itself never scrolls
+    <div style={{ background: '#15171c', color: '#ddd', height: '100vh', overflowY: 'auto', padding: 12, font: '13px system-ui, sans-serif' }}>
       <div style={{ position: 'sticky', top: 0, zIndex: 2, background: '#15171c', paddingBottom: 8 }}>
         {TABS.map(([t, label]) => (
           <button key={t} type="button" onClick={() => { setTab(t); setPicked(null) }}
