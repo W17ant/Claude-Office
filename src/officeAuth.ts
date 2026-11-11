@@ -64,3 +64,35 @@ export function officeAuthHeaders(opts: {
   const token = ui ?? ((opts.method ?? 'GET') === 'GET' ? office : null)
   return token ? { Authorization: `Bearer ${token}` } : {}
 }
+
+type PageLoc = { protocol: string; hostname: string }
+
+/**
+ * Whether this page may queue a prompt for a session from the chat
+ * (`@<session> <prompt>`, server/prompt-queue.js): the office page on this
+ * machine's loopback holding the UI token from its trusted snapshot. A phone
+ * or a page through a proxy name never may; the server refuses them too.
+ * @param opts.loc the page location (tests pass a fake)
+ * @param opts.uiToken the snapshot's UI token (tests pass it)
+ * @returns true when the page holds what the server asks for
+ */
+export function canQueuePrompts(opts: { loc?: PageLoc; uiToken?: string | null } = {}): boolean {
+  const loc = opts.loc ?? (typeof window !== 'undefined' ? window.location : { protocol: 'http:', hostname: '127.0.0.1' })
+  if (isPhoneFullLocation(loc) || isProxiedPage(loc)) return false
+  const ui = opts.uiToken !== undefined ? opts.uiToken : getUiToken()
+  return !!ui
+}
+
+/**
+ * Headers for POST /chat: officeAuthHeaders, plus on the loopback office page
+ * the UI token, which is what lets `@<session> <prompt>` queue a prompt (the
+ * server ignores the header on a plain line). Never the file token.
+ * @param opts as canQueuePrompts
+ * @returns headers for fetch
+ */
+export function chatPostHeaders(opts: { loc?: PageLoc; uiToken?: string | null } = {}): Record<string, string> {
+  const base = officeAuthHeaders({ method: 'POST', ...opts })
+  if (base.Authorization || !canQueuePrompts(opts)) return base
+  const ui = opts.uiToken !== undefined ? opts.uiToken : getUiToken()
+  return ui ? { Authorization: `Bearer ${ui}` } : base
+}

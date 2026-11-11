@@ -70,15 +70,37 @@ interface SlackChatProps {
   lastSeenId?: number | null
   /** The page has no office token: the "Answer here" toggle is hidden (the server would refuse it) */
   readOnly?: boolean
+  /**
+   * Session names `@<name> <prompt>` queues a prompt for (server/prompt-queue.js),
+   * offered as the input starts with `@`; absent where the server would refuse one
+   */
+  mentions?: string[]
 }
 
-const SlackChat: React.FC<SlackChatProps> = ({ messages, muted, volume, onToggleMute, onVolumeChange, onSendMessage, onReaction, autoTypeText, dayPhase, typingUser, lastSeenId, readOnly = false }) => {
+// Why 6: the hint row wraps past that, and a longer list means typing more of the name
+const MAX_MENTION_HINTS = 6
+
+/** The session names an input still being typed as `@<prefix>` could complete to. */
+export function mentionHints(input: string, mentions: string[] | undefined): string[] {
+  const m = /^@(\S*)$/.exec(input)
+  if (!m || !mentions?.length) return []
+  const prefix = m[1].toLowerCase()
+  return mentions.filter(name => name.startsWith(prefix)).slice(0, MAX_MENTION_HINTS)
+}
+
+const SlackChat: React.FC<SlackChatProps> = ({ messages, muted, volume, onToggleMute, onVolumeChange, onSendMessage, onReaction, autoTypeText, dayPhase, typingUser, lastSeenId, readOnly = false, mentions }) => {
   const theme = useTheme()
   useSeasonArt() // Why: re-render when a seasonal room or avatar file turns out to exist
   void theme // Why: subscribe so avatars re-render when /the-office toggles
   const bodyRef = useRef<HTMLDivElement>(null)
   const [inputText, setInputText] = useState('')
   const [showSlashHint, setShowSlashHint] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const hints = mentionHints(inputText, mentions)
+  const completeMention = (name: string) => {
+    setInputText(`@${name} `)
+    inputRef.current?.focus()
+  }
   const [emojiPickerMsgId, setEmojiPickerMsgId] = useState<number | null>(null)
   const pickerRef = useRef<HTMLDivElement>(null)
   const onSendRef = useRef(onSendMessage)
@@ -319,6 +341,21 @@ const SlackChat: React.FC<SlackChatProps> = ({ messages, muted, volume, onToggle
       </div>
 
       <div className="slack-input-wrap">
+        {hints.length > 0 && (
+          <div className="slack-slash-hint" role="listbox" aria-label="Queue a prompt for a session">
+            {hints.map(name => (
+              <span
+                key={name}
+                role="option"
+                aria-selected={false}
+                className="slack-slash-cmd"
+                title={`Queue a prompt for ${name}: it gets it when its turn ends`}
+                // Why mousedown: a click would blur the input first
+                onMouseDown={e => { e.preventDefault(); completeMention(name) }}
+              >@{name}</span>
+            ))}
+          </div>
+        )}
         {showSlashHint && (
           <div className="slack-slash-hint">
             <span className="slack-slash-cmd">/status</span>
@@ -332,9 +369,10 @@ const SlackChat: React.FC<SlackChatProps> = ({ messages, muted, volume, onToggle
         )}
         <div className="slack-input-bar">
           <input
+            ref={inputRef}
             type="text"
             className="slack-input-field"
-            placeholder="Message #office-general"
+            placeholder={mentions?.length ? 'Message #office-general, or @session to queue a prompt' : 'Message #office-general'}
             value={inputText}
             onChange={e => {
               const val = e.target.value
@@ -344,6 +382,12 @@ const SlackChat: React.FC<SlackChatProps> = ({ messages, muted, volume, onToggle
             onKeyDown={e => {
               if (e.key === 'Escape') {
                 setShowSlashHint(false)
+                return
+              }
+              // Tab completes the first session name the @ could mean
+              if (e.key === 'Tab' && hints.length > 0) {
+                e.preventDefault()
+                completeMention(hints[0])
                 return
               }
               if (e.key === 'Enter' && inputText.trim()) {

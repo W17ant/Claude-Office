@@ -223,6 +223,8 @@ export interface SessionInfo {
   hooked?: boolean
   /** Its entry in Claude Code's session registry, while its process runs */
   registry?: SessionRegistry
+  /** The name `@<name> <prompt>` in the chat queues a prompt for (server/prompt-queue.js mentionName) */
+  mention?: string
 }
 
 /**
@@ -374,6 +376,8 @@ export interface OfficeEvent {
   hooked?: boolean
   // the session's registry entry; absent once its process has gone
   registry?: SessionRegistry
+  // the name a chat @-mention uses for the session (server/prompt-queue.js)
+  mention?: string
   timestamp?: number
   // session_status / agent_status: the payroll / electricity / memory feed (src/meters.ts)
   session?: SessionStatus

@@ -14,7 +14,7 @@ import {
   pageWsProtocols, resetViewerKeyMemory, viewerWsProtocols,
 } from '../src/viewerKey'
 import { sameOriginWsUrl, officeWsUrl } from '../src/serverUrl'
-import { officeAuthHeaders } from '../src/officeAuth'
+import { canQueuePrompts, chatPostHeaders, officeAuthHeaders } from '../src/officeAuth'
 import { STAGE_H, STAGE_W, stageScale } from '../src/components/ViewerStage'
 import { WS_VIEWER_PROTOCOL_PREFIX as SERVER_PREFIX } from '../server/lan.js'
 
@@ -123,9 +123,30 @@ describe('officeAuthHeaders: a page served through an HTTPS proxy name sends a t
       // Code only: comments mention fetch( in examples
       const src = readFileSync(file, 'utf8').split('\n').filter(l => !/^\s*(\*|\/\/|\/\*)/.test(l)).join('\n')
       if (!/\b(fetch|fetchImpl)\(/.test(src)) continue
-      // Each file that fetches the office names its auth: officeAuthHeaders or the UI token
-      expect(/officeAuthHeaders|Bearer \$\{uiToken\}/.test(src), file).toBe(true)
+      // Each file that fetches the office names its auth: officeAuthHeaders
+      // (chatPostHeaders builds on it) or the UI token
+      expect(/officeAuthHeaders|chatPostHeaders|Bearer \$\{uiToken\}/.test(src), file).toBe(true)
     }
+  })
+})
+
+describe('chatPostHeaders / canQueuePrompts: who may queue a prompt from the chat', () => {
+  const UI = 'ef'.repeat(24)
+  const loopback = { protocol: 'http:', hostname: '127.0.0.1' }
+  const proxied = { protocol: 'https:', hostname: 'my-mac.tail1234.ts.net' }
+  const phone = { protocol: 'https:', hostname: '192.168.1.23' }
+  it('the loopback page with the UI token sends it on POST /chat and may queue; without it, nothing', () => {
+    expect(chatPostHeaders({ loc: loopback, uiToken: UI })).toEqual({ Authorization: `Bearer ${UI}` })
+    expect(canQueuePrompts({ loc: loopback, uiToken: UI })).toBe(true)
+    expect(chatPostHeaders({ loc: loopback, uiToken: null })).toEqual({})
+    expect(canQueuePrompts({ loc: loopback, uiToken: null })).toBe(false)
+  })
+  it('a page through a proxy name or the phone never may (its headers are officeAuthHeaders\' own)', () => {
+    expect(canQueuePrompts({ loc: proxied, uiToken: UI })).toBe(false)
+    expect(chatPostHeaders({ loc: proxied, uiToken: UI })).toEqual({ Authorization: `Bearer ${UI}` })
+    expect(canQueuePrompts({ loc: phone, uiToken: UI })).toBe(false)
+    // The phone page sends the phone secret only (none held here), never the UI token
+    expect(chatPostHeaders({ loc: phone, uiToken: UI })).toEqual({})
   })
 })
 

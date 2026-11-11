@@ -633,6 +633,16 @@ describe('the full-mode listener', () => {
     expect(await chatText()).toContain('hello from the phone')
   })
 
+  it('an @-mention typed on the phone queues nothing: queuing a prompt is the Mac page\'s alone', async () => {
+    office.server.processEvent({ type: 'session_started', ...ALPHA, source: 'startup' })
+    const res = await phone('post', '/chat').send({ sender: 'Boss', text: '@alpha run the deploy from the phone' })
+    expect(res.status).toBe(401)
+    expect(office.server.promptQueue.list(SID)).toEqual([])
+    // The prompt text is not stored as a chat line either; the refusal is
+    expect(await chatText()).not.toContain('run the deploy from the phone')
+    expect(await chatText()).toContain('Only the office page on this Mac')
+  })
+
   it('refuses any other Host (421) or Origin (403), with the secret and for the static files alike', async () => {
     for (const host of [`evil.example:${lan.port}`, '127.0.0.1', `127.0.0.1:${lan.port + 1}`, `localhost:${lan.port}`]) {
       // Why disableTLSCerts: Node names the certificate check after the Host

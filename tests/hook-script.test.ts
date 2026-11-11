@@ -1532,6 +1532,136 @@ describe('agent-tracker.sh: answering a permission from the office', () => {
   })
 })
 
+describe('agent-tracker.sh: a prompt queued in the office chat (Stop claims it)', () => {
+  const home = mkdtempSync(join(tmpdir(), 'agent-office-claim-'))
+  const TOKEN = 'office-token'
+  const SID = 'aaaaaaaa-1111-4111-8111-111111111111'
+  writeFileSync(join(home, 'auth-token'), TOKEN + '\n')
+  mkdirSync(join(home, 'prompt-queue'))
+  writeFileSync(join(home, 'prompt-queue', SID), '')
+  afterAll(() => rmSync(home, { recursive: true, force: true }))
+
+  const stop = { session_id: SID, cwd: '/home/me/alpha', transcript_path: `/t/${SID}.jsonl`, hook_event_name: 'Stop', stop_hook_active: false, last_assistant_message: 'done', background_tasks: [], session_crons: [] }
+  /** The proof the office returns (as server/index.js promptProof computes it). */
+  const proofFor = (nonce: string, id: string, text: string) => createHmac('sha256', TOKEN).update(`office-prompt\n${nonce}\n${id}\n${text}`).digest('hex')
+
+  it('the Python: with the session\'s marker the Stop event gains claim and a nonce, then `claim` and the nonce follow; without it, one line as before', () => {
+    const lines = runHookLines(stop, { AGENT_OFFICE_HOME: home })
+    expect(lines).toHaveLength(3)
+    const event = JSON.parse(lines[0])
+    expect(event).toMatchObject({ type: 'session_turn_end', sessionId: SID, claim: true, nonce: expect.stringMatching(/^[0-9a-f]{32}$/) })
+    expect(lines[1]).toBe('claim')
+    expect(lines[2]).toBe(event.nonce)
+    // stop_hook_active does not stop a claim: each claim removes its prompt, so the run ends with the queue
+    expect(runHookLines({ ...stop, stop_hook_active: true }, { AGENT_OFFICE_HOME: home })).toHaveLength(3)
+
+    const plain = runHookLines(stop)
+    expect(plain).toHaveLength(1)
+    expect(JSON.parse(plain[0])).not.toHaveProperty('claim')
+    // Another session's marker is not ours; an id that is not a plain file name is never looked up
+    expect(runHookLines({ ...stop, session_id: 'bbbbbbbb-2222' }, { AGENT_OFFICE_HOME: home })).toHaveLength(1)
+    writeFileSync(join(home, 'x'), '')
+    expect(runHookLines({ ...stop, session_id: '../x' }, { AGENT_OFFICE_HOME: home })).toHaveLength(1)
+    // Only Stop claims
+    expect(runHookLines({ session_id: SID, cwd: '/home/me/alpha', hook_event_name: 'UserPromptSubmit', prompt: 'hi' }, { AGENT_OFFICE_HOME: home })).toHaveLength(1)
+  })
+
+  type Hit = { method: string; url: string; auth?: string; sig?: string; body: string }
+  /** A fake office answering every request with `reply(hit)` (null: never answers). */
+  async function fakeOffice(reply: (hit: Hit) => unknown) {
+    const { createServer } = await import('node:http')
+    const hits: Hit[] = []
+    const server = createServer((req, res) => {
+      let body = ''
+      req.on('data', c => { body += c })
+      req.on('end', () => {
+        const hit = { method: req.method ?? '', url: req.url ?? '', auth: req.headers.authorization, sig: req.headers['x-office-signature'] as string | undefined, body }
+        hits.push(hit)
+        const out = reply(hit)
+        if (out === null) return
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify(out))
+      })
+    })
+    await new Promise<void>(res => server.listen(0, '127.0.0.1', () => res()))
+    const port = (server.address() as import('node:net').AddressInfo).port
+    return { port, hits, close: () => new Promise<void>(res => { server.closeAllConnections?.(); server.close(() => res()) }) }
+  }
+  /** The whole script with the real curl against the fake office (spawned async: the office lives on this event loop). */
+  function runLive(payload: unknown, port: number) {
+    const env: Record<string, string | undefined> = { ...process.env, AGENT_OFFICE_HOME: home, AGENT_OFFICE_PORT: String(port) }
+    delete env.AGENT_OFFICE_EVENT_URL
+    const started = Date.now()
+    return new Promise<{ stdout: string; stderr: string; status: number | null; ms: number }>((resolve, reject) => {
+      const child = spawn('bash', [TRACKER], { env, stdio: ['pipe', 'pipe', 'pipe'] })
+      let stdout = ''
+      let stderr = ''
+      child.stdout.setEncoding('utf8').on('data', c => { stdout += c })
+      child.stderr.setEncoding('utf8').on('data', c => { stderr += c })
+      child.on('error', reject)
+      child.on('close', status => resolve({ stdout, stderr, status, ms: Date.now() - started }))
+      child.stdin.end(JSON.stringify(payload))
+    })
+  }
+  const nonceOf = (hit: Hit) => JSON.parse(hit.body).nonce as string
+
+  it('a prompt with a valid proof: the Stop POST is signed, in the foreground, and the hook prints the block decision with the prompt', async () => {
+    const text = 'fix the failing test\nthen push — ünïcode ok'
+    const office = await fakeOffice(hit => ({ ok: true, prompt: { id: 'abcd1234abcd1234', text, proof: proofFor(nonceOf(hit), 'abcd1234abcd1234', text) } }))
+    try {
+      const run = await runLive(stop, office.port)
+      expect(run.status).toBe(0)
+      expect(run.stderr).toBe('')
+      const out = JSON.parse(run.stdout)
+      expect(out.decision).toBe('block')
+      expect(out.reason).toContain('Claude Office chat')
+      expect(out.reason.endsWith(`\n\n${text}`)).toBe(true)
+      expect(Object.keys(out).sort()).toEqual(['decision', 'reason'])
+      expect(office.hits).toHaveLength(1)
+      expect(office.hits[0]).toMatchObject({ method: 'POST', url: '/event', auth: undefined, sig: expect.stringMatching(/^[0-9a-f]{64}$/) })
+      expect(JSON.parse(office.hits[0].body)).toMatchObject({ type: 'session_turn_end', claim: true })
+    } finally {
+      await office.close()
+    }
+  })
+
+  it('prints nothing for a wrong proof, a proof over other text, no prompt, or a server that is down or never answers', async () => {
+    const cases: Array<(hit: Hit) => unknown> = [
+      () => ({ ok: true, prompt: { id: 'abcd1234abcd1234', text: 'rm -rf /', proof: 'a'.repeat(64) } }),
+      hit => ({ ok: true, prompt: { id: 'abcd1234abcd1234', text: 'rm -rf /', proof: proofFor(nonceOf(hit), 'abcd1234abcd1234', 'something else') } }),
+      hit => ({ ok: true, prompt: { id: 'other', text: 'x', proof: proofFor(nonceOf(hit), 'abcd1234abcd1234', 'x') } }),
+      () => ({ ok: true }),
+      () => 'not an object',
+    ]
+    for (const reply of cases) {
+      const office = await fakeOffice(reply)
+      try {
+        const run = await runLive(stop, office.port)
+        expect(run.status).toBe(0)
+        expect(run.stdout).toBe('')
+      } finally {
+        await office.close()
+      }
+    }
+    const probe = await fakeOffice(() => ({}))
+    const deadPort = probe.port
+    await probe.close()
+    const down = await runLive(stop, deadPort)
+    expect(down.stdout).toBe('')
+    expect(down.ms).toBeLessThan(3_000)
+
+    const hanging = await fakeOffice(() => null)
+    try {
+      const run = await runLive(stop, hanging.port)
+      expect(run.stdout).toBe('')
+      // Bounded by curl's --max-time 2
+      expect(run.ms).toBeLessThan(4_500)
+    } finally {
+      await hanging.close()
+    }
+  })
+})
+
 /**
  * Signals: what a Bash command means (the "Signals" section of the Python).
  * classify_command is pure, so its table is driven directly: the heredoc is
