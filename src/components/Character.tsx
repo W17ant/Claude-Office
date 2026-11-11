@@ -1,5 +1,5 @@
 import { currentSeason, useSeasonArt } from '../season'
-import { SANTA_HAT, halloweenPiece, hatKindOf, hatOnHead, maskOnEyes, spriteKey, useHeadAnchor, wearsOverlayHat, type HalloweenPiece } from '../hat'
+import { SANTA_HAT, halloweenPiece, hatKindOf, hatMirrored, hatOnHead, maskOnEyes, spriteKey, useHeadAnchor, wearsOverlayHat, type HalloweenPiece } from '../hat'
 import { EYES } from '../eyes'
 import { HAT_FIT } from '../hatFit'
 import React, { useRef, useState, useEffect } from 'react'
@@ -322,9 +322,9 @@ const Character: React.FC<CharacterProps> = ({ agent, idleDurationMs = 0, zIndex
                 left: `${onHead.left * 100}%`,
                 width: `${onHead.width * 100}%`,
                 bottom: `${onHead.bottom * 100}%`,
-                // Why: every piece is drawn for a head turned to the viewer's left;
-                // a sprite facing right wears it mirrored (a hat's tip trails behind)
-                transform: facingRight ? 'scaleX(-1)' : undefined,
+                // Why: drawn for a head turned to the viewer's left; mirrored to
+                // face right, and so its back stays at the back (hatMirrored)
+                transform: hatMirrored(piece, facingRight, facingAway) ? 'scaleX(-1)' : undefined,
               }}
               draggable={false}
             />

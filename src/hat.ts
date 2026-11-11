@@ -73,6 +73,11 @@ export interface HalloweenPiece {
    * it too small for the head (holes set wide on a small mask)
    */
   eyes?: { x: number; y: number; spacing: number; size?: number }
+  /**
+   * Worn the other way round while the face is visible, so a part that
+   * belongs at the back of the head (the Santa hat's bobble) stays there
+   */
+  flipFront?: boolean
 }
 
 // Why these numbers: tuned on every cast sprite facing the viewer (both
@@ -91,14 +96,18 @@ const MASKS: readonly HalloweenPiece[] = [
   { kind: 'mask', src: '/sprites/effects/mask-hockey.png', scale: 0.8, offset: 0.05, eyes: { x: 0.66, y: 0.51, spacing: 0.38 } },
   // Why lower than the others: its flat top is hair, so its eye holes have to land on the eyes
   // Why size 1.35: its eye holes are wide-set, so by the eye spacing alone it only covered the eyes, not the head
-  { kind: 'mask', src: '/sprites/effects/mask-frankenstein.png', scale: 1.0, offset: 0.055, eyes: { x: 0.56, y: 0.72, spacing: 0.43, size: 1.35 } },
+  // Why y 0.8: the art's hair and forehead were stretched 1.75x upward so its flat top reaches
+  // the top of the wearer's head (it stopped mid-hair); the holes are where 0.72 put them before
+  { kind: 'mask', src: '/sprites/effects/mask-frankenstein.png', scale: 1.0, offset: 0.055, eyes: { x: 0.56, y: 0.8, spacing: 0.43, size: 1.35 } },
 ]
 
 // Why 1.2: the fur band overhangs the head a little on each side, like a
 // real hat; tuned on all 30+ cast sprites (wider looked like a sombrero).
 // Why 0.13: the band sits 13% of the sprite's height below the top of the
 // hair, at the forehead, so the hat is worn rather than balanced on the hair
-export const SANTA_HAT: HalloweenPiece = { kind: 'hat', src: HAT_SRC, scale: 1.2, offset: 0.13 }
+// Why flipFront: with the sprite's own mirroring alone the bobble hung over
+// the face on the front poses; from behind it was already at the back
+export const SANTA_HAT: HalloweenPiece = { kind: 'hat', src: HAT_SRC, scale: 1.2, offset: 0.13, flipFront: true }
 
 /** Every image a Halloween piece can use (for the asset check and the tests) */
 export const HALLOWEEN_PIECE_SRCS: readonly string[] = [WITCH_HAT.src, ...MASKS.map(m => m.src)]
@@ -282,4 +291,16 @@ export function hatOnHead(head: HeadAnchor, piece: HalloweenPiece, nudge?: HatNu
     width,
     bottom: 1 - head.top - piece.offset - (nudge?.dy ?? 0),
   }
+}
+
+/**
+ * Whether a hat is drawn mirrored: every piece is drawn for a head turned to
+ * the viewer's left, so a sprite facing right wears it mirrored, and a piece
+ * with `flipFront` the other way round again while the face is visible.
+ * @param piece the hat
+ * @param facingRight the sprite faces the viewer's right
+ * @param facingAway the sprite shows the back of its head
+ */
+export function hatMirrored(piece: HalloweenPiece, facingRight: boolean, facingAway: boolean): boolean {
+  return piece.flipFront && !facingAway ? !facingRight : facingRight
 }

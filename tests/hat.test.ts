@@ -1,7 +1,7 @@
 /** hat.ts - finding a sprite's head from its alpha channel. */
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { HALLOWEEN_PIECE_SRCS, SANTA_HAT, WITCH_HAT, halloweenPiece, hatKindOf, hatOnHead, headAnchorFromAlpha, maskOnEyes, spriteKey, wearsOverlayHat } from '../src/hat'
+import { HALLOWEEN_PIECE_SRCS, SANTA_HAT, WITCH_HAT, halloweenPiece, hatKindOf, hatMirrored, hatOnHead, headAnchorFromAlpha, maskOnEyes, spriteKey, wearsOverlayHat } from '../src/hat'
 import { HAT_FIT } from '../src/hatFit'
 import { EYES } from '../src/eyes'
 import { SEASON_SUFFIX } from '../src/seasonNames'
@@ -171,5 +171,21 @@ describe('the hand-set tables', () => {
         expect(n.size, key).toBeLessThan(2.5)
       }
     }
+  })
+})
+
+describe('hatMirrored', () => {
+  it('a hat is mirrored with a sprite facing right', () => {
+    expect(hatMirrored(WITCH_HAT, false, false)).toBe(false)
+    expect(hatMirrored(WITCH_HAT, true, false)).toBe(true)
+    expect(hatMirrored(WITCH_HAT, true, true)).toBe(true)
+  })
+
+  it('the Santa hat goes the other way round while the face shows, so its bobble hangs at the back of the head', () => {
+    expect(hatMirrored(SANTA_HAT, false, false)).toBe(true)
+    expect(hatMirrored(SANTA_HAT, true, false)).toBe(false)
+    // from behind it was already at the back
+    expect(hatMirrored(SANTA_HAT, false, true)).toBe(false)
+    expect(hatMirrored(SANTA_HAT, true, true)).toBe(true)
   })
 })

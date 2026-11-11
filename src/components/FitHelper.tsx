@@ -17,7 +17,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { ROLE_TO_CHAR } from '../config'
 import { EYES, type EyeLine } from '../eyes'
-import { SANTA_HAT, WITCH_HAT, halloweenPiece, hatOnHead, maskOnEyes, useHeadAnchor, wearsOverlayHat, type HalloweenPiece } from '../hat'
+import { SANTA_HAT, WITCH_HAT, halloweenPiece, hatMirrored, hatOnHead, maskOnEyes, useHeadAnchor, wearsOverlayHat, type HalloweenPiece } from '../hat'
 import { HAT_FIT, type HatKind, type HatNudge } from '../hatFit'
 import { SEASON_SUFFIX } from '../seasonNames'
 import { getAllOfficeCharacters } from '../theme'
@@ -94,8 +94,9 @@ const Frame: React.FC<{
   const srcs = useMemo(() => candidates(name, tab), [name, tab])
   const [i, setI] = useState(0)
   const src = srcs[Math.min(i, srcs.length - 1)]
-  // Why the room above the sprite: a hat stands up off the hair, past the image's top
-  const pad = tab === 'mask' ? 0 : CARD_H * 0.35
+  // Why the room above the sprite: a hat stands up off the hair, and a tall
+  // mask (Frankenstein's flat head) can reach past the image's top
+  const pad = tab === 'mask' ? CARD_H * 0.12 : CARD_H * 0.35
   return (
     <button
       type="button"
@@ -138,14 +139,14 @@ const MaskOn: React.FC<{ piece: HalloweenPiece; eye: EyeLine; right: boolean }> 
 }
 
 /** A hat on the head measured from `src`, as Character draws it */
-const HatOn: React.FC<{ piece: HalloweenPiece; src: string; nudge?: HatNudge; right: boolean }> = ({ piece, src, nudge, right }) => {
+const HatOn: React.FC<{ piece: HalloweenPiece; src: string; nudge?: HatNudge; right: boolean; away: boolean }> = ({ piece, src, nudge, right, away }) => {
   const head = useHeadAnchor(src, true)
   if (!head) return null
   const on = hatOnHead(head, piece, nudge)
   return (
     <img src={piece.src} alt="" draggable={false} style={{
       ...overlayStyle, left: `${on.left * 100}%`, width: `${on.width * 100}%`, bottom: `${on.bottom * 100}%`,
-      transform: right ? 'scaleX(-1)' : undefined,
+      transform: hatMirrored(piece, right, away) ? 'scaleX(-1)' : undefined,
     }} />
   )
 }
@@ -237,7 +238,7 @@ const FitHelper: React.FC = () => {
             <Frame key={`${tab}:${k}`} name={k} tab={tab} selected={picked === k} edited={k in edits[tab]} onPick={() => setPicked(k)}>
               {src => tab === 'mask'
                 ? <MaskOn piece={piece} eye={eyeOf(k)} right={right} />
-                : <HatOn piece={piece} src={src} nudge={nudgeOf(tab, k)} right={right} />}
+                : <HatOn piece={piece} src={src} nudge={nudgeOf(tab, k)} right={right} away={k.includes('-rear-')} />}
             </Frame>
           )
         })}
