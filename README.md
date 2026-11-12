@@ -14,14 +14,19 @@ A pixel art virtual office that visualizes your AI agents working in real-time. 
 - **Your phone** — `npm run lan` prints a QR code; taps on the phone (water a plant, ring the bell) play on the desktop too
 - The full list is in the [CHANGELOG](CHANGELOG.md)
 
-### The rooms
+### Click a door — the boss follows you
+![Clicking the office door shows the corridor, then the meeting room door; the boss walks through the corridor and arrives in the meeting room](docs/images/rooms.gif)
+
 ![The corridor with its five doors, the meeting room, the server room with its racks, and the lunch room](docs/images/rooms.png)
 
 ### Every season
 ![The office at Christmas, Halloween, Easter, Valentine's Day, and in spring, summer, autumn and winter](docs/images/seasons.png)
 
 ### Halloween in Dunder Mifflin mode
-![The Scranton office decorated for Halloween, with masks and a witch hat on the staff](docs/images/halloween-dunder-mifflin.png)
+![The Scranton office decorated for Halloween, staff walking about in masks and a witch hat](docs/images/halloween-dunder-mifflin.gif)
+
+### Click the furniture
+![Clicking the coffee machine: the boss walks over and comes away with a coffee](docs/images/coffee-errand.gif)
 
 ## Update — 1.1: the level-up
 
