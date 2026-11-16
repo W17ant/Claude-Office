@@ -1465,6 +1465,18 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* Another AI tool's session (Codex, Gemini CLI, ...): its name, in the model tag's shape,
+   teal so it reads apart from the model and from Claude Code's sessions */
+.session-pill-client {
+  padding: 0 3px;
+  border-radius: 3px;
+  background: rgba(94, 200, 190, 0.14);
+  color: #7fd6cc;
+  font-size: 7px;
+  font-weight: 700;
+  line-height: 11px;
+  white-space: nowrap;
+}
 .session-pill-state {
   font-size: 7px;
   white-space: nowrap;

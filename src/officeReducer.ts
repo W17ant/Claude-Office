@@ -71,6 +71,7 @@ import { BOSS_ROLE, BOSS_NAME } from './config'
 import { getTheme } from './theme'
 import { getVariant, pickIncidentLine } from './incident'
 import { isSignalKind, signalFamily, signalOutcome, signalWhere, SCENE_MS } from './signals'
+import { clientLabel } from './tools'
 
 // ---------------------------------------------------------------------------
 // Room constants
@@ -753,7 +754,9 @@ function mainCount(state: OfficeState): number {
 /** A chat line from a session's Claude; "Claude · <project>" once several terminals are open */
 function claudeMsg(state: OfficeState, claude: Agent, text: string, tag?: 'prompt' | 'reply'): OfficeEffect {
   const cfg = cfgFor(CLAUDE_ROLE)
-  const sender = mainCount(state) > 1 && claude.project ? `${cfg.title} · ${claude.project}` : cfg.title
+  // Why the session's own name: another AI tool's character (codex:…) speaks as that tool
+  const name = clientLabel(claude.sessionId) ?? cfg.title
+  const sender = mainCount(state) > 1 && claude.project ? `${name} · ${claude.project}` : name
   return { kind: 'msg', sender, role: CLAUDE_ROLE, color: cfg.color, text, agentId: claude.id, ...(tag ? { tag } : {}) }
 }
 
@@ -865,9 +868,11 @@ function ensureClaude(state: OfficeState, sessionId: string, info: SessionFields
   }
   const project = info.project ?? projectFromCwd(info.cwd)
   const cfg = cfgFor(CLAUDE_ROLE)
+  // Why: another AI tool's session (codex:…) gets that tool's name, not Claude's
+  const tool = clientLabel(sessionId)
   const r = spawnAgent(cur, {
-    id, name: cfg.title, role: CLAUDE_ROLE,
-    task: project ? `Claude Code · ${project}` : 'Claude Code',
+    id, name: tool ?? cfg.title, role: CLAUDE_ROLE,
+    task: `${tool ?? 'Claude Code'}${project ? ` · ${project}` : ''}`,
     statusText: 'clocked in',
     sessionId, project, model: info.model,
     preferredSpotId: CLAUDE_HOME_SPOT,
