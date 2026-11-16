@@ -161,11 +161,18 @@ async function downloadFile(url, dest, { maxBytes, ...opts }) {
       if (failed) return
       failed = true
       req.destroy()
+      // Why decide on 'close', not now: a stream destroyed while its `wx`
+      // open is still in flight finishes that open (emitting 'open' and
+      // creating the file) before it closes, so `created` is only final then.
+      const settle = () => {
+        // Why only a file this call made: when `wx` refused, what is at `dest`
+        // was there before and is not this function's to remove.
+        if (!created) return reject(err)
+        fs.rm(dest, { force: true }, () => reject(err))
+      }
+      if (out.closed) return settle()
+      out.once('close', settle)
       out.destroy()
-      // Why only a file this call made: when `wx` refused, what is at `dest`
-      // was there before and is not this function's to remove.
-      if (!created) return reject(err)
-      fs.rm(dest, { force: true }, () => reject(err))
     }
     res.on('data', (chunk) => {
       size += chunk.length

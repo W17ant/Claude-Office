@@ -93,9 +93,9 @@ jobs:
 
       - name: Install
         # A full install, unlike CI: electron-builder needs the Electron
-        # binary for the platform it packages. better-sqlite3 installs its
-        # prebuilt for the runner's Node; electron/after-pack.cjs swaps in the
-        # Electron one per packaged architecture.
+        # binary for the platform it packages. better-sqlite3 ships Node-API
+        # prebuilts in its npm package that load on Electron's Node too;
+        # electron/after-pack.cjs keeps only the packaged architecture's.
         run: npm ci
 
       - name: Build the office
