@@ -21,8 +21,11 @@ contribute what they know about their tool.
   needs you, turn ended, ended. Subagents too, where the tool reports them.
 - Every session shows which tool it is.
 - One command per tool connects it, and another disconnects it.
-- Codex is verified against a real Codex install (it is set up on the
-  owner's Mac). The other four ship labelled **experimental — tell us if it
+- Codex is verified against a real Codex CLI session on the owner's Mac.
+  The owner agreed to install the CLI (`npm i -g @openai/codex`), approve
+  the hook once with `/hooks`, and run one short session (a little Codex
+  quota). Today only the ChatGPT app's bundled copy is on the Mac, and its
+  hooks are off. The other four ship labelled **experimental — tell us if it
   works**, with a link to #115, in the README and in the installer's output.
 - A fork author can fix or improve one tool by sending one translator file
   and one test built from a real payload they paste in.
@@ -174,8 +177,9 @@ contribute what they know about their tool.
 ### 6. Tests and fixtures
 
 - `tests/fixtures/tools/<tool>/*.json` hold payloads.
-  - Codex fixtures are recorded from a real Codex session on the owner's Mac
-    (the live check).
+  - Codex fixtures are recorded from a real Codex CLI session on the
+    owner's Mac (the live check). The plan stops at that step and waits for
+    the owner to install the CLI, approve `/hooks` and run the session.
   - The others come from the tools' docs and EooL's fixtures. Each one is
     marked in a `README.md` in its folder as *from docs, not yet seen live*,
     so a contributor knows a real capture is wanted.
