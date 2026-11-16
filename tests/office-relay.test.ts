@@ -1,7 +1,8 @@
 /** hooks/office-relay.py — forwards another AI tool's hook payload to POST /hook/<tool>, signed, loopback only, never in the tool's way. */
 
 import { spawn } from 'node:child_process'
-import { readFileSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { createServer, type Server } from 'node:http'
 import { createServer as createTcpServer, type Server as TcpServer } from 'node:net'
 import { join } from 'node:path'
@@ -112,6 +113,21 @@ describe('office-relay.py', () => {
       expect(r.stdout, args.join(' ')).toBe('')
     }
     expect(office.server.sessions.size).toBe(before)
+  })
+
+  it('saves each raw payload to AGENT_OFFICE_CAPTURE_DIR when set (recording fixtures), and still forwards it', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'relay-capture-'))
+    try {
+      const payload = withSession('codex', 'session-start', 'relay-capture')
+      await relay(['codex'], payload, { ...env, AGENT_OFFICE_CAPTURE_DIR: dir })
+      const files = readdirSync(dir)
+      expect(files).toHaveLength(1)
+      expect(files[0]).toMatch(/^codex-SessionStart-\d+\.json$/)
+      expect(readFileSync(join(dir, files[0]), 'utf8')).toBe(payload)
+      expect(office.server.sessions.get('codex:relay-capture')).toBeTruthy()
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 
   it('answers the tools that read stdout, and stays silent for the rest', async () => {

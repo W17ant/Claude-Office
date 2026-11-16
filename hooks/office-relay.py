@@ -19,6 +19,10 @@
 # host is fixed and AGENT_OFFICE_EVENT_URL is ignored, so prompts and code
 # never leave the machine. Nothing is sent inside the office's own runs
 # (AGENT_OFFICE_RUN=1) or without a token. Standard library only.
+#
+# AGENT_OFFICE_CAPTURE_DIR=<dir> (testing only) also saves each raw payload as
+# <dir>/<tool>-<event>-<ms>.json, for recording real payloads as test fixtures
+# (tests/fixtures/tools/). Never set by the installer.
 import json, os, sys, time, hashlib
 
 TOOLS = ('codex', 'gemini', 'opencode', 'antigravity', 'kimi')
@@ -80,6 +84,14 @@ def main(argv):
     if not isinstance(payload, dict):
         return
     name = event or str(payload.get('hook_event_name') or '')
+    capture = os.environ.get('AGENT_OFFICE_CAPTURE_DIR')
+    if capture and os.path.isdir(capture):
+        label = _safe_event(name) or 'event'
+        try:
+            with open(os.path.join(capture, '%s-%s-%d.json' % (tool, label, int(time.time() * 1000))), 'wb') as f:
+                f.write(body)
+        except OSError:
+            pass  # a capture problem never stops the forward
     reply = REPLIES.get((tool, name)) or REPLIES.get((tool, '*'))
     if reply:
         # Before the network: the tool gets its answer even if the office hangs
