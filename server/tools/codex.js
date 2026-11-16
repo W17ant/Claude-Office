@@ -63,7 +63,7 @@ export function translate(p, event) {
 
     switch (name) {
       case 'SessionStart':
-        return [out('session_started', { source: short(p.source, 20) || 'startup', model, transcriptPath: short(p.transcript_path, 400) })]
+        return [out('session_started', { source: short(p.source, 20) || 'startup', model })]
       case 'SessionEnd':
         return [out('session_ended', { reason: short(p.reason, 40) || 'other' })]
       case 'UserPromptSubmit':
