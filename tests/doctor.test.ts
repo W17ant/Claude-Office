@@ -135,6 +135,24 @@ describe('doctor helpers', () => {
 // ---------------------------------------------------------------------------
 
 describe('runDoctor', () => {
+  it('lists the other AI tools it finds, as information only', async () => {
+    const home = installedHome()
+    mkdirSync(join(home, '.codex'), { recursive: true })
+    writeFileSync(join(home, '.codex', 'hooks.json'), JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: 'command', command: 'python3 -I "/x/office-relay.py" codex' }] }] } }))
+    mkdirSync(join(home, '.gemini'), { recursive: true })
+    const r = (await runDoctor(await base(home))) as Report
+    const line = r.results.find(x => x.title.startsWith('other AI tools'))
+    expect(line?.level).toBe('PASS')
+    expect(line?.title).toContain('Codex connected')
+    expect(line?.title).toContain('Gemini CLI not connected')
+    expect(line?.title).not.toContain('Kimi')
+  })
+
+  it('says nothing about other AI tools when none is installed', async () => {
+    const r = (await runDoctor(await base(installedHome()))) as Report
+    expect(r.results.find(x => x.title.startsWith('other AI tools'))).toBeUndefined()
+  })
+
   it('passes the hooks and status line on a HOME the installer set up; the server down is a WARN, not a FAIL', async () => {
     const home = installedHome()
     const r = (await runDoctor(await base(home))) as Report

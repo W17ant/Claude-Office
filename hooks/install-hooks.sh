@@ -59,6 +59,15 @@ set -euo pipefail
 # --status-line-only: register the status line only (no hooks), for the
 #                     plugin install; with --uninstall, leave the hooks alone
 # --uninstall:        remove what this script registered (see above)
+# --tool <id> (npm run install-hooks -- --tool codex): another AI tool, not
+# Claude Code. That installer is Node (scripts/install-tool-hooks.mjs, next to
+# this checkout's hooks/); this script hands the whole command line over.
+for arg in "$@"; do
+    case "$arg" in
+        --tool|--tool=*)
+            exec node "$(CDPATH= cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/../scripts/install-tool-hooks.mjs" "$@" ;;
+    esac
+done
 HOOKS=1
 STATUS_LINE=1
 UNINSTALL=0

@@ -48,6 +48,7 @@ import { dirname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { openOffice } from '../scripts/open-office.mjs'
 import { COMMANDS as CHECKOUT_COMMANDS, formatReport, MIN_NODE_MAJOR, runDoctor } from '../scripts/doctor.mjs'
+import { main as toolHooks, TOOL_IDS } from '../scripts/install-tool-hooks.mjs'
 import { readPort } from '../server/config.js'
 
 /** The package root: the directory holding package.json, server/, dist/ and hooks/. */
@@ -100,9 +101,13 @@ export function parseArgs(argv) {
   const flags = new Set()
   const positional = []
   let port
+  let tool
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
-    if (arg === '--port' || arg.startsWith('--port=')) {
+    if (arg === '--tool' || arg.startsWith('--tool=')) {
+      // Why a sentinel: `--tool` with no id must still be reported, as a missing id
+      tool = arg === '--tool' ? (argv[++i] ?? '') : arg.slice('--tool='.length)
+    } else if (arg === '--port' || arg.startsWith('--port=')) {
       const raw = arg === '--port' ? argv[++i] : arg.slice('--port='.length)
       const n = /^\d{1,5}$/.test(raw ?? '') ? Number(raw) : NaN
       if (!(n >= 1 && n <= 65535)) return { command: 'help', flags, error: `--port needs a port number (1-65535), got ${raw === undefined ? 'nothing' : JSON.stringify(raw)}` }
@@ -125,6 +130,12 @@ export function parseArgs(argv) {
   if (flags.has('--no-status-line') && flags.has('--status-line-only')) {
     return { command, flags, port, error: '--no-status-line and --status-line-only together leave nothing to do' }
   }
+  if (tool !== undefined) {
+    if (command !== 'install-hooks' && command !== 'uninstall-hooks') return { command, flags, port, error: `--tool works with install-hooks and uninstall-hooks only` }
+    if (!TOOL_IDS.includes(tool)) return { command, flags, port, error: `--tool needs one of: ${TOOL_IDS.join(', ')}${tool ? ` (got ${JSON.stringify(tool)})` : ''}` }
+    if (flags.size) return { command, flags, port, error: `--tool takes no other option (${[...flags][0]} is for Claude Code)` }
+    return { command, flags, port, tool }
+  }
   return { command, flags, port }
 }
 
@@ -142,6 +153,8 @@ Commands:
   install-hooks       connect Claude Code: hooks + status line in settings.json
   uninstall-hooks     take them back out
       --no-status-line | --status-line-only   (either command)
+      --tool <id>       connect (or disconnect) another AI tool instead:
+                        ${TOOL_IDS.join(', ')}
   doctor [--json]     check node, hooks, status line, tools, server and token
 
 Options:
@@ -352,6 +365,21 @@ function runBash(ctx, script, args, extraEnv = {}) {
   return res.status ?? 1
 }
 
+/**
+ * install-hooks / uninstall-hooks --tool <id>: another AI tool's own config
+ * (scripts/install-tool-hooks.mjs), pointed at the same hooks dir Claude
+ * Code's hooks use, so the relay outlives the npx cache too.
+ */
+function toolHooksCommand(ctx, tool, remove) {
+  const { dir, copy } = resolveHooksDir({ root: ctx.root, officeHome: ctx.officeHome })
+  if (copy && !remove) {
+    copyHooks(join(ctx.root, 'hooks'), dir)
+    ctx.out.write(`Copied the hook scripts to ${dir} (a path that outlives the npx cache).\n`)
+  }
+  // Why the copy stays on uninstall: Claude Code's hooks or another tool may still run from it
+  return toolHooks([...(remove ? ['--uninstall'] : []), '--tool', tool, '--hooks-dir', dir], { out: ctx.out, err: ctx.err, home: ctx.env.HOME || homedir() })
+}
+
 function installHooks(ctx, args) {
   const { dir, copy } = resolveHooksDir({ root: ctx.root, officeHome: ctx.officeHome })
   if (copy) {
@@ -423,9 +451,9 @@ export async function main(argv, { root = PACKAGE_ROOT, env = process.env, out =
     case 'stop':
       return runBash(ctx, join(root, 'scripts', 'stop-office.sh'), flags.has('--force') || flags.has('-f') ? ['--force'] : [])
     case 'install-hooks':
-      return installHooks(ctx, [...flags])
+      return parsed.tool ? toolHooksCommand(ctx, parsed.tool, false) : installHooks(ctx, [...flags])
     case 'uninstall-hooks':
-      return uninstallHooks(ctx, [...flags])
+      return parsed.tool ? toolHooksCommand(ctx, parsed.tool, true) : uninstallHooks(ctx, [...flags])
     case 'doctor':
       return doctor(ctx, flags)
   }

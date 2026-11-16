@@ -38,6 +38,7 @@ import { accessSync, constants, existsSync, readdirSync, readFileSync, realpathS
 import { homedir } from 'node:os'
 import { basename, delimiter, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { status as toolStatus, TOOL_IDS, toolLabel } from './install-tool-hooks.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const TRACKER_NAME = 'agent-tracker.sh'
@@ -369,6 +370,21 @@ export function checkTools(names = ['python3', 'bash', 'curl'], path = process.e
   })
 }
 
+/**
+ * Other AI tools (scripts/install-tool-hooks.mjs): one line naming each tool
+ * that is installed and whether the office is connected to it. Information
+ * only — a tool someone doesn't use is never a problem — so it is a PASS, and
+ * nothing at all when none of them is installed.
+ * @returns {object | null} a result, or null
+ */
+export function checkOtherTools({ home, commands: C = COMMANDS }) {
+  const found = TOOL_IDS.map(id => ({ id, state: toolStatus(id, { home }) })).filter(t => t.state !== 'not-installed')
+  if (!found.length) return null
+  const title = `other AI tools: ${found.map(t => `${toolLabel(t.id)} ${t.state === 'connected' ? 'connected' : 'not connected'}`).join(', ')}`
+  const missing = found.filter(t => t.state !== 'connected')
+  return result(PASS, title, missing.length ? `connect one: ${C.install}${C.install.startsWith('npm run') ? ' --' : ''} --tool <${missing.map(t => t.id).join('|')}>` : null)
+}
+
 /** GET /health: is the server up, has it seen hooks. */
 export async function checkServer({ port = DEFAULT_PORT, fetchImpl = globalThis.fetch, timeoutMs = 2000, now = Date.now(), commands: C = COMMANDS } = {}) {
   const url = `http://127.0.0.1:${port}/health`
@@ -504,6 +520,8 @@ export async function runDoctor(opts = {}) {
   results.push(...hooks.results)
   results.push(checkStatusLine({ settings, statusScript, home, pluginOnly: hooks.plugin.found && !hooks.hooks.any, commands }))
   results.push(...checkTools(undefined, opts.path ?? env.PATH))
+  const others = checkOtherTools({ home, commands })
+  if (others) results.push(others)
   const server = await checkServer({ port, fetchImpl: opts.fetchImpl, timeoutMs: opts.timeoutMs, commands })
   results.push(...server.results)
   results.push(checkToken({ officeHome, serverUp: server.up }))
