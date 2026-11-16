@@ -9,7 +9,7 @@ session, agent, wait, failure and dollar, live. Work that makes the office more
 truthful (hook fidelity, session and worker lifecycle, meters, incident
 signals, install/uninstall) comes first. Skins, translations and your own
 team of characters are becoming data — a file or a folder you drop in — so
-they can be shared without keeping a fork (see #TRANSLATIONS); a skin PR fits
+they can be shared without keeping a fork (see [#116](https://github.com/W17ant/Claude-Office/issues/116)); a skin PR fits
 best once that lands. Seasonal variants on the incident axis are welcome once
 the art exists.
 
