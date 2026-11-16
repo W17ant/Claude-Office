@@ -1,0 +1,52 @@
+# Feature request form — something the office should show or do; open-ended ideas go to Discussions › Ideas
+name: Feature request
+description: Something the office should show or do
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Not sure yet, or want votes first? Start it in [Discussions › Ideas](https://github.com/W17ant/Claude-Office/discussions/categories/ideas).
+        Features that reflect something the AI tool really does (a hook event, a status-line field, a state) come first; see CONTRIBUTING.md.
+  - type: textarea
+    id: what
+    attributes:
+      label: What should the office do
+      description: One paragraph.
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why
+      description: What you would do with it, or what you are missing today.
+  - type: dropdown
+    id: how-run
+    attributes:
+      label: How you run the office
+      options:
+        - npx @w17ant/agent-office
+        - Desktop app
+        - From a checkout (npm run …)
+        - Claude Code plugin
+  - type: dropdown
+    id: ai-tool
+    attributes:
+      label: Which AI tool
+      options:
+        - Claude Code
+        - Codex
+        - Gemini CLI
+        - OpenCode
+        - Other
+  - type: input
+    id: fork
+    attributes:
+      label: Built it in a fork already? Link it
+      placeholder: https://github.com/you/Claude-Office/tree/your-branch
+  - type: checkboxes
+    id: build
+    attributes:
+      label: Building it
+      options:
+        - label: I'd like to build this

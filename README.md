@@ -1,5 +1,7 @@
 # Claude Office
 
+[![npm](https://img.shields.io/npm/v/@w17ant/agent-office)](https://www.npmjs.com/package/@w17ant/agent-office) [![npm downloads](https://img.shields.io/npm/dm/@w17ant/agent-office)](https://www.npmjs.com/package/@w17ant/agent-office) [![Latest release](https://img.shields.io/github/v/release/W17ant/Claude-Office)](https://github.com/W17ant/Claude-Office/releases/latest) [![GitHub stars](https://img.shields.io/github/stars/W17ant/Claude-Office?style=social)](https://github.com/W17ant/Claude-Office)
+
 A pixel art virtual office that visualizes your AI agents working in real-time. Watch Claude Code agents spawn, sit at desks, take coffee breaks, and chat in a Slack-inspired office chat panel — all rendered in an isometric pixel art office.
 
 ## Update — rooms, seasons and a quieter office
@@ -207,7 +209,7 @@ bash scripts/stop-office.sh
 
 Now spawn agents in Claude Code and watch them appear in the office.
 
-**No checkout** (after the first npm release, Node 22+):
+**No checkout** (Node 22+):
 
 ```bash
 npx @w17ant/agent-office install-hooks   # connect Claude Code (once)
@@ -400,9 +402,14 @@ npm run build:electron  # Build the installer
 
 The app keeps itself up to date: when a newer release is out it downloads it in the background, and the tray menu (also on right-click in the window) offers **Restart to update**. Untick **Update automatically** in the same menu and it only tells you a new version is there, with a link to the download. How it works on each platform, and when it falls back to the download link, is in the [reference](docs/reference.md#desktop-app-electron).
 
-## Contributing
+## Community
 
-Issues and pull requests welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
+- **Got an idea?** Suggest it, or vote on others, in [Discussions › Ideas](https://github.com/W17ant/Claude-Office/discussions/categories/ideas)
+- **Made the office your own?** Show it in [Show and tell](https://github.com/W17ant/Claude-Office/discussions/categories/show-and-tell)
+- **Built something in a fork?** Bring it back and get credited in the changelog: [CONTRIBUTING › Got something in your fork?](CONTRIBUTING.md#got-something-in-your-fork)
+- **Want to help?** Issues labelled [help wanted](https://github.com/W17ant/Claude-Office/labels/help%20wanted) are open for anyone
+
+Bug reports and pull requests are welcome too; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
