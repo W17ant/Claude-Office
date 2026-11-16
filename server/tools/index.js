@@ -6,11 +6,17 @@
  * one test in tests/tool-translators.test.ts.
  */
 
+import antigravity from './antigravity.js'
 import codex from './codex.js'
+import gemini from './gemini.js'
+import kimi from './kimi.js'
 
 /** Tool id -> translator module. */
 export const TOOLS = Object.freeze({
   [codex.id]: codex,
+  [gemini.id]: gemini,
+  [antigravity.id]: antigravity,
+  [kimi.id]: kimi,
 })
 
 /**

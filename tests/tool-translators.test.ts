@@ -87,3 +87,117 @@ describe('codex', () => {
     }
   })
 })
+
+// Every event a tool's fixtures produce carries the tool and a prefixed session id
+function expectTagged(tool: string, names: string[], events: (name: string) => any[]) {
+  for (const name of names) {
+    const out = events(name)
+    expect(out.length, `${tool}/${name}`).toBeGreaterThan(0)
+    for (const e of out) {
+      expect(e.client, name).toBe(tool)
+      expect(e.sessionId, name).toMatch(new RegExp(`^${tool}:`))
+    }
+  }
+}
+
+describe('gemini', () => {
+  const SID = 'gemini:gem-sess-1'
+
+  it('starts and ends a session', () => {
+    expect(run('gemini', 'session-start')[0]).toMatchObject({ type: 'session_started', sessionId: SID, project: 'demo-app', source: 'startup' })
+    expect(run('gemini', 'session-end')[0]).toMatchObject({ type: 'session_ended', reason: 'exit' })
+  })
+
+  it('takes the prompt from BeforeAgent and the reply from AfterAgent', () => {
+    expect(run('gemini', 'before-agent')[0]).toMatchObject({ type: 'session_prompt', text: 'fix the flaky test' })
+    expect(run('gemini', 'after-agent')[0]).toMatchObject({ type: 'session_turn_end', text: 'Fixed it.' })
+  })
+
+  it('shows tool calls, and a failed one as failed', () => {
+    expect(run('gemini', 'before-tool')[0]).toMatchObject({ type: 'agent_working', tool: 'run_shell_command', status: 'running: npm test' })
+    expect(run('gemini', 'after-tool')[0]).toMatchObject({ type: 'session_tool_done', toolName: 'run_shell_command' })
+    expect(run('gemini', 'after-tool-error')[0]).toMatchObject({ type: 'agent_working', failed: true, tool: 'run_shell_command' })
+  })
+
+  it('raises a hand on a ToolPermission notification, unanswerable', () => {
+    const [e] = run('gemini', 'notification-permission')
+    expect(e).toMatchObject({ type: 'session_needs_you', kind: 'permission', toolName: 'run_shell_command' })
+    expect(e.answerable).not.toBe(true)
+  })
+
+  it('marks compaction, and ignores model events', () => {
+    expect(run('gemini', 'pre-compress')[0]).toMatchObject({ type: 'session_compact', phase: 'pre' })
+    expect(run('gemini', 'before-model')).toEqual([])
+  })
+
+  it('tags every event', () => {
+    expectTagged('gemini', ['session-start', 'before-agent', 'before-tool', 'after-tool', 'after-tool-error', 'after-agent', 'notification-permission', 'pre-compress', 'session-end'], n => run('gemini', n))
+  })
+})
+
+describe('antigravity', () => {
+  // Antigravity payloads carry no event name: the relay passes it along
+  const agy = (name: string, event: string) => run('antigravity', name, event)
+  const SID = 'antigravity:agy-conv-1'
+
+  it('starts a session in the first workspace folder', () => {
+    expect(agy('session-start', 'SessionStart')[0]).toMatchObject({ type: 'session_started', sessionId: SID, project: 'demo-app', model: 'gemini-3-pro' })
+  })
+
+  it('shows tool calls, and a failed one as failed', () => {
+    expect(agy('pre-tool', 'PreToolUse')[0]).toMatchObject({ type: 'agent_working', tool: 'run_command' })
+    expect(agy('post-tool', 'PostToolUse')[0]).toMatchObject({ type: 'session_tool_done', toolName: 'run_command' })
+    expect(agy('post-tool-error', 'PostToolUse')[0]).toMatchObject({ type: 'agent_working', failed: true })
+  })
+
+  it('shows thinking when an invocation starts, and ends the turn on Stop', () => {
+    expect(agy('pre-invocation', 'PreInvocation')[0]).toMatchObject({ type: 'agent_working', status: 'thinking' })
+    expect(agy('stop', 'Stop')[0]).toMatchObject({ type: 'session_turn_end' })
+  })
+
+  it('has nothing to say without an event name', () => {
+    expect(translateFor('antigravity', fixture('antigravity', 'stop'), undefined)).toEqual([])
+  })
+
+  it('tags every event', () => {
+    const pairs: Record<string, string> = { 'session-start': 'SessionStart', 'pre-tool': 'PreToolUse', 'post-tool': 'PostToolUse', 'pre-invocation': 'PreInvocation', stop: 'Stop' }
+    expectTagged('antigravity', Object.keys(pairs), n => agy(n, pairs[n]))
+  })
+})
+
+describe('kimi', () => {
+  const SID = 'kimi:kimi-sess-1'
+
+  it('starts a session with its title and model, and ends it', () => {
+    expect(run('kimi', 'session-start')[0]).toMatchObject({ type: 'session_started', sessionId: SID, title: 'Parser tests', model: 'kimi-k2', project: 'demo-app' })
+    expect(run('kimi', 'session-end')[0]).toMatchObject({ type: 'session_ended' })
+  })
+
+  it('passes the prompt on and ends the turn', () => {
+    expect(run('kimi', 'user-prompt')[0]).toMatchObject({ type: 'session_prompt', text: 'add a test for the parser' })
+    expect(run('kimi', 'stop')[0]).toMatchObject({ type: 'session_turn_end' })
+    expect(run('kimi', 'stop-failure')[0]).toMatchObject({ type: 'session_error' })
+  })
+
+  it('shows tool calls, failures and permission requests', () => {
+    expect(run('kimi', 'pre-tool')[0]).toMatchObject({ type: 'agent_working', tool: 'Bash', status: 'running: npm test' })
+    expect(run('kimi', 'post-tool')[0]).toMatchObject({ type: 'session_tool_done', toolName: 'Bash' })
+    expect(run('kimi', 'post-tool-failure')[0]).toMatchObject({ type: 'agent_working', failed: true })
+    const [hand] = run('kimi', 'permission-request')
+    expect(hand).toMatchObject({ type: 'session_needs_you', kind: 'permission', toolName: 'Bash' })
+    expect(hand.answerable).not.toBe(true)
+  })
+
+  it('spawns and completes a subagent', () => {
+    expect(run('kimi', 'subagent-start')[0]).toMatchObject({ type: 'agent_spawned', agent: { id: 'kimi:k-sub-1' } })
+    expect(run('kimi', 'subagent-stop')[0]).toMatchObject({ type: 'agent_completed', agentId: 'kimi:k-sub-1' })
+  })
+
+  it('tags every event', () => {
+    expectTagged('kimi', ['session-start', 'user-prompt', 'pre-tool', 'post-tool', 'post-tool-failure', 'permission-request', 'stop', 'stop-failure', 'subagent-start', 'subagent-stop', 'session-end'], n => run('kimi', n))
+  })
+
+  it('understands nothing from an empty payload', () => {
+    for (const tool of ['gemini', 'antigravity', 'kimi']) expect(translateFor(tool, {}, 'SessionStart'), tool).toEqual([])
+  })
+})
