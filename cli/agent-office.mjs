@@ -29,8 +29,8 @@
  * hooks stay where they are, exactly like `npm run install-hooks`.
  *
  * Everything here is macOS / Linux (bash, python3 and curl run the hooks);
- * the server needs Node 20+ (better-sqlite3 12; 22+ gets a prebuilt binary,
- * 20 compiles it from source since better-sqlite3 12.10).
+ * the server needs Node 22+ (better-sqlite3 13, whose Node-API prebuilts
+ * ship in its npm package).
  *
  * Why cli/ and not bin/: the repository root is also the Claude Code plugin
  * root, and a plugin's bin/ is put on the Bash tool's PATH in every session

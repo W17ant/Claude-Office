@@ -94,12 +94,12 @@ describe('doctor helpers', () => {
     expect(scriptPathIn('python3 ~/tools/claude-agent-tracker.sh.py', 'agent-tracker.sh')).toBeNull()
   })
 
-  it('node: 20+ passes, older fails with the floor in the message', () => {
+  it('node: 22+ passes, older fails with the floor in the message', () => {
     expect(checkNode('22.22.0').level).toBe(PASS)
-    expect(checkNode('20.0.0').level).toBe(PASS)
-    const old = checkNode('18.20.4')
+    expect(checkNode('22.0.0').level).toBe(PASS)
+    const old = checkNode('20.19.4')
     expect(old.level).toBe(FAIL)
-    expect(old.title).toContain('Node 20+')
+    expect(old.title).toContain('Node 22+')
   })
 
   it('finds an installed plugin in enabledPlugins + installed_plugins.json, the cache, or the marketplace clone', () => {

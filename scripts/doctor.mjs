@@ -42,10 +42,9 @@ import { fileURLToPath } from 'node:url'
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const TRACKER_NAME = 'agent-tracker.sh'
 const STATUS_NAME = 'status-line.sh'
-// better-sqlite3 12 (package.json) runs on Node 20.x and up. Its prebuilt
-// binaries cover 20 only up to 12.9; from 12.10 Node 20 builds from source
-// (needs python3 + a C++ toolchain), 22 and newer still download a prebuild
-export const MIN_NODE_MAJOR = 20
+// Why 22: better-sqlite3 13 (package.json) declares engines node >=22; its
+// Node-API prebuilts ship inside the npm package, so 22+ needs no compiler
+export const MIN_NODE_MAJOR = 22
 export const DEFAULT_PORT = 3334
 const PLUGIN_NAME = 'agent-office'
 
