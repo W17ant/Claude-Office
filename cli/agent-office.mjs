@@ -57,8 +57,10 @@ export const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..
  * The files install-hooks copies out of the package. agent-tracker.sh runs
  * agent-tracker.py from its own directory; the installer reads nothing else
  * from hooks/, and hooks.json is kept so doctor can list the expected events.
+ * office-relay.py and opencode-plugin.js are what `install-hooks --tool <id>`
+ * points other AI tools at (scripts/install-tool-hooks.mjs).
  */
-export const HOOK_FILES = ['agent-tracker.sh', 'agent-tracker.py', 'status-line.sh', 'install-hooks.sh', 'hooks.json']
+export const HOOK_FILES = ['agent-tracker.sh', 'agent-tracker.py', 'status-line.sh', 'install-hooks.sh', 'hooks.json', 'office-relay.py', 'opencode-plugin.js']
 
 /** Flags each command accepts (besides the global --port, --help and --version). */
 export const COMMAND_FLAGS = {

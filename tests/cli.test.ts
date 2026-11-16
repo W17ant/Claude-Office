@@ -140,6 +140,10 @@ describe('where the hooks live', () => {
     expect(resolveHooksDir({ root: '/opt/agent-office', officeHome: '/h/.agent-office', exists: () => false })).toEqual({ dir: '/h/.agent-office/hooks', copy: true })
   })
 
+  it('copies the relay and the OpenCode plugin too, so other tools\' hooks outlive the npx cache', () => {
+    expect(HOOK_FILES).toEqual(expect.arrayContaining(['office-relay.py', 'opencode-plugin.js']))
+  })
+
   it('copyHooks writes every hook file whole, scripts executable, and leaves no temp files', () => {
     const dest = join(tempDir(), 'office', 'hooks')
     copyHooks(join(ROOT, 'hooks'), dest)
