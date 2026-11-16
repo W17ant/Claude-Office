@@ -1,0 +1,73 @@
+# Bug report form — something in the office is wrong or does not match what Claude Code is doing
+name: Bug report
+description: Something in the office is wrong, or does not match what Claude Code is doing
+labels: [bug]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: A clear sentence or two. If the office shows something different from what Claude Code did, say what each one showed.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1.
+        2.
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+  - type: dropdown
+    id: how-run
+    attributes:
+      label: How you run the office
+      options:
+        - npx @w17ant/agent-office
+        - Desktop app
+        - From a checkout (npm run …)
+        - Claude Code plugin
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Office version
+      description: The desktop app's About box, `npm ls @w17ant/agent-office`, or `git log -1 --oneline` in a checkout
+      placeholder: "1.3.0"
+  - type: dropdown
+    id: os
+    attributes:
+      label: OS
+      options:
+        - macOS
+        - Linux
+        - Windows (WSL)
+        - Windows (native)
+    validations:
+      required: true
+  - type: dropdown
+    id: ai-tool
+    attributes:
+      label: Which AI tool
+      options:
+        - Claude Code
+        - Codex
+        - Gemini CLI
+        - OpenCode
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: claude-version
+    attributes:
+      label: Claude Code version
+      description: "`claude --version`"
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: "`~/.agent-office/server.log`, a hook error Claude Code printed, or a screenshot of the office. Strip anything private."

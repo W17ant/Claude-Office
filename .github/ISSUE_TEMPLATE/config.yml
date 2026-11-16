@@ -1,0 +1,9 @@
+# Issue chooser — every issue goes through a form; ideas and questions go to Discussions
+blank_issues_enabled: false
+contact_links:
+  - name: Idea or suggestion
+    url: https://github.com/W17ant/Claude-Office/discussions/categories/ideas
+    about: Share an idea and let others vote on it
+  - name: Question
+    url: https://github.com/W17ant/Claude-Office/discussions/categories/q-a
+    about: Ask how to set something up or how it works
