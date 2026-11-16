@@ -201,3 +201,36 @@ describe('kimi', () => {
     for (const tool of ['gemini', 'antigravity', 'kimi']) expect(translateFor(tool, {}, 'SessionStart'), tool).toEqual([])
   })
 })
+
+describe('opencode', () => {
+  const SID = 'opencode:ses_oc1'
+
+  it('starts a session on session.created, and a subagent when it has a parent', () => {
+    expect(run('opencode', 'session-created')[0]).toMatchObject({ type: 'session_started', sessionId: SID, project: 'demo-app' })
+    expect(run('opencode', 'subagent-created')[0]).toMatchObject({ type: 'agent_spawned', sessionId: SID, agent: { id: 'opencode:ses_child' } })
+  })
+
+  it('marks a prompt on a user message only', () => {
+    expect(run('opencode', 'user-message')[0]).toMatchObject({ type: 'session_prompt', sessionId: SID })
+    expect(run('opencode', 'assistant-message')).toEqual([])
+  })
+
+  it('shows tool calls and permission requests', () => {
+    expect(run('opencode', 'tool-before')[0]).toMatchObject({ type: 'agent_working', tool: 'bash', status: 'running: npm test' })
+    expect(run('opencode', 'tool-after')[0]).toMatchObject({ type: 'session_tool_done', toolName: 'bash' })
+    const [hand] = run('opencode', 'permission-asked')
+    expect(hand).toMatchObject({ type: 'session_needs_you', kind: 'permission', toolName: 'bash' })
+    expect(hand.answerable).not.toBe(true)
+  })
+
+  it('ends the turn when idle, and reports errors, compaction and deletion', () => {
+    expect(run('opencode', 'session-idle')[0]).toMatchObject({ type: 'session_turn_end' })
+    expect(run('opencode', 'session-error')[0]).toMatchObject({ type: 'session_error' })
+    expect(run('opencode', 'session-compacted')[0]).toMatchObject({ type: 'session_compact', phase: 'post' })
+    expect(run('opencode', 'session-deleted')[0]).toMatchObject({ type: 'session_ended' })
+  })
+
+  it('tags every event', () => {
+    expectTagged('opencode', ['session-created', 'subagent-created', 'user-message', 'tool-before', 'tool-after', 'permission-asked', 'session-idle', 'session-error', 'session-compacted', 'session-deleted'], n => run('opencode', n))
+  })
+})

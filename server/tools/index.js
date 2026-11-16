@@ -10,6 +10,7 @@ import antigravity from './antigravity.js'
 import codex from './codex.js'
 import gemini from './gemini.js'
 import kimi from './kimi.js'
+import opencode from './opencode.js'
 
 /** Tool id -> translator module. */
 export const TOOLS = Object.freeze({
@@ -17,6 +18,7 @@ export const TOOLS = Object.freeze({
   [gemini.id]: gemini,
   [antigravity.id]: antigravity,
   [kimi.id]: kimi,
+  [opencode.id]: opencode,
 })
 
 /**
