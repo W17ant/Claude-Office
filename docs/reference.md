@@ -228,7 +228,7 @@ The chat AI watcher (`scripts/chat-ai-watcher.sh`, log in `~/.agent-office/chat-
 
 ## Run it with npx
 
-*After the first npm release.* The package is `@w17ant/agent-office` (the plain name `agent-office` belongs to another project on npm); its command is `agent-office` (`cli/agent-office.mjs`):
+The package is `@w17ant/agent-office` (the plain name `agent-office` belongs to another project on npm); its command is `agent-office` (`cli/agent-office.mjs`):
 
 ```bash
 npx @w17ant/agent-office install-hooks   # hooks + status line in ~/.claude/settings.json (--no-status-line | --status-line-only)
@@ -1154,5 +1154,4 @@ machine with an ACL.
 
 Open and planned work lives in [GitHub issues](https://github.com/W17ant/Claude-Office/issues). Next up, roughly in order:
 
-- **`npx` one-liner** to start the office without a checkout: built (`cli/agent-office.mjs`, see [Run it with npx](#run-it-with-npx)), waiting on the first npm release
 - **Spooky Sprint**, a seasonal variant on the incident-mode axis — art-gated

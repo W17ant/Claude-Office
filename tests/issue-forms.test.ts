@@ -40,6 +40,14 @@ describe.each([
   })
 })
 
+describe('bug_report.yml triage', () => {
+  // Why: better-sqlite3 13 moved the floor to Node 22, so the Node version decides many install bugs
+  it('asks for the Node version', () => {
+    const node = item(load('bug_report.yml'), 'node-version')
+    expect(node?.type).toBe('input')
+  })
+})
+
 describe('feature_request.yml', () => {
   it('lets the person say they want to build it', () => {
     const boxes = load('feature_request.yml').body.filter((b: any) => b.type === 'checkboxes')

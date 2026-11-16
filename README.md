@@ -209,7 +209,7 @@ bash scripts/stop-office.sh
 
 Now spawn agents in Claude Code and watch them appear in the office.
 
-**No checkout** (after the first npm release, Node 22+):
+**No checkout** (Node 22+):
 
 ```bash
 npx @w17ant/agent-office install-hooks   # connect Claude Code (once)

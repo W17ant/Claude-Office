@@ -62,6 +62,11 @@ body:
     validations:
       required: true
   - type: input
+    id: node-version
+    attributes:
+      label: Node version
+      description: "`node --version` (the office needs Node 22 or newer)"
+  - type: input
     id: claude-version
     attributes:
       label: Claude Code version
@@ -70,4 +75,4 @@ body:
     id: logs
     attributes:
       label: Logs or screenshots
-      description: "`~/.agent-office/server.log`, a hook error Claude Code printed, or a screenshot of the office. Strip anything private."
+      description: "Output of `npm run doctor` (or `npx @w17ant/agent-office doctor`), the server's terminal output or `~/.agent-office/server.log` (`--detach` only), `~/.agent-office/chat-ai.log`, a hook error Claude Code printed, or a screenshot. Strip anything private."
