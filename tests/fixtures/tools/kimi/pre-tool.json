@@ -1,0 +1,1 @@
+{"hook_event_name": "PreToolUse", "session_id": "kimi-sess-1", "cwd": "/Users/someone/demo-app", "tool_name": "Shell", "tool_input": {"command": "npm test"}, "tool_call_id": "call-1"}

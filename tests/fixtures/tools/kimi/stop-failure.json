@@ -1,0 +1,1 @@
+{"hook_event_name": "StopFailure", "session_id": "kimi-sess-1", "cwd": "/Users/someone/demo-app", "error_type": "rate_limit", "error_message": "rate limited"}

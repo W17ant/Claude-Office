@@ -22,6 +22,7 @@
 import React, { useEffect, useState } from 'react'
 import { Agent, SessionInfo } from '../types'
 import { mainId, isMainAgent, mainTone, mainPillText, shortModel, projectFromCwd, type PillTone } from '../mainState'
+import { clientLabel } from '../tools'
 
 // Main-thread activity counts as "busy" for this long after the last tool call
 // (only used while no main record has arrived — an old server)
@@ -48,6 +49,7 @@ function describe(session: SessionInfo, claude: Agent | undefined, workerCount: 
   const lines = [
     unhooked ? NOT_HOOKED_HINT : null,
     pillLabel(session),
+    clientLabel(session.id, session.client) ? `tool: ${clientLabel(session.id, session.client)}` : null,
     session.title && session.project ? `project: ${session.project}` : null,
     unhooked && session.registry?.name && session.project && session.registry.name !== session.project ? `project: ${session.project}` : null,
     session.cwd ? `cwd: ${session.cwd}` : null,
@@ -110,6 +112,7 @@ const SessionStrip: React.FC<SessionStripProps> = ({ sessions, agents }) => {
           >
             <span className={`session-dot ${tone}`} title={unhooked && registryStatus ? registryStatus : undefined} />
             <span className="session-pill-project">{pillLabel(session)}</span>
+            {clientLabel(session.id, session.client) && <span className="session-pill-client">{clientLabel(session.id, session.client)}</span>}
             {model && <span className="session-pill-model" title={`model: ${session.model ?? claude?.model}`}>{model}</span>}
             {unhooked
               ? <span className="session-pill-unhooked" title={NOT_HOOKED_HINT}>not hooked</span>

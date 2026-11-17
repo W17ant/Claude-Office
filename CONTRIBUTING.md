@@ -23,7 +23,12 @@ translations, Windows, rooms and teams. Bring it back:
    so we can agree on the shape before you rebase.
 2. Open a pull request against `main`, one feature per PR, following
    *Before you open a PR* below.
-3. You are credited by name in `CHANGELOG.md` and the release notes for the
+3. *Add or fix a tool* (Codex, Gemini CLI, OpenCode, Antigravity, Kimi, or a
+   new one): one file in `server/tools/`, one fixture in
+   `tests/fixtures/tools/<tool>/` (a real capture is best:
+   `AGENT_OFFICE_CAPTURE_DIR` records one, see
+   [reference › Other AI tools](docs/reference.md#other-ai-tools)), one test.
+4. You are credited by name in `CHANGELOG.md` and the release notes for the
    version it ships in. (The no-`Co-Authored-By` rule below still applies to
    commits; the credit lives in the changelog.)
 

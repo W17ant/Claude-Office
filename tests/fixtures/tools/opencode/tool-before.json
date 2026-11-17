@@ -1,0 +1,1 @@
+{"type":"tool.execute.before","properties":{"tool":"bash","sessionID":"ses_oc1","callID":"c1","args":{"command":"npm test"}},"directory":"/Users/someone/demo-app"}

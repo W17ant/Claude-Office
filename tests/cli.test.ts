@@ -140,6 +140,10 @@ describe('where the hooks live', () => {
     expect(resolveHooksDir({ root: '/opt/agent-office', officeHome: '/h/.agent-office', exists: () => false })).toEqual({ dir: '/h/.agent-office/hooks', copy: true })
   })
 
+  it('copies the relay and the OpenCode plugin too, so other tools\' hooks outlive the npx cache', () => {
+    expect(HOOK_FILES).toEqual(expect.arrayContaining(['office-relay.py', 'opencode-plugin.js']))
+  })
+
   it('copyHooks writes every hook file whole, scripts executable, and leaves no temp files', () => {
     const dest = join(tempDir(), 'office', 'hooks')
     copyHooks(join(ROOT, 'hooks'), dest)
@@ -152,6 +156,49 @@ describe('where the hooks live', () => {
     writeFileSync(join(dest, 'agent-tracker.sh'), 'stale')
     copyHooks(join(ROOT, 'hooks'), dest)
     expect(readFileSync(join(dest, 'agent-tracker.sh')).equals(readFileSync(join(ROOT, 'hooks', 'agent-tracker.sh')))).toBe(true)
+  })
+})
+
+describe('install-hooks --tool', () => {
+  it('parses --tool <id> and --tool=<id> for install-hooks and uninstall-hooks', () => {
+    expect(parseArgs(['install-hooks', '--tool', 'codex'])).toMatchObject({ command: 'install-hooks', tool: 'codex' })
+    expect(parseArgs(['uninstall-hooks', '--tool=gemini'])).toMatchObject({ command: 'uninstall-hooks', tool: 'gemini' })
+    expect(parseArgs(['install-hooks', '--tool', 'codex']).error).toBeUndefined()
+  })
+
+  it('names the five tools when the id is wrong or missing, and refuses --tool elsewhere', () => {
+    expect(parseArgs(['install-hooks', '--tool', 'nope']).error).toMatch(/codex.*gemini.*antigravity.*kimi.*opencode/)
+    expect(parseArgs(['install-hooks', '--tool']).error).toMatch(/codex/)
+    expect(parseArgs(['doctor', '--tool', 'codex']).error).toBeTruthy()
+    expect(parseArgs(['install-hooks', '--tool', 'codex', '--status-line-only']).error).toBeTruthy()
+  })
+
+  it('from an npx copy: connects Codex to the stable relay, and disconnects it, keeping the copy', async () => {
+    const { home, env } = isolatedEnv()
+    mkdirSync(join(home, '.codex'), { recursive: true })
+    const { root } = npxCopy()
+    const out = sink()
+    expect(await main(['install-hooks', '--tool', 'codex'], { root, env, out, err: sink() })).toBe(0)
+    const stable = join(home, '.agent-office', 'hooks')
+    const cfg = readFileSync(join(home, '.codex', 'hooks.json'), 'utf8')
+    expect(cfg).toContain(join(stable, 'office-relay.py'))
+    expect(existsSync(join(stable, 'office-relay.py'))).toBe(true)
+    expect(out.text).toContain('/hooks')
+    // Claude Code's own settings are untouched
+    expect(existsSync(join(home, '.claude', 'settings.json'))).toBe(false)
+
+    expect(await main(['uninstall-hooks', '--tool', 'codex'], { root, env, out: sink(), err: sink() })).toBe(0)
+    expect(existsSync(join(home, '.codex', 'hooks.json'))).toBe(false)
+    expect(existsSync(stable)).toBe(true)
+  })
+
+  it('npm run install-hooks -- --tool <id> goes to the same installer', () => {
+    const { home, env } = isolatedEnv()
+    mkdirSync(join(home, '.gemini'), { recursive: true })
+    const r = spawnSync('bash', [join(ROOT, 'hooks', 'install-hooks.sh'), '--tool', 'gemini'], { env, encoding: 'utf8' })
+    expect(r.status).toBe(0)
+    expect(readFileSync(join(home, '.gemini', 'settings.json'), 'utf8')).toContain(join(ROOT, 'hooks', 'office-relay.py'))
+    expect(existsSync(join(home, '.claude', 'settings.json'))).toBe(false)
   })
 })
 

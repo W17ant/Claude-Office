@@ -22,6 +22,7 @@
     "hooks/",
     "scripts/open-office.mjs",
     "scripts/doctor.mjs",
+    "scripts/install-tool-hooks.mjs",
     "scripts/stop-office.sh",
     "electron/helpers.cjs",
     "NOTICE.md"

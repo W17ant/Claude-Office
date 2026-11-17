@@ -47,6 +47,7 @@ import {
   lanFullRouteAllowed, createLockout,
 } from './lan.js'
 import { loadOrCreateLanCert } from './lan-cert.js'
+import { translateFor, TOOLS } from './tools/index.js'
 import { createRecap, recapLine, isRecapDate, localDate } from './recap.js'
 import { createPromptQueue, parseMention, resolveMention, mentionName, MARKER_DIR_NAME, MAX_PROMPT_LEN, MAX_QUEUED_PER_SESSION } from './prompt-queue.js'
 
@@ -1123,7 +1124,7 @@ function sessionEvent(session, type = 'session_started') {
   return { type, sessionId: id, ...json, timestamp: Date.now() }
 }
 
-function createSession({ id, project, cwd, source, model, title, transcriptPath, now = Date.now() }) {
+function createSession({ id, project, cwd, source, model, title, transcriptPath, client, now = Date.now() }) {
   const session = {
     id,
     hooked: true,
@@ -1138,6 +1139,8 @@ function createSession({ id, project, cwd, source, model, title, transcriptPath,
   }
   if (model) session.model = model
   if (title) session.title = title
+  // Another AI tool's session (POST /hook/:tool): which one, for the UI's tag
+  if (client) session.client = client
   // The session's own transcript; a worker's file is derived from it (server/transcript.js)
   if (transcriptPath) session.transcriptPath = transcriptPath
   sessions.set(id, session)
@@ -1174,7 +1177,7 @@ function touchSession(body, now = Date.now()) {
   if (!id) return null
   let session = sessions.get(id)
   if (!session) {
-    session = createSession({ id, project: body.project, cwd: body.cwd, source: 'implicit', transcriptPath: body.transcriptPath, now })
+    session = createSession({ id, project: body.project, cwd: body.cwd, source: 'implicit', transcriptPath: body.transcriptPath, client: body.client, now })
     saveAgents()
     broadcast(sessionEvent(session))
     return session
@@ -1186,6 +1189,7 @@ function touchSession(body, now = Date.now()) {
   if (session.state === 'active') session.lastActivityAt = now
   if (!session.project) session.project = projectName(body.project, body.cwd)
   if (!session.cwd && body.cwd) session.cwd = body.cwd
+  if (!session.client && body.client) session.client = body.client
   if (body.transcriptPath && session.transcriptPath !== body.transcriptPath) session.transcriptPath = body.transcriptPath
   return session
 }
@@ -1789,6 +1793,12 @@ const EVENT_JSON_LIMIT = '64kb'
 const captureRaw = (req, _res, buf) => { req.rawBody = buf }
 const jsonBody = express.json({ limit: JSON_LIMIT, verify: captureRaw })
 const eventJsonBody = express.json({ limit: EVENT_JSON_LIMIT, verify: captureRaw })
+// Why 1mb on /hook/:tool: it carries another AI tool's RAW hook payload, and a
+// post-tool payload holds the tool's full output (file contents, command
+// output). A 413 would be dropped silently by the relay and leave a hand up;
+// the translators (server/tools) read only the fields they need.
+const TOOL_JSON_LIMIT = '1mb'
+const toolJsonBody = express.json({ limit: TOOL_JSON_LIMIT, verify: captureRaw })
 
 /**
  * Requests the full-mode LAN gate let through (createLanFullApp, "The LAN
@@ -1831,7 +1841,7 @@ app.use((req, res, next) => {
   unauthorized(res, { error: 'Unauthorized: this office answers its proxy name only with a token' })
 })
 
-app.use((req, res, next) => (req.path === '/event' ? eventJsonBody : jsonBody)(req, res, next))
+app.use((req, res, next) => (req.path === '/event' ? eventJsonBody : req.path.startsWith('/hook/') ? toolJsonBody : jsonBody)(req, res, next))
 
 // CORS for local dev — only allow known localhost origins
 app.use((req, res, next) => {
@@ -2059,14 +2069,18 @@ app.get('/roster', (_req, res) => {
  * Every event may carry sessionId, project, cwd and transcriptPath — the
  * Claude Code session the hook fired in. Agents are filed under it.
  */
-app.post('/event', requireToken, (req, res) => {
-  const body = req.body
-
+/**
+ * Validate, sanitise and apply one office event: what POST /event and
+ * POST /hook/:tool share. Returns { error } for an invalid body, else the
+ * sanitised event and what processEvent made of it. /event then does its own
+ * permission-wait and prompt-claim handling, which only Claude Code's hook uses.
+ * @param {object} body  an office event (the shapes documented above POST /event)
+ * @returns {{ error: string } | { sanitised: object, event: object | null }}
+ */
+function ingestEvent(body) {
   // Validate event type
   const validationError = validateEvent(body)
-  if (validationError) {
-    return res.status(400).json({ error: validationError })
-  }
+  if (validationError) return { error: validationError }
 
   // Clamp string fields to prevent oversized payloads reaching the frontend
   const sanitised = {
@@ -2098,6 +2112,8 @@ app.post('/event', requireToken, (req, res) => {
     tool:    clampString(body.tool),
     // Session identity (on every event) + session lifecycle fields
     sessionId:      clampString(body.sessionId),
+    // Which other AI tool the session is (POST /hook/:tool sets it); only a known id
+    client:         Object.hasOwn(TOOLS, body.client) ? body.client : undefined,
     project:        clampString(body.project),
     cwd:            clampString(body.cwd, 400),
     transcriptPath: clampString(body.transcriptPath, 400),
@@ -2167,6 +2183,13 @@ app.post('/event', requireToken, (req, res) => {
   tasks.noteEvent(sanitised)
   health.markHook()  // a hook reached us: what the strip's "last seen" counts (after the event, so its counts include it)
   status.noteHook(sanitised)  // MEMORY from the transcript for a session with no status line (throttled, read after we answer)
+  return { sanitised, event }
+}
+
+app.post('/event', requireToken, (req, res) => {
+  const ingested = ingestEvent(req.body)
+  if (ingested.error) return res.status(400).json({ error: ingested.error })
+  const { sanitised, event } = ingested
 
   // A PermissionRequest the hook will wait on: the response names the pending
   // record and how to poll it (server/permissions.js). Only while the setting
@@ -2202,6 +2225,31 @@ app.post('/event', requireToken, (req, res) => {
   }
 
   res.json({ ok: true, ...(event?.type === 'agent_spawned' ? { agentId: event.agent.id } : {}) })
+})
+
+/**
+ * POST /hook/:tool — another AI tool's raw hook payload (hooks/office-relay.py,
+ * or the OpenCode plugin), signed with the office token like /event.
+ *
+ * :tool is one of server/tools (codex, gemini, opencode, antigravity, kimi);
+ * ?event=<hook event name> when the relay knows it (some tools leave it out of
+ * the payload). The tool's translator turns the payload into office events,
+ * each applied exactly like a POST /event body, with `client` set to :tool.
+ * Answers 404 for an unknown tool, 204 when the payload means nothing to the
+ * office, else { ok, count }. Never 500 on a strange payload: the translator
+ * returns [] instead.
+ */
+app.post('/hook/:tool', requireToken, (req, res) => {
+  const tool = req.params.tool
+  const events = translateFor(tool, req.body, typeof req.query.event === 'string' ? req.query.event : undefined)
+  if (events === null) return res.status(404).json({ error: `Unknown tool: ${String(tool).slice(0, 40)}` })
+  let count = 0
+  for (const e of events) {
+    // Why force client: the route, not the payload, says which tool this is
+    if (!ingestEvent({ ...e, client: tool }).error) count++
+  }
+  if (count === 0) return res.status(204).end()
+  res.json({ ok: true, count })
 })
 
 // ---------------------------------------------------------------------------
@@ -3475,7 +3523,7 @@ function applyEvent(body) {
       const source = body.source || 'startup'
       let session = sessions.get(id)
       if (!session) {
-        session = createSession({ id, project: body.project, cwd: body.cwd, source, model: body.model, title: body.title, transcriptPath: body.transcriptPath, now })
+        session = createSession({ id, project: body.project, cwd: body.cwd, source, model: body.model, title: body.title, transcriptPath: body.transcriptPath, client: body.client, now })
       } else {
         if (session.state === 'ended') {
           clearSessionTimer(id)
@@ -3496,6 +3544,7 @@ function applyEvent(body) {
         if (body.model) session.model = body.model
         if (body.title) session.title = body.title
         if (body.transcriptPath) session.transcriptPath = body.transcriptPath
+        if (body.client && !session.client) session.client = body.client
       }
       saveAgents()
       return sessionEvent(session)

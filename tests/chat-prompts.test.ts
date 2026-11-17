@@ -55,6 +55,15 @@ describe('prompt-queue.js: mentions', () => {
     expect(resolveMention(all, 'claude')).toBeNull()
   })
 
+  // Why: prompts from the chat reach Claude Code only; another tool's session in the same folder must not make @project ambiguous
+  it('other AI tools are never mentioned: no @-name, and @project skips them', () => {
+    const claude = { id: 'aaaaaaaa-1', project: 'demo-app', state: 'active' }
+    const codex = { id: 'codex:019a-native', client: 'codex', project: 'demo-app', state: 'active' }
+    expect(mentionName(codex)).toBeUndefined()
+    expect(resolveMention([claude, codex], 'demo-app')).toEqual({ session: claude })
+    expect(resolveMention([codex], 'demo-app')).toBeNull()
+  })
+
   it('wellFormed: lone surrogates become U+FFFD, pairs stay', () => {
     expect(wellFormed('a\uD800b\uDC00c😀')).toBe('a�b�c😀')
   })

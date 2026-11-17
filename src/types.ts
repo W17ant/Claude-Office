@@ -206,6 +206,8 @@ export interface SessionInfo {
   title?: string
   model?: string
   source?: string           // startup | resume | compact | clear | fork | implicit
+  /** Another AI tool's session (codex, gemini, ...): POST /hook/:tool sets it; absent for Claude Code */
+  client?: string
   state: 'active' | 'ended'
   reason?: string           // why it ended
   startedAt?: number
