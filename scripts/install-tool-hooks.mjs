@@ -287,11 +287,9 @@ export function install(tool, { home = homedir(), hooksDir }) {
   if (tool === 'kimi') changed = installKimi(file, hooksDir, notes)
   else if (tool === 'opencode') changed = installOpencode(file, hooksDir, notes)
   else changed = installJson(tool, file, hooksDir)
-  if (tool === 'codex') {
-    notes.push('Codex runs a new hook only after you approve it: start codex and type /hooks once.')
-  } else {
-    notes.push(`${LABELS[tool]} support is experimental — tell us if it works: ${ISSUE}`)
-  }
+  if (tool === 'codex') notes.push('Codex runs a new hook only after you approve it: start codex and type /hooks once.')
+  // Why every tool: none has been run live by the project yet; fixtures come from docs and forks
+  notes.push(`${LABELS[tool]} support is experimental — tell us if it works: ${ISSUE}`)
   notes.push(`Restart any open ${LABELS[tool]} session to pick it up.`)
   return { changed, notes }
 }

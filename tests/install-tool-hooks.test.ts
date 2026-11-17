@@ -114,8 +114,9 @@ describe('JSON configs keep what is not ours', () => {
     expect(install('codex', opts()).notes.join('\n')).toMatch(/\/hooks/)
   })
 
-  it('every tool but Codex is labelled experimental, with the issue link', () => {
-    for (const tool of ['gemini', 'antigravity', 'kimi', 'opencode']) {
+  // Why Codex too: nobody on the project has run it live yet (Task 8 was skipped)
+  it('every tool is labelled experimental, with the issue link', () => {
+    for (const tool of ['codex', 'gemini', 'antigravity', 'kimi', 'opencode']) {
       mkdirSync(join(home, TOOL_DIRS[tool]), { recursive: true })
       expect(install(tool, opts()).notes.join('\n'), tool).toContain('experimental — tell us if it works')
     }
