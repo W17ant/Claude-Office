@@ -1,1 +1,1 @@
-{"session_id":"kimi-sess-1","session_title":"Parser tests","client_type":"cli","cwd":"/Users/someone/demo-app","hook_event_name":"SubagentStart","agent_id":"k-sub-1","agent_name":"reviewer"}
+{"hook_event_name": "SubagentStart", "session_id": "kimi-sess-1", "cwd": "/Users/someone/demo-app", "agent_name": "coder", "prompt": "write the parser test"}

@@ -49,7 +49,7 @@ export function toolStatus(tool, input) {
   const i = input && typeof input === 'object' ? input : {}
   const file = p => String(p ?? '').split(/[\\/]/).pop()
   switch (tool) {
-    case 'Bash': case 'shell': case 'run_shell_command': case 'bash':
+    case 'Bash': case 'shell': case 'run_shell_command': case 'bash': case 'Shell':
       return `running: ${String(i.command ?? i.cmd ?? i.description ?? '').slice(0, 60)}`
     case 'Read': case 'read_file': case 'read':
       return `reading ${file(i.file_path ?? i.path ?? i.filePath)}`

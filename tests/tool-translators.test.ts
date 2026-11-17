@@ -168,33 +168,40 @@ describe('antigravity', () => {
 describe('kimi', () => {
   const SID = 'kimi:kimi-sess-1'
 
-  it('starts a session with its title and model, and ends it', () => {
-    expect(run('kimi', 'session-start')[0]).toMatchObject({ type: 'session_started', sessionId: SID, title: 'Parser tests', model: 'kimi-k2', project: 'demo-app' })
-    expect(run('kimi', 'session-end')[0]).toMatchObject({ type: 'session_ended' })
+  it('starts a session in its folder, and ends it', () => {
+    expect(run('kimi', 'session-start')[0]).toMatchObject({ type: 'session_started', sessionId: SID, source: 'startup', project: 'demo-app' })
+    expect(run('kimi', 'session-end')[0]).toMatchObject({ type: 'session_ended', reason: 'exit' })
   })
 
   it('passes the prompt on and ends the turn', () => {
     expect(run('kimi', 'user-prompt')[0]).toMatchObject({ type: 'session_prompt', text: 'add a test for the parser' })
     expect(run('kimi', 'stop')[0]).toMatchObject({ type: 'session_turn_end' })
-    expect(run('kimi', 'stop-failure')[0]).toMatchObject({ type: 'session_error' })
   })
 
-  it('shows tool calls, failures and permission requests', () => {
-    expect(run('kimi', 'pre-tool')[0]).toMatchObject({ type: 'agent_working', tool: 'Bash', status: 'running: npm test' })
-    expect(run('kimi', 'post-tool')[0]).toMatchObject({ type: 'session_tool_done', toolName: 'Bash' })
+  // Why: Kimi's StopFailure sends error_type / error_message, not error
+  it('reports a failed turn with its error message', () => {
+    expect(run('kimi', 'stop-failure')[0]).toMatchObject({ type: 'session_error', detail: 'rate_limit: rate limited' })
+  })
+
+  it("shows Kimi's Shell tool calls and failures", () => {
+    expect(run('kimi', 'pre-tool')[0]).toMatchObject({ type: 'agent_working', tool: 'Shell', status: 'running: npm test' })
+    expect(run('kimi', 'post-tool')[0]).toMatchObject({ type: 'session_tool_done', toolName: 'Shell' })
     expect(run('kimi', 'post-tool-failure')[0]).toMatchObject({ type: 'agent_working', failed: true })
-    const [hand] = run('kimi', 'permission-request')
-    expect(hand).toMatchObject({ type: 'session_needs_you', kind: 'permission', toolName: 'Bash' })
-    expect(hand.answerable).not.toBe(true)
   })
 
-  it('spawns and completes a subagent', () => {
-    expect(run('kimi', 'subagent-start')[0]).toMatchObject({ type: 'agent_spawned', agent: { id: 'kimi:k-sub-1' } })
-    expect(run('kimi', 'subagent-stop')[0]).toMatchObject({ type: 'agent_completed', agentId: 'kimi:k-sub-1' })
+  // Why: Kimi has no permission hook event; nothing may claim "needs you"
+  it('never says needs-you (Kimi has no permission event)', () => {
+    expect(translateFor('kimi', { hook_event_name: 'PermissionRequest', session_id: 's', cwd: '/x', tool_name: 'Shell' })).toEqual([])
+  })
+
+  // Why: Kimi's subagent events carry agent_name (the subagent type), no id
+  it('spawns and completes a subagent by its name', () => {
+    expect(run('kimi', 'subagent-start')[0]).toMatchObject({ type: 'agent_spawned', agent: { id: 'kimi:kimi-sess-1:coder', name: 'coder' } })
+    expect(run('kimi', 'subagent-stop')[0]).toMatchObject({ type: 'agent_completed', agentId: 'kimi:kimi-sess-1:coder' })
   })
 
   it('tags every event', () => {
-    expectTagged('kimi', ['session-start', 'user-prompt', 'pre-tool', 'post-tool', 'post-tool-failure', 'permission-request', 'stop', 'stop-failure', 'subagent-start', 'subagent-stop', 'session-end'], n => run('kimi', n))
+    expectTagged('kimi', ['session-start', 'user-prompt', 'pre-tool', 'post-tool', 'post-tool-failure', 'stop', 'stop-failure', 'subagent-start', 'subagent-stop', 'session-end'], n => run('kimi', n))
   })
 
   it('understands nothing from an empty payload', () => {
@@ -228,6 +235,16 @@ describe('opencode', () => {
     expect(run('opencode', 'session-error')[0]).toMatchObject({ type: 'session_error' })
     expect(run('opencode', 'session-compacted')[0]).toMatchObject({ type: 'session_compact', phase: 'post' })
     expect(run('opencode', 'session-deleted')[0]).toMatchObject({ type: 'session_ended' })
+  })
+
+  // Why: a subagent's own events carry the child session id; they belong to the worker in the parent's office
+  it("routes a subagent's tool calls to its worker, and completes it when the child goes idle", () => {
+    run('opencode', 'subagent-created')
+    const child = (type: string, properties: object) => translateFor('opencode', { type, properties: { sessionID: 'ses_child', ...properties }, directory: '/Users/someone/demo-app' })!
+    expect(child('tool.execute.before', { tool: 'bash', args: { command: 'npm test' } })[0]).toMatchObject({ type: 'agent_working', sessionId: SID, agentId: 'opencode:ses_child', status: 'running: npm test' })
+    expect(child('tool.execute.after', { tool: 'bash' })).toEqual([])
+    expect(child('message.updated', { info: { role: 'user', sessionID: 'ses_child' } })).toEqual([])
+    expect(child('session.idle', {})[0]).toMatchObject({ type: 'agent_completed', sessionId: SID, agentId: 'opencode:ses_child' })
   })
 
   it('tags every event', () => {

@@ -185,10 +185,13 @@ export function mentionSlug(value) {
  * The name the chat's @-autocomplete offers for a session: Claude Code's own
  * session name (`claude-office-75`, or what /rename set) when the registry
  * has one, else the session title, the project, or the start of the id.
- * @param {{ id: string, registry?: { name?: string }, title?: string, project?: string }} session
- * @returns {string}
+ * None for another AI tool's session.
+ * @param {{ id: string, client?: string, registry?: { name?: string }, title?: string, project?: string }} session
+ * @returns {string | undefined}
  */
 export function mentionName(session) {
+  // Why: another AI tool's session (it has a client) cannot claim a prompt; its hook is not Claude Code's
+  if (session.client) return undefined
   return mentionSlug(session.registry?.name || session.title || session.project || String(session.id ?? '').slice(0, 8))
 }
 
@@ -224,7 +227,7 @@ const MIN_ID_PREFIX = 6
  * @returns {{ session: object } | { ambiguous: object[] } | null}
  */
 export function resolveMention(sessions, name) {
-  const live = Array.from(sessions).filter(s => s && s.state !== 'ended')
+  const live = Array.from(sessions).filter(s => s && s.state !== 'ended' && !s.client)
   const tiers = [
     s => mentionSlug(s.registry?.name) === name || mentionSlug(s.title) === name,
     s => mentionSlug(s.project) === name,

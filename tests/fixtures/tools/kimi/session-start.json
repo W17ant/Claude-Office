@@ -1,1 +1,1 @@
-{"session_id":"kimi-sess-1","session_title":"Parser tests","client_type":"cli","cwd":"/Users/someone/demo-app","hook_event_name":"SessionStart","source":"startup","model":"kimi-k2","profile":"default"}
+{"hook_event_name": "SessionStart", "session_id": "kimi-sess-1", "cwd": "/Users/someone/demo-app", "source": "startup"}

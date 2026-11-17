@@ -30,9 +30,10 @@ const FORWARD = new Set(['session.created', 'session.deleted', 'session.idle', '
 
 /**
  * The request signature the office checks (server/index.js requestSignature).
+ * Not exported. Why: OpenCode calls every exported function as a plugin.
  * @returns {string} hex HMAC-SHA256(token, `${method}\n${path}\n${ts}\n${body}`)
  */
-export function signRequest(token, path, ts, body) {
+function signRequest(token, path, ts, body) {
   return createHmac('sha256', token).update(`POST\n${path}\n${ts}\n${body}`).digest('hex')
 }
 

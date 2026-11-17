@@ -1,6 +1,6 @@
 /** scripts/install-tool-hooks.mjs — connects other AI tools to the office by editing their own config, and takes it back out exactly. */
 
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -12,9 +12,9 @@ const opts = () => ({ home, hooksDir: HOOKS_DIR })
 const write = (file: string, text: string) => { mkdirSync(dirname(file), { recursive: true }); writeFileSync(file, text) }
 const read = (file: string) => readFileSync(file, 'utf8')
 // The folder whose presence says the tool is installed
-const TOOL_DIRS: Record<string, string> = { codex: '.codex', gemini: '.gemini', antigravity: '.gemini/antigravity-cli', kimi: '.kimi-code', opencode: '.config/opencode' }
+const TOOL_DIRS: Record<string, string> = { codex: '.codex', gemini: '.gemini', antigravity: '.gemini/antigravity-cli', kimi: '.kimi', opencode: '.config/opencode' }
 
-beforeEach(() => { home = mkdtempSync(join(tmpdir(), 'tool-hooks-')) })
+beforeEach(() => { home = mkdtempSync(join(tmpdir(), 'tool-hooks-')); delete process.env.KIMI_SHARE_DIR })
 afterEach(() => rmSync(home, { recursive: true, force: true }))
 
 describe('every tool', () => {
@@ -136,7 +136,7 @@ describe('JSON configs keep what is not ours', () => {
 })
 
 describe('kimi config.toml', () => {
-  beforeEach(() => mkdirSync(join(home, '.kimi-code'), { recursive: true }))
+  beforeEach(() => mkdirSync(join(home, '.kimi'), { recursive: true }))
 
   it('adds a marked block of [[hooks]] tables, and uninstall restores the file byte for byte', () => {
     const file = targetFile('kimi', home)
@@ -169,10 +169,50 @@ describe('kimi config.toml', () => {
     expect(read(file)).toBe(inline)
   })
 
-  it('uses the older ~/.kimi when that is the one that exists', () => {
-    rmSync(join(home, '.kimi-code'), { recursive: true })
-    mkdirSync(join(home, '.kimi'), { recursive: true })
+  // Why: Kimi reads $KIMI_SHARE_DIR/config.toml, else ~/.kimi/config.toml (src/kimi_cli/share.py)
+  it('writes where Kimi reads: ~/.kimi, or $KIMI_SHARE_DIR when set', () => {
     expect(targetFile('kimi', home)).toBe(join(home, '.kimi', 'config.toml'))
+    expect(targetFile('kimi', home, { KIMI_SHARE_DIR: join(home, 'share') })).toBe(join(home, 'share', 'config.toml'))
+  })
+
+  // Why: Kimi refuses to start on a hook event outside its fixed list (HookEventType in hooks/config.py)
+  it('only registers events Kimi accepts', () => {
+    const KIMI_EVENTS = ['PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'UserPromptSubmit', 'Stop', 'StopFailure', 'SessionStart', 'SessionEnd', 'SubagentStart', 'SubagentStop', 'PreCompact', 'PostCompact', 'Notification']
+    install('kimi', opts())
+    const events = [...read(targetFile('kimi', home)).matchAll(/^event = "(.*)"$/gm)].map(m => m[1])
+    expect(events.length).toBeGreaterThan(0)
+    for (const e of events) expect(KIMI_EVENTS).toContain(e)
+  })
+
+  // Why: Kimi's save_config rewrites the file with tomlkit, dropping our marker comments
+  it('finds and removes its hooks after Kimi rewrote the file without the markers', () => {
+    const file = targetFile('kimi', home)
+    writeFileSync(file, 'model = "kimi-k2"\n')
+    install('kimi', opts())
+    const rewritten = read(file).replace('# >>> claude-office\n', '').replace('# <<< claude-office\n', '')
+      + '\n[[hooks]]\nevent = "Stop"\ncommand = "mine"\n'
+    writeFileSync(file, rewritten)
+    expect(status('kimi', { home })).toBe('connected')
+    expect(uninstall('kimi', { home }).changed).toEqual([file])
+    expect(read(file)).not.toContain('office-relay.py')
+    expect(read(file)).toContain('model = "kimi-k2"')
+    expect(read(file)).toContain('command = "mine"')
+    expect(status('kimi', { home })).toBe('not-connected')
+  })
+})
+
+// Why: Kimi's config.toml holds its API key; a rewrite must not widen who can read it
+describe('file permissions', () => {
+  it('keeps a private config private, and writes the backup private', () => {
+    mkdirSync(join(home, '.kimi'), { recursive: true })
+    const file = targetFile('kimi', home)
+    writeFileSync(file, 'api_key = "secret"\n')
+    chmodSync(file, 0o600)
+    install('kimi', opts())
+    expect(statSync(file).mode & 0o777).toBe(0o600)
+    expect(statSync(`${file}.claude-office.bak`).mode & 0o777).toBe(0o600)
+    uninstall('kimi', { home })
+    expect(statSync(file).mode & 0o777).toBe(0o600)
   })
 })
 

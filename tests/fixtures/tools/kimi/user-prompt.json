@@ -1,1 +1,1 @@
-{"session_id":"kimi-sess-1","session_title":"Parser tests","client_type":"cli","cwd":"/Users/someone/demo-app","hook_event_name":"UserPromptSubmit","prompt":"add a test for the parser"}
+{"hook_event_name": "UserPromptSubmit", "session_id": "kimi-sess-1", "cwd": "/Users/someone/demo-app", "prompt": "add a test for the parser"}

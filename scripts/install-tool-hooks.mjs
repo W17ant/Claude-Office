@@ -25,7 +25,7 @@
  *   - installing twice changes nothing.
  */
 
-import { existsSync, lstatSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -48,7 +48,8 @@ const EVENTS = {
   gemini: ['SessionStart', 'SessionEnd', 'BeforeAgent', 'AfterAgent', 'BeforeTool', 'AfterTool', 'Notification', 'PreCompress'],
   // Why flat vs grouped: agy's tool events take { matcher, hooks }, the others a plain handler list
   antigravity: { SessionStart: 'flat', PreInvocation: 'flat', PreToolUse: 'grouped', PostToolUse: 'grouped', Stop: 'flat' },
-  kimi: ['SessionStart', 'SessionEnd', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'PermissionRequest', 'Stop', 'StopFailure', 'Interrupt', 'PreCompact', 'PostCompact', 'SubagentStart', 'SubagentStop'],
+  // Why only these: Kimi refuses to start on an event outside its fixed list (HookEventType, src/kimi_cli/hooks/config.py)
+  kimi: ['SessionStart', 'SessionEnd', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'Stop', 'StopFailure', 'PreCompact', 'PostCompact', 'SubagentStart', 'SubagentStop'],
 }
 // Why 2 s (Gemini: 2000 ms): the relay gives up after 1.5 s; the tool's own cap is a backstop
 const TIMEOUT_S = 2
@@ -61,7 +62,7 @@ function toolPresent(tool, home) {
     case 'codex': return existsSync(join(home, '.codex'))
     case 'gemini': return existsSync(join(home, '.gemini'))
     case 'antigravity': return existsSync(join(home, '.gemini', 'antigravity-cli')) || existsSync(join(home, '.gemini', 'config'))
-    case 'kimi': return existsSync(join(home, '.kimi-code')) || existsSync(join(home, '.kimi'))
+    case 'kimi': return existsSync(dirname(targetFile('kimi', home)))
     case 'opencode': return existsSync(join(home, '.config', 'opencode'))
     default: return false
   }
@@ -71,15 +72,16 @@ function toolPresent(tool, home) {
  * The config file install edits for a tool.
  * @param {string} tool  a TOOL_IDS id
  * @param {string} home  the home directory
+ * @param {Record<string, string | undefined>} [env]  for KIMI_SHARE_DIR
  * @returns {string} absolute path
  */
-export function targetFile(tool, home) {
+export function targetFile(tool, home, env = process.env) {
   switch (tool) {
     case 'codex': return join(home, '.codex', 'hooks.json')
     case 'gemini': return join(home, '.gemini', 'settings.json')
     case 'antigravity': return join(home, '.gemini', 'config', 'hooks.json')
-    // Why the fallback: older Kimi builds read ~/.kimi; use it only when it is the one that exists
-    case 'kimi': return !existsSync(join(home, '.kimi-code')) && existsSync(join(home, '.kimi')) ? join(home, '.kimi', 'config.toml') : join(home, '.kimi-code', 'config.toml')
+    // Why: where Kimi itself reads it (get_share_dir, src/kimi_cli/share.py)
+    case 'kimi': return join(env.KIMI_SHARE_DIR || join(home, '.kimi'), 'config.toml')
     case 'opencode': return join(home, '.config', 'opencode', 'plugins', 'claude-office.js')
     default: throw new Error(`Unknown tool: ${tool}`)
   }
@@ -99,17 +101,25 @@ function readText(file) {
   return existsSync(file) ? readFileSync(file, 'utf8') : null
 }
 
-/** Write via a temp file and rename (a half-written config would break the tool). */
+/**
+ * Write via a temp file and rename (a half-written config would break the tool),
+ * keeping the file's permissions.
+ * Why keep them: Kimi's config.toml holds an API key, usually 0600.
+ */
 function writeAtomic(file, text) {
   mkdirSync(dirname(file), { recursive: true })
+  const mode = existsSync(file) ? statSync(file).mode & 0o777 : null
   const tmp = `${file}.claude-office.tmp`
-  writeFileSync(tmp, text)
+  writeFileSync(tmp, text, { mode: 0o600 })
+  if (mode !== null) chmodSync(tmp, mode)
   renameSync(tmp, file)
 }
 
-/** Keep the original bytes once, before our first change to an existing file. */
+/** Keep the original bytes once, before our first change to an existing file; private, since it may hold a key. */
 function backupOnce(file, original) {
-  if (original !== null && !existsSync(file + BACKUP_SUFFIX)) writeFileSync(file + BACKUP_SUFFIX, original)
+  if (original === null || existsSync(file + BACKUP_SUFFIX)) return
+  writeFileSync(file + BACKUP_SUFFIX, original, { mode: 0o600 })
+  chmodSync(file + BACKUP_SUFFIX, 0o600)
 }
 
 function relayCommand(hooksDir, tool, event) {
@@ -207,8 +217,8 @@ function kimiBlock(hooksDir) {
   return `${KIMI_START}\n${tables.join('\n')}${KIMI_END}\n`
 }
 
-/** Text without our block (and the newline we put before it). */
-function stripKimi(text) {
+/** Text without our marked block (and the newline we put before it). */
+function stripKimiBlock(text) {
   const start = text.indexOf(KIMI_START)
   if (start < 0) return text
   const endAt = text.indexOf(KIMI_END, start)
@@ -217,6 +227,28 @@ function stripKimi(text) {
   if (text[end] === '\n') end++
   const from = start > 0 && text[start - 1] === '\n' ? start - 1 : start
   return text.slice(0, from) + text.slice(end)
+}
+
+/**
+ * Text without any of our hooks: the marked block, then any [[hooks]] table
+ * still running the relay.
+ * Why both: Kimi's save_config rewrites config.toml with tomlkit, which keeps
+ * the tables but drops our marker comments.
+ */
+function stripKimi(text) {
+  const unmarked = stripKimiBlock(text)
+  if (!unmarked.includes(RELAY)) return unmarked
+  const kept = []
+  let table = null
+  const flush = () => { if (table && !table.join('\n').includes(RELAY)) kept.push(...table); table = null }
+  for (const line of unmarked.split('\n')) {
+    if (/^\s*\[/.test(line)) flush()
+    if (/^\s*\[\[\s*hooks\s*\]\]\s*$/.test(line)) table = [line]
+    else if (table) table.push(line)
+    else kept.push(line)
+  }
+  flush()
+  return kept.join('\n').replace(/\n{2,}$/, '\n')
 }
 
 function installKimi(file, hooksDir, notes) {
@@ -236,7 +268,7 @@ function installKimi(file, hooksDir, notes) {
 
 function uninstallKimi(file) {
   const current = readText(file)
-  if (current === null || !current.includes(KIMI_START)) return []
+  if (current === null || !current.includes(RELAY)) return []
   const next = stripKimi(current)
   if (next === '' && !existsSync(file + BACKUP_SUFFIX)) unlinkSync(file)
   else writeAtomic(file, next)
@@ -322,7 +354,7 @@ export function status(tool, { home = homedir() } = {}) {
   if (!toolPresent(tool, home)) return 'not-installed'
   const text = readText(targetFile(tool, home))
   if (text === null) return 'not-connected'
-  if (tool === 'kimi') return text.includes(KIMI_START) ? 'connected' : 'not-connected'
+  if (tool === 'kimi') return text.includes(RELAY) ? 'connected' : 'not-connected'
   if (tool === 'opencode') return text.includes(PLUGIN_MARK) ? 'connected' : 'not-connected'
   try {
     const cfg = parseJson(text, '')

@@ -1,1 +1,1 @@
-{"session_id":"kimi-sess-1","session_title":"Parser tests","client_type":"cli","cwd":"/Users/someone/demo-app","hook_event_name":"PostToolUseFailure","tool_name":"Bash","tool_input":{"command":"npm test"},"error":"exit 1"}
+{"hook_event_name": "PostToolUseFailure", "session_id": "kimi-sess-1", "cwd": "/Users/someone/demo-app", "tool_name": "Shell", "tool_input": {"command": "npm test"}, "error": "exit 1", "tool_call_id": "call-1"}

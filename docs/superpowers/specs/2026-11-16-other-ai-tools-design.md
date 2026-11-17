@@ -143,7 +143,7 @@ contribute what they know about their tool.
   | Codex | `~/.codex/hooks.json` | relay entry per event; print "approve once with `/hooks` in Codex" |
   | Gemini CLI | `~/.gemini/settings.json` `hooks` | relay entry per event |
   | Antigravity | `~/.gemini/config/hooks.json` | relay entry per event |
-  | Kimi | `~/.kimi-code/config.toml` (or the older `~/.kimi/config.toml`, whichever exists) | `[[hooks]]` tables inside a marked block (`# >>> claude-office` … `# <<< claude-office`), edited as text, no TOML library. *(Builder-check call)* If the file already has an inline `hooks = [...]` key, refuse and print the lines to add by hand: mixing the two syntaxes would make the file invalid and break Kimi |
+  | Kimi | `~/.kimi/config.toml`, or `$KIMI_SHARE_DIR/config.toml` (changed at review: Kimi's source reads these, not `~/.kimi-code`) | `[[hooks]]` tables inside a marked block (`# >>> claude-office` … `# <<< claude-office`), edited as text, no TOML library. *(Builder-check call)* If the file already has an inline `hooks = [...]` key, refuse and print the lines to add by hand: mixing the two syntaxes would make the file invalid and break Kimi |
   | OpenCode | `~/.config/opencode/plugins/claude-office.js` | a plugin that POSTs the signed event itself with `fetch` (no process per event) |
 
 - Every entry we write is recognisable as ours (by command path or marker),

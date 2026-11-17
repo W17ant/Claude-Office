@@ -5,7 +5,11 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ClaudeOffice, signRequest } from '../hooks/opencode-plugin.js'
+import * as plugin from '../hooks/opencode-plugin.js'
+import { ClaudeOffice } from '../hooks/opencode-plugin.js'
+
+/** What the server checks: HMAC(token, method\npath\nts\nbody). */
+const signRequest = (token: string, path: string, ts: string, body: string) => createHmac('sha256', token).update(`POST\n${path}\n${ts}\n${body}`).digest('hex')
 
 describe('opencode plugin', () => {
   let home: string
@@ -23,9 +27,9 @@ describe('opencode plugin', () => {
     rmSync(home, { recursive: true, force: true })
   })
 
-  it('signs the way the server checks: HMAC(token, method\\npath\\nts\\nbody)', () => {
-    const want = createHmac('sha256', 'tok').update('POST\n/hook/opencode\n123\n{"a":1}').digest('hex')
-    expect(signRequest('tok', '/hook/opencode', '123', '{"a":1}')).toBe(want)
+  // Why: OpenCode calls every exported function as a plugin; a helper export fails to load on each start
+  it('exports only the plugin function', () => {
+    expect(Object.keys(plugin).filter(k => typeof (plugin as any)[k] === 'function')).toEqual(['ClaudeOffice'])
   })
 
   it('posts a bus event, signed, to loopback with the directory added', async () => {
