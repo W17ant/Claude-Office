@@ -2,6 +2,10 @@
 
 All notable changes to Claude Office. Numbers refer to pull requests.
 
+## Unreleased
+
+- Other AI tools in the office: Codex, Gemini CLI, OpenCode, Antigravity and Kimi. `install-hooks --tool <id>` connects one (and `uninstall-hooks --tool <id>` takes it back out, leaving the rest of the tool's config as it was), its sessions appear in the office tagged with the tool's name, and `doctor` says which are connected. One small relay (`hooks/office-relay.py`, or a plugin for OpenCode) forwards each hook payload to a new `POST /hook/:tool` on loopback, and the server translates it, so a wrong field is fixed by an office update rather than a reinstall. All five are experimental until someone runs them for real: tell us on #115. Ported from community forks, with thanks: **EooL** (the event mapping for each tool and the research into their hooks), **gilberth** (Codex subagent role aliases) and **waguirre** (the Gemini CLI and Kimi wiring). See README › Other AI tools.
+
 ## 1.3.0 — 2026-11-16
 
 - Dependencies: every production `npm audit` finding is fixed (proxy-addr, body-parser, js-yaml, path-to-regexp, ws, qs; #111). The dev and build tools move up a major: Vite 8, Vitest 5, Electron 45, electron-builder 26 (#112).

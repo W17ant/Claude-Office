@@ -210,6 +210,38 @@ Two things to know. Plugin hooks merge with the ones in your settings, so pick o
 
 `GET /health` returns `{ status, agents, clients, sessions, lastHookAt, hooksSeen, uiAvailable, version, uptimeMs }`; the server also sends it in the WebSocket snapshot and as a `health` event, at most one every 5 s while hooks arrive.
 
+## Other AI tools
+
+Codex, Gemini CLI, OpenCode, Antigravity and Kimi can show their sessions in the office. All five are experimental: their payloads come from each tool's docs and from community forks, not yet from a live session ([#115](https://github.com/W17ant/Claude-Office/issues/115)).
+
+```bash
+npm run install-hooks -- --tool codex        # or gemini, opencode, antigravity, kimi
+npm run uninstall-hooks -- --tool codex
+npx @w17ant/agent-office install-hooks --tool codex   # without a checkout
+```
+
+`--tool` connects that tool only; it does not touch Claude Code's hooks. `npm run doctor` adds one line saying which installed tools are connected.
+
+**How an event travels.** The tool runs `python3 -I hooks/office-relay.py <tool> [<event>]` with its hook payload on stdin. The relay posts the payload unchanged to `POST /hook/<tool>[?event=<event>]` on `127.0.0.1:$AGENT_OFFICE_PORT` (`AGENT_OFFICE_EVENT_URL` is ignored, so nothing leaves the machine), signed with the office token exactly like `/event`. The server translates it (`server/tools/<tool>.js`), so a wrong field name is fixed by an office update, never by reinstalling the hook. The relay always exits 0, gives up after 1.5 s, sends nothing inside the office's own runs (`AGENT_OFFICE_RUN=1`) or without a token, and prints only what the tool needs on stdout: `{}` for Gemini CLI and for Antigravity's `PreToolUse` / `PostToolUse` / `Stop`, nothing for the others. It never answers a permission prompt for you. OpenCode has no command hooks, so it gets a plugin (`hooks/opencode-plugin.js`) that does the same from inside OpenCode, forwarding only the events the translator reads, without waiting for the answer.
+
+**What the installer changes.** Each file is backed up once as `<file>.claude-office.bak`, never written through a symlink, and re-running is safe. Uninstall removes only the office's entries, restores the file byte for byte when nothing else changed, and keeps hooks you added since.
+
+| Tool | File | What goes in |
+|---|---|---|
+| Codex | `~/.codex/hooks.json` | 12 events, `async`, 2 s timeout; Codex asks you to approve a new hook once with `/hooks` |
+| Gemini CLI | `~/.gemini/settings.json` | 8 events under `hooks`, named `claude-office` |
+| Antigravity | `~/.gemini/config/hooks.json` | a top-level `claude-office` entry; the event name goes on the command line, since the payload has none |
+| Kimi | `~/.kimi-code/config.toml` (or `~/.kimi/config.toml` when that is the one there) | `[[hooks]]` tables between `# >>> claude-office` and `# <<< claude-office`; a file that lists its hooks inline (`hooks = [...]`) is left alone and the installer prints the lines to add by hand |
+| OpenCode | `~/.config/opencode/plugins/claude-office.js` | the plugin; uninstall removes it only if it is still ours |
+
+**`POST /hook/:tool`** takes the office token like `/event` (signature or bearer) and a body up to 1 MB (`/event` keeps 64 KB: a Codex or Gemini payload carries the whole tool output). An unknown tool is `404`; a payload that becomes no office event (an event the office does not show, or a field it cannot read) is `204`; otherwise `{ ok: true, count }`. The route, not the payload, says which tool it is: every event gets `client: <tool>` and a session id `<tool>:<the tool's own id>`, so two tools never share a session, and the session strip shows the tool's name.
+
+**Adding or fixing a tool** is one file, one fixture and one test:
+
+1. `server/tools/<id>.js` exports `{ id, label, translate(payload, event) }`. `translate` is pure and returns an array of the office's own events (`session_started`, `prompt`, `agent_working`, `needs_you`, `turn_end`, `session_ended`, … the shapes above `POST /event` in `server/index.js`), `[]` for anything it does not understand. Build each event on `sessionBase(id, nativeId, cwd)` from `server/tools/common.js`, and wrap `translate` in `safely()` so a surprise payload is dropped instead of throwing. Register it in `server/tools/index.js`.
+2. Put real payloads in `tests/fixtures/tools/<id>/`. To record them, set `AGENT_OFFICE_CAPTURE_DIR=<an existing folder>` in the environment the tool runs its hooks in: the relay also saves each raw payload there as `<tool>-<event>-<ms>.json`. Take out your paths, prompts and code before committing them.
+3. Add the cases to `tests/tool-translators.test.ts`, and the install target to `scripts/install-tool-hooks.mjs` if the tool is new.
+
 ## Platform support
 
 | Platform | Office in the browser | Claude Code hooks + status line | Desktop app (Electron) |

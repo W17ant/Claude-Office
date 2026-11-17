@@ -203,6 +203,8 @@ contribute what they know about their tool.
 
 - README: a short "Other AI tools" section listing the five, with Codex as
   supported and the other four experimental, each linking to #115.
+  (Changed at build time: the owner has no Codex, so the live check did not
+  run and Codex ships experimental too.)
 - `docs/reference.md`: the `/hook/:tool` route, the translator shape, and
   how to add a tool.
 - CONTRIBUTING: "Add or fix a tool: one file in `server/tools/`, one fixture,

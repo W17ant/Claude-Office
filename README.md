@@ -225,6 +225,20 @@ npx @w17ant/agent-office                 # start the office and open it; Ctrl+C 
 
 Installing it as a Claude Code plugin, the hook events, every setting and the security model are all in the [reference](docs/reference.md).
 
+## Other AI tools
+
+The office can show sessions from other AI coding tools too, tagged with the tool's name on the session strip. Connect one with `--tool`:
+
+| Tool | Connect it | Status |
+|---|---|---|
+| Codex | `npm run install-hooks -- --tool codex`, then type `/hooks` in Codex once to approve it | experimental — tell us if it works ([#115](https://github.com/W17ant/Claude-Office/issues/115)) |
+| Gemini CLI | `npm run install-hooks -- --tool gemini` | experimental — tell us if it works ([#115](https://github.com/W17ant/Claude-Office/issues/115)) |
+| OpenCode | `npm run install-hooks -- --tool opencode` | experimental — tell us if it works ([#115](https://github.com/W17ant/Claude-Office/issues/115)) |
+| Antigravity | `npm run install-hooks -- --tool antigravity` | experimental — tell us if it works ([#115](https://github.com/W17ant/Claude-Office/issues/115)) |
+| Kimi | `npm run install-hooks -- --tool kimi` | experimental — tell us if it works ([#115](https://github.com/W17ant/Claude-Office/issues/115)) |
+
+With npx it is `npx @w17ant/agent-office install-hooks --tool <id>`. `uninstall-hooks --tool <id>` takes it back out and leaves the rest of the tool's config as it was. Nothing leaves your machine: the hook only talks to the office on `127.0.0.1`. How it works, and how to add a tool: [reference › Other AI tools](docs/reference.md#other-ai-tools).
+
 ## Customise Your Character
 
 The boss character (you) is configurable via `office.config.json`:
