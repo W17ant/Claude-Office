@@ -437,7 +437,8 @@
       "testsGreen": "✅ 测试又绿了",
       "testsGreenIn": "✅ {where} 测试又绿了",
       "buildGreen": "✅ 构建又绿了",
-      "buildGreenIn": "✅ {where} 构建又绿了"
+      "buildGreenIn": "✅ {where} 构建又绿了",
+      "runningTheShow": "统筹全局"
     },
     "phase": {
       "night": "🌙 夜班",

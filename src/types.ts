@@ -19,6 +19,9 @@ export interface Position {
   y: number
 }
 
+/** What getEffect (src/agentManager.ts) draws over a break or an event walk. */
+export type EffectKind = 'water' | 'pizza' | 'cake' | 'fire' | 'party'
+
 export interface Agent {
   id: string
   name: string
@@ -36,6 +39,12 @@ export interface Agent {
   visitSpotId?: string      // the seat it holds in another room while it is away from its own
   task?: string
   statusText?: string
+  /**
+   * The prop a break or an event walk shows (water glass, pizza, cake, fire,
+   * party). Why data, not the status text: the text is translated, the prop
+   * must not change with the language
+   */
+  effectKind?: EffectKind
   spriteFacing?: 'front-left' | 'front-right' | 'rear-left' | 'rear-right'
   color: string
   emoji: string

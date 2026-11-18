@@ -425,7 +425,8 @@
       "testsGreen": "✅ 테스트 다시 통과",
       "testsGreenIn": "✅ {where} 테스트 다시 통과",
       "buildGreen": "✅ 빌드 다시 성공",
-      "buildGreenIn": "✅ {where} 빌드 다시 성공"
+      "buildGreenIn": "✅ {where} 빌드 다시 성공",
+      "runningTheShow": "총괄 중"
     },
     "phase": {
       "night": "🌙 야간 근무",

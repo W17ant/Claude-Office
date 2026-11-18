@@ -127,6 +127,18 @@ describe('server/i18n.js', () => {
     }
   })
 
+  it('skips a locale file whose names are not text (GET /settings would fail on it)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agent-office-locales-'))
+    writeFileSync(join(dir, 'en.json'), JSON.stringify({ meta: { name: 'English', englishName: 'English' } }))
+    writeFileSync(join(dir, 'de.json'), JSON.stringify({ meta: { name: 42, englishName: ['German'] } }))
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      expect(Object.keys(loadLocales(dir))).toEqual(['en'])
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
   it('t follows the setting', () => {
     const dir = mkdtempSync(join(tmpdir(), 'agent-office-locales-'))
     writeFileSync(join(dir, 'en.json'), JSON.stringify({ meta: { name: 'English', englishName: 'English' }, server: { x: 'Hello' } }))

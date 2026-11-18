@@ -437,7 +437,8 @@
       "testsGreen": "✅ test di nuovo verdi",
       "testsGreenIn": "✅ test di nuovo verdi in {where}",
       "buildGreen": "✅ build di nuovo verde",
-      "buildGreenIn": "✅ build di nuovo verde in {where}"
+      "buildGreenIn": "✅ build di nuovo verde in {where}",
+      "runningTheShow": "Al comando"
     },
     "phase": {
       "night": "🌙 Turno di notte",

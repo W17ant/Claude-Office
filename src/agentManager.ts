@@ -24,7 +24,7 @@
  *   - dx < 0,  dy >= 0 → rear-left   (fallback — no rear-right walking sprite)
  */
 
-import { Agent, AgentState, Position } from './types'
+import { Agent, AgentState, Position, type EffectKind } from './types'
 import { AgentSpot, Waypoint } from './rooms'
 import { themedSpawn, themedWork, themedDone, themedCoffee, themedWater, getOfficePropForRole } from './theme'
 import { getVariant } from './incident'
@@ -226,6 +226,19 @@ function pickEnergyDrink(agentId: string): string {
  * Map an agent state to the effect sprite path (or null for no effect).
  * Pass statusText/task to detect ultra-think mode.
  */
+/**
+ * The prop an office event shows on the agents it moves, from the event's id
+ * (the same words the English names were matched on).
+ * @param eventId an id from src/events.ts
+ */
+export function eventEffectKind(eventId: string): EffectKind | undefined {
+  if (eventId.includes('pizza')) return 'pizza'
+  if (eventId.includes('birthday')) return 'cake'
+  if (eventId.includes('fire')) return 'fire'
+  if (eventId.includes('deploy') || eventId.includes('friday') || eventId.includes('success')) return 'party'
+  return undefined
+}
+
 export function getEffect(
   state: AgentState,
   idleDurationMs: number = 0,
@@ -234,6 +247,7 @@ export function getEffect(
   task?: string,
   role?: string,
   lastFailed?: boolean,
+  effectKind?: EffectKind,
 ): string | null {
   // Incident mode: an agent whose last tool call failed wears the build-failed bubble
   if (lastFailed && state === 'working' && getVariant() === 'incident') {
@@ -264,6 +278,8 @@ export function getEffect(
     }
     case 'coffee-break': {
       // Boss gets Red Bull (handled above), water breaks get water glass
+      if (effectKind === 'water') return '/sprites/effects/glass-water.png'
+      // English text: the ?sim script and agents from before effectKind
       const breakText = (statusText ?? '').toLowerCase()
       if (breakText.includes('hydrat') || breakText.includes('h2o') || breakText.includes('water') || breakText.includes('refill')) {
         return '/sprites/effects/glass-water.png'
@@ -271,7 +287,14 @@ export function getEffect(
       return '/sprites/effects/need-coffee.png'
     }
     case 'walking-to-desk': {
-      // Event-specific effects while walking to event spots
+      // Event-specific effects while walking to event spots: the event's kind
+      // first (the status text is translated), English text as the fallback
+      switch (effectKind) {
+        case 'pizza': return '/sprites/effects/pizza.png'
+        case 'cake': return '/sprites/effects/cake.png'
+        case 'fire': return '/sprites/effects/fire.png'
+        case 'party': return '/sprites/effects/party.png'
+      }
       const walkText = (statusText ?? '').toLowerCase()
       if (walkText.includes('pizza')) return '/sprites/effects/pizza.png'
       if (walkText.includes('birthday')) return '/sprites/effects/cake.png'

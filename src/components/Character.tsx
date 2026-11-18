@@ -235,7 +235,7 @@ const Character: React.FC<CharacterProps> = ({ agent, idleDurationMs = 0, zIndex
   else if (mainState === 'compacting') effectSrc = null
   else if (mainState === 'waiting') effectSrc = '/sprites/effects/glass-water.png'
   else if (mainState === 'working' && agent.state === 'working') effectSrc = '/sprites/effects/typing.png'
-  else effectSrc = getEffect(agent.state, idleDurationMs, agent.statusText, agent.id, agent.task, agent.role, agent.lastFailed)
+  else effectSrc = getEffect(agent.state, idleDurationMs, agent.statusText, agent.id, agent.task, agent.role, agent.lastFailed, agent.effectKind)
 
   const projectTag = showProject && agent.project ? agent.project : null
   // The state label under the sprite replaces the project tag (which it then carries)

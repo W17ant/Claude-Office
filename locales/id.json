@@ -439,7 +439,8 @@
       "testsGreen": "✅ tes hijau lagi",
       "testsGreenIn": "✅ tes hijau lagi di {where}",
       "buildGreen": "✅ build hijau lagi",
-      "buildGreenIn": "✅ build hijau lagi di {where}"
+      "buildGreenIn": "✅ build hijau lagi di {where}",
+      "runningTheShow": "Memimpin kantor"
     },
     "phase": {
       "night": "🌙 Sif malam",

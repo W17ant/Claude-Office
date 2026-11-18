@@ -81,6 +81,32 @@ function findings(file: string): string[] {
   return out
 }
 
+// Text App.tsx sets on agents in code (task: / statusText:). The ?sim and
+// ?video script's lines stay English (spec): they are listed here.
+const SIM_ONLY = new Set([
+  'Office assistant',
+  'Auditing auth middleware for session token vulnerabilities',
+  'Building responsive dashboard with real-time charts',
+  'Reviewing PR #487 — payment processing refactor',
+  'ultra-think: deep analysis...',
+  'Searching codebase for API endpoint patterns',
+  'Investigating null pointer in payment webhook handler',
+  'Pizza Delivery',
+  'Scanning auth-related files across codebase',
+])
+
+describe('no hard-coded agent text in App.tsx', () => {
+  it('every task / statusText literal is ?sim content', () => {
+    const found: string[] = []
+    readFileSync('src/App.tsx', 'utf8').split('\n').forEach((line, i) => {
+      for (const m of line.matchAll(/\b(?:task|statusText): '([^']*[A-Za-z][^']*)'/g)) {
+        if (!SIM_ONLY.has(m[1]) && !m[1].startsWith('ultra-think: ')) found.push(`src/App.tsx:${i + 1}: ${m[1]}`)
+      }
+    })
+    expect(found).toEqual([])
+  })
+})
+
 describe('no hard-coded English in the page', () => {
   it.each(IN_SCOPE)('%s', file => {
     expect(findings(file)).toEqual([])

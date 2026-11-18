@@ -437,7 +437,8 @@
       "testsGreen": "✅ testler yine yeşil",
       "testsGreenIn": "✅ testler yine yeşil: {where}",
       "buildGreen": "✅ build yine yeşil",
-      "buildGreenIn": "✅ build yine yeşil: {where}"
+      "buildGreenIn": "✅ build yine yeşil: {where}",
+      "runningTheShow": "Her şeyi yönetiyor"
     },
     "phase": {
       "night": "🌙 Gece vardiyası",

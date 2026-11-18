@@ -83,3 +83,21 @@ describe('firstRunLanguage', () => {
     expect(firstRunLanguage(null, false, ['de'], ['en', 'de'])).toBeNull()
   })
 })
+
+describe('parseCatalogs', () => {
+  it('skips a locale file that does not parse or lacks its names, with one warning each', async () => {
+    const { parseCatalogs } = await import('../src/i18n')
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const out = parseCatalogs({
+        '../locales/en.json': JSON.stringify({ meta: { name: 'English', englishName: 'English' } }),
+        '../locales/fr.json': '{ "meta": { "name": "Français",',
+        '../locales/de.json': JSON.stringify({ meta: { name: 42, englishName: 'German' } }),
+      })
+      expect(Object.keys(out)).toEqual(['en'])
+      expect(warn).toHaveBeenCalledTimes(2)
+    } finally {
+      warn.mockRestore()
+    }
+  })
+})

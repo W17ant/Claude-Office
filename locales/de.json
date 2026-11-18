@@ -437,7 +437,8 @@
       "testsGreen": "✅ Tests wieder grün",
       "testsGreenIn": "✅ Tests in {where} wieder grün",
       "buildGreen": "✅ Build wieder grün",
-      "buildGreenIn": "✅ Build in {where} wieder grün"
+      "buildGreenIn": "✅ Build in {where} wieder grün",
+      "runningTheShow": "Hat das Sagen"
     },
     "phase": {
       "night": "🌙 Nachtschicht",

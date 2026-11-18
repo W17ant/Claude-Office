@@ -436,7 +436,8 @@
       "testsGreen": "✅ tests green again",
       "testsGreenIn": "✅ tests green again in {where}",
       "buildGreen": "✅ build green again",
-      "buildGreenIn": "✅ build green again in {where}"
+      "buildGreenIn": "✅ build green again in {where}",
+      "runningTheShow": "Running the show"
     },
     "phase": {
       "night": "🌙 Night shift",

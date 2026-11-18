@@ -425,7 +425,8 @@
       "testsGreen": "✅ テストがまた緑に",
       "testsGreenIn": "✅ {where} のテストがまた緑に",
       "buildGreen": "✅ ビルドがまた緑に",
-      "buildGreenIn": "✅ {where} のビルドがまた緑に"
+      "buildGreenIn": "✅ {where} のビルドがまた緑に",
+      "runningTheShow": "仕切り役"
     },
     "phase": {
       "night": "🌙 夜勤",

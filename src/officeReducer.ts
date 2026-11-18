@@ -43,7 +43,7 @@
  * answered by the chat bot). Incident mode hears the same signals in App.tsx.
  */
 
-import { Agent, AgentScene, OfficeEvent, Position, SignalEvent, SnapshotAgent, ServerHealth, SessionInfo, SessionMain, MainState, NeedsYou, AGENT_CONFIGS } from './types'
+import { Agent, AgentScene, type EffectKind, OfficeEvent, Position, SignalEvent, SnapshotAgent, ServerHealth, SessionInfo, SessionMain, MainState, NeedsYou, AGENT_CONFIGS } from './types'
 import { ROOMS, AgentSpot, HUB_ROOM, OFFICE_ROOM, getFreeSpot, type RoomId } from './rooms'
 import {
   beginTransfer, stepTransfer, settleTransfer, planRoomMoves, heldSpotIds, roomOf, inOffice,
@@ -1810,7 +1810,7 @@ export function stepOffice(state: OfficeState, dt: number, env: OfficeEnv): Step
           )
           const out = beginTransfer({ ...updated, visitSpotId: lunchSpot.id }, LUNCH_ROOM, { x: lunchSpot.x, y: lunchSpot.y }, 'break', env)
           setMeta(agent.id, { onBreak: false, arrivedAtDeskAt: null, transfer: out.transfer })
-          return { ...out.agent, state: 'changing-room' as const, statusText: lunchMsg }
+          return { ...out.agent, state: 'changing-room' as const, statusText: lunchMsg, effectKind: useWater ? 'water' as const : undefined }
         }
         const breakSpot = useWater ? pickOne(WATER_SPOTS, env.random) : COFFEE_SPOT
         setMeta(agent.id, { onBreak: false, arrivedAtDeskAt: null })
@@ -1825,6 +1825,7 @@ export function stepOffice(state: OfficeState, dt: number, env: OfficeEnv): Step
           state: 'coffee-break',
           targetPosition: breakTarget,
           statusText: breakMsg,
+          effectKind: useWater ? 'water' : undefined,
           pathQueue: env.computePath(updated.position, breakTarget),
         }
         changed = true
@@ -1907,7 +1908,7 @@ export function stepOffice(state: OfficeState, dt: number, env: OfficeEnv): Step
  * pill), so the walk leaves it alone: a prompt that lands during the event
  * shows, and an idle Claude does not come back saying "back to work".
  */
-export function moveAgentsForEvent(agents: Agent[], target: Position, statusText: string, env: OfficeEnv): { agents: Agent[]; movedIds: string[] } {
+export function moveAgentsForEvent(agents: Agent[], target: Position, statusText: string, env: OfficeEnv, effectKind?: EffectKind): { agents: Agent[]; movedIds: string[] } {
   const movedIds: string[] = []
   const next = agents.map(a => {
     // Why inOffice: the event happens in the office; someone in another room does not hear it
@@ -1915,7 +1916,7 @@ export function moveAgentsForEvent(agents: Agent[], target: Position, statusText
     const decorative = a.id === BOSS_ID || a.id === CLAUDE_ID || (isMainAgent(a) && isFreeMain(a))
     if (!seated || (env.live && !decorative)) return a
     movedIds.push(a.id)
-    return walkTo(a, target, (isMainAgent(a) && a.statusText) || statusText, env)
+    return { ...walkTo(a, target, (isMainAgent(a) && a.statusText) || statusText, env), effectKind }
   })
   return { agents: next, movedIds }
 }
@@ -2004,7 +2005,7 @@ export function bossErrandGate(state: OfficeState): 'go' | 'wait' | 'fetch' {
 export function returnAgentsFromEvent(agents: Agent[], movedIds: string[], env: OfficeEnv): Agent[] {
   const moved = new Set(movedIds)
   return agents.map(a => (moved.has(a.id) && a.state === 'walking-to-desk'
-    ? walkTo(a, a.deskPosition, (isMainAgent(a) && a.statusText) || t('ui.office.backToWork'), env)
+    ? { ...walkTo(a, a.deskPosition, (isMainAgent(a) && a.statusText) || t('ui.office.backToWork'), env), effectKind: undefined }
     : a))
 }
 

@@ -16,12 +16,33 @@
 import { useSyncExternalStore } from 'react'
 import { createTranslator, matchLocale, completeness, type Catalog, type Translator, type Vars } from '../shared/i18n.js'
 
-const files = import.meta.glob('../locales/*.json', { eager: true, import: 'default' }) as Record<string, Catalog>
+// Why raw text, parsed here: a locale file with a typo (a translator's
+// checkout) must leave the office in English, not stop the page from building
+const files = import.meta.glob('../locales/*.json', { eager: true, query: '?raw', import: 'default' }) as Record<string, string>
+
+/**
+ * Parse the bundled locale files by code (en, de, zh-TW …). A file that is
+ * not valid JSON, or has no string meta.name / meta.englishName, is skipped
+ * with one console.warn, as the server does (server/i18n.js).
+ * @param raw file path → file text
+ */
+export function parseCatalogs(raw: Record<string, string>): Record<string, Catalog> {
+  const out: Record<string, Catalog> = {}
+  for (const [path, text] of Object.entries(raw)) {
+    const code = path.replace(/^.*\/([^/]+)\.json$/, '$1')
+    try {
+      const catalog = JSON.parse(text) as Catalog
+      if (typeof catalog?.meta?.name !== 'string' || typeof catalog?.meta?.englishName !== 'string') throw new Error('meta.name and meta.englishName must be text')
+      out[code] = catalog
+    } catch (err) {
+      console.warn(`[i18n] Skipping locales/${code}.json: ${(err as Error).message}`)
+    }
+  }
+  return out
+}
 
 /** Every bundled catalog by code (en, de, zh-TW …). */
-export const catalogs: Record<string, Catalog> = Object.fromEntries(
-  Object.entries(files).map(([path, catalog]) => [path.replace(/^.*\/([^/]+)\.json$/, '$1'), catalog]),
-)
+export const catalogs: Record<string, Catalog> = parseCatalogs(files)
 
 const CACHE_KEY = 'agent-office.language'
 const listeners = new Set<() => void>()

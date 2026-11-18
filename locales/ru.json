@@ -461,7 +461,8 @@
       "testsGreen": "✅ тесты снова зелёные",
       "testsGreenIn": "✅ тесты снова зелёные в {where}",
       "buildGreen": "✅ сборка снова зелёная",
-      "buildGreenIn": "✅ сборка снова зелёная в {where}"
+      "buildGreenIn": "✅ сборка снова зелёная в {where}",
+      "runningTheShow": "Руководит процессом"
     },
     "phase": {
       "night": "🌙 Ночная смена",

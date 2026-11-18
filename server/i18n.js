@@ -37,7 +37,7 @@ export function loadLocales(from = DEFAULT_DIR) {
   for (const file of files) {
     try {
       const catalog = JSON.parse(readFileSync(join(from, file), 'utf8'))
-      if (!catalog?.meta?.name || !catalog?.meta?.englishName) throw new Error('meta.name and meta.englishName are required')
+      if (typeof catalog?.meta?.name !== 'string' || typeof catalog?.meta?.englishName !== 'string') throw new Error('meta.name and meta.englishName must be text')
       out[basename(file, '.json')] = catalog
     } catch (err) {
       console.warn(`[i18n] Skipping ${file}: ${err.message}`)

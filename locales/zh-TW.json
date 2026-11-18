@@ -3,7 +3,9 @@
     "name": "繁體中文",
     "englishName": "Chinese (Traditional)",
     "status": "wip",
-    "translators": ["Yao920127"]
+    "translators": [
+      "Yao920127"
+    ]
   },
   "ui": {
     "settings": {
@@ -425,7 +427,8 @@
       "testsGreen": "✅ 測試恢復綠燈",
       "testsGreenIn": "✅ {where} 測試恢復綠燈",
       "buildGreen": "✅ build 恢復綠燈",
-      "buildGreenIn": "✅ {where} build 恢復綠燈"
+      "buildGreenIn": "✅ {where} build 恢復綠燈",
+      "runningTheShow": "統籌全局"
     },
     "phase": {
       "night": "🌙 夜班",
