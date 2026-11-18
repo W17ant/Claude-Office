@@ -1,0 +1,1569 @@
+{
+  "meta": {
+    "name": "简体中文",
+    "englishName": "Chinese (Simplified)",
+    "status": "wip",
+    "translators": []
+  },
+  "ui": {
+    "settings": {
+      "language": {
+        "title": "语言",
+        "wip": "翻译中",
+        "complete": "已翻译 {percent}%",
+        "report": "报告翻译错误",
+        "readOnly": "只有办公室自己的页面才能更改语言"
+      },
+      "title": "设置",
+      "close": "关闭设置",
+      "on": "开",
+      "off": "关",
+      "browser": {
+        "title": "本浏览器",
+        "theme": "主题",
+        "themeDefault": "默认",
+        "dayNight": "白天 / 夜晚",
+        "dayNightAria": "白天或夜晚",
+        "auto": "自动",
+        "day": "白天",
+        "night": "夜晚",
+        "season": "季节",
+        "seasonAuto": "自动（按日期）",
+        "holidays": "节日",
+        "seasons": "季节",
+        "seasonOff": "关",
+        "urlSeasonBefore": "地址里带有",
+        "urlSeasonAfter": "，它优先于这里的设置。",
+        "appliesOnReload": "刷新后生效。",
+        "reloadNow": "立即刷新",
+        "autoExplained": "自动模式按日期切换：四季（北半球），外加圣诞节、万圣节、复活节和情人节。当前：{look}。",
+        "nowUndrawn": "当前：{look}。还没有美术素材的季节会显示为普通办公室。",
+        "noArtYet": "{season}（暂无美术）",
+        "over": "{top}（叠加在{below}上）",
+        "sound": "声音",
+        "mute": "静音",
+        "unmute": "取消静音",
+        "volume": "音量",
+        "muted": "已静音",
+        "ambience": "环境音",
+        "ambienceTitle": "在少量事件音效之下播放安静的办公室底噪，音量同上"
+      },
+      "server": {
+        "title": "办公室服务器",
+        "sim": "?sim / ?video 模式下没有办公室服务器，这些设置只对真实运行的办公室有效。",
+        "readOnly": "只读页面：没有办公室令牌，服务器会拒绝修改。请打开 npm run open 给出的链接来更改这些设置。",
+        "waiting": "办公室服务器还没有响应。",
+        "answer": "在这里处理权限请求",
+        "answerTitle": "Claude 等待时，可以在办公室里的卡片上回应权限对话框",
+        "notify": "等待权限时通知",
+        "notifyTitle": "Claude 开始等待权限时发送桌面通知",
+        "logging": "提示词记录",
+        "logOff": "关",
+        "logSummary": "摘要",
+        "logFull": "完整",
+        "hintOff": "不存储也不显示任何提示词或回复文本，只记录状态。",
+        "hintSummary": "每条提示词和回复的前 200 个字符。",
+        "hintFull": "提示词和回复，最多 2000 个字符。",
+        "rowsStay": "chat.db 里已有的记录会一直保留，直到执行",
+        "ai": "AI 聊天监控",
+        "aiTitle": "让 Claude 在 #office-general 里回复的聊天监听器",
+        "bossSprite": "老板形象：",
+        "bossSpriteIn": "位于",
+        "bossSpriteWhen": "（服务器启动时读取）。",
+        "rowsStayEnd": "。"
+      }
+    },
+    "meters": {
+      "ariaLabel": "工资、电费和内存",
+      "title": "⚡ 办公室仪表",
+      "payroll": "工资",
+      "electricity": "电费",
+      "memory": "内存",
+      "needsStatusLine": "需要状态栏",
+      "perMin": "{amount}/分钟",
+      "tokPerMin": "tok/分钟",
+      "rateShort": "5h {percent}%",
+      "sessions_one": "{count} 个会话",
+      "sessions_other": "{count} 个会话",
+      "estimateMarker": "估",
+      "tip": {
+        "payrollHead_one": "工资 — {count} 个会话共 {amount} · 最近 5 分钟 {rate}/分钟",
+        "payrollHead_other": "工资 — {count} 个会话共 {amount} · 最近 5 分钟 {rate}/分钟",
+        "payrollToday": "今天 {amount} · +{added} / -{removed} 行 · 按标价估算",
+        "needsLine": "{session}：需要状态栏（{command}）",
+        "needsLineShort": "{session}：需要状态栏",
+        "payrollRow": "{session}：{amount} · {model} · {duration}",
+        "electricityHead": "电费 — 最近 5 分钟每分钟处理 {tokens} 个 token（含上下文重读）",
+        "electricityRow": "{session}：{rate} tok/分钟 · 上次调用 输入 {input} / 输出 {output}",
+        "subagents_one": " · {count} 个子代理 {tokens} tok",
+        "subagents_other": " · {count} 个子代理 {tokens} tok",
+        "memoryHead": "内存 — {session}：已用上下文窗口的 {percent}",
+        "memorySize": "（{used} / {size} token）",
+        "model": "模型 {model}",
+        "effort": " · effort {effort}",
+        "over200k": " · 超过 200k",
+        "claudeCode": " · Claude Code {version}",
+        "costLine": "{amount} · {duration} · 会话 {id}",
+        "rateHead": "速率限制（claude.ai 订阅）",
+        "rate5h": "5 小时窗口已用 {percent}%",
+        "rate7d": "7 天窗口已用 {percent}%",
+        "resets": " · {time} 重置",
+        "spendLimit": "消费上限已用 {percent}%"
+      },
+      "clutter": "🗂️ Claude 的桌子越来越乱了 — {session} 的上下文已到 {percent}%",
+      "clutterEstimated": "🗂️ Claude 的桌子越来越乱了 — {session} 的上下文已到 {percent}%（估算）",
+      "unnamedModel": "一个未命名的模型",
+      "window": {
+        "oneM": "窗口 {size} token：该会话运行的是 {model} 的 [1m] 版本",
+        "unknown": "假定窗口为 {size} token：{model} 不在办公室的模型表里，所以读数是近似值",
+        "overflow": "假定窗口为 {size} token：已用超过 200,000，所以 {model} 一定在跑 1M 版本（近似值）",
+        "table": "{model} 的窗口为 {size} token（来自 Claude Code 的模型表）"
+      },
+      "estimate": {
+        "estSuffix": " · 估算",
+        "compacted": "已压缩：窗口刚被清空，记录里的下一条回复会重新填满仪表",
+        "fromTranscript": "根据会话记录（最后一条回复的用量）估算，因为这个会话没有注册状态栏",
+        "needsBoth": "工资和电费需要状态栏：{command}"
+      },
+      "needs": {
+        "payrollHead": "工资需要状态栏 — Claude Code 只把费用报告给它的 statusLine 命令",
+        "electricityHead": "电费需要状态栏 — Claude Code 只把每分钟 token 数报告给它的 statusLine 命令",
+        "none_one": "这个会话没有注册状态栏（插件安装或 claude -p）；内存根据会话记录估算",
+        "none_other": "这 {count} 个会话没有注册状态栏（插件安装或 claude -p）；内存根据会话记录估算",
+        "register": "注册方法：{command}（在 Claude-Office 的代码目录里运行）"
+      }
+    },
+    "rooms": {
+      "mainOffice": "主办公区",
+      "corridor": "走廊",
+      "meetingRoom": "会议室",
+      "serverRoom": "机房",
+      "lunchRoom": "茶水间",
+      "short": {
+        "mainOffice": "办公区",
+        "corridor": "走廊",
+        "meetingRoom": "会议",
+        "serverRoom": "机房",
+        "lunchRoom": "茶水间"
+      },
+      "switcher": {
+        "ariaLabel": "楼层平面图：选择要显示的房间",
+        "empty": "空",
+        "people_one": "{count} 人",
+        "people_other": "{count} 人",
+        "label": "{room}，{people}",
+        "needsYou": "，需要你",
+        "trouble": "，出问题了",
+        "inView": "，当前显示"
+      },
+      "furniture": {
+        "coffeeMachine": "咖啡机",
+        "filingCabinet": "文件柜",
+        "printer": "打印机",
+        "fireExtinguisher": "灭火器",
+        "waterCooler": "饮水机",
+        "bell": "铃铛",
+        "kanbanBoard": "看板",
+        "shipItPoster": "Ship It 海报",
+        "dashboard": "仪表盘",
+        "clickToInteract": "点击互动"
+      },
+      "doors": {
+        "mainOffice": "办公区",
+        "corridor": "走廊",
+        "meetingRoom": "会议室",
+        "serverRoom": "机房",
+        "lunchRoom": "茶水间",
+        "goTo": "前往{room}"
+      },
+      "landmarks": {
+        "frontDoor": "电梯",
+        "managerDoor": "经理"
+      },
+      "placeholder": {
+        "ariaLabel": "{room}：占位图，美术还没画",
+        "note": "占位图：这个房间的美术还没画",
+        "coffee": "咖啡",
+        "water": "水"
+      },
+      "tv": {
+        "deploying": "部署中",
+        "shipped": "已上线",
+        "rollback": "回滚"
+      }
+    },
+    "needsYou": {
+      "permission": "✋ 需要你：{what}",
+      "permissionBare": "✋ 需要你 — 权限",
+      "input": "✋ 需要输入：{what}",
+      "inputBare": "✋ 需要输入",
+      "idle": "💤 空闲等待",
+      "quota": "⏳ 等待 token 额度",
+      "registry": "✋ {what}",
+      "registryBare": "✋ 在终端里等待",
+      "elicitation": "✋ {server} 有事问你",
+      "elicitationBare": "✋ 一个 MCP 服务器有事问你",
+      "short": {
+        "permission": "需要你",
+        "agentInput": "需要输入",
+        "idle": "空闲等待",
+        "quota": "等待额度",
+        "registry": "在终端等待"
+      }
+    },
+    "pill": {
+      "needsYou": "✋ 需要你",
+      "error": "⚠ 出错",
+      "compacting": "🧹 清空"
+    },
+    "strip": {
+      "sessions_one": "{count} 个会话",
+      "sessions_other": "{count} 个会话",
+      "notHooked": "{count} 个未接入",
+      "needYou_one": "{count} 个需要你",
+      "needYou_other": "{count} 个需要你",
+      "readOnlyHint": "只读：这个页面没有办公室令牌（或令牌已过期），所以服务器显示的办公室\n不含提示词、回复和命令行，权限对话框只能在终端里处理。\n请打开服务器启动时打印的链接，或在代码目录里运行 {command}：\n它会带着令牌打开办公室，之后这个浏览器会记住它。",
+      "connection": {
+        "connecting": "连接中…",
+        "online": "在线",
+        "reconnecting": "重新连接中…",
+        "offline": "离线"
+      },
+      "hooks": {
+        "unknown": "hooks：—",
+        "seen": "hooks：最近 {ago}",
+        "waiting": "hooks：暂无",
+        "missing": "还没有 hook 事件 — 运行 {command}"
+      },
+      "tip": {
+        "online": "办公室服务器 {url}：自 {time} 起在线",
+        "connecting": "办公室服务器 {url}：连接中…",
+        "reconnecting": "办公室服务器 {url}：{ago}断开连接，正在重试",
+        "offline": "办公室服务器 {url}：无法访问",
+        "start": "在代码目录里启动：{command}（或 {alt}）",
+        "hooksSeen_one": "Hooks：服务器启动以来共 {count} 个事件，最近一次 {ago}",
+        "hooksSeen_other": "Hooks：服务器启动以来共 {count} 个事件，最近一次 {ago}",
+        "hooksWaiting": "Hooks：暂无 — Claude Code 调用工具时才会触发",
+        "hooksMissing": "Hooks：{span}内没有任何事件。如果 Claude Code 正在调用工具却什么都没出现，说明 hooks 没装：{command}",
+        "counts": "会话：{sessions} · 代理：{agents} · 客户端：{clients}",
+        "notHooked_one": "未接入：{names} — 运行 {command} 就能看到它在做什么",
+        "notHooked_other": "未接入：{names} — 运行 {command} 就能看到它们在做什么",
+        "waitingOnYou": "在等你：",
+        "server": "服务器 v{version}，已运行 {span} · UI：{ui}",
+        "uiBuilt": "已构建（dist/）",
+        "uiDev": "开发服务器（dist/ 未构建）",
+        "diagnose": "诊断：{command}"
+      },
+      "simTitle": "?{mode}：模拟代理，没有服务器，没有 hooks",
+      "ariaLabel": "流水线健康状况",
+      "readOnly": "只读：请打开以下命令给出的链接",
+      "startIt": "启动：",
+      "todayTitle": "今天到目前为止：会话、代理、任务、部署、失败、事故、工资",
+      "today": "今天"
+    },
+    "time": {
+      "justNow": "刚刚",
+      "secondsAgo": "{count} 秒前",
+      "minutesAgo": "{count} 分钟前",
+      "hoursAgo": "{count} 小时前",
+      "daysAgo": "{count} 天前",
+      "seconds": "{count} 秒",
+      "minutes": "{count} 分钟",
+      "hoursMinutes": "{hours} 小时 {minutes} 分钟"
+    },
+    "sessions": {
+      "notHookedHint": "未接入 — 运行 `npm run install-hooks`（或 /plugin install agent-office）就能看到它在做什么",
+      "notHooked": "未接入",
+      "ariaLabel": "Claude Code 会话",
+      "workers_one": "{count} 个员工",
+      "workers_other": "{count} 个员工",
+      "tip": {
+        "tool": "工具：{tool}",
+        "project": "项目：{project}",
+        "cwd": "cwd：{cwd}",
+        "model": "模型：{model}",
+        "started": "启动方式：{source}",
+        "registry": "claude：{status}（注册表）",
+        "claude": "claude：{state}",
+        "pid": "pid {pid}",
+        "workers": "员工：{count}（{working} 个在工作）",
+        "ended": "已结束",
+        "endedReason": "已结束（{reason}）",
+        "session": "会话 {id}"
+      }
+    },
+    "today": {
+      "ariaLabel": "办公室的今天",
+      "title": "今天",
+      "close": "关闭",
+      "notAnswering": "办公室服务器没有响应。",
+      "counting": "统计中…",
+      "footBefore": "从本地午夜起算 · 在聊天里输入",
+      "footAfter": "听听经理怎么说",
+      "sessions": "会话",
+      "agentsSpawned": "新入职",
+      "agentsCompleted": "已下班",
+      "tasksCompleted": "已完成任务",
+      "deploys": "部署",
+      "pushes": "推送",
+      "buildsFailed": "构建失败",
+      "testsFailed": "测试失败",
+      "incidents": "事故",
+      "payroll": "工资"
+    },
+    "taskBoard": {
+      "untitled": "无标题任务",
+      "inProgress": "进行中：{subject}",
+      "done": "已完成：{subject}",
+      "todo": "待办：{subject}",
+      "blockedBy": "（被 {ids} 阻塞）",
+      "teamBoard": "{team} 团队的任务板",
+      "board": "任务板",
+      "aria": "{what}，{label}：{todo} 个待办，{doing} 个进行中，{done} 个已完成",
+      "ariaNext": "。点击查看下一个任务板",
+      "clickNext": "{what}：点击查看下一个任务板",
+      "more": "还有 {count} 个",
+      "chat": {
+        "todo": "{count} 个待办",
+        "todoBlocked": "{count} 个待办（{blocked} 个被阻塞）",
+        "inProgress": "{count} 个进行中：{subject}",
+        "progress": "{activity} — 已完成 {done}/{total}",
+        "nextUp": "{todo}，下一个：{subject}",
+        "allWaiting": "{todo}，全都在等别的事",
+        "toGo": "已完成 {done}/{total}，还剩 {pending} 个",
+        "oneDone": "任务板上唯一的任务已完成",
+        "allDone": "全部 {count} 个任务已完成"
+      }
+    },
+    "incident": {
+      "badgePinned": "由 ?variant=incident 固定 — 输入 /all-clear 结束",
+      "badgeTitle": "生产环境恢复后输入 /all-clear",
+      "incident": "事故",
+      "mini": "小事故",
+      "daysSign": "距上次事故天数",
+      "daysSignTitle": "距上次事故天数：{days}",
+      "daysSignNow": "距上次事故天数：0（就是现在）",
+      "beacon": "事故警示灯",
+      "statusPage": "状态页：回滚中",
+      "rollbackAlt": "正在回滚",
+      "rollback": "回滚",
+      "timeline": "事故时间线",
+      "pizza": "事故披萨"
+    },
+    "seasons": {
+      "christmas": "圣诞节",
+      "halloween": "万圣节",
+      "easter": "复活节",
+      "valentine": "情人节",
+      "spring": "春天",
+      "summer": "夏天",
+      "autumn": "秋天",
+      "winter": "冬天"
+    },
+    "titleBar": {
+      "incident": "🔥 生产环境挂了 — AGENT OFFICE",
+      "mode": "模式：{mode}",
+      "auto": "自动",
+      "day": "白天",
+      "night": "夜晚",
+      "settings": "设置",
+      "settingsTitle": "设置：主题、白天/夜晚、季节、声音、服务器设置"
+    },
+    "office": {
+      "catAlt": "猫",
+      "interactionAlt": "互动",
+      "thatsWhatSheSaid": "她就是这么说的 😏",
+      "waitingForDesk": "等工位中",
+      "waitingForDeskMsg": "等工位中...",
+      "doneStats": "✅ 完成 · {stats}",
+      "done": "完成",
+      "standingBy": "待命中",
+      "standingDown": "收工",
+      "working": "⚡ 工作中",
+      "workingOnPrompt": "✍ 处理提示词中",
+      "turnOver": "回合结束 — 空闲",
+      "apiError": "⚠ API 错误",
+      "apiErrorWhat": "⚠ API 错误：{error}",
+      "memoryWipe": "🧹 记忆清空",
+      "memoryWipeTrigger": "🧹 记忆清空（{trigger}）",
+      "waitingOnWorkers_one": "⏳ 在等 {count} 个后台员工",
+      "waitingOnWorkers_other": "⏳ 在等 {count} 个后台员工",
+      "waitingOnWorkersBare": "⏳ 在等后台员工",
+      "backToWorkTyping": "✍ 回去干活",
+      "backToWork": "回去干活",
+      "backToMyDesk": "回工位",
+      "clockedIn": "已上班",
+      "clockedInMsg": "🤖 上班打卡",
+      "clockedInProject": "🤖 上班打卡 · {project}",
+      "clockedOut": "已下班",
+      "clockedOutMsg": "👋 下班打卡",
+      "clockedOutAway": "我们不在时已下班",
+      "sessionEnded": "👋 会话结束",
+      "sessionEndedReason": "👋 会话结束（{reason}）",
+      "talkingTo": "正在和 {name} 说话",
+      "reportedBack": "📬 {name} 汇报完毕",
+      "reportedBackBare": "📬 一个后台员工汇报完毕",
+      "toolBatchDone_one": "{count} 个工具调用已完成",
+      "toolBatchDone_other": "{count} 个工具调用已完成",
+      "toolBatchDoneUnknown": "? 个工具调用已完成",
+      "toolRan": "{tool} 已运行",
+      "permissionAnswered": "✅ 权限已处理 — {what}",
+      "handDown": "放下手",
+      "detail": " — {detail}",
+      "grabbingRedBull": "去拿罐红牛",
+      "foundDesk": "找到工位了",
+      "offTo": {
+        "mainOffice": "去主办公区",
+        "corridor": "去走廊",
+        "meetingRoom": "去会议室",
+        "serverRoom": "去机房",
+        "lunchRoom": "去茶水间"
+      },
+      "exitCode": "退出码 {code}",
+      "shipping": "🚀 上线中",
+      "shippingWhere": "🚀 {where} 上线中",
+      "deployInterrupted": "⏹ 部署中断",
+      "deployInterruptedWhere": "⏹ {where} 部署中断",
+      "deployed": "🚀 部署成功",
+      "deployedWhere": "🚀 {where} 部署成功",
+      "deployFailed": "💥 部署失败",
+      "deployFailedWhere": "💥 {where} 部署失败",
+      "pushedTo": "🎉 已推送到 {branch}",
+      "pushedToWhere": "🎉 已推送到 {branch} · {where}",
+      "testsFailed": "❌ 测试失败",
+      "testsFailedIn": "❌ {where} 测试失败",
+      "buildFailed": "❌ 构建失败",
+      "buildFailedIn": "❌ {where} 构建失败",
+      "testsGreen": "✅ 测试又绿了",
+      "testsGreenIn": "✅ {where} 测试又绿了",
+      "buildGreen": "✅ 构建又绿了",
+      "buildGreenIn": "✅ {where} 构建又绿了"
+    },
+    "phase": {
+      "night": "🌙 夜班",
+      "dawn": "🌅 天快亮了",
+      "morning": "☀️ 早上好",
+      "afternoon": "☀️ 下午",
+      "evening": "🌆 傍晚",
+      "dusk": "🌇 太阳下山了"
+    },
+    "advent": {
+      "sleeps_one": "降临节日历：再睡 {count} 觉就是圣诞节！",
+      "sleeps_other": "降临节日历：再睡 {count} 觉就是圣诞节",
+      "christmas": "圣诞快乐！",
+      "daysTill_one": "距离 {year} 年还有 {count} 天",
+      "daysTill_other": "距离 {year} 年还有 {count} 天",
+      "newYear": "{year} 新年快乐！"
+    },
+    "chat": {
+      "logPrompts": {
+        "hint": "提示词记录：{level} — {what}。",
+        "off": "只记录状态 — 不存储、不广播、不显示任何提示词或回复文本",
+        "summary": "每条提示词和回复的前 200 个字符",
+        "full": "提示词和回复，最多 2000 个字符",
+        "unknown": "未知级别",
+        "where": "这是服务器设置（{file}）；可以在设置（标题栏里的齿轮）中修改，或用办公室令牌：",
+        "pill": "提示词：{level}"
+      },
+      "aiPausedTitle": "聊天监控已暂停 — 点击恢复",
+      "aiActiveTitle": "聊天监控运行中 — 点击暂停",
+      "aiOff": "AI 关",
+      "aiOn": "AI 开",
+      "volume": "音量：{percent}%",
+      "on": "开",
+      "off": "关",
+      "answerHere": "在这里处理：{state}",
+      "answerOnTitle": "可以在办公室里处理权限对话框（Claude 等待时会出现一张卡片）— 点击关闭",
+      "answerOffTitle": "权限对话框只能在终端里处理 — 点击让办公室来处理",
+      "notify": "通知：{state}",
+      "notifyOnTitle": "Claude 开始等待权限时发送桌面通知（只含项目和工具）— 点击关闭",
+      "notifyOffTitle": "Claude 等待权限时不发送桌面通知 — 点击开启",
+      "removeReaction": "点击移除",
+      "seen": "已读",
+      "seenAlt": "已读",
+      "typingAlt": "正在输入",
+      "typing": "{name} 正在输入",
+      "mentionsAria": "给会话排队一条提示词",
+      "mentionTitle": "给 {name} 排队一条提示词：它的回合结束时会收到",
+      "placeholder": "发消息到 {channel}",
+      "placeholderMentions": "发消息到 {channel}，或用 @会话 排队一条提示词",
+      "themeOn": "🧻 Dunder Mifflin 模式：开。盗用身份可不是开玩笑的。",
+      "themeOff": "🔁 办公室主题：关",
+      "tag": {
+        "prompt": "提示词",
+        "reply": "回复"
+      }
+    },
+    "phone": {
+      "tab": {
+        "chat": "聊天",
+        "meters": "仪表",
+        "today": "今天",
+        "settings": "设置"
+      },
+      "noKey": "无密钥",
+      "pending": "{count} 个等待中",
+      "noSecret": {
+        "title": "这个链接缺少密钥。",
+        "openBefore": "请打开",
+        "openAfter": "在电脑上打印的链接，或扫描它的二维码。链接以",
+        "endsAfter": "加 64 个字符结尾；首次访问后浏览器会记住它。"
+      },
+      "offline": "未连接。办公室可能已停止，或者这个链接已被替换：",
+      "offlineAfter": "会打印当前的链接。",
+      "metersEmpty": "还没有会话上报数据。Claude Code 开始工作后，工资、电费和内存会显示在这里。",
+      "tabsAria": "办公室面板"
+    },
+    "viewer": {
+      "connecting": "正在连接办公室…"
+    },
+    "inspector": {
+      "main": {
+        "working": "工作中",
+        "waiting_one": "在等 {count} 个员工",
+        "waiting_other": "在等 {count} 个员工",
+        "idle": "空闲",
+        "needsYou": "需要你",
+        "error": "API 错误",
+        "errorCode": "API 错误：{error}",
+        "errorDetail": "{label} — {detail}",
+        "compacting": "压缩中",
+        "unknown": "还没有消息"
+      },
+      "worker": {
+        "newHire": "正在到岗",
+        "walkingToDesk": "走向工位",
+        "walkingToManager": "走过去",
+        "talking": "交谈中",
+        "coffeeBreak": "休息中",
+        "waiting": "等工位中",
+        "changingRoom": "去另一个房间",
+        "completed": "已完成",
+        "working": "工作中",
+        "idle": "空闲",
+        "unknown": "未知"
+      },
+      "stats": {
+        "tokens": "{tokens} tok",
+        "toolUses_one": "{count} 次工具调用",
+        "toolUses_other": "{count} 次工具调用"
+      },
+      "derived": {
+        "note": "由办公室推算：{list}",
+        "tokens": "token 和模型来自它的会话记录",
+        "model": "模型来自它的会话记录",
+        "durationMs": "从创建到完成的时长",
+        "toolUses": "hook 看到的工具调用"
+      },
+      "transcript": {
+        "promptsOff": "会话记录已隐藏：提示词记录已关闭",
+        "needsToken": "办公室连上后会显示会话记录",
+        "noPath": "还没有会话记录",
+        "notFound": "找不到会话记录文件",
+        "unavailable": "会话记录不可用",
+        "nothingSaid": "还什么都没说",
+        "tool": "工具"
+      }
+    },
+    "agentCard": {
+      "ariaLabel": "代理检查器",
+      "ariaNamed": "{name} — 检查器",
+      "close": "关闭",
+      "closeTitle": "关闭（Esc）",
+      "roleMain": "会话 claude",
+      "tookTitle": "花了多长时间",
+      "forTitle": "已经干了多久",
+      "took": "用时 {elapsed}",
+      "for": "已进行 {elapsed}",
+      "isBoss": "那就是你。",
+      "task": "任务",
+      "noTask": "没有任务文本",
+      "notHooked": "未接入：只从 Claude Code 的会话注册表得知，所以还没有回合可显示",
+      "lastPrompt": "最近的提示词",
+      "lastReply": "最近的回复",
+      "promptsHidden": "已隐藏：提示词记录已关闭",
+      "nothingYet": "暂无",
+      "crons_one": "定时任务 {count}",
+      "crons_other": "定时任务 {count}",
+      "waitingOn": "在等 {count} 个",
+      "contextTitle": "最后一条消息的用量：上下文窗口有多满",
+      "context": "上下文 {tokens} tok",
+      "where": "位置",
+      "noProject": "无项目",
+      "session": "会话 {id}",
+      "noSession": "无会话",
+      "tools": "工具",
+      "calls_one": "{count} 次调用",
+      "calls_other": "{count} 次调用",
+      "restored": "办公室服务器重启过：只显示重启后的工具",
+      "noTools": "还没有工具调用",
+      "historyAria_one": "最近 {count} 条",
+      "historyAria_other": "最近 {count} 条",
+      "finished": "已完成",
+      "lineage": "派生关系",
+      "noTotals": "没有上报总计",
+      "soFar": "目前：{stats}",
+      "parent": "上级 {name}",
+      "spawnedBySession": "由会话创建",
+      "background": "后台",
+      "unread": "{count} 条未读",
+      "transcript": "会话记录",
+      "foot": {
+        "serverForgot": "服务器已不再跟踪它 — 最后已知状态",
+        "serverUnreachable": "无法访问办公室服务器 — 最后已知状态",
+        "live": "实时 · 每 {seconds} 秒刷新",
+        "officeUnreachable": "无法访问办公室服务器 — 显示办公室已知的信息",
+        "notServerAgent": "不是服务器代理 — 显示办公室已知的信息",
+        "loading": "加载中…"
+      }
+    },
+    "permission": {
+      "ariaLabel": "权限请求",
+      "timeLeft": "{seconds} 秒后转交终端处理",
+      "readOnly": "请在终端里处理（这个页面是只读的）",
+      "allow": "允许",
+      "allowTitle": "允许这次调用（{key}）",
+      "allowRemember": "允许并记住",
+      "deny": "拒绝",
+      "denyTitle": "拒绝这次调用（{key}）",
+      "sendingAllow": "正在发送允许…",
+      "sendingDeny": "正在发送拒绝…",
+      "rememberNote": "允许并记住：{what}",
+      "title": {
+        "use": "Claude 想使用 {tool}",
+        "run": "Claude 想运行 {what}",
+        "write": "Claude 想写入 {what}",
+        "edit": "Claude 想编辑 {what}",
+        "read": "Claude 想读取 {what}",
+        "fetch": "Claude 想获取 {what}",
+        "search": "Claude 想搜索 {what}",
+        "findFiles": "Claude 想查找文件 {what}"
+      },
+      "remember": {
+        "nothing": "没有可记住的",
+        "all": "允许，并且{parts}",
+        "setMode": "把这个会话切换到 {mode}",
+        "anotherMode": "另一种模式",
+        "alwaysAllow": "始终允许 {rules}{where}",
+        "alwaysDeny": "始终拒绝 {rules}{where}",
+        "alwaysAsk": "始终询问 {rules}{where}",
+        "always": "始终{behavior} {rules}{where}",
+        "this": "这个",
+        "tool": "工具",
+        "directories": "允许访问 {dirs}{where}",
+        "thisDirectory": "这个目录",
+        "other": "记住这个"
+      },
+      "fade": {
+        "timedOut": "已超时",
+        "deniedOffice": "已在办公室拒绝",
+        "allowedOffice": "已在办公室允许",
+        "terminal": "已在终端处理"
+      }
+    },
+    "character": {
+      "memoryWipe": "记忆清空",
+      "apiError": "⚠ API 错误",
+      "shipping": "🚀 上线中",
+      "waitingForDesk": "等工位中",
+      "unread_one": "{count} 条未读消息",
+      "unread_other": "{count} 条未读消息",
+      "inspect": "查看 {name}",
+      "effect": "效果"
+    },
+    "signals": {
+      "deployFailed": "部署失败",
+      "deployFailedOf": "{where} 部署失败",
+      "buildFailed": "构建失败",
+      "buildFailedIn": "{where} 构建失败",
+      "testsFailed": "测试失败",
+      "testsFailedIn": "{where} 测试失败",
+      "pushFailed": "推送失败",
+      "pushFailedOf": "推送 {target} 失败",
+      "why": "：{why}"
+    }
+  },
+  "chatter": {
+    "default": {
+      "spawn": [
+        "报到！",
+        "打卡上班",
+        "准备上线",
+        "先咖啡，后代码",
+        "开干吧",
+        "打开 vim...",
+        "拉一下最新的 main"
+      ],
+      "work": [
+        "在搞了",
+        "疯狂敲键盘",
+        "进入心流",
+        "有进展了",
+        "翻一下文档",
+        "该 git blame 了",
+        "Stack Overflow 救我"
+      ],
+      "done": [
+        "任务完成！",
+        "上线了",
+        "PR 已提",
+        "搞定收工",
+        "LGTM",
+        "已合入 main",
+        "部署好了"
+      ],
+      "coffee": [
+        "马上回来，去倒咖啡",
+        "需要咖啡因",
+        "去接一杯",
+        "咖啡续命"
+      ],
+      "water": [
+        "多喝水",
+        "喝水时间",
+        "去接水",
+        "灌满水杯",
+        "补水检查",
+        "喝口水就回"
+      ]
+    },
+    "office": {
+      "spawn": [
+        "盗用身份可不是开玩笑的，Jim！",
+        "向 Scranton 分公司报到",
+        "纸，纸，纸",
+        "熊。甜菜。太空堡垒卡拉狄加。",
+        "D-U-N-D-E-R...",
+        "我永远是碧昂丝。",
+        "上班打卡，Dunder Mifflin 风格"
+      ],
+      "work": [
+        "卖纸中",
+        "处理一令一令的纸",
+        "错。黑熊。",
+        "发放 Schrute 币",
+        "在跟总部谈判",
+        "填 TPS 报告",
+        "高雅品味俱乐部会刊"
+      ],
+      "done": [
+        "她就是这么说的",
+        "嘣。怼到了。",
+        "PR 已上线，品质堪比 24 磅证券纸",
+        "世界最佳老板批准",
+        "成交",
+        "已合并 — Jim 认证"
+      ],
+      "coffee": [
+        "Jim 请的大杯拿铁",
+        "Kevin 招牌辣肉酱时间",
+        "椒盐卷饼日！",
+        "马上回来，去休息室"
+      ],
+      "water": [
+        "补水 — Angela 说只准喝水",
+        "Stanley 说快五点了",
+        "接完水，再吃个卷饼",
+        "去休息室"
+      ],
+      "bossPraise": [
+        "干得漂亮 {name} 👊",
+        "稳 🔥",
+        "上线！",
+        "好活，去拿罐红牛",
+        "大神 💯",
+        "不错，下一个谁？",
+        "这么快，再来一个？",
+        "干净利落 👌",
+        "谢了 {name}",
+        "已合并。下一个任务加载中..."
+      ]
+    },
+    "incident": {
+      "spawn": [
+        "被 page 了。在处理。",
+        "加入应急会议，谁是指挥？",
+        "凌晨 02:14 上线，快送咖啡",
+        "眼睛还没睁开，电脑先开了"
+      ],
+      "work": [
+        "在 4f2a1c 和 main 之间二分",
+        "不是 DNS。查一下 DNS。",
+        "盯着生产日志，每秒 400 个请求的悲伤",
+        "第一次读 runbook",
+        "补一个早该有的 feature flag"
+      ],
+      "done": [
+        "回滚完成，错误率 0.1%",
+        "根因：一个 null。永远是 null。",
+        "hotfix 已合并，测试后补",
+        "状态页恢复绿色"
+      ],
+      "coffee": [
+        "第三杯咖啡，别评判我",
+        "整栋楼只有咖啡机在正常工作",
+        "咖啡不能代替睡觉，但试试吧"
+      ],
+      "water": [
+        "喝水。然后再来咖啡。",
+        "凌晨两点像个靠谱成年人一样补水",
+        "饮水机也降级了"
+      ],
+      "bossReply": [
+        "警报解除。以后周五谁都不许部署。",
+        "10 点复盘，不追责，带披萨",
+        "抓得好。记到时间线里。",
+        "我知道。我知道！"
+      ]
+    },
+    "interactions": {
+      "plant1": [
+        "给龟背竹浇水",
+        "照顾植物时间",
+        "小家伙要一直绿下去"
+      ],
+      "plant2": [
+        "给虎尾兰浇水",
+        "补水站",
+        "叶子长得真不错"
+      ],
+      "plant3": [
+        "给发财树浇水",
+        "长吧长吧",
+        "办公室丛林维护中"
+      ],
+      "plant4": [
+        "浇浇花",
+        "让办公室保持绿色"
+      ],
+      "plant5": [
+        "给龟背竹浇水",
+        "这棵长得真旺"
+      ],
+      "coffee": [
+        "煮一壶新咖啡",
+        "咖啡时间！",
+        "加满油",
+        "还有谁要咖啡？"
+      ],
+      "filing": [
+        "翻翻文件",
+        "那份文档我放哪了...",
+        "突袭文件柜",
+        "找 Q4 报告"
+      ],
+      "printer": [
+        "打印点东西",
+        "千万别卡纸...",
+        "老伙计",
+        "现在还有谁打印啊"
+      ],
+      "whiteboard": [
+        "更新白板",
+        "把工单挪到已完成",
+        "贴张便利贴",
+        "冲刺规划时间"
+      ],
+      "fireExtinguisher": [
+        "检查灭火器",
+        "安全第一",
+        "还没过期，不错",
+        "希望永远用不上"
+      ],
+      "waterCooler": [
+        "灌满水杯",
+        "补水检查",
+        "喝水休息",
+        "保持水分"
+      ],
+      "bell": [
+        "叮叮！站会时间",
+        "敲铃",
+        "大家注意！",
+        "全员集合！"
+      ],
+      "kanban": [
+        "更新看板",
+        "把工单挪到已完成",
+        "这个冲刺看着不错",
+        "谁把这张工单留在评审里了？"
+      ],
+      "shipItPoster": [
+        "上线！",
+        "斗志满满",
+        "这张海报百看不厌",
+        "冲冲冲"
+      ],
+      "tvMonitor": [
+        "看一眼仪表盘",
+        "所有系统正常",
+        "盯着指标",
+        "可用性很稳"
+      ]
+    },
+    "events": {
+      "fireDrill": {
+        "name": "消防演习",
+        "announcement": "🚨 消防演习！所有人到出口集合！",
+        "managerLine": "消防演习！快走！",
+        "agentLines": [
+          "又来...",
+          "我刚进入状态！",
+          "我的咖啡！",
+          "保护好代码库！"
+        ]
+      },
+      "pizza": {
+        "name": "披萨到了",
+        "announcement": "🍕 披萨到了！免费午餐！",
+        "managerLine": "披萨在大厅！",
+        "agentLines": [
+          "披萨！",
+          "总算有个好消息",
+          "菠萝？！",
+          "意式辣香肠是我的"
+        ]
+      },
+      "standup": {
+        "name": "每日站会",
+        "announcement": "📢 @here 每日站会现在开始",
+        "managerLine": "站会！你们上线了啥？",
+        "agentLines": [
+          "在搞那个东西",
+          "还在调试",
+          "卡在 review 上",
+          "部署到 staging 了",
+          "修了 3 个 bug，造了 5 个"
+        ]
+      },
+      "deploy": {
+        "name": "生产部署",
+        "announcement": "🚀 正在部署到生产环境...",
+        "managerLine": "屏住呼吸...",
+        "agentLines": [
+          "完了",
+          "千万别挂",
+          "我忘了跑测试",
+          "YOLO",
+          "检查回滚方案"
+        ]
+      },
+      "deploySuccess": {
+        "name": "部署成功",
+        "announcement": "✅ 部署成功！所有系统正常 🎉",
+        "managerLine": "我们做到了！",
+        "agentLines": [
+          "冲！",
+          "上线！",
+          "团队干得漂亮",
+          "该喝啤酒了"
+        ]
+      },
+      "deployFail": {
+        "name": "部署失败",
+        "announcement": "💥 部署失败 - 正在回滚",
+        "managerLine": "谁推的？！",
+        "agentLines": [
+          "不是我",
+          "完了完了完了",
+          "查日志",
+          "肯定又是 DNS",
+          "正在 revert..."
+        ]
+      },
+      "powerFlicker": {
+        "name": "电闪了一下",
+        "announcement": "⚡ 电闪了一下 - 快保存！",
+        "agentLines": [
+          "灯刚才是不是...",
+          "CTRL+S CTRL+S",
+          "我没保存的改动！",
+          "马上 git commit"
+        ]
+      },
+      "birthday": {
+        "name": "生日",
+        "announcement": "🎂 生日快乐！休息室有蛋糕！",
+        "managerLine": "生日快乐！",
+        "agentLines": [
+          "蛋糕！",
+          "生日快乐！",
+          "🎉🎉🎉",
+          "无麸质的吗？",
+          "许个愿吧"
+        ]
+      },
+      "whoBrokeBuild": {
+        "name": "构建挂了",
+        "announcement": "🔴 CI/CD 流水线红了。谁把构建搞挂的？",
+        "managerLine": "修好之前谁都别走。",
+        "agentLines": [
+          "查一下 git blame...",
+          "不是我",
+          "是那次 merge 吗？",
+          "可能是不稳定的测试？",
+          "怪实习生"
+        ]
+      },
+      "friday": {
+        "name": "周五氛围",
+        "announcement": "🎉 周五啦！再坚持一下！",
+        "managerLine": "周五不部署。",
+        "agentLines": [
+          "感谢上帝今天周五",
+          "撸串去？",
+          "再提一个 PR...",
+          "五点准时走",
+          "周末！"
+        ]
+      },
+      "printerJam": {
+        "name": "打印机卡纸",
+        "announcement": "🖨️ 打印机又卡纸了",
+        "agentLines": [
+          "为什么我们还有打印机",
+          "PC LOAD LETTER？！",
+          "现在还有谁打印东西",
+          "都 2026 年了..."
+        ]
+      },
+      "slackDown": {
+        "name": "Slack 挂了",
+        "announcement": "💀 Slack 挂了... 等等，那这条是怎么发出来的",
+        "agentLines": [
+          "真讽刺",
+          "该用邮件了",
+          "飞鸽传书时间",
+          "其实还挺清静"
+        ]
+      },
+      "fireAlarmStressRelief": {
+        "name": "着火了！着火了！着火了！",
+        "announcement": "🔥 着火了！着火了！着火了！（Dwight 在教消防安全）",
+        "managerLine": "火在朝我们开枪！",
+        "agentLines": [
+          "着火了！",
+          "天哪天哪天哪",
+          "救救 Bandit！",
+          "我宣布破产！",
+          "拿除颤器来！"
+        ]
+      },
+      "cprTraining": {
+        "name": "Stayin' Alive",
+        "announcement": "🫀 心肺复苏培训 — 跟着 Stayin' Alive 的节拍按",
+        "managerLine": "啊啊啊啊，stayin' alive，stayin' alive",
+        "agentLines": [
+          "他……死了吗？",
+          "Dwight 在把假人的脸割下来",
+          "我是从《急诊室的故事》里学的",
+          "啊啊啊啊"
+        ]
+      },
+      "goldenTicket": {
+        "name": "金奖券",
+        "announcement": "🎫 五张金奖券藏在纸箱里 — 打九折！",
+        "managerLine": "这是我的主意。全都是我。",
+        "agentLines": [
+          "怪 Kevin",
+          "威利·旺卡时间",
+          "这全是 Michael 干的",
+          "谁批准的"
+        ]
+      },
+      "jimPrank": {
+        "name": "Jim 整蛊 Dwight",
+        "announcement": "🥤 又有人把 Dwight 的订书机封进果冻里了",
+        "managerLine": "JIM！",
+        "agentLines": [
+          "又来",
+          "肯定是 Jim",
+          "盗用身份可不是开玩笑的",
+          "Pam，救命"
+        ]
+      },
+      "parkour": {
+        "name": "跑酷！",
+        "announcement": "🏃 跑酷！跑酷！跑酷！",
+        "managerLine": "跑酷！",
+        "agentLines": [
+          "跑酷！",
+          "跑——酷——",
+          "Michael 别",
+          "这事肯定没好结果"
+        ]
+      },
+      "schruteBucks": {
+        "name": "Schrute 币",
+        "announcement": "💵 Dwight 在发 Schrute 币。每个值一美分的千分之一。",
+        "agentLines": [
+          "汇率是多少？",
+          "我看起来像需要额外激励的人吗？",
+          "我宁可要 Stanley 镍币",
+          "我的加薪呢？"
+        ]
+      },
+      "kevinsChili": {
+        "name": "Kevin 的辣肉酱",
+        "announcement": "🫘 Kevin 把辣肉酱打翻了。又一次。",
+        "managerLine": "现在唯一能做的就是把它捞起来……",
+        "agentLines": [
+          "不——",
+          "他做了一整个上午",
+          "地毯毁了",
+          "我跟他说过要用两个锅"
+        ]
+      },
+      "printerJamDm": {
+        "name": "Sabre 打印机卡纸",
+        "announcement": "🖨️ 打印机又着火了。真着火了。",
+        "agentLines": [
+          "Sabre 打印机又来了",
+          "我早就跟他们说过",
+          "该叫 Nellie 了",
+          "保修过期了"
+        ]
+      },
+      "dundies": {
+        "name": "Dundies 颁奖礼",
+        "announcement": "🏆 Dundies 颁奖礼今晚举行！",
+        "managerLine": "你们会笑，你们会哭……",
+        "agentLines": [
+          "最浓密海狸奖时间到",
+          "别再来一次了",
+          "最佳老爸奖是我的",
+          "我要带 Pam 去 Chili's"
+        ]
+      },
+      "pretzelDay": {
+        "name": "椒盐卷饼日",
+        "announcement": "🥨 今天是椒盐卷饼日",
+        "managerLine": "你不明白。今天是椒盐卷饼日。",
+        "agentLines": [
+          "一年中最好的一天",
+          "每一卡路里都值",
+          "Stanley 等了一整年",
+          "所有配料都要"
+        ]
+      },
+      "bearsBeets": {
+        "name": "熊。甜菜。太空堡垒卡拉狄加。",
+        "announcement": "📋 问题：哪种熊最好？",
+        "agentLines": [
+          "错。黑熊。",
+          "熊，甜菜，太空堡垒卡拉狄加",
+          "盗用身份可不是开玩笑的，Jim",
+          "事实：熊吃甜菜"
+        ]
+      },
+      "incident": {
+        "fireDrill": {
+          "name": "作战室",
+          "announcement": "🚨 所有人到门口 — 应急会议开始",
+          "managerLine": "加入应急会议。谁了解情况？",
+          "agentLines": [
+            "加入会议",
+            "这是 sev1 吗？",
+            "先静音，孩子睡了"
+          ]
+        },
+        "pizza": {
+          "name": "事故披萨",
+          "announcement": "🍕 披萨到了（报销代码：OUTAGE）",
+          "managerLine": "快点吃",
+          "agentLines": [
+            "事故披萨就是不一样",
+            "今晚第二个披萨了",
+            "对着键盘吃，抱歉"
+          ]
+        },
+        "standup": {
+          "name": "状态同步",
+          "announcement": "📢 @here 我们知道什么，在做什么，谁被卡住了",
+          "managerLine": "挨个说一下",
+          "agentLines": [
+            "错误率 40%，在下降",
+            "回滚到一半了",
+            "我需要一个 DBA",
+            "还不是 DNS。估计是 DNS。"
+          ]
+        },
+        "deploy": {
+          "name": "回滚部署",
+          "announcement": "🚀 正在回滚...",
+          "managerLine": "稳住",
+          "agentLines": [
+            "求求了",
+            "盯着曲线",
+            "要是这次失败，就回滚这次回滚"
+          ]
+        },
+        "deploySuccess": {
+          "name": "回滚完成",
+          "announcement": "✅ 回滚完成 — 错误率恢复正常",
+          "managerLine": "开始解除警报倒计时",
+          "agentLines": [
+            "终于能喘口气了",
+            "曲线平了",
+            "谁来写复盘文档"
+          ]
+        },
+        "deployFail": {
+          "name": "回滚失败",
+          "announcement": "💥 回滚失败 — 正在回滚这次回滚",
+          "managerLine": "好。好。好。",
+          "agentLines": [
+            "果然",
+            "迁移是不可逆的",
+            "查一下备份"
+          ]
+        },
+        "powerFlicker": {
+          "name": "机柜断电一瞬",
+          "announcement": "⚡ UPS 启动了。又一次。",
+          "agentLines": [
+            "是我们搞的吗？",
+            "机房今晚也不好过"
+          ]
+        },
+        "birthday": {
+          "name": "交接班",
+          "announcement": "🕑 欧洲值班的人醒了 — 在休息室交接",
+          "managerLine": "交代清楚，然后去睡",
+          "agentLines": [
+            "交接文档就 3 行",
+            "祝好运",
+            "他们那边还是周二"
+          ]
+        },
+        "whoBrokeBuild": {
+          "name": "二分查找",
+          "announcement": "🔴 正在对 main 做 bisect — 好坏之间有 12 个 commit",
+          "managerLine": "不追责。找 commit，不找人。",
+          "agentLines": [
+            "4f2a1c 是坏的",
+            "a1b2c3 是好的",
+            "是那次配置改动",
+            "怪 DNS"
+          ]
+        },
+        "friday": {
+          "name": "周五部署",
+          "announcement": "📅 提醒：这一切起源于一次周五部署",
+          "managerLine": "再也不了",
+          "agentLines": [
+            "再也不了",
+            "上次也是这么说的",
+            "从今往后周五只读"
+          ]
+        },
+        "printerJam": {
+          "name": "打印错误日志",
+          "announcement": "🖨️ 有人把 kubectl logs 管道到了 lp",
+          "agentLines": [
+            "有 400 页",
+            "PC LOAD STACKTRACE",
+            "拔掉电源"
+          ]
+        },
+        "slackDown": {
+          "name": "状态页挂了",
+          "announcement": "💀 状态页挂了。状态页啊。",
+          "agentLines": [
+            "当然了",
+            "发个微博吧",
+            "飞鸽传书时间"
+          ]
+        }
+      },
+      "drama": {
+        "coffeeMeet": {
+          "lines": [
+            "你看到那个新 PR 了吗？",
+            "那个 2000 行的？看到了...",
+            "还没有测试",
+            "💀"
+          ]
+        },
+        "whoPushed": {
+          "lines": [
+            "谁直接推到 main 了？",
+            "不是我",
+            "git blame 可不是这么说的",
+            "..."
+          ]
+        },
+        "tabsVsSpaces": {
+          "lines": [
+            "Tab 还是空格？",
+            "当然是空格",
+            "已拉黑并举报"
+          ]
+        },
+        "meeting": {
+          "lines": [
+            "这个会发条 Slack 消息就够了",
+            "这条 Slack 消息不发也够了"
+          ]
+        },
+        "framework": {
+          "lines": [
+            "我们应该用 Rust 重写",
+            "你每周都这么说",
+            "而且我每周都是对的"
+          ]
+        },
+        "legacy": {
+          "lines": [
+            "发现一个 2019 年的 TODO",
+            "写的什么",
+            "“以后再修”",
+            "以后就是现在",
+            "不。以后就是以后。"
+          ]
+        },
+        "ai": {
+          "lines": [
+            "今天 AI 写的代码比我还好",
+            "说实话门槛也不高",
+            "扎心但没毛病"
+          ]
+        },
+        "standupExcuse": {
+          "lines": [
+            "你昨天做了什么？",
+            "排查了一个复杂问题",
+            "你是说你谷歌了 6 个小时",
+            "我更喜欢叫它“调研”"
+          ]
+        }
+      }
+    }
+  },
+  "server": {
+    "commands": {
+      "status": "📊 {agents} 个代理在岗，{working} 个在工作，{clients} 个客户端已连接",
+      "quiet": "🏢 办公室很安静 — 没有在岗的代理",
+      "cleared": "🧹 聊天已清空",
+      "incident": "🔴 宣布事故 — 生产环境挂了。所有人到作战室。（结束后输入 /all-clear）",
+      "allClear": "✅ 警报解除 — 事故结束。10 点复盘，不追责，带披萨。",
+      "help": "📋 命令：{commands}",
+      "desc": {
+        "status": "办公室统计",
+        "agents": "列出代理",
+        "recap": "今天到目前为止",
+        "incident": "宣布事故",
+        "allClear": "结束事故",
+        "clear": "清空聊天记录（需要认证令牌）",
+        "help": "显示这条消息"
+      }
+    },
+    "system": {
+      "expired": "⌛ 给 {name} 排队的提示词已过期，未送达（它的回合一小时内没有结束）",
+      "expiredUnknown": "⌛ 给某个会话排队的提示词已过期，未送达（它的回合一小时内没有结束）",
+      "pickedUp": "📬 {name} 从聊天里取走了提示词",
+      "pickedUpMore": "📬 {name} 从聊天里取走了提示词（还有 {count} 条在等）",
+      "dropped_one": "🗑️ 给 {name} 排队的一条提示词已丢弃：{why}",
+      "dropped_other": "🗑️ 给 {name} 排队的 {count} 条提示词已丢弃：{why}",
+      "sessionEnded": "会话已结束",
+      "ambiguous": "🤔 {mention} 匹配到 {count} 个会话：{names}。请改用会话 id。",
+      "notTrusted": "🔒 只有这台 Mac 上的办公室页面才能给 {name} 排队提示词（手机、经过代理的页面或没有办公室链接的页面都不行）",
+      "noHooks": "🔌 {name} 没有办公室 hooks，没人能送达这条提示词：运行 {command} 并重启那个会话",
+      "tooLong": "它有 {length} 个字符，上限是 {limit}",
+      "full": "已经有 {count} 条提示词在等它了",
+      "badId": "这个会话 id 不是 hook 能认领的",
+      "notQueued": "✋ 没有给 {name} 排队：{why}",
+      "whenBusy": "当前回合结束时它会收到",
+      "whenIdle": "它现在没在工作，所以要等下一个回合结束才会收到（办公室无法自己启动回合：在它的终端里随便给一条提示词）",
+      "queued": "📨 已给 {name} 排队：{when}",
+      "queuedInLine": "📨 已给 {name} 排队（第 {position} 位）：{when}",
+      "needsToken": "🔒 {command} 需要办公室认证令牌 — 在办公室代码目录里运行 {script}，它会带上令牌（见 README › Chat）"
+    },
+    "agents": {
+      "starting": "开始：{task}",
+      "done": "完成：{result}"
+    },
+    "recap": {
+      "quiet": "📋 回顾：今天到目前为止很安静 — 什么都还没发生。且行且珍惜。",
+      "line": "📋 今日回顾：{parts}。{payroll} {signOff}",
+      "sessions_one": "{count} 个会话",
+      "sessions_other": "{count} 个会话",
+      "agents_one": "入职 {count} 个代理，{out} 个已下班",
+      "agents_other": "入职 {count} 个代理，{out} 个已下班",
+      "tasks_one": "完成 {count} 个任务",
+      "tasks_other": "完成 {count} 个任务",
+      "deploys_one": "上线 {count} 次部署",
+      "deploys_other": "上线 {count} 次部署",
+      "pushes_one": "{count} 次推送",
+      "pushes_other": "{count} 次推送",
+      "buildsFailed_one": "{count} 次构建失败",
+      "buildsFailed_other": "{count} 次构建失败",
+      "testsFailed_one": "{count} 次测试失败",
+      "testsFailed_other": "{count} 次测试失败",
+      "incidents_one": "{count} 起事故（我们不提它）",
+      "incidents_other": "{count} 起事故（我们不提它们）",
+      "noIncidents": "没有事故",
+      "payroll": "工资：{amount}。",
+      "signOffIncident": "10 点前把复盘笔记放我桌上。",
+      "signOffDeploys": "上线得漂亮，各位。",
+      "signOff": "干得好，团队。"
+    },
+    "notify": {
+      "title": "Claude 需要你",
+      "message": "{project} · {tool} {phrase}",
+      "bash": "想运行一条命令",
+      "write": "想写入一个文件",
+      "edit": "想编辑一个文件",
+      "notebook": "想编辑一个 notebook",
+      "read": "想读取一个文件",
+      "fetch": "想获取一个网页",
+      "search": "想搜索网络",
+      "other": "需要权限",
+      "aTool": "某个工具",
+      "aSession": "某个会话"
+    },
+    "routing": {
+      "debugger": [
+        "报错",
+        "错误",
+        "崩溃",
+        "闪退",
+        "修复",
+        "坏了",
+        "调试",
+        "异常",
+        "堆栈",
+        "段错误",
+        "跑不起来"
+      ],
+      "codeReviewer": [
+        "评审",
+        "审查",
+        "代码审查",
+        "合并请求",
+        "合并",
+        "批准",
+        "看一下代码"
+      ],
+      "frontend": [
+        "前端",
+        "界面",
+        "组件",
+        "设计稿",
+        "样式",
+        "布局",
+        "响应式",
+        "动画",
+        "像素",
+        "主题",
+        "深色模式",
+        "暗色模式",
+        "浅色模式",
+        "颜色",
+        "字体",
+        "间距",
+        "内边距",
+        "外边距"
+      ],
+      "tester": [
+        "测试",
+        "覆盖率",
+        "单元测试",
+        "单测",
+        "端到端",
+        "断言"
+      ],
+      "security": [
+        "安全",
+        "漏洞",
+        "认证",
+        "鉴权",
+        "授权",
+        "注入",
+        "跨域",
+        "令牌",
+        "密码",
+        "加密",
+        "证书"
+      ],
+      "devops": [
+        "部署",
+        "上线",
+        "发布",
+        "流水线",
+        "运维",
+        "容器",
+        "域名",
+        "阿里云",
+        "腾讯云"
+      ],
+      "performance": [
+        "性能",
+        "太慢",
+        "很慢",
+        "卡顿",
+        "优化",
+        "速度",
+        "延迟",
+        "打包体积",
+        "内存泄漏",
+        "缓存",
+        "懒加载",
+        "渲染",
+        "帧率",
+        "瓶颈"
+      ],
+      "database": [
+        "数据库",
+        "查询",
+        "表结构",
+        "迁移",
+        "索引",
+        "数据表",
+        "字段"
+      ],
+      "typescript": [
+        "类型",
+        "泛型",
+        "枚举",
+        "联合类型",
+        "类型推断",
+        "校验"
+      ],
+      "ai": [
+        "人工智能",
+        "大模型",
+        "提示词",
+        "模型",
+        "向量",
+        "嵌入",
+        "智能体",
+        "上下文窗口"
+      ],
+      "fullstack": [
+        "接口",
+        "后端",
+        "全栈",
+        "路由",
+        "中间件",
+        "请求",
+        "响应"
+      ],
+      "git": [
+        "分支",
+        "提交",
+        "变基",
+        "冲突",
+        "远程仓库"
+      ],
+      "architect": [
+        "重构",
+        "架构",
+        "抽象",
+        "设计模式",
+        "模块",
+        "代码整洁"
+      ]
+    }
+  }
+}
