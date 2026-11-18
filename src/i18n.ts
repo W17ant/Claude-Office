@@ -14,7 +14,7 @@
  * (firstRunLanguage) and saves it to the server, so every page then agrees.
  */
 import { useSyncExternalStore } from 'react'
-import { createTranslator, matchLocale, type Catalog, type Translator, type Vars } from '../shared/i18n.js'
+import { createTranslator, matchLocale, completeness, type Catalog, type Translator, type Vars } from '../shared/i18n.js'
 
 const files = import.meta.glob('../locales/*.json', { eager: true, import: 'default' }) as Record<string, Catalog>
 
@@ -105,4 +105,44 @@ export function firstRunLanguage(
     if (code !== 'en' || /^en(-|$)/i.test(wanted)) return code
   }
   return 'en'
+}
+
+/** One language the office has, as the Settings picker shows it. */
+export interface LanguageInfo {
+  code: string
+  /** In the language itself ("Deutsch") */
+  name: string
+  englishName: string
+  /** "wip": a draft no native speaker has checked yet */
+  status: 'wip' | null
+  /** 0–100, the share of English it translates */
+  completeness: number
+}
+
+/**
+ * The bundled languages, English first, then by English name.
+ * Why bundled and not GET /settings: the page and the server ship the same
+ * locale files, and the picker then works before the server answers (and
+ * under ?sim, which has no server).
+ */
+export function languageList(): LanguageInfo[] {
+  const en = catalogs.en ?? {}
+  return Object.entries(catalogs)
+    .map(([code, c]) => ({
+      code,
+      name: c.meta.name,
+      englishName: c.meta.englishName,
+      status: c.meta.status === 'wip' ? 'wip' as const : null,
+      completeness: code === 'en' ? 100 : completeness(c, en),
+    }))
+    .sort((a, b) => (a.code === 'en' ? -1 : b.code === 'en' ? 1 : a.englishName.localeCompare(b.englishName)))
+}
+
+// Why a GitHub issue form: a plain link, so the office itself sends nothing,
+// and the form lands with the language already filled in
+const REPORT_BASE = 'https://github.com/W17ant/Claude-Office/issues/new?template=translation.yml&language='
+
+/** The "Report a translation error" link for a language. */
+export function reportUrl(code: string): string {
+  return REPORT_BASE + encodeURIComponent(code)
 }

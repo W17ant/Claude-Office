@@ -29,9 +29,11 @@ import {
   type DayNightMode, type SeasonPreference,
 } from '../settings'
 import {
-  useServerSettings, setAnswerPermissions, setLogPrompts, setAiPaused, setNotifyPermissions,
+  useServerSettings, setAnswerPermissions, setLogPrompts, setAiPaused, setNotifyPermissions, setLanguage,
   LOG_PROMPTS_LEVELS, type LogPromptsLevel,
 } from '../serverSettings'
+import LanguagePicker from './LanguagePicker'
+import { applyLanguage, currentLanguage, languageList, reportUrl, useT } from '../i18n'
 import '../styles/settings.css'
 
 interface SettingsPanelProps {
@@ -162,6 +164,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
 }) => {
   const theme = useTheme()
   const server = useServerSettings()
+  const tr = useT()
   useSeasonArt() // Why: re-render when a season turns out to have art or not (the "no art yet" note)
   const [seasonPref, setSeasonPref] = React.useState<SeasonPreference>(LOADED_SEASON_PREF)
   const ref = useRef<HTMLDivElement>(null)
@@ -212,6 +215,18 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         <span className="op-title" id="sp-title">Settings</span>
         <button className="op-close" onClick={onClose} aria-label="Close settings">×</button>
       </div>
+
+      <section className="sp-section" aria-label={tr('ui.settings.language.title')}>
+        <div className="sp-section-title">{tr('ui.settings.language.title')}</div>
+        {/* Why sim changes it locally: ?sim and ?video have no server, and a
+            translator wants to see their language there */}
+        <LanguagePicker
+          languages={languageList()}
+          value={currentLanguage()}
+          canChange={simMode || !readOnly}
+          onChange={code => (simMode ? applyLanguage(code) : void setLanguage(code))}
+        />
+      </section>
 
       <section className="sp-section" aria-label="This browser">
         <div className="sp-section-title">This browser</div>
@@ -305,6 +320,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
         <div className="sp-note sp-foot">Boss sprite: <code>boss.sprite</code> in <code>office.config.json</code> (read when the server starts).</div>
       </section>
+
+      <div className="sp-note sp-foot">
+        <a className="sp-link" href={reportUrl(currentLanguage())} target="_blank" rel="noopener noreferrer">{tr('ui.settings.language.report')}</a>
+      </div>
     </div>
   )
 }

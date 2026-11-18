@@ -10,7 +10,6 @@
  *   language           GET /settings · POST /settings (UI token): the office's
  *                      language (src/i18n.ts shows the page in it); also
  *                      kept current by the WebSocket (noteServerLanguage)
- *   languages          GET /settings: the languages the office has, for the picker
  *   aiPaused           GET /chat/cron-state · POST /chat/cron-state (open
  *                      route: the chat monitor's pause file, "AI On / Off")
  *
@@ -40,23 +39,9 @@ export interface ServerSettings {
   aiPaused: boolean | null
   /** The office's language: undefined until known, null while not chosen */
   language: string | null | undefined
-  /** null until GET /settings answered (or a server without translations) */
-  languages: LanguageInfo[] | null
 }
 
-/** One language the office has (GET /settings `languages`). */
-export interface LanguageInfo {
-  code: string
-  /** In the language itself ("Deutsch") */
-  name: string
-  englishName: string
-  /** "wip": a draft no native speaker has checked yet */
-  status: 'wip' | null
-  /** 0–100, the share of English it translates */
-  completeness: number
-}
-
-let state: ServerSettings = { logPrompts: null, answerPermissions: null, notifyPermissions: null, aiPaused: null, language: undefined, languages: null }
+let state: ServerSettings = { logPrompts: null, answerPermissions: null, notifyPermissions: null, aiPaused: null, language: undefined }
 let loading: Promise<void> | null = null
 const listeners = new Set<() => void>()
 
@@ -81,7 +66,6 @@ export function loadServerSettings(): Promise<void> {
       if (d && typeof d.answerPermissions === 'boolean') set({ answerPermissions: d.answerPermissions })
       if (d && typeof d.notifyPermissions === 'boolean') set({ notifyPermissions: d.notifyPermissions })
       if (d && (typeof d.language === 'string' || d.language === null)) set({ language: d.language })
-      if (d && Array.isArray(d.languages)) set({ languages: d.languages })
     })
     .catch(() => {})
   const cron = fetch(`${base}/chat/cron-state`, { signal: AbortSignal.timeout(2000), headers: officeAuthHeaders() })

@@ -1,0 +1,31 @@
+# Translation error form — a word or sentence in one of the office's languages is wrong. The office's "Report a translation error" link fills in the language.
+name: Translation error
+description: Something in one of the office's languages reads wrong, or is missing
+labels: [translation]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks! Most languages are drafts until a native speaker checks them. You can also fix it yourself: each language is one file in `locales/` (see CONTRIBUTING › Add or fix a language).
+  - type: input
+    id: language
+    attributes:
+      label: Language
+      description: Its code, such as de, pt-BR or zh-TW
+    validations:
+      required: true
+  - type: input
+    id: where
+    attributes:
+      label: Where in the office?
+      placeholder: Settings panel, an agent's speech bubble, the chat …
+  - type: textarea
+    id: current
+    attributes:
+      label: What it says
+  - type: textarea
+    id: suggested
+    attributes:
+      label: What it should say
+    validations:
+      required: true
