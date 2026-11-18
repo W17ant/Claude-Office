@@ -1,0 +1,18 @@
+{
+  "meta": {
+    "name": "English",
+    "englishName": "English",
+    "translators": []
+  },
+  "ui": {
+    "settings": {
+      "language": {
+        "title": "Language",
+        "wip": "work in progress",
+        "complete": "{percent}% translated",
+        "report": "Report a translation error",
+        "readOnly": "Only the office's own page can change the language"
+      }
+    }
+  }
+}
