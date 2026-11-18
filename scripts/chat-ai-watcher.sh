@@ -16,6 +16,14 @@
 #   CHAT_AI_MODEL                model for `claude -p` (default claude-haiku-5-5)
 #   CHAT_AI_TIMEOUT              seconds before a `claude -p` call is killed (default 60)
 #   CHAT_AI_MAX_REPLIES_PER_MIN  backstop against reply loops (default 5)
+#   AGENT_OFFICE_LOCALES_DIR     testing only: where the locale files are
+#                                (default: locales/ next to scripts/)
+#
+# Language: the bot replies in the office's language (GET /settings
+# `language`, Settings › Language). Its sender names stay English, like
+# character names. Routing keywords: the English ones in locales/en.json
+# (server.routing.<persona>) plus the office language's own, so a message in
+# that language still reaches the right persona.
 # =============================================================================
 
 set -u
@@ -34,6 +42,7 @@ LOCK_FILE="$STATE_DIR/chat-ai.lock"
 ERR_FILE="$STATE_DIR/chat-ai-claude.err"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOCALES_DIR="${AGENT_OFFICE_LOCALES_DIR:-$SCRIPT_DIR/../locales}"
 
 # Flags for every `claude -p` call:
 #   --safe-mode           no hooks, CLAUDE.md, MCP servers, skills or plugins —
@@ -132,41 +141,81 @@ rate_cap_hit() {
 }
 record_claude_call() { CALL_TIMES="$CALL_TIMES $(date +%s)"; }
 
-# Keyword routing: which office persona answers.
+# Keyword routing: which office persona answers. $1 is the message, $2 the
+# office's language code (empty for English). The keywords come from
+# locales/en.json plus that language's file (server.routing.<persona>); a
+# missing or broken file adds nothing, and the first persona whose keywords
+# match wins, in the order below.
 route_message() {
-    printf '%s' "$1" | python3 -c "
-import sys
+    printf '%s' "$1" | ROUTE_LANG="${2:-}" LOCALES_DIR="$LOCALES_DIR" python3 -c "
+import json, os, sys
 msg = sys.stdin.read().lower()
+def routing(code):
+    try:
+        with open(os.path.join(os.environ['LOCALES_DIR'], code + '.json'), encoding='utf-8') as f:
+            r = json.load(f).get('server', {}).get('routing', {})
+            return r if isinstance(r, dict) else {}
+    except Exception:
+        return {}
+en = routing('en')
+lang = os.environ.get('ROUTE_LANG', '')
+own = routing(lang) if lang and lang != 'en' and all(c.isalnum() or c == '-' for c in lang) else {}
 routes = [
-    (['bug','error','crash','fix','broken','debug','exception','traceback','stack trace','segfault'], 'debugger', 'Debugger'),
-    (['review','pr','merge','approve','lgtm','pull request','code review','diff'], 'code-reviewer', 'Reviewer'),
-    (['css','ui','ux','component','design','frontend','style','layout','responsive','tailwind','animation','pixel','theme','dark mode','light mode','color','font','spacing','padding','margin'], 'frontend-developer', 'Frontend'),
-    (['test','coverage','spec','jest','pytest','unit test','e2e','playwright','cypress','assertion','mock'], 'test-engineer', 'Tester'),
-    (['security','auth','vuln','xss','injection','csrf','cors','token','jwt','oauth','password','encrypt','ssl','tls','certificate'], 'security-auditor', 'Security'),
-    (['deploy','ci','pipeline','docker','devops','kubernetes','k8s','terraform','aws','gcp','azure','vercel','netlify','heroku','nginx','cdn','dns','domain','ssl cert'], 'devops-engineer', 'DevOps'),
-    (['perf','slow','optimize','speed','latency','bundle','lighthouse','core web vitals','memory leak','cache','lazy load','render','fps','bottleneck'], 'performance-engineer', 'PerfEng'),
-    (['db','query','schema','migration','sql','postgres','mysql','mongo','redis','index','join','table','row','column','orm','prisma','drizzle','supabase','neon'], 'database-architect', 'DBA'),
-    (['typescript','type','interface','generic','enum','union','infer','zod','validation','schema'], 'typescript-pro', 'TS Pro'),
-    (['ai','llm','prompt','model','openai','anthropic','embedding','vector','rag','agent','token','context window'], 'ai-engineer', 'AI Eng'),
-    (['api','endpoint','rest','graphql','webhook','route','middleware','request','response','http','fetch','axios','cors'], 'fullstack-developer', 'Fullstack'),
-    (['git','branch','commit','rebase','cherry-pick','stash','conflict','remote','origin'], 'code-reviewer', 'Reviewer'),
-    (['refactor','clean','abstract','pattern','solid','dry','yagni','architecture','module','package','monorepo'], 'architect-reviewer', 'Architect'),
+    ('debugger', 'debugger', 'Debugger'),
+    ('codeReviewer', 'code-reviewer', 'Reviewer'),
+    ('frontend', 'frontend-developer', 'Frontend'),
+    ('tester', 'test-engineer', 'Tester'),
+    ('security', 'security-auditor', 'Security'),
+    ('devops', 'devops-engineer', 'DevOps'),
+    ('performance', 'performance-engineer', 'PerfEng'),
+    ('database', 'database-architect', 'DBA'),
+    ('typescript', 'typescript-pro', 'TS Pro'),
+    ('ai', 'ai-engineer', 'AI Eng'),
+    ('fullstack', 'fullstack-developer', 'Fullstack'),
+    ('git', 'code-reviewer', 'Reviewer'),
+    ('architect', 'architect-reviewer', 'Architect'),
 ]
-for keywords, role, name in routes:
-    if any(w in msg for w in keywords):
+for key, role, name in routes:
+    words = [w for w in list(en.get(key, [])) + list(own.get(key, [])) if isinstance(w, str) and w]
+    if any(w.lower() in msg for w in words):
         print(f'{role}|{name}')
         sys.exit(0)
 print('assistant|Claude')
 "
 }
 
+# The office's language as "code|English name" from GET /settings; empty
+# when it is English, not chosen, or the server does not say.
+office_language() {
+    curl -sf "$SERVER/settings" 2>/dev/null | python3 -c "
+import json, sys
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+code = d.get('language')
+if not isinstance(code, str) or code == 'en':
+    sys.exit(0)
+for l in d.get('languages') or []:
+    if isinstance(l, dict) and l.get('code') == code and isinstance(l.get('englishName'), str):
+        print(code + '|' + l['englishName'])
+" 2>/dev/null
+}
+
 # Generate and post one reply. Returns non-zero when nothing was posted; the
 # caller (reply_to_message) clears the lock either way.
 do_reply() {
     local msg="$1"
-    local agent_info agent_role agent_name dev_context persona context prompt reply posted
+    local agent_info agent_role agent_name dev_context persona context prompt reply posted lang_info lang_code lang_name lang_line
 
-    agent_info=$(route_message "$msg")
+    lang_info=$(office_language)
+    lang_code=${lang_info%%|*}
+    lang_name=${lang_info#*|}
+    lang_line=""
+    if [ -n "$lang_info" ]; then lang_line="
+Reply in $lang_name."; fi
+
+    agent_info=$(route_message "$msg" "$lang_code")
     agent_role=${agent_info%%|*}
     agent_name=${agent_info#*|}
     echo "[chat-ai] Routed to: $agent_name ($agent_role)"
@@ -202,7 +251,7 @@ $dev_context
 Recent conversation:
 $context
 
-Reply to the latest message naturally. Keep it short (8-12 words). Continue the conversation — reference previous messages if relevant."
+Reply to the latest message naturally. Keep it short (8-12 words). Continue the conversation — reference previous messages if relevant.$lang_line"
 
     echo "[chat-ai] Generating reply..."
     record_claude_call
@@ -217,8 +266,15 @@ Reply to the latest message naturally. Keep it short (8-12 words). Continue the 
     fi
     rm -f "$ERR_FILE"
 
-    # Truncate to 15 words max
-    reply=$(printf '%s' "$reply" | python3 -c "import sys; w=sys.stdin.read().strip().split(); print(' '.join(w[:15]))")
+    # Truncate to 15 words max; then, for Chinese, Japanese or Korean, 40 characters.
+    # Why 40: about what 8-12 English words say, and the word cut never fires
+    # on text without spaces
+    reply=$(printf '%s' "$reply" | python3 -c "
+import re, sys
+text = ' '.join(sys.stdin.read().strip().split()[:15])
+if re.search(r'[\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff\uac00-\ud7af]', text):
+    text = text[:40]
+print(text)")
 
     echo "[chat-ai] Replying as $agent_name: $reply"
 

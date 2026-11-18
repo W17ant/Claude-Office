@@ -8,7 +8,7 @@
  */
 
 import { spawn, type ChildProcess } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -42,6 +42,7 @@ fi
 mode=$(cat "$dir/mode" 2>/dev/null || echo ok)
 case "$mode" in
   empty) echo "Not logged in · Please run /login" >&2; exit 1 ;;
+  reply) cat "$dir/reply" ;;
   *) echo "On it, checking the error logs now" ;;
 esac`
 
@@ -123,7 +124,7 @@ interface WatcherWorld {
  * fake `claude`. `lastTs` is written to chat-ai-last-ts before it starts;
  * `delay` makes every `claude -p` take that many seconds.
  */
-async function startWatcher(opts: { maxPerMinute?: number; staleLock?: boolean; lastTs?: string; delay?: number } = {}): Promise<WatcherWorld> {
+async function startWatcher(opts: { maxPerMinute?: number; staleLock?: boolean; lastTs?: string; delay?: number; env?: Record<string, string> } = {}): Promise<WatcherWorld> {
   const office = await loadOffice()
   const port = await listen(office.server.httpServer)
   // What start() writes once the port is bound: the watcher reads it to post as an agent
@@ -147,6 +148,7 @@ async function startWatcher(opts: { maxPerMinute?: number; staleLock?: boolean; 
     FAKE_CLAUDE_DIR: claudeDir,
     CHAT_AI_POLL_INTERVAL: '0.2',
     CHAT_AI_MAX_REPLIES_PER_MIN: String(opts.maxPerMinute ?? 50),
+    ...(opts.env ?? {}),
   })
   await waitFor('watcher pid file', () => existsSync(join(office.dir, 'chat-watcher.pid')))
   return { office, port, claudeDir, watcher }
@@ -264,6 +266,58 @@ describe('chat-ai-watcher.sh', () => {
     await sleep(600)
     expect(claudeCalls(w)).toHaveLength(3)
     expect(replies(await chat(w))).toHaveLength(3)
+  })
+})
+
+describe('chat-ai-watcher.sh in the office language', () => {
+  let w: WatcherWorld
+  let i18n: typeof import('../server/i18n.js')
+  const localesDir = tempDir('agent-office-script-locales-')
+
+  beforeAll(async () => {
+    copyFileSync('locales/en.json', join(localesDir, 'en.json'))
+    writeFileSync(join(localesDir, 'de.json'), JSON.stringify({
+      meta: { name: 'Deutsch', englishName: 'German' },
+      server: { routing: { debugger: ['absturz'] } },
+    }))
+    // Why lastTs 1: under a loaded machine the watcher may start after the first
+    // message is posted; a watermark from the start of time never skips it
+    w = await startWatcher({ lastTs: '1', env: { AGENT_OFFICE_LOCALES_DIR: localesDir } })
+    i18n = await import('../server/i18n.js')
+    i18n.useLocaleDir(localesDir)
+  })
+  afterAll(async () => { i18n.useLocaleDir(); await w.watcher.stop(); removeOffice(w.office) })
+
+  const setLanguage = (language: string | null) => request(w.office.server.app).post('/settings')
+    .set('Authorization', `Bearer ${w.office.server.UI_TOKEN}`).send({ language })
+
+  it('English: no language line in the prompt', async () => {
+    await say(w, 'the build has a bug')
+    await waitFor('a claude call', () => claudeCalls(w).length === 1)
+    expect(claudeCalls(w)[0][1]).not.toContain('Reply in')
+  })
+
+  it('German: tells claude to reply in German and routes a German keyword', async () => {
+    expect((await setLanguage('de')).status).toBe(200)
+    await say(w, 'Absturz beim Start')
+    await waitFor('a second claude call', () => claudeCalls(w).length === 2)
+    const prompt = claudeCalls(w)[1][1]
+    expect(prompt).toContain('Reply in German.')
+    expect(prompt).toContain('You are responding as Debugger')
+  })
+
+  it('English keywords still route in German', async () => {
+    await say(w, 'can you review the PR please')
+    await waitFor('a third claude call', () => claudeCalls(w).length === 3)
+    expect(claudeCalls(w)[2][1]).toContain('You are responding as Reviewer')
+  })
+
+  it('cuts an unspaced Chinese reply to 40 characters', async () => {
+    writeFileSync(join(w.claudeDir, 'mode'), 'reply')
+    writeFileSync(join(w.claudeDir, 'reply'), '好'.repeat(120))
+    await say(w, 'another bug here')
+    const reply = await waitFor('the cut reply', async () => (await chat(w)).find(m => typeof m.text === 'string' && m.text.startsWith('好')))
+    expect([...reply!.text]).toHaveLength(40)
   })
 })
 
