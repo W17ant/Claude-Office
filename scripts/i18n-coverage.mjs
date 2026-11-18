@@ -19,7 +19,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { flatten, completeness, isTranslated } from '../shared/i18n.js'
+import { flatten, completeness, isTranslated, isEnglishOnly } from '../shared/i18n.js'
 import { loadLocaleFiles } from './i18n-check.mjs'
 
 const NOT_COUNTED = ['meta.', 'ui.demo.']
@@ -44,7 +44,7 @@ function gitEnAtLastCommit(dir) {
 }
 
 function countable(key) {
-  return !NOT_COUNTED.some(p => key.startsWith(p))
+  return !NOT_COUNTED.some(p => key.startsWith(p)) && !isEnglishOnly(key)
 }
 
 function present(v) {

@@ -135,3 +135,30 @@ describe('completeness and plural forms', () => {
     expect(completeness({ meta: ja.meta, ui: { x: 'エックス' } }, enP)).toBeLessThan(100)
   })
 })
+
+describe('English-only keys (the Dunder Mifflin theme)', () => {
+  const enD = {
+    meta: { name: 'English', englishName: 'English' },
+    ui: { office: { thatsWhatSheSaid: "That's what she said 😏", other: 'Other' } },
+    chatter: { office: { spawn: ['Bears. Beets.'], bossPraise: ['nice work, {name}'] }, events: { dundies: { name: 'The Dundies' } } },
+  }
+  const deD = {
+    meta: { name: 'Deutsch', englishName: 'German' },
+    ui: { office: { thatsWhatSheSaid: 'Das hat sie gesagt', other: 'Andere' } },
+    chatter: { office: { spawn: ['Bären.'], bossPraise: ['gut gemacht, {name}'] }, events: { dundies: { name: 'Die Dundies' } } },
+  }
+  it('always speak English, even when a file translates them', () => {
+    const { t, list } = createTranslator({ en: enD, de: deD }, 'de')
+    expect(list('chatter.office.spawn')).toEqual(['Bears. Beets.'])
+    expect(t('ui.office.thatsWhatSheSaid')).toBe("That's what she said 😏")
+    expect(t('chatter.events.dundies.name')).toBe('The Dundies')
+    // the rest is translated as usual
+    expect(t('ui.office.other')).toBe('Andere')
+    expect(list('chatter.office.bossPraise')).toEqual(['gut gemacht, {name}'])
+  })
+  it('do not count toward completeness', () => {
+    const { thatsWhatSheSaid: _x, ...uiRest } = deD.ui.office
+    const partial = { meta: deD.meta, ui: { office: uiRest }, chatter: { office: { bossPraise: deD.chatter.office.bossPraise } } }
+    expect(completeness(partial, enD)).toBe(100)
+  })
+})

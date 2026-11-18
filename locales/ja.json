@@ -362,7 +362,6 @@
     "office": {
       "catAlt": "猫",
       "interactionAlt": "インタラクション",
-      "thatsWhatSheSaid": "…って彼女が言ってた 😏",
       "waitingForDesk": "デスク待ち",
       "waitingForDeskMsg": "デスク待ち...",
       "doneStats": "✅ 完了 · {stats}",
@@ -709,44 +708,6 @@
       ]
     },
     "office": {
-      "spawn": [
-        "なりすましは冗談じゃないぞ、Jim！",
-        "Scranton 支店に出勤",
-        "紙、紙、紙",
-        "クマ。ビーツ。ギャラクティカ。",
-        "D! U! N! D! E! R!",
-        "私はいつだってビヨンセ。",
-        "Dunder Mifflin 流で出勤"
-      ],
-      "work": [
-        "紙を売ってる",
-        "連単位で処理中",
-        "違う。クロクマだ。",
-        "Schrute バックス授与",
-        "本社と交渉中",
-        "TPS レポート提出中",
-        "ファイナー・シングス・クラブの会報"
-      ],
-      "done": [
-        "…って彼女が言ってた",
-        "ブーン。こんがり焼けたな。",
-        "24ポンド上質紙みたいに PR 出荷",
-        "世界一のボスも承認",
-        "契約成立",
-        "マージ完了 — Jim 公認"
-      ],
-      "coffee": [
-        "Jim からのグランデラテ",
-        "Kevin の名物チリで休憩",
-        "プレッツェルの日だ！",
-        "ちょっと休憩室"
-      ],
-      "water": [
-        "水分補給 — Angela いわく水だけ",
-        "Stanley いわく、もうすぐ5時",
-        "水を汲んで、それからプレッツェル",
-        "休憩室までひとっ走り"
-      ],
       "bossPraise": [
         "ナイス {name} 👊",
         "最高 🔥",
@@ -1016,125 +977,6 @@
           "メールの出番",
           "伝書鳩の出番",
           "正直ちょっと平和"
-        ]
-      },
-      "fireAlarmStressRelief": {
-        "name": "火事だ！火事だ！火事だ！",
-        "announcement": "🔥 火事だ！火事だ！火事だ！（Dwight の防災訓練）",
-        "managerLine": "火が撃ってくる！",
-        "agentLines": [
-          "火事だ！",
-          "どうしようどうしよう",
-          "Bandit を助けて！",
-          "破産を宣言する！",
-          "除細動器を持ってこい！"
-        ]
-      },
-      "cprTraining": {
-        "name": "Stayin' Alive",
-        "announcement": "🫀 心肺蘇生の訓練 — Stayin' Alive のリズムで",
-        "managerLine": "ah ah ah ah, stayin' alive, stayin' alive",
-        "agentLines": [
-          "え...死んでる？",
-          "Dwight が人形の顔を切り取ってる",
-          "ER で見て覚えた",
-          "ah ah ah ah"
-        ]
-      },
-      "goldenTicket": {
-        "name": "ゴールデンチケット",
-        "announcement": "🎫 コピー用紙の束に5枚のゴールデンチケット — 10%オフ！",
-        "managerLine": "俺のアイデアだ。全部俺の手柄だ。",
-        "agentLines": [
-          "Kevin のせいだ",
-          "ウィリー・ウォンカの時間",
-          "全部 Michael の仕業",
-          "誰がこれ承認したの"
-        ]
-      },
-      "jimPrank": {
-        "name": "Jim のいたずら",
-        "announcement": "🥤 また誰かが Dwight のホッチキスをゼリーに閉じ込めた",
-        "managerLine": "JIM！",
-        "agentLines": [
-          "またか",
-          "どうせ Jim",
-          "なりすましは冗談じゃない",
-          "Pam、助けて"
-        ]
-      },
-      "parkour": {
-        "name": "パルクール！",
-        "announcement": "🏃 パルクール！パルクール！パルクール！",
-        "managerLine": "パルクール！",
-        "agentLines": [
-          "パルクール！",
-          "パル・クール",
-          "Michael、やめて",
-          "絶対ろくなことにならない"
-        ]
-      },
-      "schruteBucks": {
-        "name": "Schrute バックス",
-        "announcement": "💵 Dwight が Schrute バックスを発行中。1セントの1000分の1。",
-        "agentLines": [
-          "換算レートは？",
-          "追加のインセンティブが要るように見える？",
-          "代わりに Stanley ニッケルでいい",
-          "昇給はどこ？"
-        ]
-      },
-      "kevinsChili": {
-        "name": "Kevin のチリ",
-        "announcement": "🫘 Kevin がまたチリをこぼした。",
-        "managerLine": "残された道は、すくい上げることだけ...",
-        "agentLines": [
-          "うそぉぉ",
-          "朝からずっと作ってたのに",
-          "カーペット終了",
-          "鍋2つにしろって言ったのに"
-        ]
-      },
-      "printerJamDm": {
-        "name": "Sabre プリンター",
-        "announcement": "🖨️ またプリンターが燃えてる。物理的に。",
-        "agentLines": [
-          "Sabre のプリンター、またやらかす",
-          "だから言ったのに",
-          "Nellie を呼ぼう",
-          "保証切れ"
-        ]
-      },
-      "dundies": {
-        "name": "ダンディー賞",
-        "announcement": "🏆 今夜はダンディー賞！",
-        "managerLine": "笑って、泣いて...",
-        "agentLines": [
-          "もじゃもじゃビーバー賞の時間",
-          "もう勘弁して",
-          "ベストパパ賞は俺の",
-          "Pam を Chili's に連れてく"
-        ]
-      },
-      "pretzelDay": {
-        "name": "プレッツェルの日",
-        "announcement": "🥨 プレッツェルの日だ",
-        "managerLine": "わかってないな。プレッツェルの日なんだぞ。",
-        "agentLines": [
-          "一年で最高の日",
-          "カロリーなんて気にしない",
-          "Stanley が一年待ってた日",
-          "トッピング全部のせ"
-        ]
-      },
-      "bearsBeets": {
-        "name": "クマ。ビーツ。ギャラクティカ。",
-        "announcement": "📋 質問：一番いいクマは？",
-        "agentLines": [
-          "違う。クロクマだ。",
-          "クマ、ビーツ、ギャラクティカ",
-          "なりすましは冗談じゃないぞ、Jim",
-          "事実：クマはビーツを食べる"
         ]
       },
       "incident": {

@@ -374,7 +374,6 @@
     "office": {
       "catAlt": "gato",
       "interactionAlt": "interacción",
-      "thatsWhatSheSaid": "Eso es lo que ella dijo 😏",
       "waitingForDesk": "esperando escritorio",
       "waitingForDeskMsg": "esperando un escritorio...",
       "doneStats": "✅ listo · {stats}",
@@ -731,44 +730,6 @@
       ]
     },
     "office": {
-      "spawn": [
-        "¡El robo de identidad no es broma, Jim!",
-        "reportándome en la sucursal de Scranton",
-        "papel, papel, papel",
-        "Osos. Remolachas. Battlestar Galactica.",
-        "la D, la U, la N, la...",
-        "Soy Beyoncé, siempre.",
-        "fiché la entrada, al estilo Dunder Mifflin"
-      ],
-      "work": [
-        "vendiendo papel",
-        "procesando resmas",
-        "falso. osos negros.",
-        "dólares Schrute otorgados",
-        "negociando con la corporación",
-        "llenando informes TPS",
-        "boletín del Club de las Cosas Finas"
-      ],
-      "done": [
-        "eso es lo que ella dijo",
-        "¡bum! ¡quemado!",
-        "PR enviado como papel bond de 24 lb",
-        "aprobado por el Mejor Jefe del Mundo",
-        "trato cerrado",
-        "mergeado, con el visto bueno de Jim"
-      ],
-      "coffee": [
-        "latte grande cortesía de Jim",
-        "pausa para el famoso chili de Kevin",
-        "¡día del pretzel!",
-        "ya vuelvo, voy a la sala de descanso"
-      ],
-      "water": [
-        "hidratación: Angela dice que solo agua",
-        "Stanley dice que ya casi son las 5",
-        "lleno el vaso y después pretzel",
-        "escapada a la sala de descanso"
-      ],
       "bossPraise": [
         "buen trabajo, {name} 👊",
         "sólido 🔥",
@@ -1038,125 +999,6 @@
           "hora de usar el correo",
           "hora de la paloma mensajera",
           "la verdad es bastante relajante"
-        ]
-      },
-      "fireAlarmStressRelief": {
-        "name": "¡FUEGO! ¡FUEGO! ¡FUEGO!",
-        "announcement": "🔥 ¡FUEGO! ¡FUEGO! ¡FUEGO! (Dwight está enseñando seguridad contra incendios)",
-        "managerLine": "¡El fuego nos está disparando!",
-        "agentLines": [
-          "¡FUEGO!",
-          "ay dios mío ay dios mío",
-          "¡salven a Bandit!",
-          "¡ME DECLARO EN BANCARROTA!",
-          "¡traigan el desfibrilador!"
-        ]
-      },
-      "cprTraining": {
-        "name": "Stayin' Alive",
-        "announcement": "🫀 Curso de RCP: al ritmo de Stayin' Alive",
-        "managerLine": "ah ah ah ah, stayin' alive, stayin' alive",
-        "agentLines": [
-          "¿está... muerto?",
-          "Dwight le está cortando la cara al muñeco",
-          "esto lo aprendí viendo ER",
-          "ah ah ah ah"
-        ]
-      },
-      "goldenTicket": {
-        "name": "Boleto dorado",
-        "announcement": "🎫 Cinco boletos dorados escondidos en resmas de papel: ¡10% de descuento!",
-        "managerLine": "Fue idea mía. Todo fue cosa mía.",
-        "agentLines": [
-          "la culpa es de Kevin",
-          "momento Willy Wonka",
-          "eso fue todo cosa de Michael",
-          "¿quién aprobó esto?"
-        ]
-      },
-      "jimPrank": {
-        "name": "Jim le hace una broma a Dwight",
-        "announcement": "🥤 Alguien volvió a meter la engrapadora de Dwight en gelatina",
-        "managerLine": "¡JIM!",
-        "agentLines": [
-          "otra vez no",
-          "siempre es Jim",
-          "el robo de identidad no es broma",
-          "Pam, ayuda"
-        ]
-      },
-      "parkour": {
-        "name": "¡Parkour!",
-        "announcement": "🏃 ¡PARKOUR! ¡PARKOUR! ¡PARKOUR!",
-        "managerLine": "¡PARKOUR!",
-        "agentLines": [
-          "¡parkour!",
-          "PAR-KOUR",
-          "Michael, no",
-          "esto va a terminar mal"
-        ]
-      },
-      "schruteBucks": {
-        "name": "Dólares Schrute",
-        "announcement": "💵 Dwight está repartiendo dólares Schrute. Valen 1/1000 de centavo.",
-        "agentLines": [
-          "¿a cuánto está el cambio?",
-          "¿tengo cara de necesitar incentivos extra?",
-          "prefiero los centavos Stanley",
-          "¿y mi aumento?"
-        ]
-      },
-      "kevinsChili": {
-        "name": "El chili de Kevin",
-        "announcement": "🫘 A Kevin se le cayó el chili. Otra vez.",
-        "managerLine": "lo único que queda es recogerlo...",
-        "agentLines": [
-          "NOOO",
-          "le llevó toda la mañana",
-          "la alfombra quedó arruinada",
-          "le dije que usara dos ollas"
-        ]
-      },
-      "printerJamDm": {
-        "name": "Impresora Sabre atascada",
-        "announcement": "🖨️ La impresora está en llamas otra vez. Llamas de verdad.",
-        "agentLines": [
-          "las impresoras Sabre atacan de nuevo",
-          "SE LO DIJE",
-          "hora de llamar a Nellie",
-          "la garantía ya venció"
-        ]
-      },
-      "dundies": {
-        "name": "Los Dundies",
-        "announcement": "🏆 ¡Esta noche son los Dundies!",
-        "managerLine": "Van a reír, van a llorar...",
-        "agentLines": [
-          "hora del premio al Castor Más Peludo",
-          "otra vez no, por favor",
-          "me pido el de Mejor Papá",
-          "voy a llevar a Pam a Chili's"
-        ]
-      },
-      "pretzelDay": {
-        "name": "Día del pretzel",
-        "announcement": "🥨 ES EL DÍA DEL PRETZEL",
-        "managerLine": "No lo entiendes. Es el día del pretzel.",
-        "agentLines": [
-          "el mejor día del año",
-          "vale cada caloría",
-          "Stanley lleva todo el año esperando",
-          "con todos los toppings"
-        ]
-      },
-      "bearsBeets": {
-        "name": "Osos. Remolachas. Battlestar Galactica.",
-        "announcement": "📋 Pregunta: ¿qué clase de oso es el mejor?",
-        "agentLines": [
-          "falso. el oso negro.",
-          "Osos, remolachas, Battlestar Galactica",
-          "el robo de identidad no es broma, Jim",
-          "dato: los osos comen remolachas"
         ]
       },
       "incident": {

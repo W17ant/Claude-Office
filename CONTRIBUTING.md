@@ -45,7 +45,9 @@ adding one needs no code:
 2. Translate what you can. Anything you leave out shows in English, so a half
    done file is fine. Keep every `{placeholder}` exactly as it is, and leave
    slash commands (`/status`), `@`-mentions, product names and character
-   names in English. Chatter lists (`chatter.*`) can be longer or shorter
+   names in English. The Dunder Mifflin theme's lines stay English and are
+   not in your file (the check says so if one slips in). Chatter lists
+   (`chatter.*`) can be longer or shorter
    than the English ones; translate them for tone, not word for word.
    Plurals: add the forms your language needs (`_one`, `_few`, `_many`,
    `_other` …, see `Intl.PluralRules`). `server.routing.*` lists are words

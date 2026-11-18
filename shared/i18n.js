@@ -75,6 +75,30 @@ export function matchLocale(requested, available) {
   return byLower.get(lang) ?? 'en'
 }
 
+// Why English only: the Dunder Mifflin theme is quotes and in-jokes from an
+// American show; its fans know them in English and translations fall flat
+// (the owner's call). These keys always come from en.json, a translation of
+// them is refused by scripts/i18n-check.mjs and they never count toward
+// completeness. Matched as a key or a key prefix (ending in ".").
+export const ENGLISH_ONLY = [
+  'chatter.office.spawn', 'chatter.office.work', 'chatter.office.done',
+  'chatter.office.coffee', 'chatter.office.water',
+  'ui.office.thatsWhatSheSaid',
+  'chatter.events.fireAlarmStressRelief.', 'chatter.events.cprTraining.', 'chatter.events.goldenTicket.',
+  'chatter.events.jimPrank.', 'chatter.events.parkour.', 'chatter.events.schruteBucks.',
+  'chatter.events.kevinsChili.', 'chatter.events.printerJamDm.', 'chatter.events.dundies.',
+  'chatter.events.pretzelDay.', 'chatter.events.bearsBeets.',
+]
+
+/**
+ * Whether a key always stays English (see ENGLISH_ONLY).
+ * @param {string} key
+ * @returns {boolean}
+ */
+export function isEnglishOnly(key) {
+  return ENGLISH_ONLY.some(p => (p.endsWith('.') ? key.startsWith(p) : key === p || key.startsWith(p + '_')))
+}
+
 /** Replace {name} with vars.name; unknown placeholders stay as written. */
 function fill(text, vars) {
   if (!vars) return text
@@ -102,8 +126,10 @@ function pluralForm(lang, count) {
  */
 export function createTranslator(catalogs, lang) {
   const code = catalogs[lang] ? lang : 'en'
-  const own = catalogs[code] ?? {}
+  const mine = catalogs[code] ?? {}
   const en = catalogs.en ?? {}
+  // An English-only key reads English whatever the language
+  const ownFor = key => (isEnglishOnly(key) ? en : mine)
 
   /**
    * @param {string} key
@@ -113,6 +139,7 @@ export function createTranslator(catalogs, lang) {
   function t(key, vars) {
     if (vars && typeof vars.count === 'number') {
       // Order: this language's form, its _other, English's form, English's _other
+      const own = ownFor(key)
       const candidates = [
         [own, `${key}_${pluralForm(code, vars.count)}`],
         [own, `${key}_other`],
@@ -124,7 +151,7 @@ export function createTranslator(catalogs, lang) {
         if (hit !== undefined) return fill(hit, vars)
       }
     }
-    const text = nonEmptyString(lookup(own, key)) ?? nonEmptyString(lookup(en, key))
+    const text = nonEmptyString(lookup(ownFor(key), key)) ?? nonEmptyString(lookup(en, key))
     return text === undefined ? key : fill(text, vars)
   }
 
@@ -133,8 +160,8 @@ export function createTranslator(catalogs, lang) {
    * @returns {string[]}
    */
   function list(key) {
-    const mine = lookup(own, key)
-    if (Array.isArray(mine) && mine.length > 0) return mine
+    const translated = lookup(ownFor(key), key)
+    if (Array.isArray(translated) && translated.length > 0) return translated
     const base = lookup(en, key)
     return Array.isArray(base) ? base : []
   }
@@ -153,7 +180,7 @@ const NOT_COUNTED = ['meta.', 'ui.demo.']
  * @returns {number}
  */
 export function completeness(catalog, en) {
-  const keys = Object.keys(flatten(en)).filter(k => !NOT_COUNTED.some(p => k.startsWith(p)))
+  const keys = Object.keys(flatten(en)).filter(k => !NOT_COUNTED.some(p => k.startsWith(p)) && !isEnglishOnly(k))
   if (keys.length === 0) return 100
   const mine = flatten(catalog)
   const done = keys.filter(k => isTranslated(mine, k)).length

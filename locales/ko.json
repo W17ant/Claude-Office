@@ -362,7 +362,6 @@
     "office": {
       "catAlt": "고양이",
       "interactionAlt": "상호작용",
-      "thatsWhatSheSaid": "그녀도 그렇게 말했죠 😏",
       "waitingForDesk": "자리 기다리는 중",
       "waitingForDeskMsg": "자리 기다리는 중...",
       "doneStats": "✅ 완료 · {stats}",
@@ -709,44 +708,6 @@
       ]
     },
     "office": {
-      "spawn": [
-        "신분 도용은 장난이 아니에요, Jim!",
-        "Scranton 지점 출근 보고",
-        "종이, 종이, 종이",
-        "곰. 비트. 배틀스타 갤럭티카.",
-        "D 다음 U 다음 N 다음...",
-        "나는 언제나 비욘세예요.",
-        "Dunder Mifflin 스타일로 출근"
-      ],
-      "work": [
-        "종이 파는 중",
-        "용지 처리 중",
-        "틀렸어요. 흑곰이에요.",
-        "Schrute 벅스 지급했어요",
-        "본사랑 협상 중",
-        "TPS 보고서 쓰는 중",
-        "고상한 것들 클럽 소식지"
-      ],
-      "done": [
-        "그녀도 그렇게 말했죠",
-        "붐. 털렸네요.",
-        "PR 배포 완료, 24lb 본드지처럼 매끈하게",
-        "세계 최고의 보스가 승인했어요",
-        "계약 성사",
-        "merge 완료 — Jim 승인"
-      ],
-      "coffee": [
-        "Jim이 사 준 그란데 라테",
-        "Kevin표 칠리 먹으러 가요",
-        "프레첼 데이!",
-        "잠깐 탕비실 다녀올게요"
-      ],
-      "water": [
-        "수분 보충 — Angela가 물만 마시래요",
-        "Stanley가 거의 5시래요",
-        "물 채우고 프레첼",
-        "탕비실 다녀올게요"
-      ],
       "bossPraise": [
         "잘했어요 {name} 👊",
         "탄탄해요 🔥",
@@ -1016,125 +977,6 @@
           "이메일 쓸 시간",
           "비둘기 편지 시대로 복귀",
           "오히려 평화롭네요"
-        ]
-      },
-      "fireAlarmStressRelief": {
-        "name": "불이야! 불이야! 불이야!",
-        "announcement": "🔥 불이야! 불이야! 불이야! (Dwight의 화재 안전 교육 중)",
-        "managerLine": "불이 우리한테 총을 쏘고 있어요!",
-        "agentLines": [
-          "불이야!",
-          "세상에 세상에",
-          "Bandit을 구해요!",
-          "파산을 선언합니다!",
-          "제세동기 가져와요!"
-        ]
-      },
-      "cprTraining": {
-        "name": "Stayin' Alive",
-        "announcement": "🫀 심폐소생술 교육 — Stayin' Alive 박자에 맞춰요",
-        "managerLine": "ah ah ah ah, stayin' alive, stayin' alive",
-        "agentLines": [
-          "저 사람... 죽은 거예요?",
-          "Dwight가 얼굴을 잘라 내고 있어요",
-          "ER 보고 배웠어요",
-          "ah ah ah ah"
-        ]
-      },
-      "goldenTicket": {
-        "name": "황금 티켓",
-        "announcement": "🎫 용지 묶음 속에 황금 티켓 5장 — 10% 할인!",
-        "managerLine": "제 아이디어였어요. 전부 제가 한 거예요.",
-        "agentLines": [
-          "Kevin 탓이에요",
-          "윌리 웡카 타임",
-          "그건 전부 Michael이 한 거예요",
-          "이거 누가 승인했어요"
-        ]
-      },
-      "jimPrank": {
-        "name": "Jim의 Dwight 골탕",
-        "announcement": "🥤 누가 또 Dwight 스테이플러를 젤리에 넣었어요",
-        "managerLine": "JIM!",
-        "agentLines": [
-          "또요",
-          "언제나 Jim이죠",
-          "신분 도용은 장난이 아니에요",
-          "Pam, 도와줘요"
-        ]
-      },
-      "parkour": {
-        "name": "파쿠르!",
-        "announcement": "🏃 파쿠르! 파쿠르! 파쿠르!",
-        "managerLine": "파쿠르!",
-        "agentLines": [
-          "파쿠르!",
-          "파-쿠르",
-          "Michael, 안 돼요",
-          "이거 끝이 안 좋을 거예요"
-        ]
-      },
-      "schruteBucks": {
-        "name": "Schrute 벅스",
-        "announcement": "💵 Dwight가 Schrute 벅스를 발행 중이에요. 1/1000센트예요.",
-        "agentLines": [
-          "환율이 어떻게 돼요?",
-          "제가 추가 인센티브가 필요해 보여요?",
-          "차라리 Stanley 니켈로 받을게요",
-          "제 연봉 인상은요?"
-        ]
-      },
-      "kevinsChili": {
-        "name": "Kevin의 칠리",
-        "announcement": "🫘 Kevin이 칠리를 쏟았어요. 또요.",
-        "managerLine": "이제 남은 건 퍼 담는 것뿐...",
-        "agentLines": [
-          "안 돼애애",
-          "아침 내내 만든 건데",
-          "카펫 망했어요",
-          "냄비 두 개 쓰라고 했잖아요"
-        ]
-      },
-      "printerJamDm": {
-        "name": "Sabre 프린터 걸림",
-        "announcement": "🖨️ 프린터에 또 불났어요. 진짜 불이요.",
-        "agentLines": [
-          "Sabre 프린터가 또 사고 쳤어요",
-          "제가 말했잖아요",
-          "Nellie 부를 시간",
-          "보증 기간 끝났어요"
-        ]
-      },
-      "dundies": {
-        "name": "던디 시상식",
-        "announcement": "🏆 오늘 밤 던디 시상식이에요!",
-        "managerLine": "웃다가, 울다가...",
-        "agentLines": [
-          "가장 덥수룩한 비버상 시간",
-          "제발 또는 안 돼요",
-          "최고의 아빠상은 제 거예요",
-          "Pam 데리고 Chili's 갈 거예요"
-        ]
-      },
-      "pretzelDay": {
-        "name": "프레첼 데이",
-        "announcement": "🥨 프레첼 데이예요",
-        "managerLine": "모르는구나. 프레첼 데이라고요.",
-        "agentLines": [
-          "1년 중 최고의 날",
-          "칼로리 따윈 상관없어요",
-          "Stanley가 1년 내내 기다렸어요",
-          "토핑 전부 다요"
-        ]
-      },
-      "bearsBeets": {
-        "name": "곰. 비트. 배틀스타 갤럭티카.",
-        "announcement": "📋 질문: 가장 좋은 곰은 무슨 곰일까요?",
-        "agentLines": [
-          "틀렸어요. 흑곰이에요.",
-          "곰, 비트, 배틀스타 갤럭티카",
-          "신분 도용은 장난이 아니에요, Jim",
-          "사실: 곰은 비트를 먹어요"
         ]
       },
       "incident": {

@@ -32,7 +32,11 @@ credited by name in the changelog, never a fork to maintain.
 - A missing or half-done translation never breaks anything: any key a file
   lacks falls back to English, key by key (a chatter list falls back as a
   whole list).
-- Dates, times and money use the language's own formatting (`Intl`).
+- Dates and times use the language's own formatting (`Intl`); money is
+  written "$1.23" in every language (the owner's call, after the build).
+- The Dunder Mifflin theme's lines (the cast's chatter and its own office
+  events) stay English in every language (the owner's call, after the
+  build): quotes from the show read best as they are.
 - Adding a language needs no code: copy `en.json`, translate, open a PR. CI
   tells the translator what is missing or wrong.
 - Ship with about 12 languages on day one (the owner's call), drafted by
@@ -202,8 +206,8 @@ all of it. Credit by name in the CHANGELOG.
 - Locale matching is exact first, then by language: `zh-HK` gets `zh-TW`,
   but `zh-CN` never falls back to `zh-TW` or the other way round. `pt-PT`
   gets `pt-BR`. Anything else gets English.
-- Costs stay in US dollars (that is what the tools bill in), formatted with
-  `Intl` for the chosen language.
+- Costs stay in US dollars (that is what the tools bill in), written
+  "$1.23" in every language (the owner's call).
 - Read-only and phone pages hear a language change live, like other
   settings.
 - `locales/` is added to the npm package's `files`.

@@ -53,6 +53,11 @@ describe('checkLocale catches each kind of problem', () => {
     const withOne = { ...src, ui: { ...src.ui, m_one: 'A file', m_other: '{count} files' } }
     expect(checkLocale('ru', { ...base, ui: { m_one: '{count} файл', m_few: '{count} файла' } }, withOne)).toEqual([])
   })
+  it('an English-only key (Dunder Mifflin) in a translation', () => {
+    const withDunder = { ...src, chatter: { ...src.chatter, office: { spawn: ['Bears. Beets.'] } } }
+    const p = checkLocale('de', { ...base, chatter: { office: { spawn: ['Bären.'] } } }, withDunder)
+    expect(p.some(s => /chatter\.office\.spawn.*English/.test(s)), p.join('\n')).toBe(true)
+  })
   it('Han is allowed in Japanese', () => {
     expect(problems('ja', { ui: { plain: '日本語のテキスト' } })).toEqual([])
   })

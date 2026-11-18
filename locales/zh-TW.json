@@ -364,7 +364,6 @@
     "office": {
       "catAlt": "貓",
       "interactionAlt": "互動",
-      "thatsWhatSheSaid": "她也是這麼說的 😏",
       "waitingForDesk": "等待座位",
       "waitingForDeskMsg": "等待座位中...",
       "doneStats": "✅ 完成 · {stats}",
@@ -711,44 +710,6 @@
       ]
     },
     "office": {
-      "spawn": [
-        "身分盜竊可不是開玩笑的，Jim！",
-        "向 Scranton 分公司報到",
-        "紙、紙、紙",
-        "熊。甜菜。星際大爭霸。",
-        "D、U、N、D…",
-        "我永遠是碧昂絲。",
-        "打卡上班，Dunder Mifflin 風格"
-      ],
-      "work": [
-        "賣紙中",
-        "處理一令一令的紙",
-        "錯。是黑熊。",
-        "發放 Schrute 幣",
-        "跟總公司談判中",
-        "填 TPS 報告",
-        "高雅事物俱樂部會訊"
-      ],
-      "done": [
-        "她也是這麼說的",
-        "砰。被嗆爆了。",
-        "PR 出貨，紮實得像 24 磅證券紙",
-        "世界最佳老闆認證",
-        "成交了",
-        "已合併 — Jim 認證"
-      ],
-      "coffee": [
-        "Jim 請的大杯拿鐵",
-        "Kevin 的招牌辣肉醬時間",
-        "椒鹽卷餅日！",
-        "brb，去茶水間"
-      ],
-      "water": [
-        "補水 — Angela 說只准喝水",
-        "Stanley 說快五點了",
-        "裝完水，再來個椒鹽卷餅",
-        "跑一趟茶水間"
-      ],
       "bossPraise": [
         "做得好 {name} 👊",
         "穩 🔥",
@@ -1018,125 +979,6 @@
           "改用 email 吧",
           "該用飛鴿傳書了",
           "其實還蠻清靜的"
-        ]
-      },
-      "fireAlarmStressRelief": {
-        "name": "失火了！失火了！",
-        "announcement": "🔥 失火了！失火了！失火了！（Dwight 在教消防安全）",
-        "managerLine": "火在對我們開槍！",
-        "agentLines": [
-          "失火了！",
-          "天啊天啊天啊",
-          "快救 Bandit！",
-          "我宣布破產！",
-          "快拿電擊器！"
-        ]
-      },
-      "cprTraining": {
-        "name": "Stayin' Alive",
-        "announcement": "🫀 CPR 訓練 — 跟著 Stayin' Alive 的節拍",
-        "managerLine": "ah ah ah ah, stayin' alive, stayin' alive",
-        "agentLines": [
-          "他...死了嗎？",
-          "Dwight 在把假人的臉割下來",
-          "我是看《急診室的春天》學的",
-          "ah ah ah ah"
-        ]
-      },
-      "goldenTicket": {
-        "name": "金獎券",
-        "announcement": "🎫 五張金獎券藏在紙箱裡 — 打九折！",
-        "managerLine": "是我的點子。全都是我。",
-        "agentLines": [
-          "都怪 Kevin",
-          "威利旺卡時間",
-          "那全是 Michael 搞的",
-          "誰核准的"
-        ]
-      },
-      "jimPrank": {
-        "name": "Jim 整 Dwight",
-        "announcement": "🥤 又有人把 Dwight 的釘書機放進果凍裡了",
-        "managerLine": "JIM！",
-        "agentLines": [
-          "又來了",
-          "一定是 Jim",
-          "身分盜竊可不是開玩笑的",
-          "Pam，救命"
-        ]
-      },
-      "parkour": {
-        "name": "跑酷！",
-        "announcement": "🏃 跑酷！跑酷！跑酷！",
-        "managerLine": "跑酷！",
-        "agentLines": [
-          "跑酷！",
-          "跑～酷～",
-          "Michael 不要",
-          "這下場一定很慘"
-        ]
-      },
-      "schruteBucks": {
-        "name": "Schrute 幣",
-        "announcement": "💵 Dwight 在發 Schrute 幣。一枚值千分之一分錢。",
-        "agentLines": [
-          "匯率多少？",
-          "我看起來像需要額外獎勵嗎？",
-          "我寧願要 Stanley 鎳幣",
-          "我的加薪呢？"
-        ]
-      },
-      "kevinsChili": {
-        "name": "Kevin 的辣肉醬",
-        "announcement": "🫘 Kevin 把辣肉醬打翻了。又來。",
-        "managerLine": "現在唯一能做的，就是把它舀起來...",
-        "agentLines": [
-          "不～～",
-          "他煮了一整個早上",
-          "地毯毀了",
-          "我叫過他用兩個鍋子"
-        ]
-      },
-      "printerJamDm": {
-        "name": "Sabre 印表機卡紙",
-        "announcement": "🖨️ 印表機又著火了。真的著火。",
-        "agentLines": [
-          "Sabre 印表機又出事了",
-          "我早就跟他們說了",
-          "該找 Nellie 了",
-          "保固過期了"
-        ]
-      },
-      "dundies": {
-        "name": "Dundies 頒獎典禮",
-        "announcement": "🏆 今晚是 Dundies 頒獎典禮！",
-        "managerLine": "你們會笑，你們會哭...",
-        "agentLines": [
-          "最茂密海狸獎頒獎時間",
-          "拜託不要再來了",
-          "最佳老爸獎我的",
-          "我要帶 Pam 去 Chili's"
-        ]
-      },
-      "pretzelDay": {
-        "name": "椒鹽卷餅日",
-        "announcement": "🥨 今天是椒鹽卷餅日",
-        "managerLine": "你不懂。今天是椒鹽卷餅日。",
-        "agentLines": [
-          "一年中最棒的一天",
-          "每一卡路里都值得",
-          "Stanley 等了一整年",
-          "配料全部都加"
-        ]
-      },
-      "bearsBeets": {
-        "name": "熊。甜菜。星際大爭霸。",
-        "announcement": "📋 問題：哪種熊最強？",
-        "agentLines": [
-          "錯。是黑熊。",
-          "熊、甜菜、星際大爭霸",
-          "身分盜竊可不是開玩笑的，Jim",
-          "事實：熊吃甜菜"
         ]
       },
       "incident": {

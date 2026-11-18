@@ -68,8 +68,7 @@
  * dozen numbers a day. Nothing here stores a prompt, reply, command line or
  * task subject, so GET /recap can stay open like the other read-only GETs.
  */
-import { t, lang } from './i18n.js'
-import { formatMoney } from '../shared/i18n.js'
+import { t } from './i18n.js'
 
 /** Counter columns of daily_stats, in display order (cost_usd is separate). */
 export const COUNT_COLUMNS = [
@@ -327,8 +326,9 @@ export function recapLine(s) {
   if (red.length) parts.push(red.join(', '))
   parts.push(s.incidents ? t('server.recap.incidents', { count: s.incidents }) : t('server.recap.noIncidents'))
 
-  // Why formatMoney: dollars, written the way the office's language writes them
-  const payroll = s.costUsd > 0 ? t('server.recap.payroll', { amount: formatMoney(s.costUsd, lang()) }) : ''
+  // Why "$1.23" in every language: costs are billed in dollars and the meters
+  // write them this way too (the owner's call)
+  const payroll = s.costUsd > 0 ? t('server.recap.payroll', { amount: `$${s.costUsd.toFixed(2)}` }) : ''
   const signOff = s.incidents ? t('server.recap.signOffIncident') : s.deploys ? t('server.recap.signOffDeploys') : t('server.recap.signOff')
   return t('server.recap.line', { parts: parts.join(' · '), payroll, signOff })
 }

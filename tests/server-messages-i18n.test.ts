@@ -60,7 +60,8 @@ describe('server messages in the office language', () => {
     expect(recapLine({ date: '2026-11-18', ...ZERO })).toBe('📋 Rückblick: ruhiger Tag.')
     // A key the German file lacks comes out in English
     expect(recapLine({ date: '2026-11-18', ...ZERO, sessions: 1 })).toMatch(/1 session/)
-    expect(recapLine({ date: '2026-11-18', ...ZERO, sessions: 1, costUsd: 1234.5 })).toContain('1.234,50')
+    // Money stays in dollars, written the same in every language (the owner's call)
+    expect(recapLine({ date: '2026-11-18', ...ZERO, sessions: 1, costUsd: 1234.5 })).toContain('$1234.50')
 
     const { permissionNotificationText } = await import('../server/permission-notify.js')
     expect(permissionNotificationText({ project: 'alpha', toolName: 'Bash' })).toEqual({

@@ -374,7 +374,6 @@
     "office": {
       "catAlt": "kucing",
       "interactionAlt": "interaksi",
-      "thatsWhatSheSaid": "Itu kata dia 😏",
       "waitingForDesk": "menunggu meja",
       "waitingForDeskMsg": "menunggu meja kosong...",
       "doneStats": "✅ selesai · {stats}",
@@ -731,44 +730,6 @@
       ]
     },
     "office": {
-      "spawn": [
-        "Pencurian identitas itu bukan lelucon, Jim!",
-        "melapor ke cabang Scranton",
-        "kertas, kertas, kertas",
-        "Beruang. Bit. Battlestar Galactica.",
-        "D, U, N, D...",
-        "Aku Beyoncé, selalu.",
-        "sudah masuk, gaya Dunder Mifflin"
-      ],
-      "work": [
-        "jualan kertas",
-        "memproses rim kertas",
-        "salah. beruang hitam.",
-        "dapat Schrute Bucks",
-        "nego sama kantor pusat",
-        "mengisi laporan TPS",
-        "buletin Finer Things Club"
-      ],
-      "done": [
-        "itu kata dia",
-        "boom. roasted.",
-        "PR dirilis semulus kertas 80 gram",
-        "Bos Terbaik Sedunia setuju",
-        "deal ditutup",
-        "sudah merge — disetujui Jim"
-      ],
-      "coffee": [
-        "latte grande dari Jim",
-        "istirahat chili legendaris Kevin",
-        "hari pretzel!",
-        "bentar, ke pantry"
-      ],
-      "water": [
-        "minum — kata Angela, air putih saja",
-        "kata Stanley sudah hampir jam 5",
-        "isi air, lalu pretzel",
-        "ke pantry dulu"
-      ],
       "bossPraise": [
         "kerja bagus {name} 👊",
         "mantap 🔥",
@@ -1038,125 +999,6 @@
           "saatnya pakai email",
           "saatnya merpati pos",
           "sebenarnya agak tenang"
-        ]
-      },
-      "fireAlarmStressRelief": {
-        "name": "KEBAKARAN! KEBAKARAN!",
-        "announcement": "🔥 KEBAKARAN! KEBAKARAN! KEBAKARAN! (Dwight sedang mengajari keselamatan kebakaran)",
-        "managerLine": "Apinya menembaki kita!",
-        "agentLines": [
-          "KEBAKARAN!",
-          "ya ampun ya ampun",
-          "selamatkan Bandit!",
-          "AKU MENYATAKAN BANGKRUT!",
-          "ambil defibrilatornya!"
-        ]
-      },
-      "cprTraining": {
-        "name": "Stayin' Alive",
-        "announcement": "🫀 Pelatihan CPR — ikuti ketukan Stayin' Alive",
-        "managerLine": "ah ah ah ah, stayin' alive, stayin' alive",
-        "agentLines": [
-          "dia... mati?",
-          "Dwight memotong wajahnya",
-          "aku belajar ini dari ER",
-          "ah ah ah ah"
-        ]
-      },
-      "goldenTicket": {
-        "name": "Tiket Emas",
-        "announcement": "🎫 Lima Tiket Emas disembunyikan di rim kertas — diskon 10%!",
-        "managerLine": "Itu ideku. Semuanya ideku.",
-        "agentLines": [
-          "salahkan Kevin",
-          "waktunya Willy Wonka",
-          "itu semua ulah Michael",
-          "siapa yang menyetujui ini"
-        ]
-      },
-      "jimPrank": {
-        "name": "Jim Menjahili Dwight",
-        "announcement": "🥤 Ada yang memasukkan stapler Dwight ke jeli lagi",
-        "managerLine": "JIM!",
-        "agentLines": [
-          "lagi-lagi",
-          "pasti Jim",
-          "pencurian identitas itu bukan lelucon",
-          "Pam, tolong"
-        ]
-      },
-      "parkour": {
-        "name": "Parkour!",
-        "announcement": "🏃 PARKOUR! PARKOUR! PARKOUR!",
-        "managerLine": "PARKOUR!",
-        "agentLines": [
-          "parkour!",
-          "PAR-KOUR",
-          "Michael jangan",
-          "ini bakal berakhir buruk"
-        ]
-      },
-      "schruteBucks": {
-        "name": "Schrute Bucks",
-        "announcement": "💵 Dwight membagikan Schrute Bucks. Nilainya 1/1000 sen.",
-        "agentLines": [
-          "kursnya berapa?",
-          "memangnya aku kelihatan butuh insentif tambahan?",
-          "aku pilih Stanley Nickels saja",
-          "naik gajiku mana?"
-        ]
-      },
-      "kevinsChili": {
-        "name": "Chili Kevin",
-        "announcement": "🫘 Kevin menjatuhkan chili-nya. Lagi.",
-        "managerLine": "yang bisa dilakukan sekarang cuma menyendoknya...",
-        "agentLines": [
-          "TIDAAAK",
-          "dia masak dari pagi",
-          "karpetnya rusak",
-          "sudah kubilang pakai dua panci"
-        ]
-      },
-      "printerJamDm": {
-        "name": "Printer Sabre Macet",
-        "announcement": "🖨️ Printernya terbakar lagi. Terbakar sungguhan.",
-        "agentLines": [
-          "printer Sabre berulah lagi",
-          "SUDAH KUBILANG",
-          "waktunya panggil Nellie",
-          "garansinya sudah habis"
-        ]
-      },
-      "dundies": {
-        "name": "The Dundies",
-        "announcement": "🏆 The Dundies malam ini!",
-        "managerLine": "Kalian akan tertawa, kalian akan menangis...",
-        "agentLines": [
-          "waktunya penghargaan Bushiest Beaver",
-          "Tolong jangan lagi",
-          "aku ambil Ayah Terbaik",
-          "aku ajak Pam ke Chili's"
-        ]
-      },
-      "pretzelDay": {
-        "name": "Hari Pretzel",
-        "announcement": "🥨 HARI INI HARI PRETZEL",
-        "managerLine": "Kamu nggak ngerti. Ini hari pretzel.",
-        "agentLines": [
-          "hari terbaik sepanjang tahun",
-          "sepadan dengan semua kalorinya",
-          "Stanley sudah menunggu setahun",
-          "semua topping-nya"
-        ]
-      },
-      "bearsBeets": {
-        "name": "Beruang. Bit. Battlestar Galactica.",
-        "announcement": "📋 Pertanyaan: beruang jenis apa yang terbaik?",
-        "agentLines": [
-          "salah. beruang hitam.",
-          "Beruang, bit, Battlestar Galactica",
-          "pencurian identitas itu bukan lelucon, Jim",
-          "fakta: beruang makan bit"
         ]
       },
       "incident": {

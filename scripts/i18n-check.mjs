@@ -13,7 +13,7 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, basename, extname, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { flatten } from '../shared/i18n.js'
+import { flatten, isEnglishOnly } from '../shared/i18n.js'
 
 // Why: BCP 47 as the office uses it: language, optional script, optional region
 const CODE_RE = /^[a-z]{2,3}(-[A-Z][a-z]{3})?(-[A-Z]{2})?$/
@@ -89,6 +89,7 @@ export function checkLocale(code, catalog, en) {
   const allowed = new Set(ALLOWED_SCRIPTS[code.split('-')[0]] ?? [])
   for (const [key, value] of Object.entries(flatten(catalog))) {
     if (key.startsWith('meta.')) continue
+    if (code !== 'en' && isEnglishOnly(key)) { problems.push(`${code}: ${key} stays English (the Dunder Mifflin theme): remove it from this file`); continue }
     let english = source[key]
     let plural = false
     if (english === undefined && PLURAL_SUFFIX_RE.test(key)) {

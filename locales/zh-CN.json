@@ -372,7 +372,6 @@
     "office": {
       "catAlt": "猫",
       "interactionAlt": "互动",
-      "thatsWhatSheSaid": "她就是这么说的 😏",
       "waitingForDesk": "等工位中",
       "waitingForDeskMsg": "等工位中...",
       "doneStats": "✅ 完成 · {stats}",
@@ -729,44 +728,6 @@
       ]
     },
     "office": {
-      "spawn": [
-        "盗用身份可不是开玩笑的，Jim！",
-        "向 Scranton 分公司报到",
-        "纸，纸，纸",
-        "熊。甜菜。太空堡垒卡拉狄加。",
-        "D-U-N-D-E-R...",
-        "我永远是碧昂丝。",
-        "上班打卡，Dunder Mifflin 风格"
-      ],
-      "work": [
-        "卖纸中",
-        "处理一令一令的纸",
-        "错。黑熊。",
-        "发放 Schrute 币",
-        "在跟总部谈判",
-        "填 TPS 报告",
-        "高雅品味俱乐部会刊"
-      ],
-      "done": [
-        "她就是这么说的",
-        "嘣。怼到了。",
-        "PR 已上线，品质堪比 24 磅证券纸",
-        "世界最佳老板批准",
-        "成交",
-        "已合并 — Jim 认证"
-      ],
-      "coffee": [
-        "Jim 请的大杯拿铁",
-        "Kevin 招牌辣肉酱时间",
-        "椒盐卷饼日！",
-        "马上回来，去休息室"
-      ],
-      "water": [
-        "补水 — Angela 说只准喝水",
-        "Stanley 说快五点了",
-        "接完水，再吃个卷饼",
-        "去休息室"
-      ],
       "bossPraise": [
         "干得漂亮 {name} 👊",
         "稳 🔥",
@@ -1036,125 +997,6 @@
           "该用邮件了",
           "飞鸽传书时间",
           "其实还挺清静"
-        ]
-      },
-      "fireAlarmStressRelief": {
-        "name": "着火了！着火了！着火了！",
-        "announcement": "🔥 着火了！着火了！着火了！（Dwight 在教消防安全）",
-        "managerLine": "火在朝我们开枪！",
-        "agentLines": [
-          "着火了！",
-          "天哪天哪天哪",
-          "救救 Bandit！",
-          "我宣布破产！",
-          "拿除颤器来！"
-        ]
-      },
-      "cprTraining": {
-        "name": "Stayin' Alive",
-        "announcement": "🫀 心肺复苏培训 — 跟着 Stayin' Alive 的节拍按",
-        "managerLine": "啊啊啊啊，stayin' alive，stayin' alive",
-        "agentLines": [
-          "他……死了吗？",
-          "Dwight 在把假人的脸割下来",
-          "我是从《急诊室的故事》里学的",
-          "啊啊啊啊"
-        ]
-      },
-      "goldenTicket": {
-        "name": "金奖券",
-        "announcement": "🎫 五张金奖券藏在纸箱里 — 打九折！",
-        "managerLine": "这是我的主意。全都是我。",
-        "agentLines": [
-          "怪 Kevin",
-          "威利·旺卡时间",
-          "这全是 Michael 干的",
-          "谁批准的"
-        ]
-      },
-      "jimPrank": {
-        "name": "Jim 整蛊 Dwight",
-        "announcement": "🥤 又有人把 Dwight 的订书机封进果冻里了",
-        "managerLine": "JIM！",
-        "agentLines": [
-          "又来",
-          "肯定是 Jim",
-          "盗用身份可不是开玩笑的",
-          "Pam，救命"
-        ]
-      },
-      "parkour": {
-        "name": "跑酷！",
-        "announcement": "🏃 跑酷！跑酷！跑酷！",
-        "managerLine": "跑酷！",
-        "agentLines": [
-          "跑酷！",
-          "跑——酷——",
-          "Michael 别",
-          "这事肯定没好结果"
-        ]
-      },
-      "schruteBucks": {
-        "name": "Schrute 币",
-        "announcement": "💵 Dwight 在发 Schrute 币。每个值一美分的千分之一。",
-        "agentLines": [
-          "汇率是多少？",
-          "我看起来像需要额外激励的人吗？",
-          "我宁可要 Stanley 镍币",
-          "我的加薪呢？"
-        ]
-      },
-      "kevinsChili": {
-        "name": "Kevin 的辣肉酱",
-        "announcement": "🫘 Kevin 把辣肉酱打翻了。又一次。",
-        "managerLine": "现在唯一能做的就是把它捞起来……",
-        "agentLines": [
-          "不——",
-          "他做了一整个上午",
-          "地毯毁了",
-          "我跟他说过要用两个锅"
-        ]
-      },
-      "printerJamDm": {
-        "name": "Sabre 打印机卡纸",
-        "announcement": "🖨️ 打印机又着火了。真着火了。",
-        "agentLines": [
-          "Sabre 打印机又来了",
-          "我早就跟他们说过",
-          "该叫 Nellie 了",
-          "保修过期了"
-        ]
-      },
-      "dundies": {
-        "name": "Dundies 颁奖礼",
-        "announcement": "🏆 Dundies 颁奖礼今晚举行！",
-        "managerLine": "你们会笑，你们会哭……",
-        "agentLines": [
-          "最浓密海狸奖时间到",
-          "别再来一次了",
-          "最佳老爸奖是我的",
-          "我要带 Pam 去 Chili's"
-        ]
-      },
-      "pretzelDay": {
-        "name": "椒盐卷饼日",
-        "announcement": "🥨 今天是椒盐卷饼日",
-        "managerLine": "你不明白。今天是椒盐卷饼日。",
-        "agentLines": [
-          "一年中最好的一天",
-          "每一卡路里都值",
-          "Stanley 等了一整年",
-          "所有配料都要"
-        ]
-      },
-      "bearsBeets": {
-        "name": "熊。甜菜。太空堡垒卡拉狄加。",
-        "announcement": "📋 问题：哪种熊最好？",
-        "agentLines": [
-          "错。黑熊。",
-          "熊，甜菜，太空堡垒卡拉狄加",
-          "盗用身份可不是开玩笑的，Jim",
-          "事实：熊吃甜菜"
         ]
       },
       "incident": {

@@ -372,7 +372,6 @@
     "office": {
       "catAlt": "kedi",
       "interactionAlt": "etkileşim",
-      "thatsWhatSheSaid": "Kadın da öyle demişti 😏",
       "waitingForDesk": "masa bekliyor",
       "waitingForDeskMsg": "masa bekliyor...",
       "doneStats": "✅ bitti · {stats}",
@@ -729,44 +728,6 @@
       ]
     },
     "office": {
-      "spawn": [
-        "Kimlik hırsızlığı şaka değildir, Jim!",
-        "Scranton şubesine rapor veriyorum",
-        "kağıt, kağıt, kağıt",
-        "Ayılar. Pancarlar. Battlestar Galactica.",
-        "D'si, U'su, N'si...",
-        "Ben Beyoncé'yim, her zaman.",
-        "Dunder Mifflin usulü mesaiye başladım"
-      ],
-      "work": [
-        "kağıt satıyorum",
-        "top top kağıt işliyorum",
-        "yanlış. kara ayılar.",
-        "Schrute Parası verildi",
-        "merkezle pazarlık ediyorum",
-        "TPS raporlarını dosyalıyorum",
-        "İnce Zevkler Kulübü bülteni"
-      ],
-      "done": [
-        "kadın da öyle demişti",
-        "bum. yandın.",
-        "PR 24 libre kağıt gibi yollandı",
-        "Dünyanın En İyi Patronu onaylıyor",
-        "anlaşmayı kapattım",
-        "merge edildi — Jim onaylı"
-      ],
-      "coffee": [
-        "Jim'den grande latte",
-        "Kevin'in meşhur chili molası",
-        "pretzel günü!",
-        "hemen dönüyorum, mola odası"
-      ],
-      "water": [
-        "su molası — Angela sadece su diyor",
-        "Stanley saat neredeyse 5 diyor",
-        "su doldur, sonra pretzel",
-        "mola odasına gidiyorum"
-      ],
       "bossPraise": [
         "eline sağlık {name} 👊",
         "sağlam 🔥",
@@ -1036,125 +997,6 @@
           "e-posta zamanı",
           "posta güvercini zamanı",
           "aslında epey huzurlu"
-        ]
-      },
-      "fireAlarmStressRelief": {
-        "name": "YANGIN! YANGIN! YANGIN!",
-        "announcement": "🔥 YANGIN! YANGIN! YANGIN! (Dwight yangın güvenliği öğretiyor)",
-        "managerLine": "Yangın bize ateş ediyor!",
-        "agentLines": [
-          "YANGIN!",
-          "aman tanrım aman tanrım",
-          "Bandit'i kurtarın!",
-          "İFLAS İLAN EDİYORUM!",
-          "defibrilatörü getirin!"
-        ]
-      },
-      "cprTraining": {
-        "name": "Stayin' Alive",
-        "announcement": "🫀 İlk yardım eğitimi — Stayin' Alive ritmine uy",
-        "managerLine": "ah ah ah ah, stayin' alive, stayin' alive",
-        "agentLines": [
-          "o... öldü mü?",
-          "Dwight yüzünü kesip çıkarıyor",
-          "bunu Acil Servis dizisinden öğrendim",
-          "ah ah ah ah"
-        ]
-      },
-      "goldenTicket": {
-        "name": "Altın Bilet",
-        "announcement": "🎫 Kağıt topları arasına beş Altın Bilet saklandı — %10 indirim!",
-        "managerLine": "Benim fikrimdi. Tamamen benim.",
-        "agentLines": [
-          "Kevin'i suçluyorum",
-          "Willy Wonka zamanı",
-          "hepsi Michael'ın işiydi",
-          "bunu kim onayladı"
-        ]
-      },
-      "jimPrank": {
-        "name": "Jim'in Dwight Şakası",
-        "announcement": "🥤 Biri Dwight'ın zımbasını yine jöleye koymuş",
-        "managerLine": "JIM!",
-        "agentLines": [
-          "yine mi",
-          "her zaman Jim",
-          "kimlik hırsızlığı şaka değildir",
-          "Pam, yardım et"
-        ]
-      },
-      "parkour": {
-        "name": "Parkur!",
-        "announcement": "🏃 PARKUR! PARKUR! PARKUR!",
-        "managerLine": "PARKUR!",
-        "agentLines": [
-          "parkur!",
-          "PAR-KUR",
-          "Michael, hayır",
-          "bunun sonu kötü bitecek"
-        ]
-      },
-      "schruteBucks": {
-        "name": "Schrute Parası",
-        "announcement": "💵 Dwight Schrute Parası dağıtıyor. Bir sentin binde biri.",
-        "agentLines": [
-          "kur ne kadar?",
-          "ekstra teşvike ihtiyacım var gibi mi görünüyorum?",
-          "onun yerine Stanley nikeli alırım",
-          "zammım nerede?"
-        ]
-      },
-      "kevinsChili": {
-        "name": "Kevin'in Chili'si",
-        "announcement": "🫘 Kevin chili'yi düşürdü. Yine.",
-        "managerLine": "yapılacak tek şey kaldı, onu kaşıkla toplamak...",
-        "agentLines": [
-          "HAYIIIR",
-          "bütün sabahını aldı",
-          "halı mahvoldu",
-          "iki tencere kullan demiştim"
-        ]
-      },
-      "printerJamDm": {
-        "name": "Sabre Yazıcı Sıkışması",
-        "announcement": "🖨️ Yazıcı yine yanıyor. Gerçekten yanıyor.",
-        "agentLines": [
-          "Sabre yazıcıları yine iş başında",
-          "SÖYLEMİŞTİM",
-          "Nellie'yi arama vakti",
-          "garanti bitmiş"
-        ]
-      },
-      "dundies": {
-        "name": "Dundie Ödülleri",
-        "announcement": "🏆 Dundie Ödülleri bu akşam!",
-        "managerLine": "Güleceksiniz, ağlayacaksınız...",
-        "agentLines": [
-          "En Gür Kunduz ödülü zamanı",
-          "Lütfen yine olmasın",
-          "En İyi Baba benim",
-          "Pam'i Chili's'e götürüyorum"
-        ]
-      },
-      "pretzelDay": {
-        "name": "Pretzel Günü",
-        "announcement": "🥨 BUGÜN PRETZEL GÜNÜ",
-        "managerLine": "Anlamıyorsun. Bugün pretzel günü.",
-        "agentLines": [
-          "yılın en güzel günü",
-          "her kalorisine değer",
-          "Stanley bütün yıl bunu bekledi",
-          "bütün soslardan"
-        ]
-      },
-      "bearsBeets": {
-        "name": "Ayılar. Pancarlar. Battlestar Galactica.",
-        "announcement": "📋 Soru: en iyi ayı hangisi?",
-        "agentLines": [
-          "yanlış. kara ayı.",
-          "Ayılar, pancarlar, Battlestar Galactica",
-          "kimlik hırsızlığı şaka değildir, Jim",
-          "gerçek: ayılar pancar yer"
         ]
       },
       "incident": {

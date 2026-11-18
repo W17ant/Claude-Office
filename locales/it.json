@@ -372,7 +372,6 @@
     "office": {
       "catAlt": "gatto",
       "interactionAlt": "interazione",
-      "thatsWhatSheSaid": "È quello che ha detto lei 😏",
       "waitingForDesk": "in attesa di una scrivania",
       "waitingForDeskMsg": "in attesa di una scrivania...",
       "doneStats": "✅ fatto · {stats}",
@@ -729,44 +728,6 @@
       ]
     },
     "office": {
-      "spawn": [
-        "Il furto d'identità non è uno scherzo, Jim!",
-        "a rapporto alla filiale di Scranton",
-        "carta, carta, carta",
-        "Orsi. Barbabietole. Battlestar Galactica.",
-        "D-U-N-D-E-R...",
-        "Io sono Beyoncé, sempre.",
-        "cartellino timbrato, stile Dunder Mifflin"
-      ],
-      "work": [
-        "vendo carta",
-        "smaltisco risme",
-        "falso. orsi neri.",
-        "assegnati dollari Schrute",
-        "trattativa con la sede centrale",
-        "compilo i report TPS",
-        "newsletter del Club delle Cose Raffinate"
-      ],
-      "done": [
-        "è quello che ha detto lei",
-        "boom. bruciato.",
-        "PR spedita su carta da 90 grammi",
-        "approvato dal Miglior Capo del Mondo",
-        "affare chiuso",
-        "mergiato — approvato da Jim"
-      ],
-      "coffee": [
-        "latte grande offerto da Jim",
-        "pausa col famoso chili di Kevin",
-        "è il giorno dei pretzel!",
-        "torno subito, sala relax"
-      ],
-      "water": [
-        "idratazione — Angela dice solo acqua",
-        "Stanley dice che sono quasi le 5",
-        "riempio, poi pretzel",
-        "salto in sala relax"
-      ],
       "bossPraise": [
         "bel lavoro {name} 👊",
         "solido 🔥",
@@ -1036,125 +997,6 @@
           "tocca usare l'email",
           "è l'ora dei piccioni viaggiatori",
           "in realtà è quasi rilassante"
-        ]
-      },
-      "fireAlarmStressRelief": {
-        "name": "AL FUOCO! AL FUOCO! AL FUOCO!",
-        "announcement": "🔥 AL FUOCO! AL FUOCO! AL FUOCO! (Dwight insegna la sicurezza antincendio)",
-        "managerLine": "Il fuoco ci sta sparando addosso!",
-        "agentLines": [
-          "AL FUOCO!",
-          "oddio oddio",
-          "salvate Bandit!",
-          "DICHIARO BANCAROTTA!",
-          "prendete il defibrillatore!"
-        ]
-      },
-      "cprTraining": {
-        "name": "Stayin' Alive",
-        "announcement": "🫀 Corso di rianimazione — a ritmo di Stayin' Alive",
-        "managerLine": "ah ah ah ah, stayin' alive, stayin' alive",
-        "agentLines": [
-          "è... morto?",
-          "Dwight sta tagliando via la faccia",
-          "l'ho imparato da E.R.",
-          "ah ah ah ah"
-        ]
-      },
-      "goldenTicket": {
-        "name": "Biglietto d'oro",
-        "announcement": "🎫 Cinque biglietti d'oro nascosti nelle risme di carta — 10% di sconto!",
-        "managerLine": "È stata un'idea mia. Tutta mia.",
-        "agentLines": [
-          "è colpa di Kevin",
-          "momento Willy Wonka",
-          "è tutta opera di Michael",
-          "chi l'ha approvato"
-        ]
-      },
-      "jimPrank": {
-        "name": "Jim fa uno scherzo a Dwight",
-        "announcement": "🥤 Qualcuno ha rimesso la spillatrice di Dwight nella gelatina",
-        "managerLine": "JIM!",
-        "agentLines": [
-          "di nuovo",
-          "è sempre Jim",
-          "il furto d'identità non è uno scherzo",
-          "Pam, aiuto"
-        ]
-      },
-      "parkour": {
-        "name": "Parkour!",
-        "announcement": "🏃 PARKOUR! PARKOUR! PARKOUR!",
-        "managerLine": "PARKOUR!",
-        "agentLines": [
-          "parkour!",
-          "PAR-KOUR",
-          "Michael, no",
-          "finirà male"
-        ]
-      },
-      "schruteBucks": {
-        "name": "Dollari Schrute",
-        "announcement": "💵 Dwight distribuisce dollari Schrute. 1/1000 di centesimo.",
-        "agentLines": [
-          "qual è il tasso di cambio?",
-          "ti sembra che mi serva un incentivo in più?",
-          "preferisco i nichelini Stanley",
-          "dov'è il mio aumento?"
-        ]
-      },
-      "kevinsChili": {
-        "name": "Il chili di Kevin",
-        "announcement": "🫘 A Kevin è caduto il chili. Di nuovo.",
-        "managerLine": "l'unica cosa da fare è raccoglierlo...",
-        "agentLines": [
-          "NOOO",
-          "ci ha messo tutta la mattina",
-          "la moquette è rovinata",
-          "gli avevo detto di usare due pentole"
-        ]
-      },
-      "printerJamDm": {
-        "name": "Stampante Sabre inceppata",
-        "announcement": "🖨️ La stampante va di nuovo a fuoco. Fuoco vero.",
-        "agentLines": [
-          "le stampanti Sabre colpiscono ancora",
-          "GLIEL'AVEVO DETTO",
-          "chiamiamo Nellie",
-          "garanzia scaduta"
-        ]
-      },
-      "dundies": {
-        "name": "I Dundies",
-        "announcement": "🏆 Stasera ci sono i Dundies!",
-        "managerLine": "Riderete, piangerete...",
-        "agentLines": [
-          "è l'ora del premio Castoro più Cespuglioso",
-          "Ti prego, non di nuovo",
-          "il Miglior Papà è mio",
-          "porto Pam da Chili's"
-        ]
-      },
-      "pretzelDay": {
-        "name": "Il giorno dei pretzel",
-        "announcement": "🥨 È IL GIORNO DEI PRETZEL",
-        "managerLine": "Non capite. È il giorno dei pretzel.",
-        "agentLines": [
-          "il giorno più bello dell'anno",
-          "vale ogni caloria",
-          "Stanley lo aspetta da un anno",
-          "con tutte le guarnizioni"
-        ]
-      },
-      "bearsBeets": {
-        "name": "Orsi. Barbabietole. Battlestar Galactica.",
-        "announcement": "📋 Domanda: qual è l'orso migliore?",
-        "agentLines": [
-          "falso. orso nero.",
-          "Orsi, barbabietole, Battlestar Galactica",
-          "il furto d'identità non è uno scherzo, Jim",
-          "fatto: gli orsi mangiano barbabietole"
         ]
       },
       "incident": {

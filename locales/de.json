@@ -372,7 +372,6 @@
     "office": {
       "catAlt": "Katze",
       "interactionAlt": "Aktion",
-      "thatsWhatSheSaid": "Das hat sie auch gesagt 😏",
       "waitingForDesk": "wartet auf einen Platz",
       "waitingForDeskMsg": "wartet auf einen Platz...",
       "doneStats": "✅ fertig · {stats}",
@@ -729,44 +728,6 @@
       ]
     },
     "office": {
-      "spawn": [
-        "Identitätsdiebstahl ist kein Witz, Jim!",
-        "melde mich in der Filiale Scranton",
-        "Papier, Papier, Papier",
-        "Bären. Rüben. Battlestar Galactica.",
-        "D to the U to the N to the...",
-        "Ich bin Beyoncé, immer.",
-        "eingestempelt, Dunder-Mifflin-Style"
-      ],
-      "work": [
-        "verkaufe Papier",
-        "schiebe Ries um Ries",
-        "Falsch. Schwarzbären.",
-        "Schrute Bucks verteilt",
-        "verhandle mit der Zentrale",
-        "fülle TPS-Reports aus",
-        "Newsletter vom Finer Things Club"
-      ],
-      "done": [
-        "Das hat sie auch gesagt",
-        "Boom. Gegrillt.",
-        "PR raus wie 90-g-Papier",
-        "vom Weltbesten Boss abgesegnet",
-        "Deal abgeschlossen",
-        "gemergt — von Jim abgesegnet"
-      ],
-      "coffee": [
-        "Grande Latte von Jim",
-        "Pause für Kevins berühmtes Chili",
-        "Brezeltag!",
-        "bin kurz im Pausenraum"
-      ],
-      "water": [
-        "Wasser — Angela erlaubt nur Wasser",
-        "Stanley sagt, es ist fast fünf",
-        "auffüllen, dann Brezel",
-        "ab in den Pausenraum"
-      ],
       "bossPraise": [
         "gute Arbeit, {name} 👊",
         "stark 🔥",
@@ -1036,125 +997,6 @@
           "Zeit für E-Mails",
           "Zeit für Brieftauben",
           "eigentlich ganz entspannt"
-        ]
-      },
-      "fireAlarmStressRelief": {
-        "name": "FEUER! FEUER! FEUER!",
-        "announcement": "🔥 FEUER! FEUER! FEUER! (Dwight übt Brandschutz)",
-        "managerLine": "Das Feuer schießt auf uns!",
-        "agentLines": [
-          "FEUER!",
-          "oh mein Gott oh mein Gott",
-          "Rettet Bandit!",
-          "ICH ERKLÄRE DEN BANKROTT!",
-          "holt den Defibrillator!"
-        ]
-      },
-      "cprTraining": {
-        "name": "Stayin' Alive",
-        "announcement": "🫀 Erste-Hilfe-Kurs — im Takt von Stayin' Alive",
-        "managerLine": "ah ah ah ah, stayin' alive, stayin' alive",
-        "agentLines": [
-          "ist er... tot?",
-          "Dwight schneidet das Gesicht ab",
-          "kenn ich aus Emergency Room",
-          "ah ah ah ah"
-        ]
-      },
-      "goldenTicket": {
-        "name": "Goldenes Ticket",
-        "announcement": "🎫 Fünf goldene Tickets in Papierpaketen versteckt — 10 % Rabatt!",
-        "managerLine": "Es war meine Idee. Alles meine Idee.",
-        "agentLines": [
-          "ich geb Kevin die Schuld",
-          "Willy-Wonka-Zeit",
-          "das war alles Michael",
-          "wer hat das genehmigt"
-        ]
-      },
-      "jimPrank": {
-        "name": "Jim veräppelt Dwight",
-        "announcement": "🥤 Jemand hat Dwights Tacker schon wieder in Wackelpudding versenkt",
-        "managerLine": "JIM!",
-        "agentLines": [
-          "nicht schon wieder",
-          "es ist immer Jim",
-          "Identitätsdiebstahl ist kein Witz",
-          "Pam, hilf mir"
-        ]
-      },
-      "parkour": {
-        "name": "Parkour!",
-        "announcement": "🏃 PARKOUR! PARKOUR! PARKOUR!",
-        "managerLine": "PARKOUR!",
-        "agentLines": [
-          "Parkour!",
-          "PAR-KOUR",
-          "Michael, nein",
-          "das geht böse aus"
-        ]
-      },
-      "schruteBucks": {
-        "name": "Schrute Bucks",
-        "announcement": "💵 Dwight verteilt Schrute Bucks. Ein Tausendstel Cent.",
-        "agentLines": [
-          "wie ist der Wechselkurs?",
-          "seh ich aus, als bräuchte ich einen Extra-Anreiz?",
-          "ich nehm lieber Stanley Nickels",
-          "wo bleibt meine Gehaltserhöhung?"
-        ]
-      },
-      "kevinsChili": {
-        "name": "Kevins Chili",
-        "announcement": "🫘 Kevin hat das Chili fallen lassen. Schon wieder.",
-        "managerLine": "jetzt bleibt nur noch, es aufzulöffeln...",
-        "agentLines": [
-          "NEEEIN",
-          "er hat den ganzen Morgen dafür gebraucht",
-          "der Teppich ist hin",
-          "ich hab ihm gesagt, er soll zwei Töpfe nehmen"
-        ]
-      },
-      "printerJamDm": {
-        "name": "Sabre-Druckerstau",
-        "announcement": "🖨️ Der Drucker brennt schon wieder. Richtig, mit Flammen.",
-        "agentLines": [
-          "Sabre-Drucker schlagen wieder zu",
-          "ich hab's ihnen GESAGT",
-          "Zeit, Nellie anzurufen",
-          "Garantie abgelaufen"
-        ]
-      },
-      "dundies": {
-        "name": "Die Dundies",
-        "announcement": "🏆 Heute Abend sind die Dundies!",
-        "managerLine": "Ihr werdet lachen, ihr werdet weinen...",
-        "agentLines": [
-          "Zeit für den Buschigsten Biber",
-          "Bitte nicht schon wieder",
-          "Bester Papa gehört mir",
-          "ich geh mit Pam ins Chili's"
-        ]
-      },
-      "pretzelDay": {
-        "name": "Brezeltag",
-        "announcement": "🥨 ES IST BREZELTAG",
-        "managerLine": "Du verstehst das nicht. Es ist Brezeltag.",
-        "agentLines": [
-          "bester Tag des Jahres",
-          "jede Kalorie wert",
-          "Stanley wartet das ganze Jahr darauf",
-          "alle Toppings"
-        ]
-      },
-      "bearsBeets": {
-        "name": "Bären. Rüben. Battlestar Galactica.",
-        "announcement": "📋 Frage: Welcher Bär ist der beste?",
-        "agentLines": [
-          "Falsch. Schwarzbär.",
-          "Bären, Rüben, Battlestar Galactica",
-          "Identitätsdiebstahl ist kein Witz, Jim",
-          "Fakt: Bären essen Rüben"
         ]
       },
       "incident": {
