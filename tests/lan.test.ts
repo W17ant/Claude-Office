@@ -180,10 +180,11 @@ const BOARD = {
 
 /** One representative payload per broadcast type, each with SECRET in every text field it can carry. */
 const PAYLOADS: Record<string, Message> = {
+  settings: { type: 'settings', language: 'de' },
   snapshot: {
     type: 'snapshot', activeAgents: [AGENT], sessions: [{ ...SESSION, id: SID }], statuses: { sessions: [{ project: SECRET }], totals: {} },
     health: { status: 'ok', agents: 1, clients: 1, sessions: 1, lastHookAt: 1, hooksSeen: 3, uiAvailable: true, version: '1.1.2', uptimeMs: 5 },
-    mcpServers: ['github'], pendingPermissions: [PERMISSION], uiToken: `${SECRET}ui`, signals: [SIGNAL], taskBoards: [BOARD], timestamp: 1,
+    mcpServers: ['github'], pendingPermissions: [PERMISSION], uiToken: `${SECRET}ui`, signals: [SIGNAL], taskBoards: [BOARD], language: 'de', timestamp: 1,
   },
   office_interaction: { type: 'office_interaction', item: 'plant-1', by: 'phone', timestamp: 1 },
   agent_spawned: { type: 'agent_spawned', agent: AGENT, project: `${SECRET}proj`, cwd: `/x/${SECRET}`, sessionId: SID, timestamp: 1 },
@@ -265,6 +266,9 @@ describe('redactForLan: the scene and nothing that names the work', () => {
 
   it('keeps what the scene draws', () => {
     const r = (type: string) => office.server.redactForLan(PAYLOADS[type])
+    // The phone page speaks the office's language too
+    expect(r('settings')).toEqual({ type: 'settings', language: 'de' })
+    expect(r('snapshot').language).toBe('de')
     expect(r('agent_spawned').agent).toEqual({ id: 'a1', name: 'Dev', role: 'frontend-developer', agentType: 'frontend-developer', background: false, state: 'working', spawnedAt: 1, lastActivityAt: 2, sessionId: SID, unread: 2 })
     expect(r('agent_working')).toEqual({ type: 'agent_working', agentId: 'a1', sessionId: SID, failed: true, timestamp: 1 })
     expect(r('agent_completed')).toEqual({ type: 'agent_completed', agentId: 'a1', sessionId: SID, tokens: 5, durationMs: 9, timestamp: 1 })

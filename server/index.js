@@ -49,6 +49,7 @@ import {
 import { loadOrCreateLanCert } from './lan-cert.js'
 import { translateFor, TOOLS } from './tools/index.js'
 import { createRecap, recapLine, isRecapDate, localDate } from './recap.js'
+import { setLanguage, getLanguage, hasLanguage, languages } from './i18n.js'
 import { createPromptQueue, parseMention, resolveMention, mentionName, MARKER_DIR_NAME, MAX_PROMPT_LEN, MAX_QUEUED_PER_SESSION } from './prompt-queue.js'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -1535,12 +1536,19 @@ function clampCount(val, max = Number.MAX_SAFE_INTEGER) {
 // could answer also raises one OS notification (server/permission-notify.js):
 // project and tool name only, after the 300 ms needs-you delay, at most one
 // per session a minute.
+//
+// language (default null: not chosen, which reads as English) is the office's
+// language, a code with a file in locales/ (server/i18n.js). Every page follows
+// it: it rides in the WebSocket snapshot (every tier, phone included) and a
+// change is broadcast as { type: 'settings', language }. The office's own page
+// sets it once on first run from the browser's language. A saved code whose
+// file has gone loads as null.
 // ---------------------------------------------------------------------------
 
 const SETTINGS_FILE = join(RUNTIME_DIR, 'settings.json')
 const ANSWER_MARKER_FILE = join(RUNTIME_DIR, 'answer-permissions')
 const LOG_PROMPTS_LEVELS = new Map([['off', 0], ['summary', 200], ['full', MAX_TEXT_LEN]])
-const settings = { logPrompts: 'summary', answerPermissions: true, notifyPermissions: true }
+const settings = { logPrompts: 'summary', answerPermissions: true, notifyPermissions: true, language: null }
 
 function loadSettings() {
   if (!existsSync(SETTINGS_FILE)) return
@@ -1550,6 +1558,7 @@ function loadSettings() {
       if (LOG_PROMPTS_LEVELS.has(saved.logPrompts)) settings.logPrompts = saved.logPrompts
       if (typeof saved.answerPermissions === 'boolean') settings.answerPermissions = saved.answerPermissions
       if (typeof saved.notifyPermissions === 'boolean') settings.notifyPermissions = saved.notifyPermissions
+      if (hasLanguage(saved.language)) settings.language = saved.language
     }
   } catch (err) {
     console.warn('[settings] Could not read settings:', err.message)
@@ -1631,6 +1640,7 @@ function retrimAndAnnounce(reason, opts) {
 }
 
 loadSettings()
+setLanguage(settings.language)
 syncAnswerMarker()
 // agents.json was written under whatever level was set then; settings.json may say less now
 if (retrimTranscripts().length) saveAgents()
@@ -2898,18 +2908,21 @@ app.get('/recap', (req, res) => {
 })
 
 /**
- * GET /settings — the office settings (see Settings above). Open.
+ * GET /settings — the office settings (see Settings above), plus the
+ * languages the office has ({ code, name, englishName, status, completeness }).
+ * Open.
  * POST /settings — change them: { logPrompts: "off" | "summary" | "full",
- * answerPermissions: boolean, notifyPermissions: boolean }. Needs the UI token (the office page) or the
- * bearer token: it decides what of the conversation is kept and whether a
- * permission dialog may be answered from here.
+ * answerPermissions: boolean, notifyPermissions: boolean, language: code | null }.
+ * Needs the UI token (the office page) or the bearer token: it decides what
+ * of the conversation is kept and whether a permission dialog may be
+ * answered from here.
  */
 app.get('/settings', (_req, res) => {
-  res.json({ ...settings, logPromptsLevels: Array.from(LOG_PROMPTS_LEVELS.keys()) })
+  res.json({ ...settings, logPromptsLevels: Array.from(LOG_PROMPTS_LEVELS.keys()), languages: languages() })
 })
 
 app.post('/settings', requireUi, (req, res) => {
-  const { logPrompts, answerPermissions, notifyPermissions } = req.body ?? {}
+  const { logPrompts, answerPermissions, notifyPermissions, language } = req.body ?? {}
   if (logPrompts !== undefined) {
     if (typeof logPrompts !== 'string' || !LOG_PROMPTS_LEVELS.has(logPrompts)) {
       return res.status(400).json({ error: `logPrompts must be one of ${Array.from(LOG_PROMPTS_LEVELS.keys()).join(', ')}` })
@@ -2921,12 +2934,21 @@ app.post('/settings', requireUi, (req, res) => {
   if (notifyPermissions !== undefined && typeof notifyPermissions !== 'boolean') {
     return res.status(400).json({ error: 'notifyPermissions must be true or false' })
   }
+  if (language !== undefined && language !== null && !hasLanguage(language)) {
+    return res.status(400).json({ error: `language must be one of ${languages().map(l => l.code).join(', ')}, or null` })
+  }
   if (logPrompts !== undefined) settings.logPrompts = logPrompts
   if (answerPermissions !== undefined) settings.answerPermissions = answerPermissions
   if (notifyPermissions !== undefined) settings.notifyPermissions = notifyPermissions
+  const languageChanged = language !== undefined && language !== settings.language
+  if (language !== undefined) {
+    settings.language = language
+    setLanguage(language)
+  }
   saveSettings()
   syncAnswerMarker()
-  console.log(`[settings] logPrompts = ${settings.logPrompts}, answerPermissions = ${settings.answerPermissions}, notifyPermissions = ${settings.notifyPermissions}`)
+  console.log(`[settings] logPrompts = ${settings.logPrompts}, answerPermissions = ${settings.answerPermissions}, notifyPermissions = ${settings.notifyPermissions}, language = ${settings.language ?? 'not chosen'}`)
+  if (languageChanged) broadcast({ type: 'settings', language: settings.language })
   // A lower level applies to the text already held too (rows in chat.db stay until /clear)
   if (logPrompts !== undefined) retrimAndAnnounce(`logPrompts ${settings.logPrompts}`)
   res.json({ ok: true, ...settings })
@@ -4156,6 +4178,9 @@ function buildSnapshot(trusted) {
     // Each session's task board, the most recently changed first: subjects and
     // states only, never a description, so read-only connections get it as is
     taskBoards: tasks.boards(),
+    // The office's language (null: not chosen yet). Every tier gets it: it says
+    // nothing about the work, and a read-only page must speak it too
+    language: settings.language,
     timestamp: Date.now(),
   }
 }
@@ -4270,8 +4295,10 @@ const LAN_EVENT_RULES = {
     pendingPermissions: (s.pendingPermissions ?? []).map(lanPermission),
     signals: (s.signals ?? []).map(lanSignal),
     taskBoards: (s.taskBoards ?? []).map(lanBoard).filter(Boolean),
+    language: typeof s.language === 'string' ? s.language : null,
     timestamp: s.timestamp,
   }),
+  settings: p => ({ type: 'settings', language: typeof p.language === 'string' ? p.language : null }),
   agent_spawned: eventFields(['sessionId', 'recovered'], p => ({ agent: lanAgent(p.agent) })),
   office_interaction: eventFields(['item', 'by']),
   agent_working: eventFields(['agentId', 'sessionId', 'failed']),
