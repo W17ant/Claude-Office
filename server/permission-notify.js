@@ -18,6 +18,7 @@
  *
  * The `notifyPermissions` setting (server/index.js) turns it off.
  */
+import { t } from './i18n.js'
 
 // Why: 60 s per session. One banner is enough to call someone back to the
 // office, where every pending card is on show; a session that asks for five
@@ -31,6 +32,11 @@ export const PERMISSION_NOTIFY_THROTTLE_MS = 60_000
 // lands well inside it.
 export const PERMISSION_NOTIFY_DELAY_MS = 300
 
+/** The banner's title in the office's language (English: "Claude needs you"). */
+export function permissionNotifyTitle() {
+  return t('server.notify.title')
+}
+// Kept for callers that want the English title
 export const PERMISSION_NOTIFY_TITLE = 'Claude needs you'
 
 // Why: notification banners truncate long lines anyway; a project or tool name
@@ -38,16 +44,19 @@ export const PERMISSION_NOTIFY_TITLE = 'Claude needs you'
 const MAX_NAME_LEN = 48
 
 // What a tool wants, in words that carry none of its input
-const PHRASE_BY_TOOL = {
-  Bash: 'wants to run a command',
-  PowerShell: 'wants to run a command',
-  Write: 'wants to write a file',
-  Edit: 'wants to edit a file',
-  MultiEdit: 'wants to edit a file',
-  NotebookEdit: 'wants to edit a notebook',
-  Read: 'wants to read a file',
-  WebFetch: 'wants to fetch a web page',
-  WebSearch: 'wants to search the web',
+function toolPhrase(tool) {
+  switch (tool) {
+    case 'Bash':
+    case 'PowerShell': return t('server.notify.bash')
+    case 'Write': return t('server.notify.write')
+    case 'Edit':
+    case 'MultiEdit': return t('server.notify.edit')
+    case 'NotebookEdit': return t('server.notify.notebook')
+    case 'Read': return t('server.notify.read')
+    case 'WebFetch': return t('server.notify.fetch')
+    case 'WebSearch': return t('server.notify.search')
+    default: return t('server.notify.other')
+  }
 }
 
 /** A name fit for a banner: printable characters only, trimmed and clamped; '' when nothing is left. */
@@ -62,7 +71,7 @@ function cleanName(value) {
 /** A tool name as Claude Code spells them (Bash, mcp__github__create_pull_request): word characters, dots, colons and dashes only. */
 function cleanToolName(value) {
   const name = typeof value === 'string' ? value.replace(/[^\w.:-]/g, '').slice(0, MAX_NAME_LEN) : ''
-  return name || 'A tool'
+  return name || t('server.notify.aTool')
 }
 
 /**
@@ -75,10 +84,9 @@ function cleanToolName(value) {
  */
 export function permissionNotificationText(permission) {
   const fromCwd = typeof permission?.cwd === 'string' ? permission.cwd.split(/[\\/]/).filter(Boolean).pop() : ''
-  const project = cleanName(permission?.project) || cleanName(fromCwd) || 'A session'
+  const project = cleanName(permission?.project) || cleanName(fromCwd) || t('server.notify.aSession')
   const tool = cleanToolName(permission?.toolName)
-  const phrase = PHRASE_BY_TOOL[tool] ?? 'wants permission'
-  return { title: PERMISSION_NOTIFY_TITLE, message: `${project} · ${tool} ${phrase}` }
+  return { title: permissionNotifyTitle(), message: t('server.notify.message', { project, tool, phrase: toolPhrase(tool) }) }
 }
 
 /**

@@ -49,7 +49,7 @@ import {
 import { loadOrCreateLanCert } from './lan-cert.js'
 import { translateFor, TOOLS } from './tools/index.js'
 import { createRecap, recapLine, isRecapDate, localDate } from './recap.js'
-import { setLanguage, getLanguage, hasLanguage, languages } from './i18n.js'
+import { setLanguage, getLanguage, hasLanguage, languages, t } from './i18n.js'
 import { createPromptQueue, parseMention, resolveMention, mentionName, MARKER_DIR_NAME, MAX_PROMPT_LEN, MAX_QUEUED_PER_SESSION } from './prompt-queue.js'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -160,7 +160,7 @@ const promptQueue = createPromptQueue({
   dir: PROMPT_QUEUE_DIR,
   onExpire: (sessionId, item) => {
     const session = sessions.get(sessionId)
-    systemLine(`⌛ A prompt queued for ${session ? mentionName(session) : 'a session'} expired undelivered (its turn never ended within the hour)`)
+    systemLine(session ? t('server.system.expired', { name: mentionName(session) }) : t('server.system.expiredUnknown'))
     console.log(`[prompt-queue] expired ${item.id} for ${sessionId}`)
   },
 })
@@ -1239,7 +1239,7 @@ function endSession(session, reason, now = Date.now()) {
   cancelPendingNeedsYou(session.id)
   clearNeedsYouTimer(session.id)
   releasePermissions(session.id, 'session ended')
-  dropQueuedPrompts(session, 'the session ended')
+  dropQueuedPrompts(session, t('server.system.sessionEnded'))
   if (session.main?.state !== 'idle') console.log(`[main] ${sessionName(session)}: ${session.main?.state ?? 'idle'} -> idle (session ended)`)
   session.main = newMain(now)
   for (const agentId of Array.from(session.agentIds)) {
@@ -2272,18 +2272,18 @@ function handleSlashCommand(cmd) {
       const agentCount = activeAgents.size
       const working = Array.from(activeAgents.values()).filter(a => a.state === 'working').length
       const clients = wss?.clients?.size ?? 0
-      return `📊 ${agentCount} agents active, ${working} working, ${clients} clients connected`
+      return t('server.commands.status', { agents: agentCount, working, clients })
     }
     case '/agents': {
       const agents = Array.from(activeAgents.values())
-      if (agents.length === 0) return '🏢 Office is quiet — no agents active'
+      if (agents.length === 0) return t('server.commands.quiet')
       return agents.map(a => `${a.name} (${a.role}) — ${a.state}`).join(', ')
     }
     case '/clear': {
       db.prepare('DELETE FROM messages').run()
       // The last prompt and reply on each session are the same conversation
       retrimAndAnnounce('chat cleared', { clear: true })
-      return '🧹 Chat cleared'
+      return t('server.commands.cleared')
     }
     // Incident mode ("Prod Is Down"): relayed to every connected office as a
     // variant_change so all tabs switch together. Nothing is persisted server-side.
@@ -2292,18 +2292,27 @@ function handleSlashCommand(cmd) {
     case '/incident': {
       noteRecap(() => recap.incident('declare'))
       setImmediate(() => broadcast({ type: 'variant_change', variant: 'incident', reason: 'manual', timestamp: Date.now() }))
-      return '🔴 INCIDENT DECLARED — prod is down. Everyone to the war room. (/all-clear when it is over)'
+      return t('server.commands.incident')
     }
     case '/all-clear': {
       noteRecap(() => recap.incident('resolved'))
       setImmediate(() => broadcast({ type: 'variant_change', variant: 'none', reason: 'manual', timestamp: Date.now() }))
-      return '✅ ALL CLEAR — incident over. Postmortem at 10, blameless, bring pizza.'
+      return t('server.commands.allClear')
     }
     // Today's counts as one office-manager line (server/recap.js); numbers only
     case '/recap':
       return recapLine(recap.today())
     case '/help':
-      return '📋 Commands: /status — office stats, /agents — list agents, /recap — today so far, /incident — declare an incident, /all-clear — end it, /clear — wipe chat history (needs the auth token), /help — this message'
+      // Why the names outside the text: commands stay English in every language
+      return t('server.commands.help', { commands: [
+        `/status — ${t('server.commands.desc.status')}`,
+        `/agents — ${t('server.commands.desc.agents')}`,
+        `/recap — ${t('server.commands.desc.recap')}`,
+        `/incident — ${t('server.commands.desc.incident')}`,
+        `/all-clear — ${t('server.commands.desc.allClear')}`,
+        `/clear — ${t('server.commands.desc.clear')}`,
+        `/help — ${t('server.commands.desc.help')}`,
+      ].join(', ') })
     default:
       return null
   }
@@ -2387,7 +2396,7 @@ function deliverQueuedPrompt(sessionId) {
     broadcast(mainEvent(session, 'prompt from the office chat', now))
   }
   const left = promptQueue.list(sessionId).length
-  systemLine(`📬 ${name} picked up the prompt from the chat${left ? ` (${left} more waiting)` : ''}`)
+  systemLine(left ? t('server.system.pickedUpMore', { name, count: left }) : t('server.system.pickedUp', { name }))
   console.log(`[prompt-queue] delivered ${item.id} to ${name}`)
   return item
 }
@@ -2395,7 +2404,7 @@ function deliverQueuedPrompt(sessionId) {
 /** Forget a session's queued prompts (it ended), saying so in the chat when there were any. */
 function dropQueuedPrompts(session, why) {
   const n = promptQueue.drop(session.id)
-  if (n) systemLine(`🗑️ ${n === 1 ? 'A prompt' : `${n} prompts`} queued for ${mentionName(session)} dropped: ${why}`)
+  if (n) systemLine(t('server.system.dropped', { count: n, name: mentionName(session), why }))
 }
 
 /**
@@ -2405,26 +2414,26 @@ function dropQueuedPrompts(session, why) {
 function queuePromptFromChat(req, res, { sender, text, mention, found }) {
   if (found.ambiguous) {
     const names = found.ambiguous.map(s => `@${String(s.id).slice(0, 8)} (${mentionName(s)})`).join(', ')
-    systemLine(`🤔 @${mention.name} matches ${found.ambiguous.length} sessions: ${names}. Use the session id instead.`)
+    systemLine(t('server.system.ambiguous', { mention: `@${mention.name}`, count: found.ambiguous.length, names }))
     return res.status(409).json({ error: 'ambiguous mention' })
   }
   const session = found.session
   const name = mentionName(session)
   if (!mayQueuePrompt(req)) {
-    systemLine(`🔒 Only the office page on this Mac can queue a prompt for ${name} (not the phone, a page through a proxy, or a page without the office link)`)
+    systemLine(t('server.system.notTrusted', { name }))
     console.warn(`[prompt-queue] Refused a prompt for ${name} from ${clampString(sender)}: not the trusted office page`)
     return unauthorized(res, { error: 'Queuing a prompt needs the office page on this machine' })
   }
   if (session.hooked === false) {
-    systemLine(`🔌 ${name} has no office hooks, so nothing would deliver the prompt: run npm run install-hooks and restart that session`)
+    systemLine(t('server.system.noHooks', { name, command: 'npm run install-hooks' }))
     return res.status(409).json({ error: 'session has no hooks' })
   }
   const added = promptQueue.add(session.id, { text: mention.body, from: clampString(sender) })
   if (!added.ok) {
-    const why = added.reason === 'too-long' ? `it is ${mention.body.length} characters, the limit is ${MAX_PROMPT_LEN}`
-      : added.reason === 'full' ? `${MAX_QUEUED_PER_SESSION} prompts are already waiting for it`
-      : 'the session id is not one the hook can claim'
-    systemLine(`✋ Not queued for ${name}: ${why}`)
+    const why = added.reason === 'too-long' ? t('server.system.tooLong', { length: mention.body.length, limit: MAX_PROMPT_LEN })
+      : added.reason === 'full' ? t('server.system.full', { count: MAX_QUEUED_PER_SESSION })
+      : t('server.system.badId')
+    systemLine(t('server.system.notQueued', { name, why }))
     return res.status(added.reason === 'too-long' ? 413 : added.reason === 'full' ? 429 : 409).json({ error: `not queued: ${added.reason}` })
   }
   // The boss's line, as a transcript row (see above): at the logPrompts level, none when off
@@ -2434,10 +2443,8 @@ function queuePromptFromChat(req, res, { sender, text, mention, found }) {
     broadcast({ type: 'chat_message', ...row })
   }
   const busy = session.main?.state === 'working'
-  const when = busy
-    ? 'it gets it when its current turn ends'
-    : 'it is not working now, so it gets it when its next turn ends (the office cannot start a turn by itself: give it any prompt in its terminal)'
-  systemLine(`📨 Queued for ${name}${added.position > 1 ? ` (#${added.position} in line)` : ''}: ${when}`)
+  const when = busy ? t('server.system.whenBusy') : t('server.system.whenIdle')
+  systemLine(added.position > 1 ? t('server.system.queuedInLine', { name, position: added.position, when }) : t('server.system.queued', { name, when }))
   console.log(`[prompt-queue] queued ${added.item.id} for ${name} (${added.position} waiting)`)
   return res.json({ ok: true, queued: { sessionId: session.id, id: added.item.id, position: added.position } })
 }
@@ -2464,7 +2471,7 @@ app.post('/chat', (req, res) => {
     if (PRIVILEGED_COMMANDS.has(cmd) && !tokenMatches(bearerToken(req))) {
       // Tell the person in the chat panel why nothing happened (the UI ignores
       // the HTTP status), and the caller through the status
-      const sysMsg = addMessage({ sender: 'system', text: `🔒 ${cmd} needs the office auth token — run python3 scripts/chat-post.py ${cmd} from the office checkout, which sends it (see README › Chat)`, isSystem: true })
+      const sysMsg = addMessage({ sender: 'system', text: t('server.system.needsToken', { command: cmd, script: `python3 scripts/chat-post.py ${cmd}` }), isSystem: true })
       broadcast({ type: 'chat_message', ...sysMsg, isSystem: true })
       console.warn(`[chat] Refused ${cmd} from ${clampString(sender)}: no auth token`)
       return unauthorized(res, { error: `${cmd} needs the office auth token` })
@@ -3266,7 +3273,7 @@ function applyEvent(body) {
       // Proactive message — announce task in chat
       const taskShort = (record.task ?? '').slice(0, 50)
       if (taskShort) {
-        const chatMsg = addMessage({ sender: record.name, role: record.role, text: `starting: ${taskShort}` })
+        const chatMsg = addMessage({ sender: record.name, role: record.role, text: t('server.agents.starting', { task: taskShort }) })
         broadcast({ type: 'chat_message', ...chatMsg })
       }
 
@@ -3450,7 +3457,7 @@ function applyEvent(body) {
 
         // Proactive message — announce completion in chat
         const resultShort = (body.result ?? 'done').slice(0, 50)
-        const chatMsg = addMessage({ sender: agent.name, role: agent.role, text: `done: ${resultShort}` })
+        const chatMsg = addMessage({ sender: agent.name, role: agent.role, text: t('server.agents.done', { result: resultShort }) })
         broadcast({ type: 'chat_message', ...chatMsg })
 
         // Smart notification — alert on failure
