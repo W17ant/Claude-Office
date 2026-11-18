@@ -21,6 +21,7 @@
 import type { OfficeEvent, PendingPermission, PermissionSuggestion } from './types'
 import { officeHttpBase } from './serverUrl'
 import { getPhoneSecret, onPhoneFullPage } from './phoneSecret'
+import { t } from './i18n'
 
 export type PermissionDecision = 'allow' | 'allow-remember' | 'deny'
 
@@ -164,18 +165,24 @@ export function postSetting(body: Record<string, unknown>): Promise<boolean> {
 // Words on the card
 // ---------------------------------------------------------------------------
 
-const VERB_BY_TOOL: Record<string, string> = {
-  Bash: 'run', Write: 'write', Edit: 'edit', MultiEdit: 'edit', NotebookEdit: 'edit', Read: 'read',
-  WebFetch: 'fetch', WebSearch: 'search', Glob: 'find files', Grep: 'search',
-}
-
 /** "Claude wants to run Bash", "... write probe.txt", "... use mcp__github__create_pull_request". */
 export function permissionTitle(p: Pick<PendingPermission, 'toolName' | 'summary'>): string {
-  const verb = VERB_BY_TOOL[p.toolName]
-  if (!verb) return `Claude wants to use ${p.toolName}`
-  if (p.toolName === 'Bash') return 'Claude wants to run Bash'
   const what = p.summary && p.summary !== p.toolName ? p.summary : p.toolName
-  return `Claude wants to ${verb} ${what}`
+  // Why one whole sentence per verb, not a verb dropped into a frame: word
+  // order differs by language (the verb goes last in German and Japanese)
+  switch (p.toolName) {
+    // Why the bare tool name for Bash: its summary is the command, which the card's detail already shows
+    case 'Bash':         return t('ui.permission.title.run', { what: p.toolName })
+    case 'Write':        return t('ui.permission.title.write', { what })
+    case 'Edit': case 'MultiEdit': case 'NotebookEdit':
+                         return t('ui.permission.title.edit', { what })
+    case 'Read':         return t('ui.permission.title.read', { what })
+    case 'WebFetch':     return t('ui.permission.title.fetch', { what })
+    case 'WebSearch': case 'Grep':
+                         return t('ui.permission.title.search', { what })
+    case 'Glob':         return t('ui.permission.title.findFiles', { what })
+    default:             return t('ui.permission.title.use', { tool: p.toolName })
+  }
 }
 
 /** acceptEdits -> accept-edits, bypassPermissions -> bypass-permissions. */
@@ -188,36 +195,43 @@ function kebab(s: string): string {
  * (Claude Code PermissionUpdate objects: setMode, addRules, addDirectories...).
  */
 export function describeSuggestions(suggestions: PermissionSuggestion[] | undefined): string {
-  if (!suggestions?.length) return 'Nothing to remember'
+  if (!suggestions?.length) return t('ui.permission.remember.nothing')
   const parts = suggestions.map(s => {
+    // Why the destination, mode and rule names stay as they are: they are Claude Code's own identifiers
     const where = typeof s.destination === 'string' ? ` (${kebab(s.destination)})` : ''
     switch (s.type) {
       case 'setMode':
-        return `switch this session to ${typeof s.mode === 'string' ? kebab(s.mode) : 'another mode'}`
+        return t('ui.permission.remember.setMode', { mode: typeof s.mode === 'string' ? kebab(s.mode) : t('ui.permission.remember.anotherMode') })
       case 'addRules': case 'replaceRules': {
-        const rules = Array.isArray(s.rules) ? s.rules : []
-        const names = rules.map(r => {
+        const list = Array.isArray(s.rules) ? s.rules : []
+        const names = list.map(r => {
           const rule = (r ?? {}) as Record<string, unknown>
-          const tool = typeof rule.toolName === 'string' ? rule.toolName : 'tool'
+          const tool = typeof rule.toolName === 'string' ? rule.toolName : t('ui.permission.remember.tool')
           return typeof rule.ruleContent === 'string' && rule.ruleContent ? `${tool}(${rule.ruleContent})` : tool
         })
+        const rules = names.join(', ') || t('ui.permission.remember.this')
         const behavior = typeof s.behavior === 'string' ? s.behavior : 'allow'
-        return `always ${behavior} ${names.join(', ') || 'this'}${where}`
+        switch (behavior) {
+          case 'allow': return t('ui.permission.remember.alwaysAllow', { rules, where })
+          case 'deny':  return t('ui.permission.remember.alwaysDeny', { rules, where })
+          case 'ask':   return t('ui.permission.remember.alwaysAsk', { rules, where })
+          default:      return t('ui.permission.remember.always', { behavior, rules, where })
+        }
       }
       case 'addDirectories': {
         const dirs = Array.isArray(s.directories) ? s.directories.map(String) : []
-        return `allow access to ${dirs.join(', ') || 'this directory'}${where}`
+        return t('ui.permission.remember.directories', { dirs: dirs.join(', ') || t('ui.permission.remember.thisDirectory'), where })
       }
       default:
-        return `${typeof s.type === 'string' ? kebab(s.type) : 'remember this'}${where}`
+        return `${typeof s.type === 'string' ? kebab(s.type) : t('ui.permission.remember.other')}${where}`
     }
   })
-  return `Allow, and ${parts.join('; ')}`
+  return t('ui.permission.remember.all', { parts: parts.join('; ') })
 }
 
 /** The line a resolved card shows while it fades. */
 export function fadeLabel(resolved: { status: string; decidedBy: string }): string {
-  if (resolved.decidedBy === 'timeout') return 'timed out'
-  if (resolved.decidedBy === 'office') return resolved.status === 'denied' ? 'denied from the office' : 'allowed from the office'
-  return 'answered in the terminal'
+  if (resolved.decidedBy === 'timeout') return t('ui.permission.fade.timedOut')
+  if (resolved.decidedBy === 'office') return resolved.status === 'denied' ? t('ui.permission.fade.deniedOffice') : t('ui.permission.fade.allowedOffice')
+  return t('ui.permission.fade.terminal')
 }

@@ -29,6 +29,7 @@ import {
   type PermissionAction, type PermissionCardState, type PermissionDecision,
 } from '../permissions'
 import { playNeedsYou } from '../sounds'
+import { useT } from '../i18n'
 
 interface PermissionCardsProps {
   cards: PermissionCardState[]
@@ -46,6 +47,7 @@ function isTyping(target: EventTarget | null): boolean {
 }
 
 const PermissionCards: React.FC<PermissionCardsProps> = ({ cards, dispatch, readOnly = false, explainRemember = false }) => {
+  const tr = useT()
   // One chime per card id, however many times the list re-renders or a deadline moves.
   // Why the needs-you chime, not the bell: a card is Claude waiting on you; the
   // reducer's needs-you for the same wait lands inside the chime's cooldown, so
@@ -101,8 +103,10 @@ const PermissionCards: React.FC<PermissionCardsProps> = ({ cards, dispatch, read
 
   if (cards.length === 0) return null
 
+  // Why the y / n keys go in as values: the handler above listens for them in every language
+
   return (
-    <div className="perm-stack" role="region" aria-label="Permission requests">
+    <div className="perm-stack" role="region" aria-label={tr('ui.permission.ariaLabel')}>
       {cards.map(card => {
         const total = Math.max(1, card.deadline - card.createdAt)
         const left = Math.max(0, Math.min(1, (card.deadline - now) / total))
@@ -120,34 +124,34 @@ const PermissionCards: React.FC<PermissionCardsProps> = ({ cards, dispatch, read
               <span className="perm-where" title={card.cwd}>{where}</span>
             </div>
             <pre className="perm-detail">{card.detail || card.summary || card.toolName}</pre>
-            <div className="perm-timebar" title={card.resolved ? '' : `${secondsLeft}s before the terminal takes over`}>
+            <div className="perm-timebar" title={card.resolved ? '' : tr('ui.permission.timeLeft', { seconds: secondsLeft })}>
               <div className={`perm-timebar-fill${left < 0.25 ? ' low' : ''}`} style={{ width: `${left * 100}%` }} />
             </div>
             {card.resolved ? (
               <div className="perm-outcome">{fadeLabel(card.resolved)}</div>
             ) : readOnly ? (
               <div className="perm-outcome perm-readonly" data-testid="permission-read-only">
-                answer it in the terminal (this page is read-only)
+                {tr('ui.permission.readOnly')}
               </div>
             ) : (
               <div className="perm-actions">
-                <button className="perm-btn allow" disabled={busy} onClick={() => decide(card, 'allow')} title="Allow this call (y)">
-                  Allow
+                <button className="perm-btn allow" disabled={busy} onClick={() => decide(card, 'allow')} title={tr('ui.permission.allowTitle', { key: 'y' })}>
+                  {tr('ui.permission.allow')}
                 </button>
                 {card.suggestions.length > 0 && (
                   <button className="perm-btn remember" disabled={busy} onClick={() => decide(card, 'allow-remember')} title={describeSuggestions(card.suggestions)}>
-                    Allow &amp; remember
+                    {tr('ui.permission.allowRemember')}
                   </button>
                 )}
-                <button className="perm-btn deny" disabled={busy} onClick={() => decide(card, 'deny')} title="Deny this call (n)">
-                  Deny
+                <button className="perm-btn deny" disabled={busy} onClick={() => decide(card, 'deny')} title={tr('ui.permission.denyTitle', { key: 'n' })}>
+                  {tr('ui.permission.deny')}
                 </button>
-                {card.sent && <span className="perm-sending">sending {card.sent === 'allow-remember' ? 'allow' : card.sent}…</span>}
+                {card.sent && <span className="perm-sending">{card.sent === 'deny' ? tr('ui.permission.sendingDeny') : tr('ui.permission.sendingAllow')}</span>}
               </div>
             )}
             {explainRemember && !readOnly && !card.resolved && card.suggestions.length > 0 && (
               <div className="perm-remember-note" data-testid="permission-remember-note">
-                Allow &amp; remember: {describeSuggestions(card.suggestions)}
+                {tr('ui.permission.rememberNote', { what: describeSuggestions(card.suggestions) })}
               </div>
             )}
           </div>

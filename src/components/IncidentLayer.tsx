@@ -20,6 +20,7 @@ import { useIncident, daysSinceLastIncident, shouldPlayAlarm } from '../incident
 import {
   INCIDENT_ASSETS, incidentAssetUrl, probeIncidentAssets, subscribeIncidentAssets, type IncidentAssetName,
 } from '../incidentAssets'
+import { useT } from '../i18n'
 
 /** Live asset URL for a slot (re-renders when a probe confirms the real art). */
 function useIncidentAsset(name: IncidentAssetName): string | null {
@@ -43,6 +44,7 @@ const INCIDENT_BOARD = { left: 74.07, top: 24.28, width: 12.5, originX: 6.27, or
 const COUNTER     = { x: 80, y: 54 }      // coffee counter, next to the machine
 
 const DaysSinceSign: React.FC<{ days: number; incident: boolean }> = ({ days, incident }) => {
+  const tr = useT()
   const src = useIncidentAsset('daysSign')
   if (!src) return null
   const n = incident ? 0 : days
@@ -51,15 +53,16 @@ const DaysSinceSign: React.FC<{ days: number; incident: boolean }> = ({ days, in
     <div
       className={`days-sign${incident ? ' incident' : ''}`}
       style={{ left: `${DAYS_SIGN.x}%`, top: `${DAYS_SIGN.y}%` }}
-      title={incident ? 'Days since last incident: 0 (it is happening now)' : `Days since last incident: ${days}`}
+      title={incident ? tr('ui.incident.daysSignNow') : tr('ui.incident.daysSignTitle', { days })}
     >
-      <img src={src} alt="Days since last incident" draggable={false} />
+      <img src={src} alt={tr('ui.incident.daysSign')} draggable={false} />
       <span className={`days-sign-digits${size}`}>{n}</span>
     </div>
   )
 }
 
 const IncidentLayer: React.FC = () => {
+  const tr = useT()
   const incident = useIncident()
   const active = incident.variant === 'incident'
 
@@ -93,23 +96,23 @@ const IncidentLayer: React.FC = () => {
 
           {/* Beacon over the door: CSS light cone sweep + two alternating frames */}
           <div className="incident-beacon-sweep" style={{ left: `${DOOR_BEACON.x}%`, top: `${DOOR_BEACON.y}%` }} aria-hidden="true" />
-          <div className="incident-beacon" style={{ left: `${DOOR_BEACON.x}%`, top: `${DOOR_BEACON.y}%` }} title="Incident beacon">
+          <div className="incident-beacon" style={{ left: `${DOOR_BEACON.x}%`, top: `${DOOR_BEACON.y}%` }} title={tr('ui.incident.beacon')}>
             {beacon && <img className="frame-a" src={beacon} alt="" draggable={false} />}
             {beaconLit && <img className="frame-b" src={beaconLit} alt="" draggable={false} />}
           </div>
 
           {/* Status page on the wall TV */}
           {screen && (
-            <div className="incident-tv" style={{ left: `${TV_SCREEN.x}%`, top: `${TV_SCREEN.y}%` }} title="Status page: ROLLBACK">
-              <img src={screen} alt="Rollback in progress" draggable={false} />
+            <div className="incident-tv" style={{ left: `${TV_SCREEN.x}%`, top: `${TV_SCREEN.y}%` }} title={tr('ui.incident.statusPage')}>
+              <img src={screen} alt={tr('ui.incident.rollbackAlt')} draggable={false} />
               {/* Why: the placeholder (the deploy screen) needs the word; the real status-screen art already says ROLLBACK */}
-              {screen !== INCIDENT_ASSETS.statusScreen.intended && <span className="incident-tv-label">ROLLBACK</span>}
+              {screen !== INCIDENT_ASSETS.statusScreen.intended && <span className="incident-tv-label">{tr('ui.incident.rollback')}</span>}
             </div>
           )}
 
           {/* Slots that stay empty until the real art is drawn */}
           {board && (
-            <img className="incident-board" src={board} alt="Incident timeline" draggable={false}
+            <img className="incident-board" src={board} alt={tr('ui.incident.timeline')} draggable={false}
               style={{
                 left: `${INCIDENT_BOARD.left}%`,
                 top: `${INCIDENT_BOARD.top}%`,
@@ -119,7 +122,7 @@ const IncidentLayer: React.FC = () => {
               }} />
           )}
           {pizza && (
-            <img className="incident-pizza" src={pizza} alt="Incident pizza" draggable={false}
+            <img className="incident-pizza" src={pizza} alt={tr('ui.incident.pizza')} draggable={false}
               style={{ left: `${COUNTER.x}%`, top: `${COUNTER.y}%` }} />
           )}
         </>

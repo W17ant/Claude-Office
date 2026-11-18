@@ -13,6 +13,7 @@
 
 import React from 'react'
 import { ADVENT_DOORS, adventDate, adventFor, adventLabel, type AdventState } from '../advent'
+import { useT } from '../i18n'
 
 // Why: a still calendar (today's door already open) when the viewer asks for less motion
 const MOVE = !(typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches)
@@ -85,6 +86,7 @@ function Header({ state }: { state: AdventState }) {
 }
 
 const AdventCalendar: React.FC = () => {
+  useT() // Why: adventLabel() reads the language; this re-renders the memoised calendar when it changes
   const state = adventFor(adventDate(new Date(), typeof location === 'undefined' ? '' : location.search))
   if (!state) return null
   const label = adventLabel(state)

@@ -1,3 +1,4 @@
+/** SlackChat - the #office-general chat panel: header, settings pills, messages, reactions and the input bar. */
 import { useSeasonArt } from '../season'
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import { ROLE_TO_CHAR } from '../config'
@@ -5,6 +6,7 @@ import { getSpritePath, useTheme, toggleTheme, getTheme, themedDisplayName } fro
 import IncidentBadge from './IncidentBadge'
 import { officeHttpBase } from '../serverUrl'
 import { useServerSettings, setAnswerPermissions, setAiPaused, setNotifyPermissions } from '../serverSettings'
+import { t, useT } from '../i18n'
 
 export function getAvatarSrc(role: string, agentId?: string): string {
   const charBase = ROLE_TO_CHAR[role] ?? 'employee-3'
@@ -35,20 +37,30 @@ export interface ChatMessage {
 
 const EMOJI_PICKER = ['👍', '👎', '😊', '🎉', '😡', '🔥', '💯']
 
+// Why not translated: the channel is an identifier (App.tsx posts to it), like a Slack channel name
+const CHANNEL = 'office-general'
+// Why not translated: the commands are typed as written, in any language
+const SLASH_COMMANDS = ['/status', '/agents', '/recap', '/help', '/the-office', '/incident', '/all-clear']
+
 // The server's prompt-logging level (GET /settings). The chat header only
 // shows the level; it is changed in the Settings panel (the gear in the title
 // bar, UI token) or from a terminal with the office token. Absent until the
 // route exists.
 const SETTINGS_URL = `${officeHttpBase()}/settings`
-const LOG_PROMPTS_WHAT: Record<string, string> = {
-  off:     'state only — no prompt or reply text is stored, broadcast or shown',
-  summary: 'the first 200 characters of each prompt and reply',
-  full:    'prompts and replies up to 2000 characters',
+// Why a function, not a table: built when shown, so it follows the language
+function logPromptsWhat(level: string): string {
+  switch (level) {
+    case 'off': return t('ui.chat.logPrompts.off')
+    case 'summary': return t('ui.chat.logPrompts.summary')
+    case 'full': return t('ui.chat.logPrompts.full')
+    default: return t('ui.chat.logPrompts.unknown')
+  }
 }
 function logPromptsHint(level: string): string {
   return [
-    `Prompt logging: ${level} — ${LOG_PROMPTS_WHAT[level] ?? 'unknown level'}.`,
-    'A server setting (~/.agent-office/settings.json); change it in Settings (the gear in the title bar), or with the office token:',
+    // Why the level as a value: it is the setting's own word (off / summary / full), which stays English
+    t('ui.chat.logPrompts.hint', { level, what: logPromptsWhat(level) }),
+    t('ui.chat.logPrompts.where', { file: '~/.agent-office/settings.json' }),
     `curl -X POST ${SETTINGS_URL} -H "Authorization: Bearer $(cat ~/.agent-office/auth-token)" -H 'Content-Type: application/json' -d '{"logPrompts":"${level === 'off' ? 'summary' : 'off'}"}'`,
   ].join('\n')
 }
@@ -90,6 +102,7 @@ export function mentionHints(input: string, mentions: string[] | undefined): str
 
 const SlackChat: React.FC<SlackChatProps> = ({ messages, muted, volume, onToggleMute, onVolumeChange, onSendMessage, onReaction, autoTypeText, dayPhase, typingUser, lastSeenId, readOnly = false, mentions }) => {
   const theme = useTheme()
+  const tr = useT()
   useSeasonArt() // Why: re-render when a seasonal room or avatar file turns out to exist
   void theme // Why: subscribe so avatars re-render when /the-office toggles
   const bodyRef = useRef<HTMLDivElement>(null)
@@ -187,19 +200,19 @@ const SlackChat: React.FC<SlackChatProps> = ({ messages, muted, volume, onToggle
     <div className="slack-panel">
       <div className="slack-header">
         <div className="slack-channel-icon">#</div>
-        <span className="slack-channel-name">office-general</span>
+        <span className="slack-channel-name">{CHANNEL}</span>
         <div className="slack-header-right">
           <div className="slack-online-dot" />
           <span className="slack-online-count">{onlineCount}</span>
           <div
             className={`slack-cron-toggle ${cronPaused ? 'paused' : 'active'}`}
             onClick={toggleCron}
-            title={cronPaused ? 'Chat monitor paused — click to resume' : 'Chat monitor active — click to pause'}
+            title={cronPaused ? tr('ui.chat.aiPausedTitle') : tr('ui.chat.aiActiveTitle')}
           >
             <div className="slack-cron-track">
               <div className="slack-cron-thumb" />
             </div>
-            <span className="slack-cron-label">{cronPaused ? 'AI Off' : 'AI On'}</span>
+            <span className="slack-cron-label">{cronPaused ? tr('ui.chat.aiOff') : tr('ui.chat.aiOn')}</span>
           </div>
           <button className="slack-mute-btn" onClick={onToggleMute}>
             {muted ? '🔇' : volume < 0.4 ? '🔈' : '🔊'}
@@ -211,7 +224,7 @@ const SlackChat: React.FC<SlackChatProps> = ({ messages, muted, volume, onToggle
             value={Math.round(volume * 100)}
             onChange={e => onVolumeChange(Number(e.target.value) / 100)}
             className="slack-volume-slider"
-            title={`Volume: ${Math.round(volume * 100)}%`}
+            title={tr('ui.chat.volume', { percent: Math.round(volume * 100) })}
           />
         </div>
       </div>
@@ -223,31 +236,27 @@ const SlackChat: React.FC<SlackChatProps> = ({ messages, muted, volume, onToggle
         <div className="slack-settings-row">
           {logPrompts && (
             <span className={`slack-logprompts ${logPrompts}`} title={logPromptsHint(logPrompts)} data-testid="log-prompts">
-              prompts: {logPrompts}
+              {tr('ui.chat.logPrompts.pill', { level: logPrompts })}
             </span>
           )}
           {!readOnly && answerHere !== null && (
             <span
               className={`slack-answer-toggle ${answerHere ? 'on' : 'off'}`}
               onClick={toggleAnswerHere}
-              title={answerHere
-                ? 'Permission dialogs can be answered from the office (a card appears while Claude waits) — click to turn off'
-                : 'Permission dialogs are answered in the terminal only — click to let the office answer them'}
+              title={answerHere ? tr('ui.chat.answerOnTitle') : tr('ui.chat.answerOffTitle')}
               data-testid="answer-permissions"
             >
-              Answer here: {answerHere ? 'on' : 'off'}
+              {tr('ui.chat.answerHere', { state: answerHere ? tr('ui.chat.on') : tr('ui.chat.off') })}
             </span>
           )}
           {!readOnly && notifyHere !== null && (
             <span
               className={`slack-answer-toggle slack-notify-toggle ${notifyHere ? 'on' : 'off'}`}
               onClick={toggleNotify}
-              title={notifyHere
-                ? 'A desktop notification (project and tool only) when Claude starts waiting on a permission — click to turn off'
-                : 'No desktop notification when Claude waits on a permission — click to turn on'}
+              title={notifyHere ? tr('ui.chat.notifyOnTitle') : tr('ui.chat.notifyOffTitle')}
               data-testid="notify-permissions"
             >
-              Notify: {notifyHere ? 'on' : 'off'}
+              {tr('ui.chat.notify', { state: notifyHere ? tr('ui.chat.on') : tr('ui.chat.off') })}
             </span>
           )}
         </div>
@@ -286,7 +295,7 @@ const SlackChat: React.FC<SlackChatProps> = ({ messages, muted, volume, onToggle
                       <span className="slack-sender" style={{ color: msg.senderColor }}>
                         {msg.displayName ?? themedDisplayName(msg.senderSprite, msg.sender)}
                       </span>
-                      {msg.tag && <span className={`slack-tag ${msg.tag}`}>{msg.tag}</span>}
+                      {msg.tag && <span className={`slack-tag ${msg.tag}`}>{msg.tag === 'prompt' ? tr('ui.chat.tag.prompt') : tr('ui.chat.tag.reply')}</span>}
                       <span className="slack-time">{msg.timestamp}</span>
                     </div>
                   )}
@@ -300,7 +309,7 @@ const SlackChat: React.FC<SlackChatProps> = ({ messages, muted, volume, onToggle
                           key={i}
                           className="slack-reaction"
                           onClick={() => handleReaction(msg, r)}
-                          title="Click to remove"
+                          title={tr('ui.chat.removeReaction')}
                         >{r}</span>
                       ))}
                     </div>
@@ -320,8 +329,8 @@ const SlackChat: React.FC<SlackChatProps> = ({ messages, muted, volume, onToggle
               </div>
               {lastSeenId != null && msg.id === lastSeenId && (
                 <div className="slack-seen-row">
-                  <span className="slack-seen-label">Seen</span>
-                  <img src={getAvatarSrc('assistant')} className="slack-seen-avatar" alt="seen" />
+                  <span className="slack-seen-label">{tr('ui.chat.seen')}</span>
+                  <img src={getAvatarSrc('assistant')} className="slack-seen-avatar" alt={tr('ui.chat.seenAlt')} />
                 </div>
               )}
             </React.Fragment>
@@ -330,10 +339,10 @@ const SlackChat: React.FC<SlackChatProps> = ({ messages, muted, volume, onToggle
         {typingUser && (
           <div className="slack-msg slack-typing-row">
             <div className="slack-avatar" style={{ border: '2px solid #cc785c', boxShadow: '0 0 6px #cc785c40' }}>
-              <img src={getAvatarSrc('assistant')} alt="typing" className="slack-avatar-img" />
+              <img src={getAvatarSrc('assistant')} alt={tr('ui.chat.typingAlt')} className="slack-avatar-img" />
             </div>
             <div className="slack-msg-content">
-              <div className="slack-typing-label">{typingUser} is typing</div>
+              <div className="slack-typing-label">{tr('ui.chat.typing', { name: typingUser })}</div>
               <div className="slack-typing-dots"><span/><span/><span/></div>
             </div>
           </div>
@@ -342,14 +351,14 @@ const SlackChat: React.FC<SlackChatProps> = ({ messages, muted, volume, onToggle
 
       <div className="slack-input-wrap">
         {hints.length > 0 && (
-          <div className="slack-slash-hint" role="listbox" aria-label="Queue a prompt for a session">
+          <div className="slack-slash-hint" role="listbox" aria-label={tr('ui.chat.mentionsAria')}>
             {hints.map(name => (
               <span
                 key={name}
                 role="option"
                 aria-selected={false}
                 className="slack-slash-cmd"
-                title={`Queue a prompt for ${name}: it gets it when its turn ends`}
+                title={tr('ui.chat.mentionTitle', { name })}
                 // Why mousedown: a click would blur the input first
                 onMouseDown={e => { e.preventDefault(); completeMention(name) }}
               >@{name}</span>
@@ -358,13 +367,7 @@ const SlackChat: React.FC<SlackChatProps> = ({ messages, muted, volume, onToggle
         )}
         {showSlashHint && (
           <div className="slack-slash-hint">
-            <span className="slack-slash-cmd">/status</span>
-            <span className="slack-slash-cmd">/agents</span>
-            <span className="slack-slash-cmd">/recap</span>
-            <span className="slack-slash-cmd">/help</span>
-            <span className="slack-slash-cmd">/the-office</span>
-            <span className="slack-slash-cmd">/incident</span>
-            <span className="slack-slash-cmd">/all-clear</span>
+            {SLASH_COMMANDS.map(cmd => <span key={cmd} className="slack-slash-cmd">{cmd}</span>)}
           </div>
         )}
         <div className="slack-input-bar">
@@ -372,7 +375,9 @@ const SlackChat: React.FC<SlackChatProps> = ({ messages, muted, volume, onToggle
             ref={inputRef}
             type="text"
             className="slack-input-field"
-            placeholder={mentions?.length ? 'Message #office-general, or @session to queue a prompt' : 'Message #office-general'}
+            placeholder={mentions?.length
+              ? tr('ui.chat.placeholderMentions', { channel: `#${CHANNEL}` })
+              : tr('ui.chat.placeholder', { channel: `#${CHANNEL}` })}
             value={inputText}
             onChange={e => {
               const val = e.target.value
@@ -396,7 +401,7 @@ const SlackChat: React.FC<SlackChatProps> = ({ messages, muted, volume, onToggle
                 if (trimmed === '/the-office' || trimmed === '/theoffice') {
                   toggleTheme()
                   const nowOn = getTheme() === 'office'
-                  onSendMessage?.(nowOn ? '🧻 Dunder Mifflin mode: ON. Identity theft is not a joke.' : '🔁 Office theme: OFF')
+                  onSendMessage?.(nowOn ? tr('ui.chat.themeOn') : tr('ui.chat.themeOff'))
                 } else {
                   onSendMessage?.(trimmed)
                 }

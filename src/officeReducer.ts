@@ -72,6 +72,7 @@ import { getTheme } from './theme'
 import { getVariant, pickIncidentLine } from './incident'
 import { isSignalKind, signalFamily, signalOutcome, signalWhere, SCENE_MS } from './signals'
 import { clientLabel } from './tools'
+import { t, list } from './i18n'
 
 // ---------------------------------------------------------------------------
 // Room constants
@@ -399,23 +400,13 @@ function pickOne<T>(items: T[], random: () => number): T {
 }
 
 function bossReply(agentName: string, random: () => number): string {
-  const replies = [
-    `nice work ${agentName} 👊`,
-    `solid 🔥`,
-    `ship it!`,
-    `great stuff, grab a Red Bull`,
-    `legend 💯`,
-    `good job, who's next?`,
-    `that was quick, another one?`,
-    `clean work 👌`,
-    `cheers ${agentName}`,
-    `merged. next task loading...`,
-  ]
   // Why: during an incident the boss is the Incident Commander 40% of the time;
   // under the Office theme Michael Scott occasionally lands his signature line.
   if (getVariant() === 'incident' && random() < 0.4) return pickIncidentLine('bossReply')
-  if (getTheme() === 'office' && random() < 0.25) return `That's what she said 😏`
-  return pickOne(replies, random)
+  if (getTheme() === 'office' && random() < 0.25) return t('ui.office.thatsWhatSheSaid')
+  // Why read the list here: a list read at import would never change language.
+  // A line may name the agent with {name}; list() hands lines over unfilled.
+  return pickOne(list('chatter.office.bossPraise'), random).replace(/\{name\}/g, () => agentName)
 }
 
 // ---------------------------------------------------------------------------
@@ -558,12 +549,12 @@ function spawnAgent(state: OfficeState, raw: SpawnFields, env: OfficeEnv, announ
       ...common,
       assignedSpotId: undefined,
       state: 'waiting',
-      statusText: 'waiting for a desk',
+      statusText: t('ui.office.waitingForDesk'),
       pathQueue: env.computePath(base.position, pos),
     }
     meta = { ...meta, lobbySlot: slot }
     lobby = [...state.lobby, id]
-    effects.push({ kind: 'msg', sender: name, role, color: cfg.color, text: 'waiting for a desk...' })
+    effects.push({ kind: 'msg', sender: name, role, color: cfg.color, text: t('ui.office.waitingForDeskMsg') })
   }
 
   // Why: with a corridor the building's entrance is its front door, so a
@@ -600,8 +591,9 @@ function completeAgent(
     const color = cfgFor(agent.role).color
     // The live server posts "done: <result>" itself; under ?sim nobody else will.
     // The numbers are ours either way: the server's row does not carry them.
+    // Why the ?sim line stays English: sim / demo content is not translated (spec).
     if (!env.live) effects.push({ kind: 'msg', sender: agent.name, role: agent.role, color, text: `done: ${resultMsg}${parts.length ? ` · ${parts.join(' · ')}` : ''}` })
-    else if (parts.length) effects.push({ kind: 'msg', sender: agent.name, role: agent.role, color, text: `✅ done · ${parts.join(' · ')}` })
+    else if (parts.length) effects.push({ kind: 'msg', sender: agent.name, role: agent.role, color, text: t('ui.office.doneStats', { stats: parts.join(' · ') }) })
     effects.push({ kind: 'sfx', sfx: 'celebration' })
     const boss = cfgFor(BOSS_ROLE)
     effects.push({ kind: 'msg', sender: boss.title, role: BOSS_ROLE, color: boss.color, text: bossReply(agent.name, env.random) })
@@ -728,7 +720,7 @@ function mcpDone(state: OfficeState, server: string, sessionId: string | undefin
     state: {
       ...state,
       meta: { ...state.meta, [id]: { ...m, mcpBusy: [], mcpIdleSince: env.now } },
-      agents: state.agents.map(a => (a.id === id && a.state === 'working' ? { ...a, statusText: 'standing by' } : a)),
+      agents: state.agents.map(a => (a.id === id && a.state === 'working' ? { ...a, statusText: t('ui.office.standingBy') } : a)),
       // A status still queued for its arrival is the call that just finished
       pendingStatus: without(state.pendingStatus, id),
     },
@@ -805,12 +797,12 @@ function applyMain(state: OfficeState, id: string, patch: MainPatch, env: Office
 /** Claude's status line for a server-side main record (snapshot / reconnect) */
 function mainStatusText(main: SessionMain): string | undefined {
   switch (main.state) {
-    case 'working':    return main.lastPrompt ? `✍ ${summarise(main.lastPrompt)}` : '⚡ working'
+    case 'working':    return main.lastPrompt ? `✍ ${summarise(main.lastPrompt)}` : t('ui.office.working')
     case 'waiting':    return waitingText(main.waitingOn ?? 0)
-    case 'idle':       return 'turn over — idle'
-    case 'needs-you':  return main.needsYou ? needsYouLabel(main.needsYou) : '✋ needs you'
-    case 'error':      return `⚠ API error${main.error?.error ? `: ${main.error.error}` : ''}`
-    case 'compacting': return '🧹 memory wipe'
+    case 'idle':       return t('ui.office.turnOver')
+    case 'needs-you':  return main.needsYou ? needsYouLabel(main.needsYou) : t('ui.pill.needsYou')
+    case 'error':      return main.error?.error ? t('ui.office.apiErrorWhat', { error: main.error.error }) : t('ui.office.apiError')
+    case 'compacting': return t('ui.office.memoryWipe')
     default:           return undefined
   }
 }
@@ -820,17 +812,17 @@ function fromServerMain(main: SessionMain): MainPatch {
 }
 
 function waitingText(n: number): string {
-  return n > 0 ? `⏳ waiting on ${n} background worker${n === 1 ? '' : 's'}` : '⏳ waiting on background workers'
+  return n > 0 ? t('ui.office.waitingOnWorkers', { count: n }) : t('ui.office.waitingOnWorkersBare')
 }
 
 /** Claude's status line when PostCompact puts it back where it was */
 function restoredStatus(state: MainState, claude: Agent): string | undefined {
   switch (state) {
-    case 'working':   return '✍ back to work'
-    case 'idle':      return 'turn over — idle'
+    case 'working':   return t('ui.office.backToWorkTyping')
+    case 'idle':      return t('ui.office.turnOver')
     case 'waiting':   return waitingText(claude.waitingOn ?? 0)
-    case 'needs-you': return claude.needsYou ? needsYouLabel(claude.needsYou) : '✋ needs you'
-    case 'error':     return '⚠ API error'
+    case 'needs-you': return claude.needsYou ? needsYouLabel(claude.needsYou) : t('ui.pill.needsYou')
+    case 'error':     return t('ui.office.apiError')
     default:          return undefined
   }
 }
@@ -873,14 +865,14 @@ function ensureClaude(state: OfficeState, sessionId: string, info: SessionFields
   const r = spawnAgent(cur, {
     id, name: tool ?? cfg.title, role: CLAUDE_ROLE,
     task: `${tool ?? 'Claude Code'}${project ? ` · ${project}` : ''}`,
-    statusText: 'clocked in',
+    statusText: t('ui.office.clockedIn'),
     sessionId, project, model: info.model,
     preferredSpotId: CLAUDE_HOME_SPOT,
   }, env, false)
   let next = r.state
   if (info.main) next = applyMain(next, id, fromServerMain(info.main), env)
   const claude = next.agents.find(a => a.id === id)!
-  const effects: OfficeEffect[] = [...r.effects, claudeMsg(next, claude, `🤖 clocked in${project ? ` · ${project}` : ''}`)]
+  const effects: OfficeEffect[] = [...r.effects, claudeMsg(next, claude, project ? t('ui.office.clockedInProject', { project }) : t('ui.office.clockedInMsg'))]
   return { state: next, effects, created: true }
 }
 
@@ -914,7 +906,7 @@ function bossShout(state: OfficeState, claude: Agent, bubble: string): OfficeRes
 function endSession(state: OfficeState, sessionId: string, reason: string | undefined, env: OfficeEnv): OfficeResult {
   let cur: OfficeState = { ...state, endedSessions: { ...state.endedSessions, [sessionId]: env.now } }
   const effects: OfficeEffect[] = [{ kind: 'schedule', action: { type: 'session_claude_leave', sessionId, endedAt: env.now }, delayMs: SESSION_CLAUDE_GRACE_MS }]
-  if (findMain(cur, sessionId)) cur = applyMain(cur, mainId(sessionId), { mainState: null, statusText: `👋 session ended${reason ? ` (${reason})` : ''}` }, env)
+  if (findMain(cur, sessionId)) cur = applyMain(cur, mainId(sessionId), { mainState: null, statusText: reason ? t('ui.office.sessionEndedReason', { reason }) : t('ui.office.sessionEnded') }, env)
   return { state: cur, effects }
 }
 
@@ -963,24 +955,25 @@ function reduceSignal(state: OfficeState, action: SignalEvent, env: OfficeEnv): 
     actor = findMain(cur, action.sessionId)
   }
   const where = signalWhere(action)
-  const why = action.detail || action.error || (action.exitCode !== undefined ? `exit code ${action.exitCode}` : '')
+  const why = action.detail || action.error || (action.exitCode !== undefined ? t('ui.office.exitCode', { code: action.exitCode }) : '')
+  const detail = why ? t('ui.office.detail', { detail: why }) : ''
   const scene = (kind: AgentScene['kind'], ms: number, label?: string) => {
     if (actor) cur = withScene(cur, actor.id, kind, ms, env, effects, label)
   }
 
   if (family === 'deploy') {
     if (outcome === 'start') {
-      scene('shipping', SCENE_MS.shipping, `🚀 shipping${where ? ` ${where}` : ''}`)
+      scene('shipping', SCENE_MS.shipping, where ? t('ui.office.shippingWhere', { where }) : t('ui.office.shipping'))
     } else if (action.interrupted) {
       if (actor) cur = withoutScene(cur, actor.id, 'shipping')
-      effects.push(systemMsg(`⏹ ${where ? `${where} deploy` : 'deploy'} interrupted`))
+      effects.push(systemMsg(where ? t('ui.office.deployInterruptedWhere', { where }) : t('ui.office.deployInterrupted')))
     } else if (outcome === 'ok') {
       scene('shipped', SCENE_MS.shipped)
-      effects.push(systemMsg(`🚀 ${where ?? 'it'} deployed`), { kind: 'sfx', sfx: 'celebration' })
+      effects.push(systemMsg(where ? t('ui.office.deployedWhere', { where }) : t('ui.office.deployed')), { kind: 'sfx', sfx: 'celebration' })
     } else {
       // The incident itself (and its alarm) opens in incident mode
       scene('red', SCENE_MS.red)
-      effects.push(systemMsg(`💥 ${where ? `${where} deploy` : 'deploy'} failed${why ? ` — ${why}` : ''}`))
+      effects.push(systemMsg((where ? t('ui.office.deployFailedWhere', { where }) : t('ui.office.deployFailed')) + detail))
     }
     return { state: cur, effects }
   }
@@ -988,14 +981,15 @@ function reduceSignal(state: OfficeState, action: SignalEvent, env: OfficeEnv): 
   if (family === 'push') {
     if (outcome === 'ok' && action.toDefault) {
       scene('pushed', SCENE_MS.pushed)
-      effects.push(systemMsg(`🎉 pushed to ${action.branch ?? 'main'}${where ? ` · ${where}` : ''}`))
+      // Why the branch is a value: branch names stay as git has them
+      const branch = action.branch ?? 'main'
+      effects.push(systemMsg(where ? t('ui.office.pushedToWhere', { branch, where }) : t('ui.office.pushedTo', { branch })))
     }
     return { state: cur, effects }
   }
 
   // A build or a test run: red when it fails, a line when it is green again
   if (outcome === 'start' || action.interrupted) return { state: cur, effects }
-  const what = family === 'test' ? 'tests' : 'build'
   const key = `${action.sessionId ?? ''}|${family}|${where ?? ''}`
   if (outcome === 'fail') {
     scene('red', SCENE_MS.red)
@@ -1003,12 +997,19 @@ function reduceSignal(state: OfficeState, action: SignalEvent, env: OfficeEnv): 
     cur = { ...cur, redRuns }
     // Why no sound: a red run is routine mid-task; three in five minutes open
     // an incident, and that has its cue (src/sounds.ts)
-    effects.push(systemMsg(`❌ ${what} failed${where ? ` in ${where}` : ''}${why ? ` — ${why}` : ''}`))
+    // Why two keys per family: "tests" is plural and "build" is not, which other languages agree with
+    const failed = family === 'test'
+      ? (where ? t('ui.office.testsFailedIn', { where }) : t('ui.office.testsFailed'))
+      : (where ? t('ui.office.buildFailedIn', { where }) : t('ui.office.buildFailed'))
+    effects.push(systemMsg(failed + detail))
     return { state: cur, effects }
   }
   if (!(key in cur.redRuns)) return { state: cur, effects }
   cur = { ...cur, redRuns: without(cur.redRuns, key) }
-  effects.push(systemMsg(`✅ ${what} green again${where ? ` in ${where}` : ''}`))
+  const green = family === 'test'
+    ? (where ? t('ui.office.testsGreenIn', { where }) : t('ui.office.testsGreen'))
+    : (where ? t('ui.office.buildGreenIn', { where }) : t('ui.office.buildGreen'))
+  effects.push(systemMsg(green))
   return { state: cur, effects }
 }
 
@@ -1165,7 +1166,7 @@ function reduceEvent(state: OfficeState, action: OfficeAction, env: OfficeEnv): 
           continue
         }
         if (a.id === BOSS_ID || a.id === CLAUDE_ID || isMainAgent(a) || a.state === 'completed' || byId.has(a.id)) continue
-        const r = completeAgent(cur, a.id, 'clocked out while we were away', env, true)
+        const r = completeAgent(cur, a.id, t('ui.office.clockedOutAway'), env, true)
         cur = r.state
         effects.push(...r.effects)
       }
@@ -1204,7 +1205,7 @@ function reduceEvent(state: OfficeState, action: OfficeAction, env: OfficeEnv): 
           if (!isMainAgent(a) || a.state === 'completed') continue
           const sid = a.sessionId ?? a.id.slice(mainId('').length)
           if (bySid.has(sid)) continue
-          cur = completeAgent(cur, a.id, 'clocked out while we were away', env, true).state
+          cur = completeAgent(cur, a.id, t('ui.office.clockedOutAway'), env, true).state
         }
         for (const s of listed) {
           if (s.state === 'ended') {
@@ -1265,7 +1266,7 @@ function reduceEvent(state: OfficeState, action: OfficeAction, env: OfficeEnv): 
     case 'mcp_done': {
       const id = action.agentId ?? action.agent?.id
       if (!id) return action.server ? mcpDone(state, action.server, action.sessionId, env) : none
-      return { state: { ...state, agents: state.agents.map(a => (a.id === id ? { ...a, statusText: action.result ?? 'done' } : a)) }, effects: [] }
+      return { state: { ...state, agents: state.agents.map(a => (a.id === id ? { ...a, statusText: action.result ?? t('ui.office.done') } : a)) }, effects: [] }
     }
 
     // ── Chat plumbing: typing indicator, reactions, read receipt, inbox ────
@@ -1359,7 +1360,7 @@ function reduceEvent(state: OfficeState, action: OfficeAction, env: OfficeEnv): 
       const visitSpot = { x: toAgent.deskPosition.x + 4, y: toAgent.deskPosition.y + 2 }
       effects.push({ kind: 'schedule', action: { type: 'a2a_visit_over', agentId: fromAgent.id }, delayMs: A2A_VISIT_MS })
       return {
-        state: { ...base, agents: base.agents.map(a => (a.id === fromAgent.id ? walkTo(a, visitSpot, `talking to ${toAgent.name}`, env) : a)) },
+        state: { ...base, agents: base.agents.map(a => (a.id === fromAgent.id ? walkTo(a, visitSpot, t('ui.office.talkingTo', { name: toAgent.name }), env) : a)) },
         effects,
       }
     }
@@ -1368,7 +1369,7 @@ function reduceEvent(state: OfficeState, action: OfficeAction, env: OfficeEnv): 
     case 'a2a_visit_over': {
       const agent = state.agents.find(a => a.id === action.agentId)
       if (!agent || agent.state !== 'walking-to-desk') return none
-      return { state: { ...state, agents: state.agents.map(a => (a.id === agent.id ? walkTo(a, a.deskPosition, 'back to work', env) : a)) }, effects: [] }
+      return { state: { ...state, agents: state.agents.map(a => (a.id === agent.id ? walkTo(a, a.deskPosition, t('ui.office.backToWork'), env) : a)) }, effects: [] }
     }
 
     // ── Session lifecycle: a Claude per terminal ───────────────────────────
@@ -1412,8 +1413,8 @@ function reduceEvent(state: OfficeState, action: OfficeAction, env: OfficeEnv): 
       const cur: OfficeState = { ...state, endedSessions: without(state.endedSessions, sid) }
       const claude = findMain(cur, sid)
       if (!claude) return { state: cur, effects: [] }
-      const r = completeAgent(cur, claude.id, 'clocked out', env, true)
-      return { state: r.state, effects: [...r.effects, claudeMsg(cur, claude, '👋 clocked out')] }
+      const r = completeAgent(cur, claude.id, t('ui.office.clockedOut'), env, true)
+      return { state: r.state, effects: [...r.effects, claudeMsg(cur, claude, t('ui.office.clockedOutMsg'))] }
     }
 
     // ── The boss shouts the prompt across the office; Claude starts typing ─
@@ -1433,7 +1434,7 @@ function reduceEvent(state: OfficeState, action: OfficeAction, env: OfficeEnv): 
         // (the server resolves the subagent id to the office worker when it can)
         const workerId = action.wakeupOfficeId ?? action.wakeupAgentId
         const worker = workerId ? cur.agents.find(a => a.id === workerId) : undefined
-        const label = `📬 ${worker?.name ?? 'a background worker'} reported back`
+        const label = worker ? t('ui.office.reportedBack', { name: worker.name }) : t('ui.office.reportedBackBare')
         cur = applyMain(cur, id, { mainState: serverState ?? 'working', statusText: label }, env)
         effects.push(claudeMsg(cur, claude, label))
         return { state: cur, effects }
@@ -1449,7 +1450,7 @@ function reduceEvent(state: OfficeState, action: OfficeAction, env: OfficeEnv): 
       // Why a sound here: the boss no longer walks over, so the shout is the one
       // sign a prompt went out; the cue is a soft pop (src/sounds.ts playPrompt)
       effects.push(...shout.effects, { kind: 'sfx', sfx: 'prompt' })
-      cur = applyMain(cur, id, { mainState: serverState ?? 'working', statusText: summary ? `✍ ${summary}` : '✍ working on a prompt' }, env)
+      cur = applyMain(cur, id, { mainState: serverState ?? 'working', statusText: summary ? `✍ ${summary}` : t('ui.office.workingOnPrompt') }, env)
       return { state: cur, effects }
     }
 
@@ -1482,7 +1483,7 @@ function reduceEvent(state: OfficeState, action: OfficeAction, env: OfficeEnv): 
       const next: MainState = serverState === 'waiting' || (serverState === undefined && waitingOn > 0) ? 'waiting' : serverState ?? 'idle'
       cur = next === 'waiting'
         ? applyMain(cur, id, { mainState: 'waiting', waitingOn, statusText: waitingText(waitingOn) }, env)
-        : applyMain(cur, id, { mainState: next, statusText: next === 'idle' ? 'turn over — idle' : undefined, since: action.main?.since }, env)
+        : applyMain(cur, id, { mainState: next, statusText: next === 'idle' ? t('ui.office.turnOver') : undefined, since: action.main?.since }, env)
       // Why only when it goes idle: Claude has answered and it is your turn; a turn
       // that ends with background work still running is not over yet
       if (next === 'idle') effects.push({ kind: 'sfx', sfx: 'reply' })
@@ -1540,9 +1541,11 @@ function reduceEvent(state: OfficeState, action: OfficeAction, env: OfficeEnv): 
       const wait = claude.mainState === 'needs-you' ? claude.needsYou : undefined
       const answers = !!wait && wait.kind === 'permission' && (action.batch === true || (!!action.toolName && wait.toolName === action.toolName))
       if (!answers) return none
-      const what = action.batch === true ? `tool batch of ${action.count ?? '?'} done` : `${action.toolName} ran`
+      const what = action.batch !== true ? t('ui.office.toolRan', { tool: action.toolName ?? '' })
+        : typeof action.count === 'number' ? t('ui.office.toolBatchDone', { count: action.count })
+        : t('ui.office.toolBatchDoneUnknown')
       const cur = applyMain(state, id, { mainState: 'working', statusText: `⚡ ${what}` }, env)
-      return { state: cur, effects: [claudeMsg(cur, claude, `✅ permission answered — ${what}`)] }
+      return { state: cur, effects: [claudeMsg(cur, claude, t('ui.office.permissionAnswered', { what }))] }
     }
 
     // ── The server changed the record itself (hand lowered by a tool result or the 10-min timeout) ─
@@ -1558,7 +1561,7 @@ function reduceEvent(state: OfficeState, action: OfficeAction, env: OfficeEnv): 
       const effects = [...ensured.effects]
       // The hand came down without a prompt or a tool call of ours: say why
       if (before.mainState === 'needs-you' && action.main.state !== 'needs-you') {
-        effects.push(claudeMsg(cur, before, `${action.main.state === 'working' ? '✅' : '💤'} ${action.reason ?? 'hand down'}`))
+        effects.push(claudeMsg(cur, before, `${action.main.state === 'working' ? '✅' : '💤'} ${action.reason ?? t('ui.office.handDown')}`))
       }
       return { state: cur, effects }
     }
@@ -1571,11 +1574,11 @@ function reduceEvent(state: OfficeState, action: OfficeAction, env: OfficeEnv): 
       const id = mainId(sid)
       const claude = ensured.state.agents.find(a => a.id === id)
       if (!claude) return none
-      const label = `⚠ API error${action.error ? `: ${action.error}` : ''}`
+      const label = action.error ? t('ui.office.apiErrorWhat', { error: action.error }) : t('ui.office.apiError')
       const cur = applyMain(ensured.state, id, { mainState: action.main?.state ?? 'error', statusText: label }, env)
       return {
         state: cur,
-        effects: [...ensured.effects, claudeMsg(cur, claude, `${label}${action.detail ? ` — ${action.detail}` : ''}`), { kind: 'sfx', sfx: 'error' }],
+        effects: [...ensured.effects, claudeMsg(cur, claude, label + (action.detail ? t('ui.office.detail', { detail: action.detail }) : '')), { kind: 'sfx', sfx: 'error' }],
       }
     }
 
@@ -1592,9 +1595,9 @@ function reduceEvent(state: OfficeState, action: OfficeAction, env: OfficeEnv): 
       const meta = cur.meta[id] ?? newMeta(env.now)
       if (action.phase !== 'post') {
         const beforeCompact = claude.mainState === 'compacting' ? meta.beforeCompact : claude.mainState
-        cur = applyMain(cur, id, { mainState: 'compacting', statusText: '🧹 memory wipe' }, env)
+        cur = applyMain(cur, id, { mainState: 'compacting', statusText: t('ui.office.memoryWipe') }, env)
         cur = { ...cur, meta: { ...cur.meta, [id]: { ...cur.meta[id], beforeCompact } } }
-        effects.push(claudeMsg(cur, claude, `🧹 memory wipe${action.trigger ? ` (${action.trigger})` : ''}`))
+        effects.push(claudeMsg(cur, claude, action.trigger ? t('ui.office.memoryWipeTrigger', { trigger: action.trigger }) : t('ui.office.memoryWipe')))
         return { state: cur, effects }
       }
       // Back to where it was: the server's record when it sends one, else what we remembered
@@ -1638,7 +1641,7 @@ function reduceEvent(state: OfficeState, action: OfficeAction, env: OfficeEnv): 
     case 'mcp_worker_leave': {
       // A call that came in since (or a later idle spell with its own timer) keeps it
       if (state.meta[action.agentId]?.mcpIdleSince !== action.idleSince) return none
-      return completeAgent(state, action.agentId, 'standing down', env, true)
+      return completeAgent(state, action.agentId, t('ui.office.standingDown'), env, true)
     }
 
     case 'scene_over': {
@@ -1811,7 +1814,7 @@ export function stepOffice(state: OfficeState, dt: number, env: OfficeEnv): Step
         }
         const breakSpot = useWater ? pickOne(WATER_SPOTS, env.random) : COFFEE_SPOT
         setMeta(agent.id, { onBreak: false, arrivedAtDeskAt: null })
-        const breakMsg = useWater ? waterMessage() : (isBoss ? 'grabbing a Red Bull' : coffeeMessage())
+        const breakMsg = useWater ? waterMessage() : (isBoss ? t('ui.office.grabbingRedBull') : coffeeMessage())
         const breakIcon = isBoss ? '🥫' : (useWater ? '💧' : '☕')
         effects.push(
           { kind: 'msg', sender: updated.name, role: updated.role, color: cfgFor(updated.role).color, text: `${breakIcon} ${breakMsg}` },
@@ -1873,7 +1876,7 @@ export function stepOffice(state: OfficeState, dt: number, env: OfficeEnv): Step
       targetPosition: desk,
       spriteFacing: spot.spriteFacing,
       // A session's Claude keeps its main thread's line once it has one (a hand may have gone up while it waited)
-      statusText: isMainAgent(kept[idx]) && kept[idx].mainState !== undefined ? kept[idx].statusText : 'found a desk',
+      statusText: isMainAgent(kept[idx]) && kept[idx].mainState !== undefined ? kept[idx].statusText : t('ui.office.foundDesk'),
       pathQueue: env.computePath(kept[idx].position, desk),
     }
     lobby = lobby.slice(1)
@@ -1947,7 +1950,7 @@ export function sendBoss(state: OfficeState, room: RoomId, env: OfficeEnv): Offi
   const moving = home
     ? beginTransfer(boss, OFFICE_ROOM, boss.deskPosition, 'return', env)
     : beginTransfer(boss, room, standInside(room), 'drop-in', env)
-  const statusText = home ? 'back to my desk' : `off to the ${ROOMS[room].name.toLowerCase()}`
+  const statusText = home ? t('ui.office.backToMyDesk') : offToRoom(room)
   // Why clear the break: a boss on his Red Bull run who is sent elsewhere drops it
   const meta: AgentMeta = { ...m, transfer: moving.transfer, sentTo: home ? undefined : room, wish: undefined, onBreak: false, breakStartedAt: null, arrivedAtDeskAt: null }
   return {
@@ -1957,6 +1960,24 @@ export function sendBoss(state: OfficeState, room: RoomId, env: OfficeEnv): Offi
       agents: state.agents.map(a => (a.id === BOSS_ID ? { ...moving.agent, state: 'changing-room' as const, statusText } : a)),
     },
     effects: [],
+  }
+}
+
+/**
+ * The boss's status line on his way to a room ("off to the meeting room").
+ * Why a key per room: a room name can not be lower-cased into a sentence in
+ * every language (German nouns stay capitalised), so each line is whole.
+ * @param room where he is going
+ * @returns the line in the office's language
+ */
+function offToRoom(room: RoomId): string {
+  switch (room) {
+    case 'main-office': return t('ui.office.offTo.mainOffice')
+    case 'corridor': return t('ui.office.offTo.corridor')
+    case 'meeting-room': return t('ui.office.offTo.meetingRoom')
+    case 'server-room': return t('ui.office.offTo.serverRoom')
+    case 'lunch-room': return t('ui.office.offTo.lunchRoom')
+    default: return t('ui.office.offTo.mainOffice')
   }
 }
 
@@ -1983,7 +2004,7 @@ export function bossErrandGate(state: OfficeState): 'go' | 'wait' | 'fetch' {
 export function returnAgentsFromEvent(agents: Agent[], movedIds: string[], env: OfficeEnv): Agent[] {
   const moved = new Set(movedIds)
   return agents.map(a => (moved.has(a.id) && a.state === 'walking-to-desk'
-    ? walkTo(a, a.deskPosition, (isMainAgent(a) && a.statusText) || 'back to work', env)
+    ? walkTo(a, a.deskPosition, (isMainAgent(a) && a.statusText) || t('ui.office.backToWork'), env)
     : a))
 }
 

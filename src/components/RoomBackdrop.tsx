@@ -18,6 +18,8 @@
 import React from 'react'
 import { ROOMS, type AgentSpot, type RoomId } from '../rooms'
 import { DRAWN_ROOMS, roomArt } from '../roomAccess'
+import { useT } from '../i18n'
+import { landmarkLabel, roomName } from '../roomText'
 import '../styles/room-switcher.css'
 
 interface RoomBackdropProps {
@@ -57,6 +59,7 @@ const Door: React.FC<{ x: number; y: number; label: string; kind: 'door' | 'fron
 
 /** What a spot's kind implies stands there, drawn behind the spot's floor mark */
 const SpotFurniture: React.FC<{ spot: AgentSpot }> = ({ spot }) => {
+  const tr = useT()
   const { x, y } = spot
   switch (spot.type) {
     case 'standing':
@@ -68,7 +71,7 @@ const SpotFurniture: React.FC<{ spot: AgentSpot }> = ({ spot }) => {
       return (
         <g>
           <rect className="ph-furniture" x={px(x - 6)} y={py(y - 12)} width={px(12)} height={py(7)} rx={1.5} />
-          <text className="ph-label" x={px(x)} y={py(y - 14)} textAnchor="middle">{spot.type}</text>
+          <text className="ph-label" x={px(x)} y={py(y - 14)} textAnchor="middle">{spot.type === 'coffee' ? tr('ui.rooms.placeholder.coffee') : tr('ui.rooms.placeholder.water')}</text>
         </g>
       )
     case 'meeting-seat':
@@ -108,6 +111,7 @@ function tables(spots: AgentSpot[]): { x: number; y: number; w: number; h: numbe
  * @returns the room's two pictures, or the code-drawn placeholder when it has no art
  */
 export default function RoomBackdrop({ room, theme, night, drawn = DRAWN_ROOMS }: RoomBackdropProps) {
+  const tr = useT()
   const art = roomArt(room, theme, drawn)
   if (art) {
     return (
@@ -142,7 +146,7 @@ export default function RoomBackdrop({ room, theme, night, drawn = DRAWN_ROOMS }
       viewBox={`0 0 ${W} ${H}`}
       preserveAspectRatio="none"
       role="img"
-      aria-label={`${def.name}: placeholder, its art is not drawn yet`}
+      aria-label={tr('ui.rooms.placeholder.ariaLabel', { room: roomName(room) })}
       data-testid="room-placeholder"
       data-room={room}
     >
@@ -152,8 +156,8 @@ export default function RoomBackdrop({ room, theme, night, drawn = DRAWN_ROOMS }
       <line className="ph-skirting" x1={px(left)} y1={py(wallBase)} x2={px(right)} y2={py(wallBase)} />
 
       {/* Both on the wall and the floor, never on the surround: the ink is chosen against those */}
-      <text className="ph-title" x={W / 2} y={py(wallTop) + 20} textAnchor="middle">{def.name.toUpperCase()}</text>
-      <text className="ph-note" x={W / 2} y={py(bottom) - 6} textAnchor="middle">placeholder: this room's art is not drawn yet</text>
+      <text className="ph-title" x={W / 2} y={py(wallTop) + 20} textAnchor="middle">{roomName(room).toUpperCase()}</text>
+      <text className="ph-note" x={W / 2} y={py(bottom) - 6} textAnchor="middle">{tr('ui.rooms.placeholder.note')}</text>
 
       {def.agentSpots.map(spot => <SpotFurniture key={`f-${spot.id}`} spot={spot} />)}
       {tables(def.agentSpots).map((t, i) => (
@@ -161,9 +165,9 @@ export default function RoomBackdrop({ room, theme, night, drawn = DRAWN_ROOMS }
       ))}
 
       {def.connections.map(c => (
-        <Door key={`d-${c.toRoom}`} x={c.position.x} y={c.position.y} label={ROOMS[c.toRoom].name} kind="door" />
+        <Door key={`d-${c.toRoom}`} x={c.position.x} y={c.position.y} label={roomName(c.toRoom)} kind="door" />
       ))}
-      {(def.landmarks ?? []).map(l => <Door key={`l-${l.id}`} x={l.x} y={l.y} label={l.label} kind={l.kind} />)}
+      {(def.landmarks ?? []).map(l => <Door key={`l-${l.id}`} x={l.x} y={l.y} label={landmarkLabel(l.id, l.label)} kind={l.kind} />)}
 
       {def.agentSpots.map(spot => (
         <ellipse key={`s-${spot.id}`} className="ph-spot" cx={px(spot.x)} cy={py(spot.y)} rx={5} ry={2.2} />

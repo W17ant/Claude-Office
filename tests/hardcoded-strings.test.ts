@@ -22,6 +22,21 @@ const IN_SCOPE = [
   'src/components/RoomSwitcher.tsx',
   'src/components/TaskBoard.tsx',
   'src/components/IncidentBadge.tsx',
+  'src/components/AgentCard.tsx',
+  'src/components/PermissionCard.tsx',
+  'src/components/SlackChat.tsx',
+  'src/components/PhoneOffice.tsx',
+  'src/components/ViewerStage.tsx',
+  'src/components/IncidentLayer.tsx',
+  'src/components/AdventCalendar.tsx',
+  'src/components/DeskScreens.tsx',
+  'src/components/EffectBubble.tsx',
+  'src/components/SpeechBubble.tsx',
+  'src/components/DoorLinks.tsx',
+  'src/components/FurnitureRenderer.tsx',
+  'src/components/Character.tsx',
+  'src/components/RoomLife.tsx',
+  'src/components/RoomBackdrop.tsx',
 ]
 
 /**
