@@ -295,59 +295,12 @@ export function getEffect(
 // Slack message helpers
 // ---------------------------------------------------------------------------
 
-const SPAWN_MESSAGES = [
-  'reporting for duty!',
-  'clocked in',
-  'ready to ship',
-  'coffee first, then code',
-  'let\'s do this',
-  'opening vim...',
-  'pulling latest main',
-]
-
-const WORK_MESSAGES = [
-  'on it',
-  'typing furiously',
-  'in the zone',
-  'making progress',
-  'checking the docs',
-  'git blame time',
-  'stack overflow to the rescue',
-]
-
-const DONE_MESSAGES = [
-  'task complete!',
-  'shipped it',
-  'PR opened',
-  'done and dusted',
-  'LGTM',
-  'merged to main',
-  'deployed',
-]
-
-const COFFEE_MESSAGES = [
-  'brb, coffee',
-  'need caffeine',
-  'grabbing a cup',
-  'coffee run',
-]
-
 function pick<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)]
 }
 
-const WATER_MESSAGES = [
-  'stay hydrated',
-  'h2o break',
-  'water run',
-  'refilling bottle',
-  'hydration check',
-  'quick water break',
-]
-
-// Why: route through theme module so Office mode swaps chatter automatically.
-// Fallback pool kept for reference but theme module carries default strings too.
-void SPAWN_MESSAGES; void WORK_MESSAGES; void DONE_MESSAGES; void COFFEE_MESSAGES; void WATER_MESSAGES
+// Why: the chatter lives in the locale files, read through the theme module
+// (src/theme.ts), so Dunder Mifflin mode and the office's language both apply.
 export function spawnMessage(): string  { return themedSpawn() }
 export function workMessage(): string   { return themedWork() }
 export function doneMessage(): string   { return themedDone() }

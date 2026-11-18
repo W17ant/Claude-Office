@@ -3,6 +3,7 @@
 import { seasonalUrl } from './season'
 import { useSyncExternalStore } from 'react'
 import { getVariant, pickIncidentLine, type IncidentLineKind } from './incident'
+import { list } from './i18n'
 
 export type ThemeName = 'default' | 'office'
 
@@ -194,64 +195,22 @@ export function themedDisplayName(role: string, fallback: string): string {
   return slugToName(cast)
 }
 
-// ===== THEMED CHATTER POOLS =====
-
-const OFFICE_SPAWN = [
-  'Identity theft is not a joke, Jim!',
-  'reporting to Scranton branch',
-  'paper, paper, paper',
-  'Bears. Beets. Battlestar Galactica.',
-  'D to the U to the N to the...',
-  'I am Beyoncé, always.',
-  'clocked in, Dunder Mifflin style',
-]
-const OFFICE_WORK = [
-  'selling paper',
-  'processing reams',
-  'false. black bears.',
-  'Schrute bucks awarded',
-  'negotiating with corporate',
-  'filing TPS reports',
-  'Finer Things Club newsletter',
-]
-const OFFICE_DONE = [
-  "that's what she said",
-  'boom. roasted.',
-  'PR shipped like 24lb bond',
-  "World's Best Boss approves",
-  'closed the deal',
-  'merged — Jim-approved',
-]
-const OFFICE_COFFEE = [
-  'grande latte from Jim',
-  "Kevin's famous chili break",
-  'pretzel day!',
-  'brb, break room',
-]
-const OFFICE_WATER = [
-  'hydration — Angela says water only',
-  "Stanley says it's almost 5",
-  'filling up, then pretzel',
-  'break room run',
-]
-
-const DEFAULT_SPAWN = [
-  'reporting for duty!', 'clocked in', 'ready to ship',
-  'coffee first, then code', "let's do this", 'opening vim...', 'pulling latest main',
-]
-const DEFAULT_WORK = [
-  'on it', 'typing furiously', 'in the zone', 'making progress',
-  'checking the docs', 'git blame time', 'stack overflow to the rescue',
-]
-const DEFAULT_DONE = [
-  'task complete!', 'shipped it', 'PR opened', 'done and dusted',
-  'LGTM', 'merged to main', 'deployed',
-]
-const DEFAULT_COFFEE = ['brb, coffee', 'need caffeine', 'grabbing a cup', 'coffee run']
-const DEFAULT_WATER = [
-  'stay hydrated', 'h2o break', 'water run', 'refilling bottle',
-  'hydration check', 'quick water break',
-]
+// ===== THEMED CHATTER =====
+// What agents say lives in the locale files (chatter.default.* and
+// chatter.office.* in locales/<code>.json), in the office's language.
+// Why one function per pool with literal keys: the locale check can only
+// verify keys written out in full.
+function pool(kind: IncidentLineKind): string[] {
+  const office = state.name === 'office'
+  switch (kind) {
+    case 'spawn':  return office ? list('chatter.office.spawn')  : list('chatter.default.spawn')
+    case 'work':   return office ? list('chatter.office.work')   : list('chatter.default.work')
+    case 'done':   return office ? list('chatter.office.done')   : list('chatter.default.done')
+    case 'coffee': return office ? list('chatter.office.coffee') : list('chatter.default.coffee')
+    case 'water':  return office ? list('chatter.office.water')  : list('chatter.default.water')
+    default:       return []
+  }
+}
 
 // Pool order: incident variant (while active) → theme → default. Under
 // Dunder Mifflin + incident it is 50/50 so Michael stays in character.
@@ -261,11 +220,11 @@ function variantLine(kind: IncidentLineKind): string | null {
   return pickIncidentLine(kind)
 }
 
-export function themedSpawn(): string  { return variantLine('spawn')  ?? pick(state.name === 'office' ? OFFICE_SPAWN  : DEFAULT_SPAWN) }
-export function themedWork(): string   { return variantLine('work')   ?? pick(state.name === 'office' ? OFFICE_WORK   : DEFAULT_WORK) }
-export function themedDone(): string   { return variantLine('done')   ?? pick(state.name === 'office' ? OFFICE_DONE   : DEFAULT_DONE) }
-export function themedCoffee(): string { return variantLine('coffee') ?? pick(state.name === 'office' ? OFFICE_COFFEE : DEFAULT_COFFEE) }
-export function themedWater(): string  { return variantLine('water')  ?? pick(state.name === 'office' ? OFFICE_WATER  : DEFAULT_WATER) }
+export function themedSpawn(): string  { return variantLine('spawn')  ?? pick(pool('spawn')) }
+export function themedWork(): string   { return variantLine('work')   ?? pick(pool('work')) }
+export function themedDone(): string   { return variantLine('done')   ?? pick(pool('done')) }
+export function themedCoffee(): string { return variantLine('coffee') ?? pick(pool('coffee')) }
+export function themedWater(): string  { return variantLine('water')  ?? pick(pool('water')) }
 
 // ===== SIM / VIDEO MODE OFFICE SCRIPT =====
 // Parallel tool-output messages keyed by role — used when ?sim or ?video loads with Office theme.

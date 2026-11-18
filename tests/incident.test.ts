@@ -18,7 +18,7 @@ import {
   formatDuration,
   formatPostmortem,
   incidentTransitionLines,
-  INCIDENT_LINES,
+  INCIDENT_LINE_KINDS, incidentLines,
   signalIncidentInput,
   shouldPlayAlarm,
   ALARM_WINDOW_MS,
@@ -302,7 +302,7 @@ describe('incident mode — formatting', () => {
   })
 
   it('ships a non-empty line pool for every kind', () => {
-    for (const pool of Object.values(INCIDENT_LINES)) expect(pool.length).toBeGreaterThan(0)
+    for (const kind of INCIDENT_LINE_KINDS) expect(incidentLines(kind).length).toBeGreaterThan(0)
   })
 })
 

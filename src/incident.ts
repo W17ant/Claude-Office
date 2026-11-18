@@ -32,6 +32,7 @@
 import { useSyncExternalStore } from 'react'
 import type { SignalEvent, SignalKind } from './types'
 import { signalFamily, signalOutcome, signalFailureLabel, isSignalKind } from './signals'
+import { list } from './i18n'
 
 export type VariantName = 'none' | 'incident'
 
@@ -482,19 +483,25 @@ export function incidentTransitionLines(t: IncidentTransition, agentsInRoom: { n
 // boss reply in App.tsx while the variant is active.
 // ---------------------------------------------------------------------------
 
-export const INCIDENT_LINES = {
-  spawn: ['paged. on it.', 'joining the bridge, who is IC?', 'clocked in at 02:14, send coffee', 'laptop open before the eyes were'],
-  work: ['bisecting between 4f2a1c and main', 'it is not DNS. checking DNS.', 'tailing prod logs, 400 req/s of sadness', 'reading the runbook for the first time', 'adding a feature flag we should have had'],
-  done: ['rollback complete, error rate 0.1%', 'root cause: a null. always a null.', 'hotfix merged, tests added after', 'status page back to green'],
-  coffee: ['third coffee, do not judge', 'the machine is the only thing working', 'coffee is not a sleep substitute, trying anyway'],
-  water: ['water. then more coffee.', 'hydrating like a responsible adult at 2am', 'the water cooler is also degraded'],
-  bossReply: ['all clear. nobody deploys on Friday again.', 'postmortem at 10, blameless, bring pizza', 'good catch. write it down for the timeline.', 'I know. I KNOW.'],
-} as const
+// The lines live in the locale files (chatter.incident.<kind>), in the office's language
+export const INCIDENT_LINE_KINDS = ['spawn', 'work', 'done', 'coffee', 'water', 'bossReply'] as const
 
-export type IncidentLineKind = keyof typeof INCIDENT_LINES
+export type IncidentLineKind = typeof INCIDENT_LINE_KINDS[number]
+
+/** The incident lines for one kind, in the office's language. */
+export function incidentLines(kind: IncidentLineKind): string[] {
+  switch (kind) {
+    case 'spawn': return list('chatter.incident.spawn')
+    case 'work': return list('chatter.incident.work')
+    case 'done': return list('chatter.incident.done')
+    case 'coffee': return list('chatter.incident.coffee')
+    case 'water': return list('chatter.incident.water')
+    case 'bossReply': return list('chatter.incident.bossReply')
+  }
+}
 
 export function pickIncidentLine(kind: IncidentLineKind): string {
-  const pool = INCIDENT_LINES[kind]
+  const pool = incidentLines(kind)
   return pool[Math.floor(Math.random() * pool.length)]
 }
 
