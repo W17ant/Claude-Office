@@ -7,6 +7,10 @@
  *   answerPermissions  GET /settings · POST /settings (UI token)
  *   notifyPermissions  GET /settings · POST /settings (UI token): an OS
  *                      notification when a permission wait starts
+ *   language           GET /settings · POST /settings (UI token): the office's
+ *                      language (src/i18n.ts shows the page in it); also
+ *                      kept current by the WebSocket (noteServerLanguage)
+ *   languages          GET /settings: the languages the office has, for the picker
  *   aiPaused           GET /chat/cron-state · POST /chat/cron-state (open
  *                      route: the chat monitor's pause file, "AI On / Off")
  *
@@ -22,6 +26,7 @@ import { useSyncExternalStore } from 'react'
 import { postSetting } from './permissions'
 import { officeHttpBase } from './serverUrl'
 import { officeAuthHeaders } from './officeAuth'
+import { applyLanguage } from './i18n'
 
 export type LogPromptsLevel = 'off' | 'summary' | 'full'
 export const LOG_PROMPTS_LEVELS: readonly LogPromptsLevel[] = ['off', 'summary', 'full']
@@ -33,9 +38,25 @@ export interface ServerSettings {
   notifyPermissions: boolean | null
   /** null until GET /chat/cron-state answered */
   aiPaused: boolean | null
+  /** The office's language: undefined until known, null while not chosen */
+  language: string | null | undefined
+  /** null until GET /settings answered (or a server without translations) */
+  languages: LanguageInfo[] | null
 }
 
-let state: ServerSettings = { logPrompts: null, answerPermissions: null, notifyPermissions: null, aiPaused: null }
+/** One language the office has (GET /settings `languages`). */
+export interface LanguageInfo {
+  code: string
+  /** In the language itself ("Deutsch") */
+  name: string
+  englishName: string
+  /** "wip": a draft no native speaker has checked yet */
+  status: 'wip' | null
+  /** 0–100, the share of English it translates */
+  completeness: number
+}
+
+let state: ServerSettings = { logPrompts: null, answerPermissions: null, notifyPermissions: null, aiPaused: null, language: undefined, languages: null }
 let loading: Promise<void> | null = null
 const listeners = new Set<() => void>()
 
@@ -59,6 +80,8 @@ export function loadServerSettings(): Promise<void> {
       if (d && typeof d.logPrompts === 'string') set({ logPrompts: d.logPrompts })
       if (d && typeof d.answerPermissions === 'boolean') set({ answerPermissions: d.answerPermissions })
       if (d && typeof d.notifyPermissions === 'boolean') set({ notifyPermissions: d.notifyPermissions })
+      if (d && (typeof d.language === 'string' || d.language === null)) set({ language: d.language })
+      if (d && Array.isArray(d.languages)) set({ languages: d.languages })
     })
     .catch(() => {})
   const cron = fetch(`${base}/chat/cron-state`, { signal: AbortSignal.timeout(2000), headers: officeAuthHeaders() })
@@ -67,6 +90,27 @@ export function loadServerSettings(): Promise<void> {
     .catch(() => {})
   loading = Promise.all([settings, cron]).then(() => {})
   return loading
+}
+
+/** The language the server says the office is in (snapshot / settings message). */
+export function noteServerLanguage(language: string | null): void {
+  if (state.language !== language) set({ language })
+}
+
+/**
+ * Put the whole office in this language (POST /settings, UI token). The page
+ * switches at once and back again if the server says no.
+ */
+export async function setLanguage(code: string): Promise<boolean> {
+  const before = state.language
+  set({ language: code })
+  applyLanguage(code)
+  const ok = await postSetting({ language: code })
+  if (!ok) {
+    set({ language: before })
+    applyLanguage(before ?? null)
+  }
+  return ok
 }
 
 /** Let permission dialogs be answered from the office (POST /settings, UI token). */
