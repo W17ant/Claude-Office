@@ -99,6 +99,8 @@
       "electron/**",
       "!electron/after-pack.cjs",
       "server/**",
+      "shared/**",
+      "locales/**",
       "scripts/notify.sh"
     ],
     "npmRebuild": false,

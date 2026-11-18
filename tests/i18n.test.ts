@@ -113,3 +113,15 @@ describe('flatten', () => {
     expect(flatten({ a: { b: ['x', 'y'], c: 'z' } })).toEqual({ 'a.b': ['x', 'y'], 'a.c': 'z' })
   })
 })
+
+describe('packaging', () => {
+  // Why: server/i18n.js imports ../shared/i18n.js and reads ../locales/ — a
+  // package without them crashes the server at start
+  const pkg = JSON.parse(require('node:fs').readFileSync('package.json', 'utf8'))
+  it('the npm package ships shared/ and locales/', () => {
+    expect(pkg.files).toEqual(expect.arrayContaining(['shared/', 'locales/']))
+  })
+  it('the desktop app ships shared/ and locales/', () => {
+    expect(pkg.build.files).toEqual(expect.arrayContaining(['shared/**', 'locales/**']))
+  })
+})
