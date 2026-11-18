@@ -111,7 +111,10 @@ export function checkLocale(code, catalog, en) {
         const extra = [...mine].filter(p => !union.has(p))
         if (extra.length) problems.push(`${code}: ${key} uses ${show(new Set(extra))}, which English's list never does`)
       } else if (plural) {
+        // Why count is always allowed: the code passes it to every plural form, and
+        // a language whose "one" covers 21, 31 … (Russian) must be able to print it
         const theirs = placeholders(english)
+        theirs.add('count')
         const extra = [...mine].filter(p => !theirs.has(p))
         if (extra.length) problems.push(`${code}: ${key} uses ${show(new Set(extra))}, which English does not`)
       } else if (text !== '' && !sameSet(mine, placeholders(english))) {

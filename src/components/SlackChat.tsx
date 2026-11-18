@@ -200,7 +200,7 @@ const SlackChat: React.FC<SlackChatProps> = ({ messages, muted, volume, onToggle
     <div className="slack-panel">
       <div className="slack-header">
         <div className="slack-channel-icon">#</div>
-        <span className="slack-channel-name">{CHANNEL}</span>
+        <span className="slack-channel-name" title={CHANNEL}>{CHANNEL}</span>
         <div className="slack-header-right">
           <div className="slack-online-dot" />
           <span className="slack-online-count">{onlineCount}</span>

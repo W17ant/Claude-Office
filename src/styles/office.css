@@ -848,10 +848,17 @@
   font-weight: 900;
   color: #e8e8e8;
   letter-spacing: 0;
+  /* Why: a longer header label in another language (AI オン, KI AN …) must not
+     push the channel name onto two lines; it shortens with an ellipsis instead */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 .slack-header-right {
   margin-left: auto;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 3px;
@@ -1264,6 +1271,7 @@
 }
 
 .slack-cron-label {
+  white-space: nowrap;
   font-size: 8px;
   color: #8b8d91;
   text-transform: uppercase;

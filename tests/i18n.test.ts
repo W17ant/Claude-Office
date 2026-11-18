@@ -125,3 +125,13 @@ describe('packaging', () => {
     expect(pkg.build.files).toEqual(expect.arrayContaining(['shared/**', 'locales/**']))
   })
 })
+
+describe('completeness and plural forms', () => {
+  it('a language without a "one" form is complete with only _other', () => {
+    const enP = { meta: { name: 'English', englishName: 'English' }, ui: { n_one: '{count} file', n_other: '{count} files', x: 'X' } }
+    const ja = { meta: { name: '日本語', englishName: 'Japanese' }, ui: { n_other: '{count} 件', x: 'エックス' } }
+    expect(completeness(ja, enP)).toBe(100)
+    // a missing _other still counts against it
+    expect(completeness({ meta: ja.meta, ui: { x: 'エックス' } }, enP)).toBeLessThan(100)
+  })
+})

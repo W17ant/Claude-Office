@@ -48,6 +48,11 @@ describe('checkLocale catches each kind of problem', () => {
   it('a plural form English lacks is fine', () => {
     expect(problems('ru', { ui: { n_few: '{count} файла', n_many: '{count} файлов' } })).toEqual([])
   })
+  it('a plural form may show {count} even where English does not', () => {
+    // Why: Russian "one" also covers 21, 31 …, so it must be able to print the number
+    const withOne = { ...src, ui: { ...src.ui, m_one: 'A file', m_other: '{count} files' } }
+    expect(checkLocale('ru', { ...base, ui: { m_one: '{count} файл', m_few: '{count} файла' } }, withOne)).toEqual([])
+  })
   it('Han is allowed in Japanese', () => {
     expect(problems('ja', { ui: { plain: '日本語のテキスト' } })).toEqual([])
   })

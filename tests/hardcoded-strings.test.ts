@@ -70,6 +70,9 @@ function findings(file: string): string[] {
       if (ALLOWED.has(text)) continue
       out.push(`${file}:${i + 1}: ${text}`)
     }
+    // Why: punctuation written after a <code> element ends a translated sentence
+    // in English punctuation ("。" languages get a Latin "."); it belongs in the key
+    if (/<\/code>[.,;:!?]/.test(line)) out.push(`${file}:${i + 1}: punctuation after </code>`)
     for (const m of line.matchAll(ATTR)) {
       if (ALLOWED.has(m[2].trim())) continue
       out.push(`${file}:${i + 1}: ${m[1]}="${m[2]}"`)

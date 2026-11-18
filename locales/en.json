@@ -68,7 +68,8 @@
         "aiTitle": "The chat watcher that lets Claude answer #office-general",
         "bossSprite": "Boss sprite:",
         "bossSpriteIn": "in",
-        "bossSpriteWhen": "(read when the server starts)."
+        "bossSpriteWhen": "(read when the server starts).",
+        "rowsStayEnd": "."
       }
     },
     "meters": {

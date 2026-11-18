@@ -334,7 +334,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             testId="sp-logprompts"
           />
         </div>
-        {server.logPrompts && <div className="sp-note">{logHint(server.logPrompts)} {tr('ui.settings.server.rowsStay')} <code>/clear</code>.</div>}
+        {server.logPrompts && <div className="sp-note">{logHint(server.logPrompts)} {tr('ui.settings.server.rowsStay')} <code>/clear</code>{tr('ui.settings.server.rowsStayEnd')}</div>}
 
         <div className="sp-row">
           <span className="sp-label" title={tr('ui.settings.server.aiTitle')}>{tr('ui.settings.server.ai')}</span>

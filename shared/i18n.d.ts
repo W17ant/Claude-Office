@@ -25,6 +25,7 @@ export interface Translator {
 export function flatten(node: object, prefix?: string, out?: Record<string, string | string[]>): Record<string, string | string[]>
 export function matchLocale(requested: string | null | undefined, available: string[]): string
 export function createTranslator(catalogs: Record<string, Catalog | object>, lang: string): Translator
+export function isTranslated(mine: Record<string, string | string[]>, key: string): boolean
 export function completeness(catalog: object, en: object): number
 export function formatMoney(usd: number, lang: string): string
 export function formatNumber(n: number, lang: string): string

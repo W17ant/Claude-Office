@@ -156,11 +156,25 @@ export function completeness(catalog, en) {
   const keys = Object.keys(flatten(en)).filter(k => !NOT_COUNTED.some(p => k.startsWith(p)))
   if (keys.length === 0) return 100
   const mine = flatten(catalog)
-  const done = keys.filter(k => {
-    const v = mine[k]
-    return Array.isArray(v) ? v.length > 0 : nonEmptyString(v) !== undefined
-  }).length
+  const done = keys.filter(k => isTranslated(mine, k)).length
   return Math.floor((done / keys.length) * 100)
+}
+
+// Why: English needs _one, but Japanese, Korean, Chinese, Indonesian … pick
+// _other for every count, so a file without _one is not missing anything
+const SINGULAR_FORM = /_(zero|one|two|few|many)$/
+
+/**
+ * Whether a flattened catalog translates one English key. A plural form other
+ * than _other counts as translated when the language has the _other form.
+ * @param {Record<string, string | string[]>} mine  the language, flattened
+ * @param {string} key  an English key
+ * @returns {boolean}
+ */
+export function isTranslated(mine, key) {
+  const v = mine[key]
+  if (Array.isArray(v) ? v.length > 0 : nonEmptyString(v) !== undefined) return true
+  return SINGULAR_FORM.test(key) && nonEmptyString(mine[key.replace(SINGULAR_FORM, '_other')]) !== undefined
 }
 
 function safeLocale(lang) {

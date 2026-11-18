@@ -175,9 +175,25 @@ routes = [
     ('git', 'code-reviewer', 'Reviewer'),
     ('architect', 'architect-reviewer', 'Architect'),
 ]
+import re
+# Why: in an English office a keyword matches anywhere, as it always has. In
+# another language a short English keyword (pr, ui, ai) sits inside ordinary
+# words (Probleme, cuidado, mais), so there a keyword must start a word, and one
+# of 3 letters or fewer must be the whole word. Chinese, Japanese and Korean
+# keywords match anywhere: those languages write no spaces between words.
+CJK = re.compile(r'[\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff\uac00-\ud7af]')
+loose = not own and not (lang and lang != 'en')
+def hit(word):
+    w = word.strip().lower()
+    if not w:
+        return False
+    if loose or CJK.search(w):
+        return w in msg
+    pattern = r'(?<![^\W_])' + re.escape(w) + (r'(?![^\W_])' if len(w) <= 3 else '')
+    return re.search(pattern, msg) is not None
 for key, role, name in routes:
-    words = [w for w in list(en.get(key, [])) + list(own.get(key, [])) if isinstance(w, str) and w]
-    if any(w.lower() in msg for w in words):
+    words = [w for w in list(en.get(key, [])) + list(own.get(key, [])) if isinstance(w, str)]
+    if any(hit(w) for w in words):
         print(f'{role}|{name}')
         sys.exit(0)
 print('assistant|Claude')

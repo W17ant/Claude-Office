@@ -19,7 +19,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { flatten, completeness } from '../shared/i18n.js'
+import { flatten, completeness, isTranslated } from '../shared/i18n.js'
 import { loadLocaleFiles } from './i18n-check.mjs'
 
 const NOT_COUNTED = ['meta.', 'ui.demo.']
@@ -65,7 +65,7 @@ export function coverageRows(dir, enThen = gitEnAtLastCommit(dir)) {
   const keys = Object.keys(enFlat).filter(countable)
   return loadLocaleFiles(dir).filter(f => f.catalog).map(({ code, catalog }) => {
     const mine = flatten(catalog)
-    const missingKeys = code === 'en' ? [] : keys.filter(k => !present(mine[k]))
+    const missingKeys = code === 'en' ? [] : keys.filter(k => !isTranslated(mine, k))
     let staleKeys = []
     let stale = 0
     if (code !== 'en') {

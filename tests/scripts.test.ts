@@ -312,6 +312,13 @@ describe('chat-ai-watcher.sh in the office language', () => {
     expect(claudeCalls(w)[2][1]).toContain('You are responding as Reviewer')
   })
 
+  it('outside English, an English keyword matches whole words only', async () => {
+    // "pr" (Reviewer) sits inside "Probleme" and "Projekt": not a code review
+    await say(w, 'Probleme mit dem Projekt')
+    await waitFor('a fourth claude call', () => claudeCalls(w).length === 4)
+    expect(claudeCalls(w)[3][1]).toContain('You are responding as Claude')
+  })
+
   it('cuts an unspaced Chinese reply to 40 characters', async () => {
     writeFileSync(join(w.claudeDir, 'mode'), 'reply')
     writeFileSync(join(w.claudeDir, 'reply'), '好'.repeat(120))
