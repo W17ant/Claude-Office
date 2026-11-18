@@ -148,6 +148,7 @@ Toggle it off any time with `/the-office` again — state persists in `localStor
 - One pill per Claude Code session, each with its own Claude at a desk
 - Boss character (you) with an energy drink, Claude with coffee
 - Random office events: pizza deliveries, fire drills, power flickers, printer jams
+- In your language: English, Español, Português (Brasil), Français, Deutsch, Italiano, 日本語, 한국어, 简体中文, 繁體中文, Bahasa Indonesia, Русский and Türkçe (Settings › Language). Every language but English is a draft, marked *work in progress*: fixes welcome, see [CONTRIBUTING › Add or fix a language](CONTRIBUTING.md#add-or-fix-a-language)
 - Day/night cycle with smooth transitions
 - Seasons: the office follows the calendar, spring, summer, autumn and winter all year round with Christmas, Halloween, Easter and Valentine's Day on top, every one drawn in both themes — see [Seasons](docs/reference.md#seasons)
 - **Settings** (the ⚙ in the title bar): theme, day/night, season, sound and the server settings in one panel — see [Settings](docs/reference.md#settings-panel)

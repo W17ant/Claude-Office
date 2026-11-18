@@ -69,3 +69,23 @@ describe('the code and en.json', () => {
     expect(dynamic).toEqual([])
   })
 })
+
+describe('i18n-coverage', () => {
+  it('counts completeness, missing and stale keys per language', async () => {
+    const { coverageRows } = await import('../scripts/i18n-coverage.mjs')
+    const { mkdtempSync, writeFileSync } = await import('node:fs')
+    const { tmpdir } = await import('node:os')
+    const { join } = await import('node:path')
+    const dir = mkdtempSync(join(tmpdir(), 'agent-office-coverage-'))
+    const enNow = { meta: { name: 'English', englishName: 'English' }, ui: { a: 'A', b: 'B', c: 'C' } }
+    writeFileSync(join(dir, 'en.json'), JSON.stringify(enNow))
+    writeFileSync(join(dir, 'de.json'), JSON.stringify({ meta: { name: 'Deutsch', englishName: 'German', status: 'wip' }, ui: { a: 'A de' } }))
+    // English said something else for ui.a when de.json was last committed
+    const enThen = { ...enNow, ui: { ...enNow.ui, a: 'old A' } }
+    const rows = coverageRows(dir, () => JSON.stringify(enThen))
+    const de = rows.find((r: any) => r.code === 'de')
+    expect(de).toMatchObject({ name: 'Deutsch', wip: true, completeness: 33, missing: 2, stale: 1 })
+    expect(rows.find((r: any) => r.code === 'en')).toMatchObject({ completeness: 100, missing: 0 })
+    expect(coverageRows(dir, () => null).find((r: any) => r.code === 'de').stale).toBeNull()
+  })
+})
