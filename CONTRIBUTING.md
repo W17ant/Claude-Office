@@ -28,9 +28,41 @@ translations, Windows, rooms and teams. Bring it back:
    `tests/fixtures/tools/<tool>/` (a real capture is best:
    `AGENT_OFFICE_CAPTURE_DIR` records one, see
    [reference › Other AI tools](docs/reference.md#other-ai-tools)), one test.
-4. You are credited by name in `CHANGELOG.md` and the release notes for the
+4. *Add or fix a language*: see the section below.
+5. You are credited by name in `CHANGELOG.md` and the release notes for the
    version it ships in. (The no-`Co-Authored-By` rule below still applies to
    commits; the credit lives in the changelog.)
+
+## Add or fix a language
+
+The office speaks whatever language its `locales/<code>.json` file says, and
+adding one needs no code:
+
+1. Copy `locales/en.json` to `locales/<code>.json` (a language code such as
+   `de`, `pt-BR` or `zh-TW`). Fill in `meta`: `name` in the language itself
+   ("Deutsch"), `englishName` ("German"), and your GitHub name in
+   `translators`.
+2. Translate what you can. Anything you leave out shows in English, so a half
+   done file is fine. Keep every `{placeholder}` exactly as it is, and leave
+   slash commands (`/status`), `@`-mentions, product names and character
+   names in English. The Dunder Mifflin theme's lines stay English and are
+   not in your file (the check says so if one slips in). Chatter lists
+   (`chatter.*`) can be longer or shorter
+   than the English ones; translate them for tone, not word for word.
+   Plurals: add the forms your language needs (`_one`, `_few`, `_many`,
+   `_other` …, see `Intl.PluralRules`). `server.routing.*` lists are words
+   that send a chat message to a persona: add your language's own.
+3. `node scripts/i18n-check.mjs <code>` until it prints `ok`, then
+   `npm test`. `node scripts/i18n-coverage.mjs` shows how complete each
+   language is; `--keys <code>` lists what is missing or out of date.
+4. Open a PR. Most languages started as drafts written by Claude and are
+   marked `"status": "wip"` ("work in progress" in the picker): fixing one
+   is the same PR — correct what reads wrong, add your name, and remove
+   `"status": "wip"` once you have checked the whole file. Found a mistake
+   but no time for a PR? Settings › Language › *Report a translation error*.
+
+A new language in a non-Latin script also needs a line in `ALLOWED_SCRIPTS`
+in `scripts/i18n-check.mjs`, in the same PR.
 
 ## Ideas and questions
 

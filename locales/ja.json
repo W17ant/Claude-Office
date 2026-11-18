@@ -1,0 +1,1373 @@
+{
+  "meta": {
+    "name": "日本語",
+    "englishName": "Japanese",
+    "status": "wip",
+    "translators": []
+  },
+  "ui": {
+    "settings": {
+      "language": {
+        "title": "言語",
+        "wip": "翻訳中",
+        "complete": "{percent}% 翻訳済み",
+        "report": "翻訳の誤りを報告",
+        "readOnly": "言語を変更できるのはオフィス本体のページだけです"
+      },
+      "title": "設定",
+      "close": "設定を閉じる",
+      "on": "オン",
+      "off": "オフ",
+      "browser": {
+        "title": "このブラウザ",
+        "theme": "テーマ",
+        "themeDefault": "標準",
+        "dayNight": "昼 / 夜",
+        "dayNightAria": "昼か夜か",
+        "auto": "自動",
+        "day": "昼",
+        "night": "夜",
+        "season": "季節",
+        "seasonAuto": "自動（日付）",
+        "holidays": "行事",
+        "seasons": "季節",
+        "seasonOff": "オフ",
+        "urlSeasonBefore": "アドレスに",
+        "urlSeasonAfter": " が指定されており、こちらより優先されます。",
+        "appliesOnReload": "再読み込みで反映されます。",
+        "reloadNow": "今すぐ再読み込み",
+        "autoExplained": "自動では日付で決まります：四季（北半球）に、クリスマス・ハロウィン・イースター・バレンタインデーが重なります。現在：{look}。",
+        "nowUndrawn": "現在：{look}。絵がまだない季節は通常のオフィスと同じ見た目です。",
+        "noArtYet": "{season}（絵はまだありません）",
+        "over": "{below}＋{top}",
+        "sound": "サウンド",
+        "mute": "ミュート",
+        "unmute": "ミュート解除",
+        "volume": "音量",
+        "muted": "ミュート中",
+        "ambience": "環境音",
+        "ambienceTitle": "数少ないイベント音の下で流れる、静かなオフィスの環境音。上の音量で再生されます"
+      },
+      "server": {
+        "title": "オフィスサーバー",
+        "sim": "?sim / ?video ではオフィスサーバーがありません — これらは実際のオフィス用の設定です。",
+        "readOnly": "読み取り専用ページ：オフィストークンがないため、サーバーは変更を拒否します。変更するには npm run open のリンクを開いてください。",
+        "waiting": "オフィスサーバーからまだ応答がありません。",
+        "answer": "ここで許可に応答",
+        "answerTitle": "Claude が待っている間、オフィスのカードから許可ダイアログに応答できます",
+        "notify": "許可待ちを通知",
+        "notifyTitle": "Claude が許可待ちになるとデスクトップ通知を出します",
+        "logging": "プロンプト記録",
+        "logOff": "オフ",
+        "logSummary": "要約",
+        "logFull": "全文",
+        "hintOff": "プロンプトや返信の本文は保存も表示もしません — 状態のみ。",
+        "hintSummary": "各プロンプトと返信の先頭200文字。",
+        "hintFull": "プロンプトと返信を2000文字まで。",
+        "rowsStay": "chat.db にある既存の行は",
+        "ai": "AI チャット監視",
+        "aiTitle": "Claude が #office-general に返信できるようにするチャット監視",
+        "bossSprite": "ボスのスプライト：",
+        "bossSpriteIn": "設定場所：",
+        "bossSpriteWhen": "（サーバー起動時に読み込み）。",
+        "rowsStayEnd": " を実行するまで残ります。"
+      }
+    },
+    "meters": {
+      "ariaLabel": "給与・電気代・メモリ",
+      "title": "⚡ オフィスメーター",
+      "payroll": "給与",
+      "electricity": "電気代",
+      "memory": "メモリ",
+      "needsStatusLine": "ステータスラインが必要",
+      "perMin": "{amount}/分",
+      "tokPerMin": "tok/分",
+      "rateShort": "5h {percent}%",
+      "sessions_other": "{count} セッション",
+      "estimateMarker": "推定",
+      "tip": {
+        "payrollHead_other": "給与 — {count} セッションで {amount} · 直近5分で {rate}/分",
+        "payrollToday": "今日 {amount} · +{added} / -{removed} 行 · 定価で推定",
+        "needsLine": "{session}：ステータスラインが必要（{command}）",
+        "needsLineShort": "{session}：ステータスラインが必要",
+        "payrollRow": "{session}：{amount} · {model} · {duration}",
+        "electricityHead": "電気代 — 直近5分で毎分 {tokens} トークンを処理（コンテキストの再読み込みを含む）",
+        "electricityRow": "{session}：{rate} tok/分 · 直近の呼び出し 入力 {input} / 出力 {output}",
+        "subagents_other": " · サブエージェント {count} 体 {tokens} tok",
+        "memoryHead": "メモリ — {session}：コンテキストウィンドウの {percent}",
+        "memorySize": "（{used} / {size} トークン）",
+        "model": "モデル {model}",
+        "effort": " · effort {effort}",
+        "over200k": " · 200k 超",
+        "claudeCode": " · Claude Code {version}",
+        "costLine": "{amount} · {duration} · セッション {id}",
+        "rateHead": "レート制限（claude.ai サブスクリプション）",
+        "rate5h": "5時間枠 {percent}% 使用",
+        "rate7d": "7日間枠 {percent}% 使用",
+        "resets": " · {time} にリセット",
+        "spendLimit": "利用上限 {percent}% 使用"
+      },
+      "clutter": "🗂️ Claude のデスクが散らかってきた — {session} のコンテキストが {percent}%",
+      "clutterEstimated": "🗂️ Claude のデスクが散らかってきた — {session} のコンテキストが {percent}%（推定）",
+      "unnamedModel": "名前のないモデル",
+      "window": {
+        "oneM": "ウィンドウ {size} トークン：このセッションは {model} の [1m] 版を使用",
+        "unknown": "ウィンドウ {size} トークンと仮定：{model} はオフィスのモデル表にないため、値は概算です",
+        "overflow": "ウィンドウ {size} トークンと仮定：200,000 を超えて使用中なので、{model} は 1M 版のはず（概算）",
+        "table": "{model} のウィンドウ {size} トークン（Claude Code のモデル表）"
+      },
+      "estimate": {
+        "estSuffix": " · 推定",
+        "compacted": "圧縮済み：ウィンドウが空になったところです。トランスクリプトの次の返信でメーターが戻ります",
+        "fromTranscript": "このセッションにはステータスラインが登録されていないため、セッションのトランスクリプト（直近の返信の使用量）から推定",
+        "needsBoth": "給与と電気代にはステータスラインが必要：{command}"
+      },
+      "needs": {
+        "payrollHead": "給与にはステータスラインが必要 — Claude Code はコストを statusLine コマンドにしか報告しません",
+        "electricityHead": "電気代にはステータスラインが必要 — Claude Code は毎分のトークン数を statusLine コマンドにしか報告しません",
+        "none_other": "この {count} セッションにはステータスラインが登録されていません（プラグインでのインストールか claude -p）。メモリはトランスクリプトから推定しています",
+        "register": "登録方法：{command}（Claude-Office のチェックアウトから）"
+      }
+    },
+    "rooms": {
+      "mainOffice": "メインオフィス",
+      "corridor": "廊下",
+      "meetingRoom": "会議室",
+      "serverRoom": "サーバールーム",
+      "lunchRoom": "休憩室",
+      "short": {
+        "mainOffice": "オフィス",
+        "corridor": "廊下",
+        "meetingRoom": "会議室",
+        "serverRoom": "サーバー",
+        "lunchRoom": "休憩室"
+      },
+      "switcher": {
+        "ariaLabel": "フロアマップ：表示する部屋を選択",
+        "empty": "無人",
+        "people_other": "{count}人",
+        "label": "{room}、{people}",
+        "needsYou": "、対応待ち",
+        "trouble": "、問題発生",
+        "inView": "、表示中"
+      },
+      "furniture": {
+        "coffeeMachine": "コーヒーマシン",
+        "filingCabinet": "書類棚",
+        "printer": "プリンター",
+        "fireExtinguisher": "消火器",
+        "waterCooler": "ウォーターサーバー",
+        "bell": "ベル",
+        "kanbanBoard": "カンバンボード",
+        "shipItPoster": "Ship It ポスター",
+        "dashboard": "ダッシュボード",
+        "clickToInteract": "クリックで操作"
+      },
+      "doors": {
+        "mainOffice": "オフィス",
+        "corridor": "廊下",
+        "meetingRoom": "会議室",
+        "serverRoom": "サーバールーム",
+        "lunchRoom": "休憩室",
+        "goTo": "{room}へ"
+      },
+      "landmarks": {
+        "frontDoor": "エレベーター",
+        "managerDoor": "マネージャー"
+      },
+      "placeholder": {
+        "ariaLabel": "{room}：仮置き、まだ絵が描かれていません",
+        "note": "仮置き：この部屋の絵はまだありません",
+        "coffee": "コーヒー",
+        "water": "水"
+      },
+      "tv": {
+        "deploying": "デプロイ中",
+        "shipped": "出荷完了",
+        "rollback": "ロールバック"
+      }
+    },
+    "needsYou": {
+      "permission": "✋ 対応待ち：{what}",
+      "permissionBare": "✋ 対応待ち — 許可",
+      "input": "✋ 入力待ち：{what}",
+      "inputBare": "✋ 入力待ち",
+      "idle": "💤 アイドル中",
+      "quota": "⏳ トークン待ち",
+      "registry": "✋ {what}",
+      "registryBare": "✋ ターミナルで待機中",
+      "elicitation": "✋ {server} が質問しています",
+      "elicitationBare": "✋ MCP サーバーが質問しています",
+      "short": {
+        "permission": "対応待ち",
+        "agentInput": "入力待ち",
+        "idle": "アイドル中",
+        "quota": "トークン待ち",
+        "registry": "ターミナルで待機中"
+      }
+    },
+    "pill": {
+      "needsYou": "✋ 対応待ち",
+      "error": "⚠ エラー",
+      "compacting": "🧹 消去"
+    },
+    "strip": {
+      "sessions_other": "{count} セッション",
+      "notHooked": "{count} 未フック",
+      "needYou_other": "{count} 件対応待ち",
+      "readOnlyHint": "読み取り専用：このページにはオフィストークンがない（または古い）ため、サーバーはプロンプト・返信・コマンドラインを除いて\nオフィスを表示し、許可ダイアログにはターミナルで応答します。\nサーバー起動時に表示されたリンクを開くか、チェックアウトで {command} を実行してください：\nトークン付きでオフィスが開き、このブラウザがそれを記憶します。",
+      "connection": {
+        "connecting": "接続中…",
+        "online": "オンライン",
+        "reconnecting": "再接続中…",
+        "offline": "オフライン"
+      },
+      "hooks": {
+        "unknown": "フック：—",
+        "seen": "フック：最終 {ago}",
+        "waiting": "フック：まだなし",
+        "missing": "フックイベントがまだありません — {command} を実行"
+      },
+      "tip": {
+        "online": "オフィスサーバー {url}：{time} からオンライン",
+        "connecting": "オフィスサーバー {url}：接続中…",
+        "reconnecting": "オフィスサーバー {url}：{ago}に接続が切れました、再試行中",
+        "offline": "オフィスサーバー {url}：到達できません",
+        "start": "チェックアウトから起動：{command}  （または {alt}）",
+        "hooksSeen_other": "フック：サーバー起動以来 {count} 件、最終 {ago}",
+        "hooksWaiting": "フック：まだなし — Claude Code がツールを実行すると発火します",
+        "hooksMissing": "フック：{span} の間なし。Claude Code がツールを呼んでいるのに何も出ないなら、フックが未インストールです：{command}",
+        "counts": "セッション：{sessions} · エージェント：{agents} · クライアント：{clients}",
+        "notHooked_other": "未フック：{names} — {command} を実行すると作業内容が見えます",
+        "waitingOnYou": "あなた待ち：",
+        "server": "サーバー v{version}、稼働 {span} · UI：{ui}",
+        "uiBuilt": "ビルド済み（dist/）",
+        "uiDev": "開発サーバー（dist/ 未ビルド）",
+        "diagnose": "診断：{command}"
+      },
+      "simTitle": "?{mode}：シミュレーションのエージェント、サーバーなし、フックなし",
+      "ariaLabel": "パイプラインの状態",
+      "readOnly": "読み取り専用：リンクはこちらから",
+      "startIt": "起動：",
+      "todayTitle": "今日の集計：セッション、エージェント、タスク、デプロイ、失敗、インシデント、給与",
+      "today": "今日"
+    },
+    "time": {
+      "justNow": "たった今",
+      "secondsAgo": "{count}秒前",
+      "minutesAgo": "{count}分前",
+      "hoursAgo": "{count}時間前",
+      "daysAgo": "{count}日前",
+      "seconds": "{count}秒",
+      "minutes": "{count}分",
+      "hoursMinutes": "{hours}時間{minutes}分"
+    },
+    "sessions": {
+      "notHookedHint": "未フック — `npm run install-hooks`（または /plugin install agent-office）を実行すると作業内容が見えます",
+      "notHooked": "未フック",
+      "ariaLabel": "Claude Code セッション",
+      "workers_other": "ワーカー {count}",
+      "tip": {
+        "tool": "ツール：{tool}",
+        "project": "プロジェクト：{project}",
+        "cwd": "cwd：{cwd}",
+        "model": "モデル：{model}",
+        "started": "開始：{source}",
+        "registry": "claude：{status}（レジストリ）",
+        "claude": "claude：{state}",
+        "pid": "pid {pid}",
+        "workers": "ワーカー：{count}（作業中 {working}）",
+        "ended": "終了",
+        "endedReason": "終了（{reason}）",
+        "session": "セッション {id}"
+      }
+    },
+    "today": {
+      "ariaLabel": "今日のオフィス",
+      "title": "今日",
+      "close": "閉じる",
+      "notAnswering": "オフィスサーバーが応答しません。",
+      "counting": "集計中…",
+      "footBefore": "ローカル時刻の0時から · チャットで",
+      "footAfter": "と入力するとマネージャーの所感",
+      "sessions": "セッション",
+      "agentsSpawned": "採用",
+      "agentsCompleted": "退勤",
+      "tasksCompleted": "完了タスク",
+      "deploys": "デプロイ",
+      "pushes": "プッシュ",
+      "buildsFailed": "ビルド失敗",
+      "testsFailed": "テスト失敗",
+      "incidents": "インシデント",
+      "payroll": "給与"
+    },
+    "taskBoard": {
+      "untitled": "無題のタスク",
+      "inProgress": "進行中：{subject}",
+      "done": "完了：{subject}",
+      "todo": "未着手：{subject}",
+      "blockedBy": "（{ids} 待ち）",
+      "teamBoard": "チーム {team} のタスクボード",
+      "board": "タスクボード",
+      "aria": "{what}、{label}：未着手 {todo}、進行中 {doing}、完了 {done}",
+      "ariaNext": "。クリックで次のボード",
+      "clickNext": "{what}：クリックで次のボード",
+      "more": "あと {count} 件",
+      "chat": {
+        "todo": "未着手 {count}",
+        "todoBlocked": "未着手 {count}（ブロック中 {blocked}）",
+        "inProgress": "進行中 {count}：{subject}",
+        "progress": "{activity} — {total} 件中 {done} 件完了",
+        "nextUp": "{todo}、次は：{subject}",
+        "allWaiting": "{todo}、すべて何か待ち",
+        "toGo": "{total} 件中 {done} 件完了、残り {pending}",
+        "oneDone": "ボードにある唯一のタスクは完了",
+        "allDone": "{count} 件のタスクすべて完了"
+      }
+    },
+    "incident": {
+      "badgePinned": "?variant=incident で固定中 — /all-clear で終了",
+      "badgeTitle": "本番が戻ったら /all-clear と入力",
+      "incident": "インシデント",
+      "mini": "ミニインシデント",
+      "daysSign": "最後のインシデントからの日数",
+      "daysSignTitle": "最後のインシデントから {days} 日",
+      "daysSignNow": "最後のインシデントから 0 日（今まさに発生中）",
+      "beacon": "インシデント警告灯",
+      "statusPage": "ステータスページ：ロールバック",
+      "rollbackAlt": "ロールバック中",
+      "rollback": "ロールバック",
+      "timeline": "インシデントのタイムライン",
+      "pizza": "インシデントピザ"
+    },
+    "seasons": {
+      "christmas": "クリスマス",
+      "halloween": "ハロウィン",
+      "easter": "イースター",
+      "valentine": "バレンタインデー",
+      "spring": "春",
+      "summer": "夏",
+      "autumn": "秋",
+      "winter": "冬"
+    },
+    "titleBar": {
+      "incident": "🔥 本番ダウン — AGENT OFFICE",
+      "mode": "モード：{mode}",
+      "auto": "自動",
+      "day": "昼",
+      "night": "夜",
+      "settings": "設定",
+      "settingsTitle": "設定：テーマ、昼/夜、季節、サウンド、サーバー設定"
+    },
+    "office": {
+      "catAlt": "猫",
+      "interactionAlt": "インタラクション",
+      "waitingForDesk": "デスク待ち",
+      "waitingForDeskMsg": "デスク待ち...",
+      "doneStats": "✅ 完了 · {stats}",
+      "done": "完了",
+      "standingBy": "待機中",
+      "standingDown": "撤収",
+      "working": "⚡ 作業中",
+      "workingOnPrompt": "✍ プロンプトに取り組み中",
+      "turnOver": "ターン終了 — 待機",
+      "apiError": "⚠ API エラー",
+      "apiErrorWhat": "⚠ API エラー：{error}",
+      "memoryWipe": "🧹 記憶消去",
+      "memoryWipeTrigger": "🧹 記憶消去（{trigger}）",
+      "waitingOnWorkers_other": "⏳ バックグラウンドのワーカー {count} 人を待機中",
+      "waitingOnWorkersBare": "⏳ バックグラウンドのワーカーを待機中",
+      "backToWorkTyping": "✍ 仕事に戻る",
+      "backToWork": "仕事に戻る",
+      "backToMyDesk": "デスクに戻る",
+      "clockedIn": "出勤",
+      "clockedInMsg": "🤖 出勤",
+      "clockedInProject": "🤖 出勤 · {project}",
+      "clockedOut": "退勤",
+      "clockedOutMsg": "👋 退勤",
+      "clockedOutAway": "留守の間に退勤",
+      "sessionEnded": "👋 セッション終了",
+      "sessionEndedReason": "👋 セッション終了（{reason}）",
+      "talkingTo": "{name} と話し中",
+      "reportedBack": "📬 {name} が報告",
+      "reportedBackBare": "📬 バックグラウンドのワーカーが報告",
+      "toolBatchDone_other": "ツール {count} 件まとめて完了",
+      "toolBatchDoneUnknown": "ツール ? 件まとめて完了",
+      "toolRan": "{tool} 実行",
+      "permissionAnswered": "✅ 許可に応答 — {what}",
+      "handDown": "手を下ろす",
+      "detail": " — {detail}",
+      "grabbingRedBull": "レッドブルを取りに",
+      "foundDesk": "デスク確保",
+      "offTo": {
+        "mainOffice": "メインオフィスへ",
+        "corridor": "廊下へ",
+        "meetingRoom": "会議室へ",
+        "serverRoom": "サーバールームへ",
+        "lunchRoom": "休憩室へ"
+      },
+      "exitCode": "終了コード {code}",
+      "shipping": "🚀 出荷中",
+      "shippingWhere": "🚀 {where} を出荷中",
+      "deployInterrupted": "⏹ デプロイ中断",
+      "deployInterruptedWhere": "⏹ {where} のデプロイ中断",
+      "deployed": "🚀 デプロイ完了",
+      "deployedWhere": "🚀 {where} デプロイ完了",
+      "deployFailed": "💥 デプロイ失敗",
+      "deployFailedWhere": "💥 {where} のデプロイ失敗",
+      "pushedTo": "🎉 {branch} にプッシュ",
+      "pushedToWhere": "🎉 {branch} にプッシュ · {where}",
+      "testsFailed": "❌ テスト失敗",
+      "testsFailedIn": "❌ {where} でテスト失敗",
+      "buildFailed": "❌ ビルド失敗",
+      "buildFailedIn": "❌ {where} でビルド失敗",
+      "testsGreen": "✅ テストがまた緑に",
+      "testsGreenIn": "✅ {where} のテストがまた緑に",
+      "buildGreen": "✅ ビルドがまた緑に",
+      "buildGreenIn": "✅ {where} のビルドがまた緑に",
+      "runningTheShow": "仕切り役"
+    },
+    "phase": {
+      "night": "🌙 夜勤",
+      "dawn": "🌅 夜明け",
+      "morning": "☀️ おはよう",
+      "afternoon": "☀️ 午後",
+      "evening": "🌆 夕方",
+      "dusk": "🌇 日が沈む"
+    },
+    "advent": {
+      "sleeps_other": "アドベントカレンダー：クリスマスまであと {count} 回寝たら",
+      "christmas": "メリークリスマス！",
+      "daysTill_other": "{year}年まであと {count} 日",
+      "newYear": "あけましておめでとう、{year}年！"
+    },
+    "chat": {
+      "logPrompts": {
+        "hint": "プロンプト記録：{level} — {what}。",
+        "off": "状態のみ — プロンプトや返信の本文は保存・配信・表示されません",
+        "summary": "各プロンプトと返信の先頭200文字",
+        "full": "プロンプトと返信を2000文字まで",
+        "unknown": "不明なレベル",
+        "where": "サーバーの設定です（{file}）。設定（タイトルバーの歯車）か、オフィストークンを使って変更できます：",
+        "pill": "プロンプト：{level}"
+      },
+      "aiPausedTitle": "チャット監視は一時停止中 — クリックで再開",
+      "aiActiveTitle": "チャット監視が有効 — クリックで一時停止",
+      "aiOff": "AI オフ",
+      "aiOn": "AI オン",
+      "volume": "音量：{percent}%",
+      "on": "オン",
+      "off": "オフ",
+      "answerHere": "ここで応答：{state}",
+      "answerOnTitle": "許可ダイアログにオフィスから応答できます（Claude が待つ間カードが出ます） — クリックでオフ",
+      "answerOffTitle": "許可ダイアログにはターミナルでのみ応答します — クリックでオフィスからも応答可能に",
+      "notify": "通知：{state}",
+      "notifyOnTitle": "Claude が許可待ちになるとデスクトップ通知（プロジェクトとツールのみ） — クリックでオフ",
+      "notifyOffTitle": "Claude が許可待ちでもデスクトップ通知なし — クリックでオン",
+      "removeReaction": "クリックで削除",
+      "seen": "既読",
+      "seenAlt": "既読",
+      "typingAlt": "入力中",
+      "typing": "{name} が入力中",
+      "mentionsAria": "セッションにプロンプトを予約",
+      "mentionTitle": "{name} にプロンプトを予約：ターン終了時に届きます",
+      "placeholder": "{channel} にメッセージ",
+      "placeholderMentions": "{channel} にメッセージ、または @session でプロンプトを予約",
+      "themeOn": "🧻 Dunder Mifflin モード：オン。なりすましは冗談じゃない。",
+      "themeOff": "🔁 オフィステーマ：オフ",
+      "tag": {
+        "prompt": "プロンプト",
+        "reply": "返信"
+      }
+    },
+    "phone": {
+      "tab": {
+        "chat": "チャット",
+        "meters": "メーター",
+        "today": "今日",
+        "settings": "設定"
+      },
+      "noKey": "キーなし",
+      "pending": "{count} 件待ち",
+      "noSecret": {
+        "title": "このリンクにはキーがありません。",
+        "openBefore": "パソコンで",
+        "openAfter": "が表示したリンクを開くか、その QR コードを読み取ってください。末尾は",
+        "endsAfter": "と64文字です。初回アクセス後はこのブラウザが記憶します。"
+      },
+      "offline": "未接続です。オフィスが停止しているか、このリンクが置き換えられました：",
+      "offlineAfter": "で現在のリンクを表示できます。",
+      "metersEmpty": "まだどのセッションも報告していません。Claude Code が作業を始めると、給与・電気代・メモリがここに表示されます。",
+      "tabsAria": "オフィスのパネル"
+    },
+    "viewer": {
+      "connecting": "オフィスに接続中…"
+    },
+    "inspector": {
+      "main": {
+        "working": "作業中",
+        "waiting_other": "ワーカー {count} 人を待機中",
+        "idle": "アイドル",
+        "needsYou": "対応待ち",
+        "error": "API エラー",
+        "errorCode": "API エラー：{error}",
+        "errorDetail": "{label} — {detail}",
+        "compacting": "圧縮中",
+        "unknown": "まだ応答なし"
+      },
+      "worker": {
+        "newHire": "到着中",
+        "walkingToDesk": "デスクへ移動中",
+        "walkingToManager": "向かっている",
+        "talking": "会話中",
+        "coffeeBreak": "休憩中",
+        "waiting": "デスク待ち",
+        "changingRoom": "別の部屋へ移動中",
+        "completed": "完了",
+        "working": "作業中",
+        "idle": "アイドル",
+        "unknown": "不明"
+      },
+      "stats": {
+        "tokens": "{tokens} tok",
+        "toolUses_other": "ツール使用 {count} 回"
+      },
+      "derived": {
+        "note": "オフィスが算出：{list}",
+        "tokens": "トークンとモデルはトランスクリプトから",
+        "model": "モデルはトランスクリプトから",
+        "durationMs": "起動から完了までの時間",
+        "toolUses": "フックが捉えたツール使用"
+      },
+      "transcript": {
+        "promptsOff": "トランスクリプト非表示：プロンプトオフ",
+        "needsToken": "オフィスに接続するとトランスクリプトが表示されます",
+        "noPath": "まだトランスクリプトなし",
+        "notFound": "トランスクリプトファイルが見つかりません",
+        "unavailable": "トランスクリプトを取得できません",
+        "nothingSaid": "まだ発言なし",
+        "tool": "ツール"
+      }
+    },
+    "agentCard": {
+      "ariaLabel": "エージェント詳細",
+      "ariaNamed": "{name} — 詳細",
+      "close": "閉じる",
+      "closeTitle": "閉じる (Esc)",
+      "roleMain": "セッションの claude",
+      "tookTitle": "かかった時間",
+      "forTitle": "取り組んでいる時間",
+      "took": "所要 {elapsed}",
+      "for": "{elapsed} 経過",
+      "isBoss": "それはあなたです。",
+      "task": "タスク",
+      "noTask": "タスク本文なし",
+      "notHooked": "未フック：Claude Code のセッションレジストリでしか把握していないため、表示できるターンはまだありません",
+      "lastPrompt": "最後のプロンプト",
+      "lastReply": "最後の返信",
+      "promptsHidden": "非表示：プロンプトオフ",
+      "nothingYet": "まだなし",
+      "crons_other": "cron {count}",
+      "waitingOn": "{count} 件待ち",
+      "contextTitle": "直近メッセージの使用量：コンテキストウィンドウの埋まり具合",
+      "context": "コンテキスト {tokens} tok",
+      "where": "場所",
+      "noProject": "プロジェクトなし",
+      "session": "セッション {id}",
+      "noSession": "セッションなし",
+      "tools": "ツール",
+      "calls_other": "{count} 回呼び出し",
+      "restored": "オフィスサーバーが再起動しました：それ以降のツール",
+      "noTools": "まだツールなし",
+      "historyAria_other": "直近 {count} 件",
+      "finished": "完了",
+      "lineage": "系譜",
+      "noTotals": "合計の報告なし",
+      "soFar": "ここまで：{stats}",
+      "parent": "親 {name}",
+      "spawnedBySession": "セッションが起動",
+      "background": "バックグラウンド",
+      "unread": "未読 {count}",
+      "transcript": "トランスクリプト",
+      "foot": {
+        "serverForgot": "サーバーはもう保持していません — 最後の情報",
+        "serverUnreachable": "オフィスサーバーに到達できません — 最後の情報",
+        "live": "ライブ · {seconds}秒ごとに更新",
+        "officeUnreachable": "オフィスサーバーに到達できません — オフィスが把握している情報を表示",
+        "notServerAgent": "サーバーのエージェントではありません — オフィスが把握している情報を表示",
+        "loading": "読み込み中…"
+      }
+    },
+    "permission": {
+      "ariaLabel": "許可リクエスト",
+      "timeLeft": "あと{seconds}秒でターミナルに引き継ぎ",
+      "readOnly": "ターミナルで応答してください（このページは読み取り専用）",
+      "allow": "許可",
+      "allowTitle": "この呼び出しを許可（{key}）",
+      "allowRemember": "許可して記憶",
+      "deny": "拒否",
+      "denyTitle": "この呼び出しを拒否（{key}）",
+      "sendingAllow": "許可を送信中…",
+      "sendingDeny": "拒否を送信中…",
+      "rememberNote": "許可して記憶：{what}",
+      "title": {
+        "use": "Claude が {tool} を使おうとしています",
+        "run": "Claude が {what} を実行しようとしています",
+        "write": "Claude が {what} に書き込もうとしています",
+        "edit": "Claude が {what} を編集しようとしています",
+        "read": "Claude が {what} を読もうとしています",
+        "fetch": "Claude が {what} を取得しようとしています",
+        "search": "Claude が {what} を検索しようとしています",
+        "findFiles": "Claude が {what} のファイルを探そうとしています"
+      },
+      "remember": {
+        "nothing": "記憶するものはありません",
+        "all": "許可し、さらに {parts}",
+        "setMode": "このセッションを {mode} に切り替え",
+        "anotherMode": "別のモード",
+        "alwaysAllow": "{rules}{where} を常に許可",
+        "alwaysDeny": "{rules}{where} を常に拒否",
+        "alwaysAsk": "{rules}{where} を常に確認",
+        "always": "{rules}{where} を常に {behavior}",
+        "this": "これ",
+        "tool": "ツール",
+        "directories": "{dirs}{where} へのアクセスを許可",
+        "thisDirectory": "このディレクトリ",
+        "other": "これを記憶"
+      },
+      "fade": {
+        "timedOut": "タイムアウト",
+        "deniedOffice": "オフィスから拒否",
+        "allowedOffice": "オフィスから許可",
+        "terminal": "ターミナルで応答済み"
+      }
+    },
+    "character": {
+      "memoryWipe": "記憶消去",
+      "apiError": "⚠ API エラー",
+      "shipping": "🚀 出荷中",
+      "waitingForDesk": "デスク待ち",
+      "unread_other": "未読メッセージ {count} 件",
+      "inspect": "{name} を詳しく見る",
+      "effect": "エフェクト"
+    },
+    "signals": {
+      "deployFailed": "デプロイ失敗",
+      "deployFailedOf": "{where} のデプロイ失敗",
+      "buildFailed": "ビルド失敗",
+      "buildFailedIn": "{where} でビルド失敗",
+      "testsFailed": "テスト失敗",
+      "testsFailedIn": "{where} でテスト失敗",
+      "pushFailed": "プッシュ失敗",
+      "pushFailedOf": "{target} へのプッシュ失敗",
+      "why": "：{why}"
+    }
+  },
+  "chatter": {
+    "default": {
+      "spawn": [
+        "着任しました！",
+        "出勤",
+        "出荷準備OK",
+        "まずコーヒー、それからコード",
+        "やるぞ",
+        "vim 起動中...",
+        "最新の main を pull 中"
+      ],
+      "work": [
+        "対応中",
+        "猛烈にタイピング中",
+        "ゾーンに入ってる",
+        "順調に進行中",
+        "ドキュメント確認中",
+        "git blame の時間だ",
+        "Stack Overflow 先生頼み"
+      ],
+      "done": [
+        "タスク完了！",
+        "出荷した",
+        "PR 出した",
+        "完了、お疲れ",
+        "LGTM",
+        "main にマージ済み",
+        "デプロイ済み"
+      ],
+      "coffee": [
+        "ちょっとコーヒー",
+        "カフェインが足りない",
+        "一杯もらってくる",
+        "コーヒー買い出し"
+      ],
+      "water": [
+        "水分補給しよ",
+        "H2O 休憩",
+        "水汲み",
+        "ボトル補充中",
+        "水分チェック",
+        "ちょっと水休憩"
+      ]
+    },
+    "office": {
+      "bossPraise": [
+        "ナイス {name} 👊",
+        "最高 🔥",
+        "出荷だ！",
+        "いい仕事、レッドブルでも飲んで",
+        "レジェンド 💯",
+        "お疲れ、次は誰？",
+        "早いね、もう一件いく？",
+        "きれいな仕事 👌",
+        "ありがと {name}",
+        "マージ完了。次のタスク読み込み中..."
+      ]
+    },
+    "incident": {
+      "spawn": [
+        "呼び出された。対応する。",
+        "ブリッジに参加、IC は誰？",
+        "02:14 に出勤、コーヒー送って",
+        "目より先にノートPCが開いてた"
+      ],
+      "work": [
+        "4f2a1c と main の間を bisect 中",
+        "DNS じゃない。DNS 確認中。",
+        "本番ログを tail 中、毎秒400件の悲しみ",
+        "runbook を初めて読んでる",
+        "最初からあるべきだった feature flag を追加中"
+      ],
+      "done": [
+        "ロールバック完了、エラー率 0.1%",
+        "根本原因：null。いつだって null。",
+        "hotfix マージ済み、テストは後から追加",
+        "ステータスページ、緑に戻った"
+      ],
+      "coffee": [
+        "3杯目のコーヒー、責めないで",
+        "まともに動いてるのはコーヒーマシンだけ",
+        "コーヒーは睡眠の代わりにならない、けど試す"
+      ],
+      "water": [
+        "水。それからまたコーヒー。",
+        "深夜2時、責任ある大人として水分補給",
+        "ウォーターサーバーも性能低下中"
+      ],
+      "bossReply": [
+        "収束。二度と金曜にデプロイしないこと。",
+        "10時にポストモーテム、非難なし、ピザ持参で",
+        "よく気づいた。タイムラインに書いといて。",
+        "わかってる。わかってるって。"
+      ]
+    },
+    "interactions": {
+      "plant1": [
+        "モンステラに水やり",
+        "植物のお世話タイム",
+        "元気でいろよ、ちびすけ"
+      ],
+      "plant2": [
+        "サンスベリアに水やり",
+        "給水ステーション",
+        "葉っぱの調子いいね"
+      ],
+      "plant3": [
+        "パキラに水やり",
+        "育て、育て",
+        "オフィスジャングルの手入れ"
+      ],
+      "plant4": [
+        "植物に水やり",
+        "オフィスの緑を守る"
+      ],
+      "plant5": [
+        "モンステラに水やり",
+        "この子は絶好調"
+      ],
+      "coffee": [
+        "新しいのを淹れてる",
+        "コーヒータイム！",
+        "燃料補給",
+        "他にコーヒー要る人？"
+      ],
+      "filing": [
+        "ファイル確認中",
+        "あの資料どこやったっけ...",
+        "書類棚を家宅捜索",
+        "Q4 レポートを探してる"
+      ],
+      "printer": [
+        "印刷中",
+        "詰まらないで...",
+        "頼れる相棒",
+        "いまどき誰が印刷するの"
+      ],
+      "whiteboard": [
+        "ボード更新中",
+        "チケットを完了へ移動",
+        "付箋を追加",
+        "スプリント計画の時間"
+      ],
+      "fireExtinguisher": [
+        "消火器チェック",
+        "安全第一",
+        "期限内、よし",
+        "使う日が来ませんように"
+      ],
+      "waterCooler": [
+        "ボトルに補充",
+        "水分チェック",
+        "水休憩",
+        "水分補給中"
+      ],
+      "bell": [
+        "チンチン！朝会の時間",
+        "ベルを鳴らす",
+        "みなさん注目！",
+        "全員集合！"
+      ],
+      "kanban": [
+        "ボード更新中",
+        "チケットを完了へ移動",
+        "スプリント順調",
+        "レビューにチケット放置したの誰？"
+      ],
+      "shipItPoster": [
+        "出荷だ！",
+        "やる気出てきた",
+        "このポスター、何度見てもいい",
+        "いくぞー"
+      ],
+      "tvMonitor": [
+        "ダッシュボード確認",
+        "全システム正常",
+        "メトリクス監視中",
+        "稼働率ばっちり"
+      ]
+    },
+    "events": {
+      "fireDrill": {
+        "name": "避難訓練",
+        "announcement": "🚨 避難訓練！全員出口へ！",
+        "managerLine": "避難訓練だ！急げ！",
+        "agentLines": [
+          "またか...",
+          "ゾーンに入ってたのに！",
+          "私のコーヒー！",
+          "コードベースを守れ！"
+        ]
+      },
+      "pizza": {
+        "name": "ピザ配達",
+        "announcement": "🍕 ピザが届いた！ランチ無料！",
+        "managerLine": "ロビーにピザあるぞ！",
+        "agentLines": [
+          "ピザだ！",
+          "やっと良い知らせ",
+          "パイナップル？！",
+          "ペパロニは俺の"
+        ]
+      },
+      "standup": {
+        "name": "デイリースタンドアップ",
+        "announcement": "📢 @here デイリースタンドアップ始めます",
+        "managerLine": "スタンドアップだ！何を出荷した？",
+        "agentLines": [
+          "例のやつやってました",
+          "まだデバッグ中",
+          "レビュー待ちでブロック中",
+          "ステージングにデプロイ済み",
+          "バグ3つ直して5つ作った"
+        ]
+      },
+      "deploy": {
+        "name": "本番デプロイ",
+        "announcement": "🚀 本番にデプロイ中...",
+        "managerLine": "息を止めて...",
+        "agentLines": [
+          "やばい",
+          "壊れないで",
+          "テスト走らせるの忘れた",
+          "YOLO",
+          "ロールバック手順確認中"
+        ]
+      },
+      "deploySuccess": {
+        "name": "デプロイ成功",
+        "announcement": "✅ デプロイ成功！全システム正常 🎉",
+        "managerLine": "やったぞ！",
+        "agentLines": [
+          "よっしゃ！",
+          "出荷だ！",
+          "みんなナイス",
+          "ビールの時間"
+        ]
+      },
+      "deployFail": {
+        "name": "デプロイ失敗",
+        "announcement": "💥 デプロイ失敗 - ロールバック中",
+        "managerLine": "誰がプッシュした？！",
+        "agentLines": [
+          "俺じゃない",
+          "やばいやばいやばい",
+          "ログ確認中",
+          "いつだって DNS",
+          "revert 中..."
+        ]
+      },
+      "powerFlicker": {
+        "name": "瞬停",
+        "announcement": "⚡ 瞬停発生 - 作業を保存して！",
+        "agentLines": [
+          "今、電気が...",
+          "CTRL+S CTRL+S",
+          "未保存の変更が！",
+          "今すぐ git commit"
+        ]
+      },
+      "birthday": {
+        "name": "誕生日",
+        "announcement": "🎂 お誕生日おめでとう！休憩室にケーキあり！",
+        "managerLine": "誕生日おめでとう！",
+        "agentLines": [
+          "ケーキ！",
+          "おめでとう！",
+          "🎉🎉🎉",
+          "グルテンフリー？",
+          "願い事して"
+        ]
+      },
+      "whoBrokeBuild": {
+        "name": "ビルド破損",
+        "announcement": "🔴 CI/CD パイプラインが赤。ビルド壊したの誰？",
+        "managerLine": "直るまで誰も帰さない。",
+        "agentLines": [
+          "git blame 確認中...",
+          "俺じゃない",
+          "マージのせい？",
+          "flaky なテストかも？",
+          "インターンのせいだ"
+        ]
+      },
+      "friday": {
+        "name": "花金",
+        "announcement": "🎉 金曜日だ！あと少し！",
+        "managerLine": "金曜はデプロイ禁止。",
+        "agentLines": [
+          "やっと金曜",
+          "飲み行く？",
+          "あと1個だけ PR...",
+          "5時ぴったりに帰る",
+          "週末だ！"
+        ]
+      },
+      "printerJam": {
+        "name": "紙詰まり",
+        "announcement": "🖨️ またプリンターが詰まった",
+        "agentLines": [
+          "なんでまだプリンターあるの",
+          "PC LOAD LETTER？！",
+          "誰が印刷なんかするの",
+          "もう2026年だよ..."
+        ]
+      },
+      "slackDown": {
+        "name": "Slack ダウン",
+        "announcement": "💀 Slack が落ちてる...あれ、これどうやって投稿してるの",
+        "agentLines": [
+          "皮肉だね",
+          "メールの出番",
+          "伝書鳩の出番",
+          "正直ちょっと平和"
+        ]
+      },
+      "incident": {
+        "fireDrill": {
+          "name": "作戦室",
+          "announcement": "🚨 全員ドアへ — ブリッジコール開始",
+          "managerLine": "ブリッジに参加。状況わかる人？",
+          "agentLines": [
+            "ブリッジに参加",
+            "これ sev1？",
+            "ミュートします、子どもが寝てるので"
+          ]
+        },
+        "pizza": {
+          "name": "インシデントピザ",
+          "announcement": "🍕 ピザ到着（経費コード：OUTAGE）",
+          "managerLine": "早く食べて",
+          "agentLines": [
+            "インシデント中のピザは格別",
+            "今夜2枚目のピザ",
+            "キーボードの上で食べてる、ごめん"
+          ]
+        },
+        "standup": {
+          "name": "状況報告",
+          "announcement": "📢 @here 何がわかってる？何をしてる？誰がブロックされてる？",
+          "managerLine": "順番に報告",
+          "agentLines": [
+            "エラー率40%、低下中",
+            "ロールバック半分まで",
+            "DBA が必要",
+            "まだ DNS じゃない。たぶん DNS。"
+          ]
+        },
+        "deploy": {
+          "name": "ロールバックデプロイ",
+          "announcement": "🚀 ロールバック中...",
+          "managerLine": "待て",
+          "agentLines": [
+            "お願い",
+            "グラフ監視中",
+            "失敗したらロールバックをロールバック"
+          ]
+        },
+        "deploySuccess": {
+          "name": "ロールバック完了",
+          "announcement": "✅ ロールバック完了 — エラー率正常",
+          "managerLine": "収束タイマー開始",
+          "agentLines": [
+            "やっと息ができる",
+            "グラフが平ら",
+            "ポストモーテムのドキュメント書く人？"
+          ]
+        },
+        "deployFail": {
+          "name": "ロールバック失敗",
+          "announcement": "💥 ロールバック失敗 — ロールバックをロールバック中",
+          "managerLine": "よし。よし。よし。",
+          "agentLines": [
+            "ですよね",
+            "マイグレーションが不可逆だった",
+            "バックアップ確認中"
+          ]
+        },
+        "powerFlicker": {
+          "name": "ラック電源の瞬断",
+          "announcement": "⚡ UPS が作動。また。",
+          "agentLines": [
+            "今の、うちら？",
+            "データセンターも今夜は大変らしい"
+          ]
+        },
+        "birthday": {
+          "name": "シフト交代",
+          "announcement": "🕑 EU のオンコールが起きた — 休憩室で引き継ぎ",
+          "managerLine": "引き継いだら寝ろ",
+          "agentLines": [
+            "引き継ぎ資料は3行",
+            "健闘を祈る",
+            "向こうは火曜日"
+          ]
+        },
+        "whoBrokeBuild": {
+          "name": "Bisect",
+          "announcement": "🔴 main を bisect 中 — 正常と異常の間に12コミット",
+          "managerLine": "非難なし。探すのはコミット、人じゃない。",
+          "agentLines": [
+            "4f2a1c はダメ",
+            "a1b2c3 は正常",
+            "設定変更のせいだった",
+            "DNS のせいだ"
+          ]
+        },
+        "friday": {
+          "name": "金曜デプロイ",
+          "announcement": "📅 お忘れなく：始まりは金曜デプロイでした",
+          "managerLine": "二度とやらない",
+          "agentLines": [
+            "二度とやらない",
+            "前回もそう言った",
+            "今後、金曜は読み取り専用で"
+          ]
+        },
+        "printerJam": {
+          "name": "エラーログ印刷中",
+          "announcement": "🖨️ 誰かが kubectl logs を lp にパイプした",
+          "agentLines": [
+            "400ページある",
+            "PC LOAD STACKTRACE",
+            "コンセント抜いて"
+          ]
+        },
+        "slackDown": {
+          "name": "ステータスページがダウン",
+          "announcement": "💀 ステータスページが落ちてる。ステータスページが。",
+          "agentLines": [
+            "そりゃそうだ",
+            "ツイートして",
+            "伝書鳩の出番"
+          ]
+        }
+      },
+      "drama": {
+        "coffeeMeet": {
+          "lines": [
+            "新しい PR 見た？",
+            "2000行のやつ？うん...",
+            "テストもなし",
+            "💀"
+          ]
+        },
+        "whoPushed": {
+          "lines": [
+            "main に直接プッシュしたの誰？",
+            "俺じゃない",
+            "git blame は違うって言ってる",
+            "..."
+          ]
+        },
+        "tabsVsSpaces": {
+          "lines": [
+            "タブ派？スペース派？",
+            "スペースに決まってる",
+            "ブロックして通報しました"
+          ]
+        },
+        "meeting": {
+          "lines": [
+            "この会議、Slack のメッセージで済んだよね",
+            "そのメッセージも沈黙で済んだよね"
+          ]
+        },
+        "framework": {
+          "lines": [
+            "Rust で書き直そう",
+            "毎週それ言ってる",
+            "で、毎週正しい"
+          ]
+        },
+        "legacy": {
+          "lines": [
+            "2019年の TODO 見つけた",
+            "なんて書いてある？",
+            "「あとで直す」",
+            "あとでは今だ",
+            "いや。あとではあとで。"
+          ]
+        },
+        "ai": {
+          "lines": [
+            "今日は AI の方が俺よりいいコード書いた",
+            "正直ハードル低いけどね",
+            "失礼だけど正論"
+          ]
+        },
+        "standupExcuse": {
+          "lines": [
+            "昨日は何してた？",
+            "複雑な問題を調査してました",
+            "6時間ググってたってことね",
+            "「リサーチ」と呼んでほしい"
+          ]
+        }
+      }
+    }
+  },
+  "server": {
+    "commands": {
+      "status": "📊 エージェント {agents} 人が稼働、{working} 人が作業中、クライアント {clients} 台が接続中",
+      "quiet": "🏢 オフィスは静か — 稼働中のエージェントなし",
+      "cleared": "🧹 チャットを消去しました",
+      "incident": "🔴 インシデント宣言 — 本番ダウン。全員作戦室へ。（終わったら /all-clear）",
+      "allClear": "✅ 収束 — インシデント終了。10時にポストモーテム、非難なし、ピザ持参で。",
+      "help": "📋 コマンド：{commands}",
+      "desc": {
+        "status": "オフィスの統計",
+        "agents": "エージェント一覧",
+        "recap": "今日のまとめ",
+        "incident": "インシデントを宣言",
+        "allClear": "それを終了",
+        "clear": "チャット履歴を消去（認証トークンが必要）",
+        "help": "このメッセージ"
+      }
+    },
+    "system": {
+      "expired": "⌛ {name} 宛てに予約したプロンプトが届かないまま期限切れになりました（1時間以内にターンが終わりませんでした）",
+      "expiredUnknown": "⌛ セッション宛てに予約したプロンプトが届かないまま期限切れになりました（1時間以内にターンが終わりませんでした）",
+      "pickedUp": "📬 {name} がチャットのプロンプトを受け取りました",
+      "pickedUpMore": "📬 {name} がチャットのプロンプトを受け取りました（あと {count} 件待ち）",
+      "dropped_other": "🗑️ {name} 宛てに予約したプロンプト {count} 件を破棄：{why}",
+      "sessionEnded": "セッションが終了した",
+      "ambiguous": "🤔 {mention} は {count} 個のセッションに一致します：{names}。セッション ID を使ってください。",
+      "notTrusted": "🔒 {name} にプロンプトを予約できるのは、この Mac のオフィスページだけです（スマホ、プロキシ経由のページ、オフィスのリンクなしで開いたページは不可）",
+      "noHooks": "🔌 {name} にはオフィスのフックがないため、プロンプトを届ける手段がありません：{command} を実行して、そのセッションを再起動してください",
+      "tooLong": "{length} 文字あります。上限は {limit} 文字です",
+      "full": "すでに {count} 件のプロンプトが待っています",
+      "badId": "このセッション ID はフックが受け取れる形式ではありません",
+      "notQueued": "✋ {name} に予約できませんでした：{why}",
+      "whenBusy": "今のターンが終わると届きます",
+      "whenIdle": "今は作業していないので、次のターンが終わったときに届きます（オフィスからターンは始められません：ターミナルで何かプロンプトを送ってください）",
+      "queued": "📨 {name} に予約しました：{when}",
+      "queuedInLine": "📨 {name} に予約しました（待ち順 #{position}）：{when}",
+      "needsToken": "🔒 {command} にはオフィスの認証トークンが必要です — オフィスのチェックアウトから {script} を実行すると送信されます（README › Chat を参照）"
+    },
+    "agents": {
+      "starting": "開始：{task}",
+      "done": "完了：{result}"
+    },
+    "recap": {
+      "quiet": "📋 まとめ：今日はここまで静か — まだ記録なし。今のうちに満喫して。",
+      "line": "📋 今日のまとめ：{parts}。{payroll} {signOff}",
+      "sessions_other": "{count} セッション",
+      "agents_other": "エージェント {count} 人採用、{out} 人退勤",
+      "tasks_other": "タスク {count} 件完了",
+      "deploys_other": "デプロイ {count} 件",
+      "pushes_other": "プッシュ {count} 件",
+      "buildsFailed_other": "ビルド失敗 {count} 件",
+      "testsFailed_other": "テスト失敗 {count} 件",
+      "incidents_other": "インシデント {count} 件（その話はしない）",
+      "noIncidents": "インシデントなし",
+      "payroll": "給与：{amount}。",
+      "signOffIncident": "ポストモーテムのメモは10時までに私の机へ。",
+      "signOffDeploys": "いい出荷だった、みんな。",
+      "signOff": "お疲れさま、チーム。"
+    },
+    "notify": {
+      "title": "Claude が呼んでいます",
+      "message": "{project} · {tool} が{phrase}",
+      "bash": "コマンドを実行しようとしています",
+      "write": "ファイルに書き込もうとしています",
+      "edit": "ファイルを編集しようとしています",
+      "notebook": "ノートブックを編集しようとしています",
+      "read": "ファイルを読もうとしています",
+      "fetch": "Web ページを取得しようとしています",
+      "search": "Web を検索しようとしています",
+      "other": "許可を求めています",
+      "aTool": "ツール",
+      "aSession": "セッション"
+    },
+    "routing": {
+      "debugger": [
+        "バグ",
+        "エラー",
+        "クラッシュ",
+        "落ちる",
+        "落ちた",
+        "直して",
+        "修正",
+        "壊れ",
+        "不具合",
+        "例外",
+        "デバッグ",
+        "スタックトレース"
+      ],
+      "codeReviewer": [
+        "レビュー",
+        "マージ",
+        "承認",
+        "プルリク",
+        "差分"
+      ],
+      "frontend": [
+        "デザイン",
+        "コンポーネント",
+        "フロントエンド",
+        "フロント",
+        "スタイル",
+        "レイアウト",
+        "レスポンシブ",
+        "アニメーション",
+        "ピクセル",
+        "テーマ",
+        "ダークモード",
+        "ライトモード",
+        "配色",
+        "カラー",
+        "フォント",
+        "余白"
+      ],
+      "tester": [
+        "テスト",
+        "カバレッジ",
+        "単体テスト",
+        "結合テスト",
+        "アサーション",
+        "モック"
+      ],
+      "security": [
+        "セキュリティ",
+        "認証",
+        "脆弱性",
+        "インジェクション",
+        "トークン",
+        "パスワード",
+        "暗号",
+        "証明書"
+      ],
+      "devops": [
+        "デプロイ",
+        "パイプライン",
+        "インフラ",
+        "コンテナ",
+        "ドメイン",
+        "本番環境"
+      ],
+      "performance": [
+        "パフォーマンス",
+        "遅い",
+        "重い",
+        "最適化",
+        "高速化",
+        "速度",
+        "レイテンシ",
+        "メモリリーク",
+        "キャッシュ",
+        "遅延読み込み",
+        "レンダリング",
+        "ボトルネック"
+      ],
+      "database": [
+        "データベース",
+        "クエリ",
+        "スキーマ",
+        "マイグレーション",
+        "インデックス",
+        "テーブル",
+        "カラム"
+      ],
+      "typescript": [
+        "型",
+        "インターフェース",
+        "ジェネリクス",
+        "バリデーション"
+      ],
+      "ai": [
+        "プロンプト",
+        "モデル",
+        "エージェント",
+        "埋め込み",
+        "ベクトル",
+        "トークン",
+        "コンテキストウィンドウ"
+      ],
+      "fullstack": [
+        "エンドポイント",
+        "ルーティング",
+        "ミドルウェア",
+        "リクエスト",
+        "レスポンス",
+        "バックエンド"
+      ],
+      "git": [
+        "ブランチ",
+        "コミット",
+        "リベース",
+        "チェリーピック",
+        "スタッシュ",
+        "コンフリクト",
+        "競合",
+        "リモート"
+      ],
+      "architect": [
+        "リファクタ",
+        "設計",
+        "アーキテクチャ",
+        "抽象化",
+        "パターン",
+        "モジュール",
+        "パッケージ",
+        "モノレポ"
+      ]
+    }
+  }
+}

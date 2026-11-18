@@ -1,3 +1,4 @@
+/** Character - one person in the office: sprite, walk cycle, worn seasonal piece, bubbles and state labels. */
 import { currentSeason, useSeasonArt } from '../season'
 import { SANTA_HAT, halloweenPiece, hatKindOf, hatMirrored, hatOnHead, maskOnEyes, pieceTransform, spriteKey, useHeadAnchor, wearsOverlayHat, type HalloweenPiece } from '../hat'
 import { EYES } from '../eyes'
@@ -14,6 +15,7 @@ import { useVariant } from '../incident'
 import { incidentPropFor } from '../incidentAssets'
 import { useWalkFrames, walkFrame } from '../walk'
 import { isMainAgent, isHardNeedsYou, needsYouBadge, needsYouShort } from '../mainState'
+import { useT } from '../i18n'
 
 export { ROLE_TO_CHAR }
 
@@ -93,6 +95,7 @@ const OPPOSITE: Record<SpriteDirection, SpriteDirection> = {
 }
 
 const Character: React.FC<CharacterProps> = ({ agent, idleDurationMs = 0, zIndex, isTyping, showProject, onClick, inspected }) => {
+  const tr = useT()
   const prevPosRef = useRef({ x: agent.position.x, y: agent.position.y })
   const lastMoveRef = useRef(0) // when this character last changed position (ms)
   const directionRef = useRef<SpriteDirection>(agent.spriteFacing ?? 'front-right')
@@ -232,13 +235,13 @@ const Character: React.FC<CharacterProps> = ({ agent, idleDurationMs = 0, zIndex
   else if (mainState === 'compacting') effectSrc = null
   else if (mainState === 'waiting') effectSrc = '/sprites/effects/glass-water.png'
   else if (mainState === 'working' && agent.state === 'working') effectSrc = '/sprites/effects/typing.png'
-  else effectSrc = getEffect(agent.state, idleDurationMs, agent.statusText, agent.id, agent.task, agent.role, agent.lastFailed)
+  else effectSrc = getEffect(agent.state, idleDurationMs, agent.statusText, agent.id, agent.task, agent.role, agent.lastFailed, agent.effectKind)
 
   const projectTag = showProject && agent.project ? agent.project : null
   // The state label under the sprite replaces the project tag (which it then carries)
   const stateLabel = needsYou
     ? `${needsYouShort(needsYou.kind)}${projectTag ? ` · ${projectTag}` : ''}`
-    : mainState === 'error' ? `⚠ API error${projectTag ? ` · ${projectTag}` : ''}` : null
+    : mainState === 'error' ? `${tr('ui.character.apiError')}${projectTag ? ` · ${projectTag}` : ''}` : null
   const tooltip = [agent.name, projectTag, main && agent.statusText ? `— ${agent.statusText}` : null].filter(Boolean).join(' ')
 
   return (
@@ -256,24 +259,24 @@ const Character: React.FC<CharacterProps> = ({ agent, idleDurationMs = 0, zIndex
       {effectSrc && <EffectBubble src={effectSrc} alt={agent.state} />}
       {badge && <div className={`effect-bubble effect-emoji ${badge.cls}`} role="img" aria-label={agent.statusText}>{badge.text}</div>}
       {mainState === 'compacting' && (
-        <div className="char-wipe" aria-label="memory wipe"><span className="char-wipe-broom">🧹</span></div>
+        <div className="char-wipe" aria-label={tr('ui.character.memoryWipe')}><span className="char-wipe-broom">🧹</span></div>
       )}
 
       {stateLabel ? (
         <div className={mainState === 'error' ? 'char-error' : `char-needs-you ${hardNeedsYou ? 'hard' : 'soft'}`}>{stateLabel}</div>
       ) : scene?.kind === 'shipping' ? (
         // The label names what ships (the target, else the project), so it stands in for the project tag
-        <div className="char-scene">{scene.label ?? '🚀 shipping'}</div>
+        <div className="char-scene">{scene.label ?? tr('ui.character.shipping')}</div>
       ) : projectTag && (
         <div className="char-project">{projectTag}</div>
       )}
 
       {agent.state === 'waiting' && (
-        <div className="char-waiting">waiting for a desk</div>
+        <div className="char-waiting">{tr('ui.character.waitingForDesk')}</div>
       )}
 
       {!!agent.unread && (
-        <div className="char-unread" title={`${agent.unread} unread message${agent.unread === 1 ? '' : 's'}`}>
+        <div className="char-unread" title={tr('ui.character.unread', { count: agent.unread })}>
           ✉ {agent.unread > 9 ? '9+' : agent.unread}
         </div>
       )}
@@ -288,7 +291,7 @@ const Character: React.FC<CharacterProps> = ({ agent, idleDurationMs = 0, zIndex
         // The sprite alone takes the click (the wrapper stays pointer-events: none)
         onClick={onClick ? () => onClick(agent.id) : undefined}
         role={onClick ? 'button' : undefined}
-        aria-label={onClick ? `Inspect ${agent.name}` : undefined}
+        aria-label={onClick ? tr('ui.character.inspect', { name: agent.name }) : undefined}
         aria-pressed={onClick ? !!inspected : undefined}
         data-agent-id={agent.id}
       >

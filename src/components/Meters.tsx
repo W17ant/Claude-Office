@@ -26,6 +26,7 @@ import {
   sessionLabel, modelLabel, CLUTTER_THRESHOLD, type SessionStatus,
   isEstimated, estimateMarker, formatMemory, estimateTip, needsStatusLineTip, STATUS_LINE_INSTALL,
 } from '../meters'
+import { t, useT } from '../i18n'
 
 const MAX_ROWS = 4
 
@@ -45,21 +46,21 @@ function payrollTip(sessions: SessionStatus[], costToday: number, dollarsPerMin:
   const lines = paid.reduce((sum, s) => sum + s.linesAdded, 0)
   const removed = paid.reduce((sum, s) => sum + s.linesRemoved, 0)
   return [
-    `PAYROLL — $${live.toFixed(4)} across ${paid.length} session${paid.length === 1 ? '' : 's'} · $${dollarsPerMin.toFixed(4)}/min over the last 5 min`,
-    `today $${costToday.toFixed(4)} · +${lines} / -${removed} lines · estimated at list price`,
+    t('ui.meters.tip.payrollHead', { amount: `$${live.toFixed(4)}`, count: paid.length, rate: `$${dollarsPerMin.toFixed(4)}` }),
+    t('ui.meters.tip.payrollToday', { amount: `$${costToday.toFixed(4)}`, added: lines, removed }),
     ...sessions.slice(0, MAX_ROWS).map(s => isEstimated(s)
-      ? `${sessionLabel(s)}: needs the status line (${STATUS_LINE_INSTALL})`
-      : `${sessionLabel(s)}: $${s.cost.toFixed(4)} · ${modelLabel(s)} · ${formatDuration(s.durationMs)}`),
+      ? t('ui.meters.tip.needsLine', { session: sessionLabel(s), command: STATUS_LINE_INSTALL })
+      : t('ui.meters.tip.payrollRow', { session: sessionLabel(s), amount: `$${s.cost.toFixed(4)}`, model: modelLabel(s), duration: formatDuration(s.durationMs) })),
   ]
 }
 
 function electricityTip(sessions: SessionStatus[], tokensPerMin: number): string[] {
   return [
-    `ELECTRICITY — ${formatTokensExact(tokensPerMin)} tokens/min processed over the last 5 min (context re-reads included)`,
+    t('ui.meters.tip.electricityHead', { tokens: formatTokensExact(tokensPerMin) }),
     ...sessions.slice(0, MAX_ROWS).map(s => isEstimated(s)
-      ? `${sessionLabel(s)}: needs the status line (${STATUS_LINE_INSTALL})`
-      : `${sessionLabel(s)}: ${formatTokensExact(s.burn.tokensPerMin)} tok/min · last call ${formatTokensExact(s.context.input)} in / ${formatTokensExact(s.context.output)} out` +
-      (s.agents?.length ? ` · ${s.agents.length} subagent${s.agents.length === 1 ? '' : 's'} ${formatTokensExact(s.agents.reduce((n, a) => n + a.tokens, 0))} tok` : ''),
+      ? t('ui.meters.tip.needsLine', { session: sessionLabel(s), command: STATUS_LINE_INSTALL })
+      : t('ui.meters.tip.electricityRow', { session: sessionLabel(s), rate: formatTokensExact(s.burn.tokensPerMin), input: formatTokensExact(s.context.input), output: formatTokensExact(s.context.output) }) +
+      (s.agents?.length ? t('ui.meters.tip.subagents', { count: s.agents.length, tokens: formatTokensExact(s.agents.reduce((n, a) => n + a.tokens, 0)) }) : ''),
     ),
   ]
 }
@@ -68,27 +69,29 @@ function memoryTip(s: SessionStatus): string[] {
   if (isEstimated(s)) return estimateTip(s)
   const size = s.context.size
   return [
-    `MEMORY — ${sessionLabel(s)}: ${pct(s.context.used)} of the context window` +
-      (size ? ` (${formatTokensExact(s.context.input)} / ${formatTokensExact(size)} tokens)` : ''),
-    `model ${modelLabel(s)}${s.modelId && s.modelId !== s.model ? ` (${s.modelId})` : ''}` +
-      (s.effort ? ` · effort ${s.effort}` : '') + (s.exceeds200k ? ' · over 200k' : '') +
-      (s.version ? ` · Claude Code ${s.version}` : ''),
-    `$${s.cost.toFixed(4)} · ${formatDuration(s.durationMs)} · session ${s.sessionId.slice(0, 8)}`,
+    t('ui.meters.tip.memoryHead', { session: sessionLabel(s), percent: pct(s.context.used) }) +
+      (size ? t('ui.meters.tip.memorySize', { used: formatTokensExact(s.context.input), size: formatTokensExact(size) }) : ''),
+    t('ui.meters.tip.model', { model: modelLabel(s) }) + (s.modelId && s.modelId !== s.model ? ` (${s.modelId})` : '') +
+      (s.effort ? t('ui.meters.tip.effort', { effort: s.effort }) : '') + (s.exceeds200k ? t('ui.meters.tip.over200k') : '') +
+      (s.version ? t('ui.meters.tip.claudeCode', { version: s.version }) : ''),
+    t('ui.meters.tip.costLine', { amount: `$${s.cost.toFixed(4)}`, duration: formatDuration(s.durationMs), id: s.sessionId.slice(0, 8) }),
   ]
 }
 
 function rateTip(s: SessionStatus): string[] {
   const rl = s.rateLimits ?? {}
-  const lines: string[] = ['RATE LIMITS (claude.ai subscription)']
-  if (rl.fiveHour != null) lines.push(`5-hour window ${rl.fiveHour}% used${rl.fiveHourResetsAt ? ` · resets ${formatClockTime(rl.fiveHourResetsAt)}` : ''}`)
-  if (rl.sevenDay != null) lines.push(`7-day window ${rl.sevenDay}% used${rl.sevenDayResetsAt ? ` · resets ${formatClockTime(rl.sevenDayResetsAt)}` : ''}`)
-  if (rl.spendLimit != null) lines.push(`spend limit ${rl.spendLimit}% used`)
+  const lines: string[] = [t('ui.meters.tip.rateHead')]
+  const resets = (at?: number | null) => (at ? t('ui.meters.tip.resets', { time: formatClockTime(at) }) : '')
+  if (rl.fiveHour != null) lines.push(t('ui.meters.tip.rate5h', { percent: rl.fiveHour }) + resets(rl.fiveHourResetsAt))
+  if (rl.sevenDay != null) lines.push(t('ui.meters.tip.rate7d', { percent: rl.sevenDay }) + resets(rl.sevenDayResetsAt))
+  if (rl.spendLimit != null) lines.push(t('ui.meters.tip.spendLimit', { percent: rl.spendLimit }))
   return lines
 }
 
 const Meters: React.FC<MetersProps> = ({ onNotice }) => {
   const { sessions, totals } = useMeters()
   const [tip, setTip] = useState<string[] | null>(null)
+  const tr = useT()
   const warnedRef = useRef(new Set<string>())
   const onNoticeRef = useRef(onNotice)
   onNoticeRef.current = onNotice
@@ -99,7 +102,8 @@ const Meters: React.FC<MetersProps> = ({ onNotice }) => {
       const used = s.context.used
       if (used == null || used <= CLUTTER_THRESHOLD || warnedRef.current.has(s.sessionId)) continue
       warnedRef.current.add(s.sessionId)
-      onNoticeRef.current?.(`🗂️ Claude's desk is getting cluttered — ${sessionLabel(s)} is at ${Math.round(used)}% context${isEstimated(s) ? ' (estimated)' : ''}`)
+      const vars = { session: sessionLabel(s), percent: Math.round(used) }
+      onNoticeRef.current?.(isEstimated(s) ? t('ui.meters.clutterEstimated', vars) : t('ui.meters.clutter', vars))
     }
   }, [sessions])
 
@@ -127,12 +131,12 @@ const Meters: React.FC<MetersProps> = ({ onNotice }) => {
   const hover = (lines: string[]) => ({ onMouseEnter: () => setTip(lines), onMouseLeave: () => setTip(null) })
 
   return (
-    <div className="meters-panel" role="group" aria-label="Payroll, electricity and memory" data-sessions={sessions.length}>
+    <div className="meters-panel" role="group" aria-label={tr('ui.meters.ariaLabel')} data-sessions={sessions.length}>
       <div className="meters-head">
-        <span className="meters-title">⚡ OFFICE METERS</span>
+        <span className="meters-title">{tr('ui.meters.title')}</span>
         {fiveHour != null && limited && (
           <span className={`meter-pill tone-${rateTone(fiveHour)}`} data-testid="rate-limit" {...hover(rateTip(limited))}>
-            5h {Math.round(fiveHour)}%
+            {tr('ui.meters.rateShort', { percent: Math.round(fiveHour) })}
           </span>
         )}
       </div>
@@ -140,26 +144,26 @@ const Meters: React.FC<MetersProps> = ({ onNotice }) => {
       <div className="meters-row">
         {needsStatusLine ? (
           <div className="meter meter-payroll meter-needs" data-testid="meter-payroll" {...hover(needsStatusLineTip('PAYROLL', estimated))}>
-            <div className="meter-label">Payroll</div>
-            <div className="meter-needs-text">needs the status line</div>
+            <div className="meter-label">{tr('ui.meters.payroll')}</div>
+            <div className="meter-needs-text">{tr('ui.meters.needsStatusLine')}</div>
           </div>
         ) : (
           <div className="meter meter-payroll" data-testid="meter-payroll" {...hover(payrollTip(sessions, costToday, dollarsPerMin))}>
-            <div className="meter-label">Payroll</div>
+            <div className="meter-label">{tr('ui.meters.payroll')}</div>
             <div className="meter-value">{formatMoney(costLive)}</div>
-            <div className="meter-sub">{formatMoney(dollarsPerMin)}/min</div>
+            <div className="meter-sub">{tr('ui.meters.perMin', { amount: formatMoney(dollarsPerMin) })}</div>
           </div>
         )}
 
         {needsStatusLine ? (
           <div className="meter meter-electricity meter-needs" data-testid="meter-electricity" {...hover(needsStatusLineTip('ELECTRICITY', estimated))}>
-            <div className="meter-label">Electricity</div>
-            <div className="meter-needs-text">needs the status line</div>
+            <div className="meter-label">{tr('ui.meters.electricity')}</div>
+            <div className="meter-needs-text">{tr('ui.meters.needsStatusLine')}</div>
           </div>
         ) : (
           <div className="meter meter-electricity" data-testid="meter-electricity" {...hover(electricityTip(sessions, tokensPerMin))}>
-            <div className="meter-label">Electricity</div>
-            <div className="meter-value">{formatTokens(tokensPerMin)}<span className="meter-unit">tok/min</span></div>
+            <div className="meter-label">{tr('ui.meters.electricity')}</div>
+            <div className="meter-value">{formatTokens(tokensPerMin)}<span className="meter-unit">{tr('ui.meters.tokPerMin')}</span></div>
             <div
               className={`meter-gauge${tokensPerMin > 0 ? ' live' : ''}`}
               style={{ ['--meter-flow' as string]: `${electricityPeriod(tokensPerMin)}s` } as React.CSSProperties}
@@ -170,13 +174,13 @@ const Meters: React.FC<MetersProps> = ({ onNotice }) => {
         )}
 
         <div className={`meter meter-memory tone-${memoryTone}`} data-testid="meter-memory" data-source={fullest.source} {...hover(memoryTip(fullest))}>
-          <div className="meter-label">Memory</div>
+          <div className="meter-label">{tr('ui.meters.memory')}</div>
           <div className="meter-value">
             {isEstimated(fullest) ? formatMemory(fullest) : pct(memoryUsed)}
             {marker && <span className="meter-est" data-testid="meter-est">{marker}</span>}
           </div>
           <div className="meter-bar"><div className="meter-bar-fill" style={{ width: `${Math.min(100, memoryUsed ?? 0)}%` }} /></div>
-          <div className="meter-sub">{multi ? `${sessions.length} sessions` : sessionLabel(fullest)}</div>
+          <div className="meter-sub">{multi ? tr('ui.meters.sessions', { count: sessions.length }) : sessionLabel(fullest)}</div>
         </div>
       </div>
 

@@ -1,6 +1,9 @@
+/** FurnitureRenderer - the room's furniture sprites and clickable hotspots, with their hover names. */
 import React from 'react'
 import ResilientImg from './ResilientImg'
 import { FurnitureItem } from '../rooms'
+import { useT } from '../i18n'
+import { furnitureLabel } from '../roomText'
 import { ASSETS } from '../assets'
 import { seasonalUrl, useSeasonArt } from '../season'
 import DeskScreens from './DeskScreens'
@@ -77,10 +80,13 @@ const CLICKABLE_TYPES = new Set([
 
 const FurnitureRenderer: React.FC<FurnitureRendererProps> = ({ items, onItemClick, screens, printJob }) => {
   useSeasonArt() // Why: memoised; re-render when a seasonal desk or plant file turns out to exist
+  const tr = useT()
   return (
     <>
       {items.map(item => {
         const clickable = CLICKABLE_TYPES.has(item.type) || item.interactive
+        // Why the check: an item without a label in the room data shows none
+        const label = item.label ? furnitureLabel(item.id, item.label) : undefined
 
         // Hotspots — invisible clickable zones over background art
         if (item.type === 'hotspot') {
@@ -99,7 +105,7 @@ const FurnitureRenderer: React.FC<FurnitureRendererProps> = ({ items, onItemClic
                 pointerEvents: 'auto',
                 cursor: 'pointer',
               }}
-              title={item.label}
+              title={label}
               onClick={onItemClick ? () => onItemClick(item.id) : undefined}
             />
           )
@@ -126,13 +132,13 @@ const FurnitureRenderer: React.FC<FurnitureRendererProps> = ({ items, onItemClic
               pointerEvents: clickable ? 'auto' : 'none',
               cursor: clickable ? 'pointer' : 'default',
             }}
-            title={item.label || (clickable ? 'Click to interact' : undefined)}
+            title={label || (clickable ? tr('ui.rooms.furniture.clickToInteract') : undefined)}
             onClick={clickable && onItemClick ? () => onItemClick(item.id) : undefined}
           >
             {desk && deskScreen && <DeskScreens geometry={desk} screens={deskScreen} layer="back" />}
             <ResilientImg
               src={url}
-              alt={item.label || item.type}
+              alt={label || item.type}
               style={{
                 height: h,
                 width: 'auto',

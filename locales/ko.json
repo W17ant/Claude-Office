@@ -1,0 +1,1398 @@
+{
+  "meta": {
+    "name": "한국어",
+    "englishName": "Korean",
+    "status": "wip",
+    "translators": []
+  },
+  "ui": {
+    "settings": {
+      "language": {
+        "title": "언어",
+        "wip": "번역 중",
+        "complete": "{percent}% 번역됨",
+        "report": "번역 오류 신고",
+        "readOnly": "언어는 사무실 본 페이지에서만 바꿀 수 있어요"
+      },
+      "title": "설정",
+      "close": "설정 닫기",
+      "on": "켜짐",
+      "off": "꺼짐",
+      "browser": {
+        "title": "이 브라우저",
+        "theme": "테마",
+        "themeDefault": "기본",
+        "dayNight": "낮 / 밤",
+        "dayNightAria": "낮 또는 밤",
+        "auto": "자동",
+        "day": "낮",
+        "night": "밤",
+        "season": "계절",
+        "seasonAuto": "자동 (날짜 기준)",
+        "holidays": "기념일",
+        "seasons": "계절",
+        "seasonOff": "끔",
+        "urlSeasonBefore": "주소의",
+        "urlSeasonAfter": " 설정이 이 설정보다 우선해요.",
+        "appliesOnReload": "새로고침하면 적용돼요.",
+        "reloadNow": "지금 새로고침",
+        "autoExplained": "자동은 날짜를 따라요: 사계절(북반구 기준)에 크리스마스, 할로윈, 부활절, 밸런타인데이가 더해져요. 지금: {look}.",
+        "nowUndrawn": "지금: {look}. 아직 그림이 없는 계절은 평소 사무실처럼 보여요.",
+        "noArtYet": "{season} (그림 준비 중)",
+        "over": "{below} 위에 {top}",
+        "sound": "소리",
+        "mute": "음소거",
+        "unmute": "음소거 해제",
+        "volume": "볼륨",
+        "muted": "음소거됨",
+        "ambience": "배경음",
+        "ambienceTitle": "몇 가지 이벤트 소리 아래로 조용한 사무실 소음이 깔려요. 위의 볼륨으로 재생돼요"
+      },
+      "server": {
+        "title": "사무실 서버",
+        "sim": "?sim / ?video에서는 사무실 서버가 없어요 — 이 설정은 실제 사무실용이에요.",
+        "readOnly": "읽기 전용 페이지: 사무실 토큰이 없어서 서버가 변경을 거부해요. 바꾸려면 npm run open의 링크를 여세요.",
+        "waiting": "사무실 서버가 아직 응답하지 않았어요.",
+        "answer": "여기서 권한 응답",
+        "answerTitle": "Claude가 기다리는 동안 사무실에 뜨는 카드로 권한 요청에 답할 수 있어요",
+        "notify": "권한 대기 알림",
+        "notifyTitle": "Claude가 권한을 기다리기 시작하면 데스크톱 알림을 보내요",
+        "logging": "프롬프트 기록",
+        "logOff": "끔",
+        "logSummary": "요약",
+        "logFull": "전체",
+        "hintOff": "프롬프트나 답변 텍스트는 저장하거나 표시하지 않아요 — 상태만 남아요.",
+        "hintSummary": "각 프롬프트와 답변의 처음 200자.",
+        "hintFull": "프롬프트와 답변을 최대 2000자까지.",
+        "rowsStay": "chat.db에 이미 있는 행은",
+        "ai": "AI 채팅 모니터",
+        "aiTitle": "Claude가 #office-general에 답하게 해 주는 채팅 감시자",
+        "bossSprite": "보스 스프라이트:",
+        "bossSpriteIn": "·",
+        "bossSpriteWhen": "(서버를 시작할 때 읽어요).",
+        "rowsStayEnd": " 명령 전까지 남아요."
+      }
+    },
+    "meters": {
+      "ariaLabel": "급여, 전기, 메모리",
+      "title": "⚡ 사무실 계기판",
+      "payroll": "급여",
+      "electricity": "전기",
+      "memory": "메모리",
+      "needsStatusLine": "상태 표시줄 필요",
+      "perMin": "{amount}/분",
+      "tokPerMin": "tok/분",
+      "rateShort": "5시간 {percent}%",
+      "sessions_other": "세션 {count}개",
+      "estimateMarker": "추정",
+      "tip": {
+        "payrollHead_other": "급여 — 세션 {count}개에서 {amount} · 최근 5분간 {rate}/분",
+        "payrollToday": "오늘 {amount} · +{added} / -{removed}줄 · 정가 기준 추정",
+        "needsLine": "{session}: 상태 표시줄 필요 ({command})",
+        "needsLineShort": "{session}: 상태 표시줄 필요",
+        "payrollRow": "{session}: {amount} · {model} · {duration}",
+        "electricityHead": "전기 — 최근 5분간 분당 {tokens} 토큰 처리 (컨텍스트 재읽기 포함)",
+        "electricityRow": "{session}: {rate} tok/분 · 마지막 호출 입력 {input} / 출력 {output}",
+        "subagents_other": " · 서브에이전트 {count}개 {tokens} tok",
+        "memoryHead": "메모리 — {session}: 컨텍스트 창의 {percent}",
+        "memorySize": " ({used} / {size} 토큰)",
+        "model": "모델 {model}",
+        "effort": " · effort {effort}",
+        "over200k": " · 200k 초과",
+        "claudeCode": " · Claude Code {version}",
+        "costLine": "{amount} · {duration} · 세션 {id}",
+        "rateHead": "사용 한도 (claude.ai 구독)",
+        "rate5h": "5시간 창 {percent}% 사용",
+        "rate7d": "7일 창 {percent}% 사용",
+        "resets": " · {time}에 초기화",
+        "spendLimit": "지출 한도 {percent}% 사용"
+      },
+      "clutter": "🗂️ Claude 책상이 어질러지고 있어요 — {session} 컨텍스트 {percent}%",
+      "clutterEstimated": "🗂️ Claude 책상이 어질러지고 있어요 — {session} 컨텍스트 {percent}% (추정)",
+      "unnamedModel": "이름 없는 모델",
+      "window": {
+        "oneM": "창 {size} 토큰: 이 세션은 {model}의 [1m] 버전을 써요",
+        "unknown": "창 {size} 토큰으로 가정: {model}이(가) 사무실 모델 표에 없어서 대략적인 값이에요",
+        "overflow": "창 {size} 토큰으로 가정: 200,000 넘게 쓰고 있으니 {model}은(는) 1M 버전일 거예요 (대략적)",
+        "table": "{model}의 창 {size} 토큰 (Claude Code 모델 표 기준)"
+      },
+      "estimate": {
+        "estSuffix": " · 추정",
+        "compacted": "압축됨: 창이 방금 비워졌어요. 트랜스크립트의 다음 답변이 계기판을 다시 채워요",
+        "fromTranscript": "이 세션에 등록된 상태 표시줄이 없어서 세션 트랜스크립트(마지막 답변의 사용량)로 추정했어요",
+        "needsBoth": "급여와 전기는 상태 표시줄이 필요해요: {command}"
+      },
+      "needs": {
+        "payrollHead": "급여는 상태 표시줄이 필요해요 — Claude Code는 비용을 statusLine 명령에만 알려 줘요",
+        "electricityHead": "전기는 상태 표시줄이 필요해요 — Claude Code는 분당 토큰을 statusLine 명령에만 알려 줘요",
+        "none_other": "이 세션 {count}개에는 등록된 상태 표시줄이 없어요 (플러그인 설치 또는 claude -p). 메모리는 트랜스크립트로 추정해요",
+        "register": "등록 방법: {command} (Claude-Office 체크아웃에서)"
+      }
+    },
+    "rooms": {
+      "mainOffice": "메인 사무실",
+      "corridor": "복도",
+      "meetingRoom": "회의실",
+      "serverRoom": "서버실",
+      "lunchRoom": "식당",
+      "short": {
+        "mainOffice": "사무실",
+        "corridor": "복도",
+        "meetingRoom": "회의실",
+        "serverRoom": "서버실",
+        "lunchRoom": "식당"
+      },
+      "switcher": {
+        "ariaLabel": "평면도: 보여 줄 방 선택",
+        "empty": "비어 있음",
+        "people_other": "{count}명",
+        "label": "{room}, {people}",
+        "needsYou": ", 확인 필요",
+        "trouble": ", 문제 발생",
+        "inView": ", 보는 중"
+      },
+      "furniture": {
+        "coffeeMachine": "커피 머신",
+        "filingCabinet": "서류 캐비닛",
+        "printer": "프린터",
+        "fireExtinguisher": "소화기",
+        "waterCooler": "정수기",
+        "bell": "종",
+        "kanbanBoard": "칸반 보드",
+        "shipItPoster": "Ship It 포스터",
+        "dashboard": "대시보드",
+        "clickToInteract": "클릭해서 사용"
+      },
+      "doors": {
+        "mainOffice": "사무실",
+        "corridor": "복도",
+        "meetingRoom": "회의실",
+        "serverRoom": "서버실",
+        "lunchRoom": "식당",
+        "goTo": "{room}(으)로 이동"
+      },
+      "landmarks": {
+        "frontDoor": "엘리베이터",
+        "managerDoor": "매니저"
+      },
+      "placeholder": {
+        "ariaLabel": "{room}: 임시 방, 아직 그림이 없어요",
+        "note": "임시: 이 방은 아직 그림이 없어요",
+        "coffee": "커피",
+        "water": "물"
+      },
+      "tv": {
+        "deploying": "배포 중",
+        "shipped": "배포 완료",
+        "rollback": "롤백"
+      }
+    },
+    "needsYou": {
+      "permission": "✋ 확인 필요: {what}",
+      "permissionBare": "✋ 확인 필요 — 권한",
+      "input": "✋ 입력 필요: {what}",
+      "inputBare": "✋ 입력 필요",
+      "idle": "💤 입력 대기",
+      "quota": "⏳ 토큰 대기 중",
+      "registry": "✋ {what}",
+      "registryBare": "✋ 터미널에서 대기 중",
+      "elicitation": "✋ {server}에서 질문이 있어요",
+      "elicitationBare": "✋ MCP 서버에서 질문이 있어요",
+      "short": {
+        "permission": "확인 필요",
+        "agentInput": "입력 필요",
+        "idle": "입력 대기",
+        "quota": "토큰 대기",
+        "registry": "터미널 대기"
+      }
+    },
+    "pill": {
+      "needsYou": "✋ 확인 필요",
+      "error": "⚠ 오류",
+      "compacting": "🧹 정리"
+    },
+    "strip": {
+      "sessions_other": "세션 {count}개",
+      "notHooked": "{count}개 훅 없음",
+      "needYou_other": "{count}개 확인 필요",
+      "readOnlyHint": "읽기 전용: 이 페이지에 사무실 토큰이 없거나 오래된 토큰이라, 서버가 프롬프트·답변·명령줄 없이\n사무실을 보여 주고 권한 요청은 터미널에서 답해야 해요.\n서버가 시작할 때 출력한 링크를 열거나, 체크아웃에서 {command}을(를) 실행하세요:\n토큰이 담긴 사무실이 열리고, 이 브라우저가 토큰을 기억해요.",
+      "connection": {
+        "connecting": "연결 중…",
+        "online": "온라인",
+        "reconnecting": "재연결 중…",
+        "offline": "오프라인"
+      },
+      "hooks": {
+        "unknown": "훅: —",
+        "seen": "훅: 마지막 {ago}",
+        "waiting": "훅: 아직 없음",
+        "missing": "아직 훅 이벤트가 없어요 — {command} 실행"
+      },
+      "tip": {
+        "online": "사무실 서버 {url}: {time}부터 온라인",
+        "connecting": "사무실 서버 {url}: 연결 중…",
+        "reconnecting": "사무실 서버 {url}: {ago} 연결 끊김, 재시도 중",
+        "offline": "사무실 서버 {url}: 연결할 수 없음",
+        "start": "체크아웃에서 시작: {command}  (또는 {alt})",
+        "hooksSeen_other": "훅: 서버 시작 후 이벤트 {count}개, 마지막 {ago}",
+        "hooksWaiting": "훅: 아직 없음 — Claude Code가 도구를 실행하면 발생해요",
+        "hooksMissing": "훅: {span} 동안 없음. Claude Code가 도구를 호출하는데도 아무것도 안 보이면 훅이 설치되지 않은 거예요: {command}",
+        "counts": "세션: {sessions} · 에이전트: {agents} · 클라이언트: {clients}",
+        "notHooked_other": "훅 없음: {names} — {command}을(를) 실행하면 무엇을 하는지 볼 수 있어요",
+        "waitingOnYou": "확인 대기 중:",
+        "server": "서버 v{version}, 가동 {span} · UI: {ui}",
+        "uiBuilt": "빌드됨 (dist/)",
+        "uiDev": "개발 서버 (dist/ 빌드 안 됨)",
+        "diagnose": "진단: {command}"
+      },
+      "simTitle": "?{mode}: 시뮬레이션 에이전트, 서버 없음, 훅 없음",
+      "ariaLabel": "파이프라인 상태",
+      "readOnly": "읽기 전용: 다음 명령의 링크를 여세요",
+      "startIt": "시작:",
+      "todayTitle": "오늘 현황: 세션, 에이전트, 작업, 배포, 실패, 장애, 급여",
+      "today": "오늘"
+    },
+    "time": {
+      "justNow": "방금",
+      "secondsAgo": "{count}초 전",
+      "minutesAgo": "{count}분 전",
+      "hoursAgo": "{count}시간 전",
+      "daysAgo": "{count}일 전",
+      "seconds": "{count}초",
+      "minutes": "{count}분",
+      "hoursMinutes": "{hours}시간 {minutes}분"
+    },
+    "sessions": {
+      "notHookedHint": "훅 없음 — `npm run install-hooks`(또는 /plugin install agent-office)를 실행하면 무엇을 하는지 볼 수 있어요",
+      "notHooked": "훅 없음",
+      "ariaLabel": "Claude Code 세션",
+      "workers_other": "작업자 {count}명",
+      "tip": {
+        "tool": "도구: {tool}",
+        "project": "프로젝트: {project}",
+        "cwd": "cwd: {cwd}",
+        "model": "모델: {model}",
+        "started": "시작: {source}",
+        "registry": "claude: {status} (레지스트리)",
+        "claude": "claude: {state}",
+        "pid": "pid {pid}",
+        "workers": "작업자: {count}명 ({working}명 작업 중)",
+        "ended": "종료됨",
+        "endedReason": "종료됨 ({reason})",
+        "session": "세션 {id}"
+      }
+    },
+    "today": {
+      "ariaLabel": "오늘의 사무실",
+      "title": "오늘",
+      "close": "닫기",
+      "notAnswering": "사무실 서버가 응답하지 않아요.",
+      "counting": "집계 중…",
+      "footBefore": "오늘 자정부터 · 채팅에",
+      "footAfter": "입력하면 매니저 총평을 볼 수 있어요",
+      "sessions": "세션",
+      "agentsSpawned": "채용한 에이전트",
+      "agentsCompleted": "퇴근",
+      "tasksCompleted": "완료한 작업",
+      "deploys": "배포",
+      "pushes": "푸시",
+      "buildsFailed": "빌드 실패",
+      "testsFailed": "테스트 실패",
+      "incidents": "장애",
+      "payroll": "급여"
+    },
+    "taskBoard": {
+      "untitled": "제목 없는 작업",
+      "inProgress": "진행 중: {subject}",
+      "done": "완료: {subject}",
+      "todo": "할 일: {subject}",
+      "blockedBy": " ({ids}에 막힘)",
+      "teamBoard": "{team} 팀 작업 보드",
+      "board": "작업 보드",
+      "aria": "{what}, {label}: 할 일 {todo}, 진행 중 {doing}, 완료 {done}",
+      "ariaNext": ". 클릭하면 다음 보드",
+      "clickNext": "{what}: 클릭하면 다음 보드",
+      "more": "{count}개 더",
+      "chat": {
+        "todo": "할 일 {count}개",
+        "todoBlocked": "할 일 {count}개 ({blocked}개 막힘)",
+        "inProgress": "{count}개 진행 중: {subject}",
+        "progress": "{activity} — {total}개 중 {done}개 완료",
+        "nextUp": "{todo}, 다음: {subject}",
+        "allWaiting": "{todo}, 모두 무언가를 기다리는 중",
+        "toGo": "{total}개 중 {done}개 완료, {pending}개 남음",
+        "oneDone": "보드의 작업 하나가 끝났어요",
+        "allDone": "작업 {count}개 모두 완료"
+      }
+    },
+    "incident": {
+      "badgePinned": "?variant=incident로 고정됨 — 끝내려면 /all-clear",
+      "badgeTitle": "prod가 복구되면 /all-clear 입력",
+      "incident": "장애",
+      "mini": "작은 장애",
+      "daysSign": "무사고 일수",
+      "daysSignTitle": "마지막 장애 후 {days}일",
+      "daysSignNow": "마지막 장애 후 0일 (지금 일어나는 중)",
+      "beacon": "장애 경광등",
+      "statusPage": "상태 페이지: 롤백",
+      "rollbackAlt": "롤백 진행 중",
+      "rollback": "롤백",
+      "timeline": "장애 타임라인",
+      "pizza": "장애 피자"
+    },
+    "seasons": {
+      "christmas": "크리스마스",
+      "halloween": "할로윈",
+      "easter": "부활절",
+      "valentine": "밸런타인데이",
+      "spring": "봄",
+      "summer": "여름",
+      "autumn": "가을",
+      "winter": "겨울"
+    },
+    "titleBar": {
+      "incident": "🔥 PROD 다운 — AGENT OFFICE",
+      "mode": "모드: {mode}",
+      "auto": "자동",
+      "day": "낮",
+      "night": "밤",
+      "settings": "설정",
+      "settingsTitle": "설정: 테마, 낮/밤, 계절, 소리, 서버 설정"
+    },
+    "office": {
+      "catAlt": "고양이",
+      "interactionAlt": "상호작용",
+      "waitingForDesk": "자리 기다리는 중",
+      "waitingForDeskMsg": "자리 기다리는 중...",
+      "doneStats": "✅ 완료 · {stats}",
+      "done": "완료",
+      "standingBy": "대기 중",
+      "standingDown": "철수 중",
+      "working": "⚡ 작업 중",
+      "workingOnPrompt": "✍ 프롬프트 작업 중",
+      "turnOver": "턴 종료 — 대기",
+      "apiError": "⚠ API 오류",
+      "apiErrorWhat": "⚠ API 오류: {error}",
+      "memoryWipe": "🧹 기억 정리",
+      "memoryWipeTrigger": "🧹 기억 정리 ({trigger})",
+      "waitingOnWorkers_other": "⏳ 백그라운드 작업자 {count}명 기다리는 중",
+      "waitingOnWorkersBare": "⏳ 백그라운드 작업자 기다리는 중",
+      "backToWorkTyping": "✍ 다시 업무로",
+      "backToWork": "다시 업무로",
+      "backToMyDesk": "내 자리로",
+      "clockedIn": "출근",
+      "clockedInMsg": "🤖 출근했어요",
+      "clockedInProject": "🤖 출근했어요 · {project}",
+      "clockedOut": "퇴근",
+      "clockedOutMsg": "👋 퇴근했어요",
+      "clockedOutAway": "자리 비운 사이 퇴근했어요",
+      "sessionEnded": "👋 세션 종료",
+      "sessionEndedReason": "👋 세션 종료 ({reason})",
+      "talkingTo": "{name}하고 대화 중",
+      "reportedBack": "📬 {name} 보고 완료",
+      "reportedBackBare": "📬 백그라운드 작업자가 보고했어요",
+      "toolBatchDone_other": "도구 {count}개 일괄 실행 완료",
+      "toolBatchDoneUnknown": "도구 ?개 일괄 실행 완료",
+      "toolRan": "{tool} 실행됨",
+      "permissionAnswered": "✅ 권한 응답 완료 — {what}",
+      "handDown": "손 내림",
+      "detail": " — {detail}",
+      "grabbingRedBull": "레드불 가지러 가요",
+      "foundDesk": "자리 찾았어요",
+      "offTo": {
+        "mainOffice": "메인 사무실로 가요",
+        "corridor": "복도로 가요",
+        "meetingRoom": "회의실로 가요",
+        "serverRoom": "서버실로 가요",
+        "lunchRoom": "식당으로 가요"
+      },
+      "exitCode": "종료 코드 {code}",
+      "shipping": "🚀 배포 중",
+      "shippingWhere": "🚀 {where} 배포 중",
+      "deployInterrupted": "⏹ 배포 중단",
+      "deployInterruptedWhere": "⏹ {where} 배포 중단",
+      "deployed": "🚀 배포 완료",
+      "deployedWhere": "🚀 {where} 배포 완료",
+      "deployFailed": "💥 배포 실패",
+      "deployFailedWhere": "💥 {where} 배포 실패",
+      "pushedTo": "🎉 {branch}에 푸시 완료",
+      "pushedToWhere": "🎉 {branch}에 푸시 완료 · {where}",
+      "testsFailed": "❌ 테스트 실패",
+      "testsFailedIn": "❌ {where} 테스트 실패",
+      "buildFailed": "❌ 빌드 실패",
+      "buildFailedIn": "❌ {where} 빌드 실패",
+      "testsGreen": "✅ 테스트 다시 통과",
+      "testsGreenIn": "✅ {where} 테스트 다시 통과",
+      "buildGreen": "✅ 빌드 다시 성공",
+      "buildGreenIn": "✅ {where} 빌드 다시 성공",
+      "runningTheShow": "총괄 중"
+    },
+    "phase": {
+      "night": "🌙 야간 근무",
+      "dawn": "🌅 동이 터요",
+      "morning": "☀️ 좋은 아침",
+      "afternoon": "☀️ 오후",
+      "evening": "🌆 저녁",
+      "dusk": "🌇 해가 지고 있어요"
+    },
+    "advent": {
+      "sleeps_other": "어드벤트 캘린더: 크리스마스까지 {count}밤",
+      "christmas": "메리 크리스마스!",
+      "daysTill_other": "{year}년까지 {count}일",
+      "newYear": "{year}년 새해 복 많이 받으세요!"
+    },
+    "chat": {
+      "logPrompts": {
+        "hint": "프롬프트 기록: {level} — {what}.",
+        "off": "상태만 — 프롬프트나 답변 텍스트는 저장·전송·표시하지 않아요",
+        "summary": "각 프롬프트와 답변의 처음 200자",
+        "full": "프롬프트와 답변을 최대 2000자까지",
+        "unknown": "알 수 없는 수준",
+        "where": "서버 설정({file})이에요. 설정(제목 표시줄의 톱니바퀴)에서 바꾸거나, 사무실 토큰으로 바꿀 수 있어요:",
+        "pill": "프롬프트: {level}"
+      },
+      "aiPausedTitle": "채팅 모니터 일시 중지됨 — 클릭해서 재개",
+      "aiActiveTitle": "채팅 모니터 작동 중 — 클릭해서 일시 중지",
+      "aiOff": "AI 끔",
+      "aiOn": "AI 켬",
+      "volume": "볼륨: {percent}%",
+      "on": "켜짐",
+      "off": "꺼짐",
+      "answerHere": "여기서 응답: {state}",
+      "answerOnTitle": "사무실에서 권한 요청에 답할 수 있어요 (Claude가 기다리는 동안 카드가 떠요) — 클릭해서 끄기",
+      "answerOffTitle": "권한 요청은 터미널에서만 답해요 — 클릭하면 사무실에서도 답할 수 있어요",
+      "notify": "알림: {state}",
+      "notifyOnTitle": "Claude가 권한을 기다리기 시작하면 데스크톱 알림(프로젝트와 도구만)을 보내요 — 클릭해서 끄기",
+      "notifyOffTitle": "Claude가 권한을 기다려도 데스크톱 알림을 보내지 않아요 — 클릭해서 켜기",
+      "removeReaction": "클릭해서 삭제",
+      "seen": "읽음",
+      "seenAlt": "읽음",
+      "typingAlt": "입력 중",
+      "typing": "{name} 입력 중",
+      "mentionsAria": "세션에 프롬프트 예약",
+      "mentionTitle": "{name}에 프롬프트 예약: 턴이 끝나면 전달돼요",
+      "placeholder": "{channel}에 메시지 보내기",
+      "placeholderMentions": "{channel}에 메시지, 또는 @세션으로 프롬프트 예약",
+      "themeOn": "🧻 Dunder Mifflin 모드: 켜짐. 신분 도용은 장난이 아니에요.",
+      "themeOff": "🔁 사무실 테마: 꺼짐",
+      "tag": {
+        "prompt": "프롬프트",
+        "reply": "답변"
+      }
+    },
+    "phone": {
+      "tab": {
+        "chat": "채팅",
+        "meters": "계기판",
+        "today": "오늘",
+        "settings": "설정"
+      },
+      "noKey": "키 없음",
+      "pending": "{count}개 대기",
+      "noSecret": {
+        "title": "이 링크에 키가 없어요.",
+        "openBefore": "컴퓨터에서 실행한",
+        "openAfter": "명령이 출력한 링크를 열거나 QR 코드를 스캔하세요. 링크는",
+        "endsAfter": "뒤에 64자가 붙어 있어요. 첫 방문 후에는 이 브라우저가 기억해요."
+      },
+      "offline": "연결 안 됨. 사무실이 멈췄거나 이 링크가 바뀌었을 수 있어요:",
+      "offlineAfter": "명령이 현재 링크를 출력해요.",
+      "metersEmpty": "아직 보고한 세션이 없어요. Claude Code가 작업을 시작하면 급여, 전기, 메모리가 여기에 나타나요.",
+      "tabsAria": "사무실 패널"
+    },
+    "viewer": {
+      "connecting": "사무실에 연결 중…"
+    },
+    "inspector": {
+      "main": {
+        "working": "작업 중",
+        "waiting_other": "작업자 {count}명 기다리는 중",
+        "idle": "대기",
+        "needsYou": "확인 필요",
+        "error": "API 오류",
+        "errorCode": "API 오류: {error}",
+        "errorDetail": "{label} — {detail}",
+        "compacting": "압축 중",
+        "unknown": "아직 소식 없음"
+      },
+      "worker": {
+        "newHire": "도착 중",
+        "walkingToDesk": "자리로 가는 중",
+        "walkingToManager": "다가가는 중",
+        "talking": "대화 중",
+        "coffeeBreak": "휴식 중",
+        "waiting": "자리 기다리는 중",
+        "changingRoom": "다른 방으로 가는 중",
+        "completed": "완료",
+        "working": "작업 중",
+        "idle": "대기",
+        "unknown": "알 수 없음"
+      },
+      "stats": {
+        "tokens": "{tokens} tok",
+        "toolUses_other": "도구 {count}회 사용"
+      },
+      "derived": {
+        "note": "사무실이 계산한 값: {list}",
+        "tokens": "트랜스크립트에서 가져온 토큰과 모델",
+        "model": "트랜스크립트에서 가져온 모델",
+        "durationMs": "생성부터 완료까지 걸린 시간",
+        "toolUses": "훅이 본 도구 사용 횟수"
+      },
+      "transcript": {
+        "promptsOff": "트랜스크립트 숨김: 프롬프트 기록 꺼짐",
+        "needsToken": "사무실이 연결되면 트랜스크립트가 나타나요",
+        "noPath": "아직 트랜스크립트 없음",
+        "notFound": "트랜스크립트 파일을 찾을 수 없음",
+        "unavailable": "트랜스크립트를 쓸 수 없음",
+        "nothingSaid": "아직 아무 말도 없음",
+        "tool": "도구"
+      }
+    },
+    "agentCard": {
+      "ariaLabel": "에이전트 정보",
+      "ariaNamed": "{name} — 정보",
+      "close": "닫기",
+      "closeTitle": "닫기 (Esc)",
+      "roleMain": "세션 claude",
+      "tookTitle": "걸린 시간",
+      "forTitle": "작업한 시간",
+      "took": "{elapsed} 걸림",
+      "for": "{elapsed}째",
+      "isBoss": "바로 당신이에요.",
+      "task": "작업",
+      "noTask": "작업 내용 없음",
+      "notHooked": "훅 없음: Claude Code 세션 레지스트리로만 알고 있어서 아직 보여 줄 턴이 없어요",
+      "lastPrompt": "마지막 프롬프트",
+      "lastReply": "마지막 답변",
+      "promptsHidden": "숨김: 프롬프트 기록 꺼짐",
+      "nothingYet": "아직 없음",
+      "crons_other": "cron {count}개",
+      "waitingOn": "{count}명 기다리는 중",
+      "contextTitle": "마지막 메시지의 사용량: 컨텍스트 창이 얼마나 찼는지",
+      "context": "컨텍스트 {tokens} tok",
+      "where": "위치",
+      "noProject": "프로젝트 없음",
+      "session": "세션 {id}",
+      "noSession": "세션 없음",
+      "tools": "도구",
+      "calls_other": "{count}회 호출",
+      "restored": "사무실 서버가 재시작됐어요: 그 이후의 도구",
+      "noTools": "아직 도구 없음",
+      "historyAria_other": "최근 {count}개 항목",
+      "finished": "완료",
+      "lineage": "계보",
+      "noTotals": "보고된 합계 없음",
+      "soFar": "지금까지: {stats}",
+      "parent": "상위 {name}",
+      "spawnedBySession": "세션이 생성함",
+      "background": "백그라운드",
+      "unread": "안 읽음 {count}",
+      "transcript": "트랜스크립트",
+      "foot": {
+        "serverForgot": "서버에서 내보냈어요 — 마지막으로 알려진 정보",
+        "serverUnreachable": "사무실 서버에 연결할 수 없어요 — 마지막으로 알려진 정보",
+        "live": "실시간 · {seconds}초마다 갱신",
+        "officeUnreachable": "사무실 서버에 연결할 수 없어요 — 사무실이 아는 정보만 표시",
+        "notServerAgent": "서버 에이전트가 아니에요 — 사무실이 아는 정보만 표시",
+        "loading": "불러오는 중…"
+      }
+    },
+    "permission": {
+      "ariaLabel": "권한 요청",
+      "timeLeft": "{seconds}초 후 터미널로 넘어가요",
+      "readOnly": "터미널에서 답하세요 (이 페이지는 읽기 전용)",
+      "allow": "허용",
+      "allowTitle": "이 호출 허용 ({key})",
+      "allowRemember": "허용 및 기억",
+      "deny": "거부",
+      "denyTitle": "이 호출 거부 ({key})",
+      "sendingAllow": "허용 보내는 중…",
+      "sendingDeny": "거부 보내는 중…",
+      "rememberNote": "허용 및 기억: {what}",
+      "title": {
+        "use": "Claude가 사용하려 해요: {tool}",
+        "run": "Claude가 실행하려 해요: {what}",
+        "write": "Claude가 쓰려 해요: {what}",
+        "edit": "Claude가 수정하려 해요: {what}",
+        "read": "Claude가 읽으려 해요: {what}",
+        "fetch": "Claude가 가져오려 해요: {what}",
+        "search": "Claude가 검색하려 해요: {what}",
+        "findFiles": "Claude가 파일을 찾으려 해요: {what}"
+      },
+      "remember": {
+        "nothing": "기억할 것 없음",
+        "all": "허용하고 {parts}",
+        "setMode": "이 세션 모드 전환: {mode}",
+        "anotherMode": "다른 모드",
+        "alwaysAllow": "항상 허용: {rules}{where}",
+        "alwaysDeny": "항상 거부: {rules}{where}",
+        "alwaysAsk": "항상 묻기: {rules}{where}",
+        "always": "항상 {behavior}: {rules}{where}",
+        "this": "이것",
+        "tool": "도구",
+        "directories": "{dirs} 접근 허용{where}",
+        "thisDirectory": "이 디렉터리",
+        "other": "이 선택 기억"
+      },
+      "fade": {
+        "timedOut": "시간 초과",
+        "deniedOffice": "사무실에서 거부함",
+        "allowedOffice": "사무실에서 허용함",
+        "terminal": "터미널에서 응답함"
+      }
+    },
+    "character": {
+      "memoryWipe": "기억 정리",
+      "apiError": "⚠ API 오류",
+      "shipping": "🚀 배포 중",
+      "waitingForDesk": "자리 기다리는 중",
+      "unread_other": "안 읽은 메시지 {count}개",
+      "inspect": "{name} 정보 보기",
+      "effect": "효과"
+    },
+    "signals": {
+      "deployFailed": "배포 실패",
+      "deployFailedOf": "{where} 배포 실패",
+      "buildFailed": "빌드 실패",
+      "buildFailedIn": "{where} 빌드 실패",
+      "testsFailed": "테스트 실패",
+      "testsFailedIn": "{where} 테스트 실패",
+      "pushFailed": "푸시 실패",
+      "pushFailedOf": "{target} 푸시 실패",
+      "why": ": {why}"
+    }
+  },
+  "chatter": {
+    "default": {
+      "spawn": [
+        "출근했어요!",
+        "출근 완료",
+        "배포할 준비 됐어요",
+        "커피 먼저, 코드는 그다음",
+        "가 봅시다",
+        "vim 여는 중...",
+        "최신 main pull 받는 중"
+      ],
+      "work": [
+        "하고 있어요",
+        "미친 듯이 타이핑 중",
+        "완전 몰입했어요",
+        "진도 나가는 중",
+        "문서 확인 중이에요",
+        "git blame 할 시간",
+        "스택 오버플로우가 구해 주겠죠"
+      ],
+      "done": [
+        "작업 끝!",
+        "배포했어요",
+        "PR 올렸어요",
+        "깔끔하게 끝냈어요",
+        "LGTM",
+        "main에 merge했어요",
+        "배포 완료"
+      ],
+      "coffee": [
+        "잠깐 커피 좀요",
+        "카페인이 필요해요",
+        "한 잔 가지러 가요",
+        "커피 타임"
+      ],
+      "water": [
+        "수분 보충해요",
+        "물 마시는 시간",
+        "물 뜨러 가요",
+        "물병 채우는 중",
+        "수분 체크",
+        "잠깐 물 마시고 올게요"
+      ]
+    },
+    "office": {
+      "bossPraise": [
+        "잘했어요 {name} 👊",
+        "탄탄해요 🔥",
+        "배포 가자!",
+        "훌륭해요, 레드불 하나 챙겨요",
+        "레전드 💯",
+        "잘했어요, 다음은 누구?",
+        "빨랐네요, 하나 더 할래요?",
+        "깔끔해요 👌",
+        "고마워요 {name}",
+        "merge 완료. 다음 작업 로딩 중..."
+      ]
+    },
+    "incident": {
+      "spawn": [
+        "호출받았어요. 바로 볼게요.",
+        "브리지 들어가요, IC 누구예요?",
+        "02:14 출근, 커피 좀 보내 주세요",
+        "눈보다 노트북이 먼저 떴어요"
+      ],
+      "work": [
+        "4f2a1c와 main 사이 bisect 중",
+        "DNS 아니에요. DNS 확인 중.",
+        "prod 로그 tail 중, 초당 400건의 슬픔",
+        "런북을 처음으로 읽는 중이에요",
+        "진작 있었어야 할 feature flag 추가 중"
+      ],
+      "done": [
+        "롤백 완료, 에러율 0.1%",
+        "근본 원인: null. 언제나 null.",
+        "핫픽스 merge 완료, 테스트는 나중에 추가했어요",
+        "상태 페이지 다시 초록불"
+      ],
+      "coffee": [
+        "세 번째 커피예요, 뭐라 하지 마요",
+        "제대로 돌아가는 건 커피 머신뿐이에요",
+        "커피가 잠을 대신할 순 없지만, 그래도 해 봐요"
+      ],
+      "water": [
+        "물. 그다음 또 커피.",
+        "새벽 2시에 책임감 있는 어른처럼 수분 보충",
+        "정수기도 성능 저하 상태예요"
+      ],
+      "bossReply": [
+        "상황 종료. 다시는 금요일에 배포 안 해요.",
+        "포스트모템 10시, 비난 없이, 피자 지참",
+        "잘 잡았어요. 타임라인에 적어 둬요.",
+        "알아요. 안다고요."
+      ]
+    },
+    "interactions": {
+      "plant1": [
+        "몬스테라 물 주는 중",
+        "식물 돌보는 시간",
+        "계속 푸르게 자라렴"
+      ],
+      "plant2": [
+        "산세베리아 물 주는 중",
+        "수분 충전소",
+        "잎이 좋아 보이네요"
+      ],
+      "plant3": [
+        "돈나무 물 주는 중",
+        "쑥쑥 자라라",
+        "사무실 정글 관리 중"
+      ],
+      "plant4": [
+        "화분에 물 주는 중",
+        "사무실을 푸르게"
+      ],
+      "plant5": [
+        "몬스테라 물 주는 중",
+        "얘는 정말 잘 크네요"
+      ],
+      "coffee": [
+        "커피 새로 내리는 중",
+        "커피 타임!",
+        "연료 충전 중",
+        "커피 필요한 사람?"
+      ],
+      "filing": [
+        "서류 확인 중",
+        "그 문서 어디 뒀더라...",
+        "서류함 습격",
+        "4분기 보고서 찾는 중"
+      ],
+      "printer": [
+        "뭐 좀 출력하는 중",
+        "제발 걸리지 마라...",
+        "오랜 친구",
+        "요즘 누가 출력을 해요"
+      ],
+      "whiteboard": [
+        "보드 업데이트 중",
+        "티켓을 완료로 옮기는 중",
+        "포스트잇 붙이는 중",
+        "스프린트 계획 시간"
+      ],
+      "fireExtinguisher": [
+        "소화기 점검 중",
+        "안전 제일",
+        "유효기간 아직 남았네요, 좋아요",
+        "쓸 일 없기를"
+      ],
+      "waterCooler": [
+        "물병 채우는 중",
+        "수분 체크",
+        "물 마시는 시간",
+        "수분 보충 중"
+      ],
+      "bell": [
+        "딩동! 스탠드업 시간이에요",
+        "종 울리는 중",
+        "모두 주목!",
+        "전원 집합!"
+      ],
+      "kanban": [
+        "보드 업데이트 중",
+        "티켓을 완료로 옮기는 중",
+        "스프린트 순조로워요",
+        "이 티켓 리뷰에 방치한 사람 누구예요?"
+      ],
+      "shipItPoster": [
+        "배포 가자!",
+        "의욕 충전",
+        "저 포스터는 봐도 봐도 좋아요",
+        "가즈아"
+      ],
+      "tvMonitor": [
+        "대시보드 확인 중",
+        "모든 시스템 정상",
+        "지표 모니터링 중",
+        "가동률 탄탄해요"
+      ]
+    },
+    "events": {
+      "fireDrill": {
+        "name": "소방 훈련",
+        "announcement": "🚨 소방 훈련! 모두 비상구로!",
+        "managerLine": "소방 훈련! 빨리 움직여요!",
+        "agentLines": [
+          "또요...",
+          "한창 몰입 중이었는데!",
+          "내 커피!",
+          "코드베이스를 구해요!"
+        ]
+      },
+      "pizza": {
+        "name": "피자 배달",
+        "announcement": "🍕 피자 왔어요! 공짜 점심!",
+        "managerLine": "로비에 피자 있어요!",
+        "agentLines": [
+          "피자다!",
+          "드디어 좋은 소식",
+          "파인애플?!",
+          "페퍼로니 찜"
+        ]
+      },
+      "standup": {
+        "name": "데일리 스탠드업",
+        "announcement": "📢 @here 데일리 스탠드업 지금 시작해요",
+        "managerLine": "스탠드업! 뭐 배포했어요?",
+        "agentLines": [
+          "그거 작업했어요",
+          "아직 디버깅 중",
+          "리뷰에 막혀 있어요",
+          "staging에 배포했어요",
+          "버그 3개 고치고 5개 만들었어요"
+        ]
+      },
+      "deploy": {
+        "name": "프로덕션 배포",
+        "announcement": "🚀 프로덕션에 배포 중...",
+        "managerLine": "숨 참아요...",
+        "agentLines": [
+          "아 안 돼",
+          "제발 터지지 마",
+          "테스트 돌리는 걸 깜빡했어요",
+          "YOLO",
+          "롤백 계획 확인 중"
+        ]
+      },
+      "deploySuccess": {
+        "name": "배포 성공",
+        "announcement": "✅ 배포 성공! 모든 시스템 정상 🎉",
+        "managerLine": "해냈어요!",
+        "agentLines": [
+          "가자!",
+          "배포 가자!",
+          "다들 수고했어요",
+          "맥주 타임"
+        ]
+      },
+      "deployFail": {
+        "name": "배포 실패",
+        "announcement": "💥 배포 실패 - 롤백 중",
+        "managerLine": "누가 그거 푸시했어요?!",
+        "agentLines": [
+          "저 아니에요",
+          "안 돼 안 돼 안 돼",
+          "로그 확인 중",
+          "역시 DNS 탓이에요",
+          "되돌리는 중..."
+        ]
+      },
+      "powerFlicker": {
+        "name": "전기 깜빡임",
+        "announcement": "⚡ 전기가 깜빡였어요 - 작업 저장하세요!",
+        "agentLines": [
+          "방금 불이...",
+          "CTRL+S CTRL+S",
+          "저장 안 한 내 변경 사항!",
+          "지금 당장 git commit"
+        ]
+      },
+      "birthday": {
+        "name": "생일",
+        "announcement": "🎂 생일 축하해요! 탕비실에 케이크 있어요!",
+        "managerLine": "생일 축하해요!",
+        "agentLines": [
+          "케이크!",
+          "생일 축하해요!",
+          "🎉🎉🎉",
+          "글루텐 프리예요?",
+          "소원 빌어요"
+        ]
+      },
+      "whoBrokeBuild": {
+        "name": "빌드 깨짐",
+        "announcement": "🔴 CI/CD 파이프라인 빨간불이에요. 누가 빌드 깼어요?",
+        "managerLine": "이거 고칠 때까지 아무도 퇴근 못 해요.",
+        "agentLines": [
+          "git blame 확인 중...",
+          "저 아니에요",
+          "merge 때문인가?",
+          "flaky 테스트일지도?",
+          "인턴 탓이에요"
+        ]
+      },
+      "friday": {
+        "name": "불금 분위기",
+        "announcement": "🎉 금요일이에요! 조금만 더 힘내요!",
+        "managerLine": "금요일엔 배포 금지.",
+        "agentLines": [
+          "TGIF",
+          "한잔할래요?",
+          "PR 하나만 더...",
+          "5시 칼퇴",
+          "주말이다!"
+        ]
+      },
+      "printerJam": {
+        "name": "프린터 걸림",
+        "announcement": "🖨️ 프린터 또 걸렸어요",
+        "agentLines": [
+          "아직도 프린터가 왜 있어요",
+          "PC LOAD LETTER?!",
+          "요즘 누가 출력해요",
+          "2026년인데..."
+        ]
+      },
+      "slackDown": {
+        "name": "Slack 다운",
+        "announcement": "💀 Slack이 죽었어요... 근데 이건 어떻게 올라가는 거죠",
+        "agentLines": [
+          "아이러니하네요",
+          "이메일 쓸 시간",
+          "비둘기 편지 시대로 복귀",
+          "오히려 평화롭네요"
+        ]
+      },
+      "incident": {
+        "fireDrill": {
+          "name": "워룸",
+          "announcement": "🚨 모두 문 앞으로 — 브리지 콜 시작해요",
+          "managerLine": "브리지 들어가요. 맥락 아는 사람?",
+          "agentLines": [
+            "브리지 들어가요",
+            "이거 sev1이에요?",
+            "음소거할게요, 애들 자요"
+          ]
+        },
+        "pizza": {
+          "name": "장애 피자",
+          "announcement": "🍕 피자 도착 (경비 코드: OUTAGE)",
+          "managerLine": "빨리 먹어요",
+          "agentLines": [
+            "장애 중에 먹는 피자는 맛이 달라요",
+            "오늘 밤 두 번째 피자",
+            "키보드 위에서 먹어서 죄송해요"
+          ]
+        },
+        "standup": {
+          "name": "상황 공유",
+          "announcement": "📢 @here 아는 것, 하는 것, 막힌 사람",
+          "managerLine": "한 명씩 돌아가며 말해요",
+          "agentLines": [
+            "에러율 40%, 떨어지는 중",
+            "롤백 절반 진행",
+            "DBA가 필요해요",
+            "아직 DNS 아님. 아마 DNS."
+          ]
+        },
+        "deploy": {
+          "name": "롤백 배포",
+          "announcement": "🚀 롤백 중...",
+          "managerLine": "대기",
+          "agentLines": [
+            "제발",
+            "그래프 보는 중",
+            "이것도 실패하면 롤백을 롤백해요"
+          ]
+        },
+        "deploySuccess": {
+          "name": "롤백 완료",
+          "announcement": "✅ 롤백 완료 — 에러율 정상",
+          "managerLine": "상황 종료 타이머 시작해요",
+          "agentLines": [
+            "이제 숨 쉬어져요",
+            "그래프 평평해요",
+            "포스트모템 문서 누가 쓸래요?"
+          ]
+        },
+        "deployFail": {
+          "name": "롤백 실패",
+          "announcement": "💥 롤백 실패 — 롤백을 롤백하는 중",
+          "managerLine": "오케이. 오케이. 오케이.",
+          "agentLines": [
+            "역시나",
+            "되돌릴 수 없는 마이그레이션이었어요",
+            "백업 확인 중"
+          ]
+        },
+        "powerFlicker": {
+          "name": "랙 전원 순단",
+          "announcement": "⚡ UPS가 작동했어요. 또요.",
+          "agentLines": [
+            "우리 때문이에요?",
+            "데이터센터도 힘든 밤이네요"
+          ]
+        },
+        "birthday": {
+          "name": "교대",
+          "announcement": "🕑 EU 당직자가 일어났어요 — 탕비실에서 인수인계",
+          "managerLine": "인수인계하고 자요",
+          "agentLines": [
+            "인수인계 문서가 3줄이에요",
+            "행운을 빌어요",
+            "거긴 화요일이에요"
+          ]
+        },
+        "whoBrokeBuild": {
+          "name": "Bisect",
+          "announcement": "🔴 main bisect 중 — good과 bad 사이 커밋 12개",
+          "managerLine": "비난 없이. 사람 말고 커밋을 찾아요.",
+          "agentLines": [
+            "4f2a1c는 bad",
+            "a1b2c3는 good",
+            "설정 변경 때문이었어요",
+            "DNS 탓이에요"
+          ]
+        },
+        "friday": {
+          "name": "금요일 배포",
+          "announcement": "📅 알림: 이 모든 건 금요일 배포에서 시작됐어요",
+          "managerLine": "다시는 안 해요",
+          "agentLines": [
+            "다시는 안 해요",
+            "지난번에도 그렇게 말했잖아요",
+            "이제부터 금요일은 읽기 전용"
+          ]
+        },
+        "printerJam": {
+          "name": "에러 로그 출력 중",
+          "announcement": "🖨️ 누가 kubectl logs를 lp로 파이프했어요",
+          "agentLines": [
+            "400페이지예요",
+            "PC LOAD STACKTRACE",
+            "코드 뽑아요"
+          ]
+        },
+        "slackDown": {
+          "name": "상태 페이지 다운",
+          "announcement": "💀 상태 페이지가 죽었어요. 상태 페이지가요.",
+          "agentLines": [
+            "그럴 줄 알았어요",
+            "트윗으로 올려요",
+            "비둘기 편지 시대로 복귀"
+          ]
+        }
+      },
+      "drama": {
+        "coffeeMeet": {
+          "lines": [
+            "새 PR 봤어요?",
+            "2000줄짜리요? 네...",
+            "테스트도 없어요",
+            "💀"
+          ]
+        },
+        "whoPushed": {
+          "lines": [
+            "누가 main에 직접 푸시했어요?",
+            "저 아니에요",
+            "git blame은 아니라던데요",
+            "..."
+          ]
+        },
+        "tabsVsSpaces": {
+          "lines": [
+            "탭이에요, 스페이스예요?",
+            "당연히 스페이스죠",
+            "차단하고 신고했어요"
+          ]
+        },
+        "meeting": {
+          "lines": [
+            "이 회의는 Slack 메시지면 충분했어요",
+            "이 Slack 메시지는 침묵이면 충분했어요"
+          ]
+        },
+        "framework": {
+          "lines": [
+            "Rust로 다시 짜야 해요",
+            "매주 그 소리 하잖아요",
+            "그리고 매주 제 말이 맞죠"
+          ]
+        },
+        "legacy": {
+          "lines": [
+            "2019년 TODO를 발견했어요",
+            "뭐라고 써 있어요?",
+            "\"나중에 고치기\"",
+            "나중이 바로 지금이에요",
+            "아뇨. 나중은 나중이에요."
+          ]
+        },
+        "ai": {
+          "lines": [
+            "오늘은 AI가 저보다 코드를 잘 짰어요",
+            "솔직히 기준이 낮잖아요",
+            "무례하지만 맞는 말이네요"
+          ]
+        },
+        "standupExcuse": {
+          "lines": [
+            "어제 뭐 했어요?",
+            "복잡한 이슈를 조사했어요",
+            "6시간 구글링했다는 거죠?",
+            "\"리서치\"라고 불러 주세요"
+          ]
+        }
+      }
+    }
+  },
+  "server": {
+    "commands": {
+      "status": "📊 에이전트 {agents}명 활동 중, {working}명 작업 중, 클라이언트 {clients}개 연결됨",
+      "quiet": "🏢 사무실이 조용해요 — 활동 중인 에이전트 없음",
+      "cleared": "🧹 채팅을 지웠어요",
+      "incident": "🔴 장애 선언 — prod 다운. 모두 워룸으로 모여요. (끝나면 /all-clear)",
+      "allClear": "✅ 상황 종료 — 장애 끝. 포스트모템은 10시, 비난 없이, 피자 지참.",
+      "help": "📋 명령어: {commands}",
+      "desc": {
+        "status": "사무실 통계",
+        "agents": "에이전트 목록",
+        "recap": "오늘 요약",
+        "incident": "장애 선언",
+        "allClear": "장애 종료",
+        "clear": "채팅 기록 삭제 (인증 토큰 필요)",
+        "help": "이 메시지"
+      }
+    },
+    "system": {
+      "expired": "⌛ {name}에 예약된 프롬프트가 전달되지 못하고 만료됐어요 (1시간 안에 턴이 끝나지 않았어요)",
+      "expiredUnknown": "⌛ 세션에 예약된 프롬프트가 전달되지 못하고 만료됐어요 (1시간 안에 턴이 끝나지 않았어요)",
+      "pickedUp": "📬 {name}: 채팅의 프롬프트를 받았어요",
+      "pickedUpMore": "📬 {name}: 채팅의 프롬프트를 받았어요 ({count}개 더 대기 중)",
+      "dropped_other": "🗑️ {name}에 예약된 프롬프트 {count}개 삭제됨: {why}",
+      "sessionEnded": "세션이 끝났어요",
+      "ambiguous": "🤔 {mention}에 해당하는 세션이 {count}개예요: {names}. 세션 id를 대신 쓰세요.",
+      "notTrusted": "🔒 {name}에 프롬프트를 예약할 수 있는 건 이 Mac의 사무실 페이지뿐이에요 (휴대폰, 프록시를 거친 페이지, 사무실 링크가 없는 페이지는 안 돼요)",
+      "noHooks": "🔌 {name}에는 사무실 훅이 없어서 프롬프트를 전달할 수 없어요: {command} 실행 후 그 세션을 다시 시작하세요",
+      "tooLong": "{length}자예요. 한도는 {limit}자예요",
+      "full": "이미 프롬프트 {count}개가 기다리고 있어요",
+      "badId": "훅이 받을 수 있는 세션 id가 아니에요",
+      "notQueued": "✋ {name}에 예약 안 됨: {why}",
+      "whenBusy": "지금 턴이 끝나면 전달돼요",
+      "whenIdle": "지금은 작업 중이 아니라서 다음 턴이 끝날 때 전달돼요 (사무실이 직접 턴을 시작할 수는 없어요: 터미널에서 아무 프롬프트나 주세요)",
+      "queued": "📨 {name}에 예약됨: {when}",
+      "queuedInLine": "📨 {name}에 예약됨 (대기 #{position}): {when}",
+      "needsToken": "🔒 {command}에는 사무실 인증 토큰이 필요해요 — 사무실 체크아웃에서 {script}을(를) 실행하면 함께 보내요 (README › Chat 참고)"
+    },
+    "agents": {
+      "starting": "시작: {task}",
+      "done": "완료: {result}"
+    },
+    "recap": {
+      "quiet": "📋 요약: 오늘은 아직 조용해요 — 기록된 게 없어요. 즐길 수 있을 때 즐기세요.",
+      "line": "📋 오늘 요약: {parts}.{payroll} {signOff}",
+      "sessions_other": "세션 {count}개",
+      "agents_other": "에이전트 {count}명 채용, {out}명 퇴근",
+      "tasks_other": "작업 {count}개 완료",
+      "deploys_other": "배포 {count}건",
+      "pushes_other": "푸시 {count}건",
+      "buildsFailed_other": "빌드 실패 {count}건",
+      "testsFailed_other": "테스트 실패 {count}건",
+      "incidents_other": "장애 {count}건 (그 얘긴 하지 맙시다)",
+      "noIncidents": "장애 없음",
+      "payroll": " 급여: {amount}.",
+      "signOffIncident": "포스트모템 노트는 10시까지 제 책상에 올려 주세요.",
+      "signOffDeploys": "다들 배포 잘했어요.",
+      "signOff": "다들 수고했어요."
+    },
+    "notify": {
+      "title": "Claude가 기다리고 있어요",
+      "message": "{project} · {tool} {phrase}",
+      "bash": "명령을 실행하려 해요",
+      "write": "파일을 쓰려 해요",
+      "edit": "파일을 수정하려 해요",
+      "notebook": "노트북을 수정하려 해요",
+      "read": "파일을 읽으려 해요",
+      "fetch": "웹 페이지를 가져오려 해요",
+      "search": "웹을 검색하려 해요",
+      "other": "권한이 필요해요",
+      "aTool": "도구",
+      "aSession": "세션"
+    },
+    "routing": {
+      "debugger": [
+        "버그",
+        "에러",
+        "오류",
+        "크래시",
+        "고쳐",
+        "고치",
+        "깨졌",
+        "작동 안",
+        "동작 안",
+        "디버그",
+        "디버깅",
+        "예외",
+        "스택 트레이스"
+      ],
+      "codeReviewer": [
+        "리뷰",
+        "검토",
+        "풀 리퀘",
+        "풀리퀘",
+        "머지",
+        "병합",
+        "승인",
+        "변경점"
+      ],
+      "frontend": [
+        "프론트",
+        "프런트",
+        "화면",
+        "디자인",
+        "컴포넌트",
+        "스타일",
+        "레이아웃",
+        "반응형",
+        "애니메이션",
+        "픽셀",
+        "테마",
+        "다크 모드",
+        "라이트 모드",
+        "색상",
+        "색깔",
+        "폰트",
+        "글꼴",
+        "여백",
+        "패딩",
+        "마진",
+        "버튼"
+      ],
+      "tester": [
+        "테스트",
+        "커버리지",
+        "단언",
+        "모킹",
+        "목 객체"
+      ],
+      "security": [
+        "보안",
+        "인증",
+        "취약점",
+        "인젝션",
+        "토큰",
+        "비밀번호",
+        "패스워드",
+        "암호화",
+        "인증서"
+      ],
+      "devops": [
+        "배포",
+        "디플로이",
+        "파이프라인",
+        "도커",
+        "쿠버네티스",
+        "테라폼",
+        "도메인",
+        "인프라"
+      ],
+      "performance": [
+        "성능",
+        "느려",
+        "느림",
+        "최적화",
+        "속도",
+        "지연",
+        "레이턴시",
+        "번들",
+        "메모리 누수",
+        "캐시",
+        "렌더링",
+        "병목",
+        "프레임"
+      ],
+      "database": [
+        "데이터베이스",
+        "디비",
+        "쿼리",
+        "스키마",
+        "마이그레이션",
+        "인덱스",
+        "조인",
+        "테이블",
+        "컬럼",
+        "칼럼"
+      ],
+      "typescript": [
+        "타입스크립트",
+        "타입",
+        "인터페이스",
+        "제네릭",
+        "유니언",
+        "유니온",
+        "검증",
+        "유효성"
+      ],
+      "ai": [
+        "인공지능",
+        "모델",
+        "프롬프트",
+        "임베딩",
+        "벡터",
+        "에이전트",
+        "컨텍스트"
+      ],
+      "fullstack": [
+        "엔드포인트",
+        "웹훅",
+        "라우트",
+        "라우팅",
+        "미들웨어",
+        "요청",
+        "응답",
+        "백엔드",
+        "풀스택"
+      ],
+      "git": [
+        "깃",
+        "브랜치",
+        "커밋",
+        "리베이스",
+        "체리픽",
+        "스태시",
+        "충돌",
+        "컨플릭트",
+        "원격 저장소"
+      ],
+      "architect": [
+        "리팩터",
+        "리팩토링",
+        "추상화",
+        "패턴",
+        "아키텍처",
+        "설계",
+        "모듈",
+        "패키지",
+        "모노레포",
+        "구조 개선"
+      ]
+    }
+  }
+}

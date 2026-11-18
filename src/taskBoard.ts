@@ -15,6 +15,7 @@
 
 import { useSyncExternalStore } from 'react'
 import type { OfficeEvent, SessionInfo } from './types'
+import { t } from './i18n'
 
 export type TaskStatus = 'pending' | 'in_progress' | 'completed'
 
@@ -244,13 +245,13 @@ export function clip(text: string | undefined, max = 60): string {
 
 /** What hovering a post-it says: the activeForm while in progress, what blocks a waiting one, who owns it. */
 export function taskCaption(task: BoardTask, board: TaskBoardInfo): string {
-  const subject = clip(task.subject, 90) || 'untitled task'
+  const subject = clip(task.subject, 90) || t('ui.taskBoard.untitled')
   let text: string
-  if (task.status === 'in_progress') text = `In progress: ${clip(task.activeForm, 90) || subject}`
-  else if (task.status === 'completed') text = `Done: ${subject}`
+  if (task.status === 'in_progress') text = t('ui.taskBoard.inProgress', { subject: clip(task.activeForm, 90) || subject })
+  else if (task.status === 'completed') text = t('ui.taskBoard.done', { subject })
   else {
-    const blockers = task.blockedBy.filter(id => board.tasks.some(t => t.id === id && t.status !== 'completed'))
-    text = `To do: ${subject}${blockers.length ? ` (blocked by ${blockers.map(id => `#${id}`).join(', ')})` : ''}`
+    const blockers = task.blockedBy.filter(id => board.tasks.some(other => other.id === id && other.status !== 'completed'))
+    text = t('ui.taskBoard.todo', { subject }) + (blockers.length ? t('ui.taskBoard.blockedBy', { ids: blockers.map(id => `#${id}`).join(', ') }) : '')
   }
   return `#${task.id} ${text}${task.owner ? ` · ${clip(task.owner, 30)}` : ''}`
 }
@@ -284,18 +285,18 @@ export function boardChatLines(board: TaskBoardInfo): string[] {
   const n = boardCounts(board)
   const total = n.pending + n.in_progress + n.completed
   const blocked = board.tasks.filter(t => t.status === 'pending' && isBlocked(t, board)).length
-  const todo = n.pending ? `${n.pending} to do${blocked ? ` (${blocked} blocked)` : ''}` : ''
+  const todo = n.pending ? (blocked ? t('ui.taskBoard.chat.todoBlocked', { count: n.pending, blocked }) : t('ui.taskBoard.chat.todo', { count: n.pending })) : ''
   const doing = board.tasks.filter(t => t.status === 'in_progress').sort((a, b) => compareIds(a.id, b.id))
   const lines: string[] = []
   if (doing.length) {
-    lines.push(`${todo ? `${todo}, ` : ''}${n.in_progress} in progress: ${clip(doing[0].subject) || `#${doing[0].id}`}`)
-    if (doing[0].activeForm) lines.push(`${clip(doing[0].activeForm)} — ${n.completed} of ${total} done`)
+    lines.push((todo ? `${todo}, ` : '') + t('ui.taskBoard.chat.inProgress', { count: n.in_progress, subject: clip(doing[0].subject) || `#${doing[0].id}` }))
+    if (doing[0].activeForm) lines.push(t('ui.taskBoard.chat.progress', { activity: clip(doing[0].activeForm), done: n.completed, total }))
   } else if (n.pending) {
     const next = board.tasks.filter(t => t.status === 'pending' && !isBlocked(t, board)).sort((a, b) => compareIds(a.id, b.id))[0]
-    lines.push(next ? `${todo}, next up: ${clip(next.subject) || `#${next.id}`}` : `${todo}, all waiting on something`)
-    if (n.completed) lines.push(`${n.completed} of ${total} done, ${n.pending} to go`)
+    lines.push(next ? t('ui.taskBoard.chat.nextUp', { todo, subject: clip(next.subject) || `#${next.id}` }) : t('ui.taskBoard.chat.allWaiting', { todo }))
+    if (n.completed) lines.push(t('ui.taskBoard.chat.toGo', { done: n.completed, total, pending: n.pending }))
   } else {
-    lines.push(n.completed === 1 ? 'the one task on the board is done' : `all ${n.completed} tasks done`)
+    lines.push(n.completed === 1 ? t('ui.taskBoard.chat.oneDone') : t('ui.taskBoard.chat.allDone', { count: n.completed }))
   }
   return lines
 }

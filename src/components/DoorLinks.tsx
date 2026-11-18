@@ -13,6 +13,8 @@
 
 import React from 'react'
 import { ROOMS, type RoomId } from '../rooms'
+import { useT } from '../i18n'
+import { doorLabel, roomName } from '../roomText'
 import '../styles/room-switcher.css'
 
 interface DoorLinksProps {
@@ -26,21 +28,26 @@ interface DoorLinksProps {
 
 /** The clickable doors of `room` */
 export default function DoorLinks({ room, open, onOpen }: DoorLinksProps) {
+  const tr = useT()
   const doors = ROOMS[room].connections.filter(c => c.door && open.has(c.toRoom))
   return (
     <>
-      {doors.map(c => (
-        <button
-          key={c.toRoom}
-          type="button"
-          className="door-link"
-          data-to={c.toRoom}
-          aria-label={`Go to ${c.label ?? ROOMS[c.toRoom].name}`}
-          title={c.label ?? ROOMS[c.toRoom].name}
-          style={{ left: `${c.door!.x}%`, top: `${c.door!.y}%`, width: `${c.door!.w}%`, height: `${c.door!.h}%` }}
-          onClick={() => onOpen(c.toRoom)}
-        />
-      ))}
+      {doors.map(c => {
+        // Why: a door without its own label is named after the room it opens
+        const name = c.label ? doorLabel(c.toRoom, c.label) : roomName(c.toRoom)
+        return (
+          <button
+            key={c.toRoom}
+            type="button"
+            className="door-link"
+            data-to={c.toRoom}
+            aria-label={tr('ui.rooms.doors.goTo', { room: name })}
+            title={name}
+            style={{ left: `${c.door!.x}%`, top: `${c.door!.y}%`, width: `${c.door!.w}%`, height: `${c.door!.h}%` }}
+            onClick={() => onOpen(c.toRoom)}
+          />
+        )
+      })}
     </>
   )
 }

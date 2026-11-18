@@ -1,0 +1,1385 @@
+{
+  "meta": {
+    "name": "繁體中文",
+    "englishName": "Chinese (Traditional)",
+    "status": "wip",
+    "translators": [
+      "Yao920127"
+    ]
+  },
+  "ui": {
+    "settings": {
+      "language": {
+        "title": "語言",
+        "wip": "翻譯中",
+        "complete": "已翻譯 {percent}%",
+        "report": "回報翻譯錯誤",
+        "readOnly": "只有辦公室本身的頁面能變更語言"
+      },
+      "title": "設定",
+      "close": "關閉設定",
+      "on": "開",
+      "off": "關",
+      "browser": {
+        "title": "此瀏覽器",
+        "theme": "主題",
+        "themeDefault": "預設",
+        "dayNight": "日 / 夜",
+        "dayNightAria": "白天或夜晚",
+        "auto": "自動",
+        "day": "白天",
+        "night": "夜晚",
+        "season": "季節",
+        "seasonAuto": "自動（依日期）",
+        "holidays": "節日",
+        "seasons": "季節",
+        "seasonOff": "關",
+        "urlSeasonBefore": "網址中有",
+        "urlSeasonAfter": "，會優先於這裡的設定。",
+        "appliesOnReload": "重新載入後生效。",
+        "reloadNow": "立即重新載入",
+        "autoExplained": "自動會依日期決定：四季（北半球），再加上聖誕節、萬聖節、復活節和情人節。目前：{look}。",
+        "nowUndrawn": "目前：{look}。還沒有美術圖的季節會顯示成一般的辦公室。",
+        "noArtYet": "{season}（尚無美術圖）",
+        "over": "{top}，底下是{below}",
+        "sound": "音效",
+        "mute": "靜音",
+        "unmute": "取消靜音",
+        "volume": "音量",
+        "muted": "已靜音",
+        "ambience": "環境音",
+        "ambienceTitle": "在少數事件音效底下播放安靜的辦公室環境音；音量依上方設定"
+      },
+      "server": {
+        "title": "辦公室伺服器",
+        "sim": "?sim / ?video 模式下沒有辦公室伺服器 — 這些設定屬於實際運作中的辦公室。",
+        "readOnly": "唯讀頁面：沒有辦公室 token，伺服器會拒絕變更。請開啟 npm run open 提供的連結來變更這些設定。",
+        "waiting": "辦公室伺服器尚未回應。",
+        "answer": "在這裡回應權限請求",
+        "answerTitle": "Claude 等待時，可以在辦公室裡的卡片上回應權限對話框",
+        "notify": "權限等待時通知",
+        "notifyTitle": "Claude 開始等待權限時，跳出桌面通知",
+        "logging": "提示記錄",
+        "logOff": "關",
+        "logSummary": "摘要",
+        "logFull": "完整",
+        "hintOff": "不儲存也不顯示任何提示或回覆文字 — 只有狀態。",
+        "hintSummary": "每則提示與回覆的前 200 個字元。",
+        "hintFull": "提示與回覆，最多 2000 個字元。",
+        "rowsStay": "chat.db 裡已有的紀錄會保留到執行",
+        "ai": "AI 聊天監控",
+        "aiTitle": "讓 Claude 回覆 #office-general 的聊天監控程式",
+        "bossSprite": "老闆角色圖：",
+        "bossSpriteIn": "位於",
+        "bossSpriteWhen": "（伺服器啟動時讀取）。",
+        "rowsStayEnd": "為止。"
+      }
+    },
+    "meters": {
+      "ariaLabel": "薪資、電力與記憶體",
+      "title": "⚡ 辦公室儀表",
+      "payroll": "薪資",
+      "electricity": "電力",
+      "memory": "記憶體",
+      "needsStatusLine": "需要 status line",
+      "perMin": "{amount}/分鐘",
+      "tokPerMin": "tok/分鐘",
+      "rateShort": "5h {percent}%",
+      "sessions_other": "{count} 個 session",
+      "estimateMarker": "估",
+      "tip": {
+        "payrollHead_other": "薪資 — {count} 個 session 共 {amount} · 過去 5 分鐘 {rate}/分鐘",
+        "payrollToday": "今日 {amount} · +{added} / -{removed} 行 · 以牌價估算",
+        "needsLine": "{session}：需要 status line（{command}）",
+        "needsLineShort": "{session}：需要 status line",
+        "payrollRow": "{session}：{amount} · {model} · {duration}",
+        "electricityHead": "電力 — 過去 5 分鐘處理了 {tokens} tokens/分鐘（含上下文重讀）",
+        "electricityRow": "{session}：{rate} tok/分鐘 · 最近一次呼叫 輸入 {input} / 輸出 {output}",
+        "subagents_other": " · {count} 個子代理 {tokens} tok",
+        "memoryHead": "記憶體 — {session}：上下文視窗已用 {percent}",
+        "memorySize": "（{used} / {size} tokens）",
+        "model": "模型 {model}",
+        "effort": " · effort {effort}",
+        "over200k": " · 超過 200k",
+        "claudeCode": " · Claude Code {version}",
+        "costLine": "{amount} · {duration} · session {id}",
+        "rateHead": "用量限制（claude.ai 訂閱）",
+        "rate5h": "5 小時區間已用 {percent}%",
+        "rate7d": "7 天區間已用 {percent}%",
+        "resets": " · 重置時間 {time}",
+        "spendLimit": "花費額度已用 {percent}%"
+      },
+      "clutter": "🗂️ Claude 的桌面有點亂了 — {session} 上下文已達 {percent}%",
+      "clutterEstimated": "🗂️ Claude 的桌面有點亂了 — {session} 上下文已達 {percent}%（估算值）",
+      "unnamedModel": "未命名的模型",
+      "window": {
+        "oneM": "視窗 {size} tokens：此 session 執行 {model} 的 [1m] 版本",
+        "unknown": "視窗假設為 {size} tokens：{model} 不在辦公室的模型對照表中，數值僅為近似值",
+        "overflow": "視窗假設為 {size} tokens：使用量超過 200,000，{model} 必定執行其 1M 版本（近似值）",
+        "table": "視窗 {size} tokens，對應 {model}（Claude Code 的模型對照表）"
+      },
+      "estimate": {
+        "estSuffix": " · 估算",
+        "compacted": "已壓縮：視窗剛被清空，逐字稿中下一則回覆會重新填滿儀表",
+        "fromTranscript": "此 session 未註冊 status line，因此由逐字稿（最後一則回覆的用量）估算",
+        "needsBoth": "薪資與電力需要 status line：{command}"
+      },
+      "needs": {
+        "payrollHead": "薪資需要 status line — Claude Code 只會把花費回報給 statusLine 指令",
+        "electricityHead": "電力需要 status line — Claude Code 只會把每分鐘 tokens 回報給 statusLine 指令",
+        "none_other": "這 {count} 個 session 未註冊 status line（外掛安裝或 claude -p）；記憶體為逐字稿估算值",
+        "register": "註冊方式：{command}（在 Claude-Office 專案目錄中執行）"
+      }
+    },
+    "rooms": {
+      "mainOffice": "主辦公室",
+      "corridor": "走廊",
+      "meetingRoom": "會議室",
+      "serverRoom": "機房",
+      "lunchRoom": "茶水間",
+      "short": {
+        "mainOffice": "辦公室",
+        "corridor": "走廊",
+        "meetingRoom": "會議",
+        "serverRoom": "機房",
+        "lunchRoom": "茶水間"
+      },
+      "switcher": {
+        "ariaLabel": "平面圖：選擇要顯示的房間",
+        "empty": "沒人",
+        "people_other": "{count} 人",
+        "label": "{room}，{people}",
+        "needsYou": "，需要你",
+        "trouble": "，出了點問題",
+        "inView": "，顯示中"
+      },
+      "furniture": {
+        "coffeeMachine": "咖啡機",
+        "filingCabinet": "檔案櫃",
+        "printer": "印表機",
+        "fireExtinguisher": "滅火器",
+        "waterCooler": "飲水機",
+        "bell": "鈴",
+        "kanbanBoard": "看板",
+        "shipItPoster": "上線海報",
+        "dashboard": "儀表板",
+        "clickToInteract": "點擊互動"
+      },
+      "doors": {
+        "mainOffice": "辦公室",
+        "corridor": "走廊",
+        "meetingRoom": "會議室",
+        "serverRoom": "機房",
+        "lunchRoom": "茶水間",
+        "goTo": "前往{room}"
+      },
+      "landmarks": {
+        "frontDoor": "電梯",
+        "managerDoor": "經理室"
+      },
+      "placeholder": {
+        "ariaLabel": "{room}：暫代圖，美術圖尚未完成",
+        "note": "暫代圖：這個房間的美術圖尚未完成",
+        "coffee": "咖啡",
+        "water": "水"
+      },
+      "tv": {
+        "deploying": "部署中",
+        "shipped": "已上線",
+        "rollback": "回滾"
+      }
+    },
+    "needsYou": {
+      "permission": "✋ 需要你：{what}",
+      "permissionBare": "✋ 需要你 — 權限",
+      "input": "✋ 需要輸入：{what}",
+      "inputBare": "✋ 需要輸入",
+      "idle": "💤 閒置提示",
+      "quota": "⏳ 等待額度",
+      "registry": "✋ {what}",
+      "registryBare": "✋ 在終端機等待",
+      "elicitation": "✋ {server} 有事要問你",
+      "elicitationBare": "✋ 有個 MCP 伺服器有事要問你",
+      "short": {
+        "permission": "需要你",
+        "agentInput": "需要輸入",
+        "idle": "閒置提示",
+        "quota": "等待額度",
+        "registry": "在終端機等待"
+      }
+    },
+    "pill": {
+      "needsYou": "✋ 需要你",
+      "error": "⚠ 錯誤",
+      "compacting": "🧹 清除"
+    },
+    "strip": {
+      "sessions_other": "{count} 個 session",
+      "notHooked": "{count} 個未掛接",
+      "needYou_other": "{count} 個需要你",
+      "readOnlyHint": "唯讀：此頁面沒有辦公室 token（或是舊 token），因此伺服器顯示的辦公室\n沒有提示、回覆或指令列，權限對話框也只能在終端機回應。\n請開啟伺服器啟動時印出的連結，或在專案目錄執行 {command}：\n它會用附帶 token 的連結開啟辦公室，這個瀏覽器之後會記住它。",
+      "connection": {
+        "connecting": "連線中…",
+        "online": "已連線",
+        "reconnecting": "重新連線中…",
+        "offline": "離線"
+      },
+      "hooks": {
+        "unknown": "hooks：—",
+        "seen": "hooks：最近一次 {ago}",
+        "waiting": "hooks：尚無紀錄",
+        "missing": "尚無 hook 事件 — 請執行 {command}"
+      },
+      "tip": {
+        "online": "辦公室伺服器 {url}：自 {time} 起上線",
+        "connecting": "辦公室伺服器 {url}：連線中…",
+        "reconnecting": "辦公室伺服器 {url}：{ago} 連線中斷，正在重試",
+        "offline": "辦公室伺服器 {url}：無法連線",
+        "start": "請在專案目錄啟動：{command}（或 {alt}）",
+        "hooksSeen_other": "Hooks：伺服器啟動後共 {count} 個事件，最近一次 {ago}",
+        "hooksWaiting": "Hooks：尚無紀錄 — Claude Code 執行工具時就會觸發",
+        "hooksMissing": "Hooks：{span} 內沒有紀錄。若 Claude Code 正在執行工具卻毫無反應，表示尚未安裝 hooks：{command}",
+        "counts": "Sessions：{sessions} · 代理人：{agents} · 用戶端：{clients}",
+        "notHooked_other": "未掛接：{names} — 執行 {command} 即可看到它們在做什麼",
+        "waitingOnYou": "等待你回應：",
+        "server": "伺服器 v{version}，已運行 {span} · UI：{ui}",
+        "uiBuilt": "已建置（dist/）",
+        "uiDev": "開發伺服器（dist/ 尚未建置）",
+        "diagnose": "診斷：{command}"
+      },
+      "simTitle": "?{mode}：模擬代理人，沒有伺服器，沒有 hooks",
+      "ariaLabel": "連線狀態",
+      "readOnly": "唯讀：請開啟此指令提供的連結",
+      "startIt": "啟動方式：",
+      "todayTitle": "今日到目前為止：session、代理人、任務、部署、失敗、事故、薪資",
+      "today": "今日"
+    },
+    "time": {
+      "justNow": "剛剛",
+      "secondsAgo": "{count} 秒前",
+      "minutesAgo": "{count} 分鐘前",
+      "hoursAgo": "{count} 小時前",
+      "daysAgo": "{count} 天前",
+      "seconds": "{count} 秒",
+      "minutes": "{count} 分鐘",
+      "hoursMinutes": "{hours} 小時 {minutes} 分"
+    },
+    "sessions": {
+      "notHookedHint": "未掛接 — 執行 `npm run install-hooks`（或 /plugin install agent-office）即可看到它在做什麼",
+      "notHooked": "未掛接",
+      "ariaLabel": "Claude Code sessions",
+      "workers_other": "{count} 名員工",
+      "tip": {
+        "tool": "工具：{tool}",
+        "project": "專案：{project}",
+        "cwd": "工作目錄：{cwd}",
+        "model": "模型：{model}",
+        "started": "啟動方式：{source}",
+        "registry": "claude：{status}（登錄表）",
+        "claude": "claude：{state}",
+        "pid": "pid {pid}",
+        "workers": "員工：{count}（{working} 名工作中）",
+        "ended": "已結束",
+        "endedReason": "已結束（{reason}）",
+        "session": "session {id}"
+      }
+    },
+    "today": {
+      "ariaLabel": "今日辦公室",
+      "title": "今日",
+      "close": "關閉",
+      "notAnswering": "辦公室伺服器沒有回應。",
+      "counting": "統計中…",
+      "footBefore": "從本地午夜起算 · 在聊天輸入",
+      "footAfter": "聽聽經理怎麼說",
+      "sessions": "Sessions",
+      "agentsSpawned": "雇用代理人",
+      "agentsCompleted": "已下班",
+      "tasksCompleted": "完成任務",
+      "deploys": "部署",
+      "pushes": "Push",
+      "buildsFailed": "Build 失敗",
+      "testsFailed": "測試失敗",
+      "incidents": "事故",
+      "payroll": "薪資"
+    },
+    "taskBoard": {
+      "untitled": "未命名任務",
+      "inProgress": "進行中：{subject}",
+      "done": "完成：{subject}",
+      "todo": "待辦：{subject}",
+      "blockedBy": "（被 {ids} 卡住）",
+      "teamBoard": "{team} 團隊的任務看板",
+      "board": "任務看板",
+      "aria": "{what}，{label}：{todo} 待辦、{doing} 進行中、{done} 完成",
+      "ariaNext": "。點擊切換下一個看板",
+      "clickNext": "{what}：點擊切換下一個看板",
+      "more": "還有 {count} 項",
+      "chat": {
+        "todo": "{count} 項待辦",
+        "todoBlocked": "{count} 項待辦（{blocked} 項卡住）",
+        "inProgress": "{count} 項進行中：{subject}",
+        "progress": "{activity} — 已完成 {done}/{total}",
+        "nextUp": "{todo}，接下來：{subject}",
+        "allWaiting": "{todo}，全部都卡住了",
+        "toGo": "已完成 {done}/{total}，還剩 {pending} 項",
+        "oneDone": "看板上唯一的任務已完成",
+        "allDone": "全部 {count} 項任務都完成了"
+      }
+    },
+    "incident": {
+      "badgePinned": "已由 ?variant=incident 固定 — 輸入 /all-clear 結束",
+      "badgeTitle": "正式環境恢復後輸入 /all-clear",
+      "incident": "事故",
+      "mini": "小型事故",
+      "daysSign": "距上次事故天數",
+      "daysSignTitle": "距上次事故天數：{days}",
+      "daysSignNow": "距上次事故天數：0（正在發生）",
+      "beacon": "事故警示燈",
+      "statusPage": "狀態頁：回滾",
+      "rollbackAlt": "回滾進行中",
+      "rollback": "回滾",
+      "timeline": "事故時間軸",
+      "pizza": "事故披薩"
+    },
+    "seasons": {
+      "christmas": "聖誕節",
+      "halloween": "萬聖節",
+      "easter": "復活節",
+      "valentine": "情人節",
+      "spring": "春天",
+      "summer": "夏天",
+      "autumn": "秋天",
+      "winter": "冬天"
+    },
+    "titleBar": {
+      "incident": "🔥 正式環境掛了 — AGENT OFFICE",
+      "mode": "模式：{mode}",
+      "auto": "自動",
+      "day": "白天",
+      "night": "夜晚",
+      "settings": "設定",
+      "settingsTitle": "設定：主題、日夜、季節、音效、伺服器設定"
+    },
+    "office": {
+      "catAlt": "貓",
+      "interactionAlt": "互動",
+      "waitingForDesk": "等待座位",
+      "waitingForDeskMsg": "等待座位中...",
+      "doneStats": "✅ 完成 · {stats}",
+      "done": "完成",
+      "standingBy": "待命中",
+      "standingDown": "收工",
+      "working": "⚡ 工作中",
+      "workingOnPrompt": "✍ 處理提示中",
+      "turnOver": "回合結束 — 閒置",
+      "apiError": "⚠ API 錯誤",
+      "apiErrorWhat": "⚠ API 錯誤：{error}",
+      "memoryWipe": "🧹 清除記憶",
+      "memoryWipeTrigger": "🧹 清除記憶（{trigger}）",
+      "waitingOnWorkers_other": "⏳ 等待 {count} 名背景員工",
+      "waitingOnWorkersBare": "⏳ 等待背景員工",
+      "backToWorkTyping": "✍ 回去工作",
+      "backToWork": "回去工作",
+      "backToMyDesk": "回座位",
+      "clockedIn": "上班打卡",
+      "clockedInMsg": "🤖 上班打卡",
+      "clockedInProject": "🤖 上班打卡 · {project}",
+      "clockedOut": "下班打卡",
+      "clockedOutMsg": "👋 下班打卡",
+      "clockedOutAway": "我們不在時已下班",
+      "sessionEnded": "👋 session 已結束",
+      "sessionEndedReason": "👋 session 已結束（{reason}）",
+      "talkingTo": "正在和 {name} 說話",
+      "reportedBack": "📬 {name} 回報了",
+      "reportedBackBare": "📬 有個背景員工回報了",
+      "toolBatchDone_other": "完成一批 {count} 個工具",
+      "toolBatchDoneUnknown": "完成一批 ? 個工具",
+      "toolRan": "{tool} 已執行",
+      "permissionAnswered": "✅ 權限已回應 — {what}",
+      "handDown": "放下手",
+      "detail": " — {detail}",
+      "grabbingRedBull": "去拿罐 Red Bull",
+      "foundDesk": "找到座位了",
+      "offTo": {
+        "mainOffice": "前往主辦公室",
+        "corridor": "前往走廊",
+        "meetingRoom": "前往會議室",
+        "serverRoom": "前往機房",
+        "lunchRoom": "前往茶水間"
+      },
+      "exitCode": "結束代碼 {code}",
+      "shipping": "🚀 上線中",
+      "shippingWhere": "🚀 {where} 上線中",
+      "deployInterrupted": "⏹ 部署中斷",
+      "deployInterruptedWhere": "⏹ {where} 部署中斷",
+      "deployed": "🚀 部署完成",
+      "deployedWhere": "🚀 {where} 部署完成",
+      "deployFailed": "💥 部署失敗",
+      "deployFailedWhere": "💥 {where} 部署失敗",
+      "pushedTo": "🎉 已 push 到 {branch}",
+      "pushedToWhere": "🎉 已 push 到 {branch} · {where}",
+      "testsFailed": "❌ 測試失敗",
+      "testsFailedIn": "❌ {where} 測試失敗",
+      "buildFailed": "❌ build 失敗",
+      "buildFailedIn": "❌ {where} build 失敗",
+      "testsGreen": "✅ 測試恢復綠燈",
+      "testsGreenIn": "✅ {where} 測試恢復綠燈",
+      "buildGreen": "✅ build 恢復綠燈",
+      "buildGreenIn": "✅ {where} build 恢復綠燈",
+      "runningTheShow": "統籌全局"
+    },
+    "phase": {
+      "night": "🌙 夜班",
+      "dawn": "🌅 天快亮了",
+      "morning": "☀️ 早安",
+      "afternoon": "☀️ 午安",
+      "evening": "🌆 晚上",
+      "dusk": "🌇 太陽下山了"
+    },
+    "advent": {
+      "sleeps_other": "降臨曆：再睡 {count} 晚就是聖誕節",
+      "christmas": "聖誕快樂！",
+      "daysTill_other": "距離 {year} 年還有 {count} 天",
+      "newYear": "{year} 新年快樂！"
+    },
+    "chat": {
+      "logPrompts": {
+        "hint": "提示記錄：{level} — {what}。",
+        "off": "僅狀態 — 不會儲存、廣播或顯示任何提示或回覆文字",
+        "summary": "每則提示與回覆的前 200 個字元",
+        "full": "提示與回覆，最多 2000 個字元",
+        "unknown": "未知等級",
+        "where": "這是伺服器設定（{file}）；可在設定（標題列的齒輪）中變更，或使用辦公室 token：",
+        "pill": "提示：{level}"
+      },
+      "aiPausedTitle": "聊天監控已暫停 — 點擊繼續",
+      "aiActiveTitle": "聊天監控已啟用 — 點擊暫停",
+      "aiOff": "AI 關閉",
+      "aiOn": "AI 開啟",
+      "volume": "音量：{percent}%",
+      "on": "開",
+      "off": "關",
+      "answerHere": "在此回應：{state}",
+      "answerOnTitle": "權限對話框可以在辦公室回應（Claude 等待時會出現卡片） — 點擊關閉",
+      "answerOffTitle": "權限對話框只能在終端機回應 — 點擊讓辦公室也能回應",
+      "notify": "通知：{state}",
+      "notifyOnTitle": "Claude 開始等待權限時跳出桌面通知（只顯示專案與工具） — 點擊關閉",
+      "notifyOffTitle": "Claude 等待權限時不跳出桌面通知 — 點擊開啟",
+      "removeReaction": "點擊移除",
+      "seen": "已讀",
+      "seenAlt": "已讀",
+      "typingAlt": "輸入中",
+      "typing": "{name} 正在輸入",
+      "mentionsAria": "替 session 排入提示",
+      "mentionTitle": "替 {name} 排入提示：它的回合結束時就會收到",
+      "placeholder": "傳送訊息到 {channel}",
+      "placeholderMentions": "傳送訊息到 {channel}，或用 @session 排入提示",
+      "themeOn": "🧻 Dunder Mifflin 模式：開啟。身分盜竊可不是開玩笑的。",
+      "themeOff": "🔁 辦公室主題：關閉",
+      "tag": {
+        "prompt": "提示",
+        "reply": "回覆"
+      }
+    },
+    "phone": {
+      "tab": {
+        "chat": "聊天",
+        "meters": "儀表",
+        "today": "今日",
+        "settings": "設定"
+      },
+      "noKey": "沒有金鑰",
+      "pending": "{count} 個等待中",
+      "noSecret": {
+        "title": "這個連結缺少金鑰。",
+        "openBefore": "請開啟",
+        "openAfter": "在電腦上印出的連結，或掃描它的 QR code。連結結尾是",
+        "endsAfter": "加上 64 個字元；第一次造訪後，這個瀏覽器就會記住它。"
+      },
+      "offline": "未連線。辦公室可能已停止，或這個連結已被更換：",
+      "offlineAfter": "會印出目前的連結。",
+      "metersEmpty": "還沒有 session 回報。Claude Code 開始工作後，薪資、電力與記憶體就會顯示在這裡。",
+      "tabsAria": "辦公室面板"
+    },
+    "viewer": {
+      "connecting": "正在連線到辦公室…"
+    },
+    "inspector": {
+      "main": {
+        "working": "工作中",
+        "waiting_other": "等待 {count} 名員工",
+        "idle": "閒置",
+        "needsYou": "需要你",
+        "error": "API 錯誤",
+        "errorCode": "API 錯誤：{error}",
+        "errorDetail": "{label} — {detail}",
+        "compacting": "壓縮中",
+        "unknown": "尚無回應"
+      },
+      "worker": {
+        "newHire": "抵達中",
+        "walkingToDesk": "走向座位",
+        "walkingToManager": "走過去",
+        "talking": "交談中",
+        "coffeeBreak": "休息中",
+        "waiting": "等待座位",
+        "changingRoom": "前往其他房間",
+        "completed": "已完成",
+        "working": "工作中",
+        "idle": "閒置",
+        "unknown": "未知"
+      },
+      "stats": {
+        "tokens": "{tokens} tok",
+        "toolUses_other": "{count} 次工具使用"
+      },
+      "derived": {
+        "note": "由辦公室推算：{list}",
+        "tokens": "從逐字稿推算 tokens 與模型",
+        "model": "從逐字稿推算模型",
+        "durationMs": "從產生到完成的時間",
+        "toolUses": "hook 記錄到的工具使用次數"
+      },
+      "transcript": {
+        "promptsOff": "逐字稿已隱藏：提示記錄已關閉",
+        "needsToken": "辦公室連線後即會顯示逐字稿",
+        "noPath": "尚無逐字稿",
+        "notFound": "找不到逐字稿檔案",
+        "unavailable": "逐字稿無法取得",
+        "nothingSaid": "目前還沒有內容",
+        "tool": "工具"
+      }
+    },
+    "agentCard": {
+      "ariaLabel": "角色檢視器",
+      "ariaNamed": "{name} — 檢視器",
+      "close": "關閉",
+      "closeTitle": "關閉 (Esc)",
+      "roleMain": "session claude",
+      "tookTitle": "耗費的時間",
+      "forTitle": "已經持續的時間",
+      "took": "耗時 {elapsed}",
+      "for": "已持續 {elapsed}",
+      "isBoss": "那就是你。",
+      "task": "任務",
+      "noTask": "沒有任務說明",
+      "notHooked": "未掛接：僅從 Claude Code 的 session 登錄表得知，目前還沒有回合可以顯示",
+      "lastPrompt": "上一則提示",
+      "lastReply": "上一則回覆",
+      "promptsHidden": "已隱藏：提示記錄已關閉",
+      "nothingYet": "目前還沒有",
+      "crons_other": "排程 {count}",
+      "waitingOn": "等待 {count}",
+      "contextTitle": "最後一則訊息的用量：上下文視窗的使用程度",
+      "context": "上下文 {tokens} tok",
+      "where": "位置",
+      "noProject": "沒有專案",
+      "session": "session {id}",
+      "noSession": "沒有 session",
+      "tools": "工具",
+      "calls_other": "{count} 次呼叫",
+      "restored": "辦公室伺服器已重啟：僅顯示此後的工具紀錄",
+      "noTools": "尚無工具紀錄",
+      "historyAria_other": "最近 {count} 筆紀錄",
+      "finished": "已完成",
+      "lineage": "來源",
+      "noTotals": "沒有回報總計",
+      "soFar": "目前：{stats}",
+      "parent": "上層 {name}",
+      "spawnedBySession": "由 session 產生",
+      "background": "背景執行",
+      "unread": "{count} 則未讀",
+      "transcript": "逐字稿",
+      "foot": {
+        "serverForgot": "伺服器已釋放此角色 — 最後已知狀態",
+        "serverUnreachable": "無法連線辦公室伺服器 — 最後已知狀態",
+        "live": "即時 · 每 {seconds} 秒更新",
+        "officeUnreachable": "無法連線辦公室伺服器 — 顯示辦公室目前已知的資訊",
+        "notServerAgent": "非伺服器角色 — 顯示辦公室目前已知的資訊",
+        "loading": "載入中…"
+      }
+    },
+    "permission": {
+      "ariaLabel": "權限請求",
+      "timeLeft": "{seconds} 秒後交回終端機",
+      "readOnly": "請在終端機回應（此頁面為唯讀）",
+      "allow": "允許",
+      "allowTitle": "允許此次呼叫 ({key})",
+      "allowRemember": "允許並記住",
+      "deny": "拒絕",
+      "denyTitle": "拒絕此次呼叫 ({key})",
+      "sendingAllow": "傳送允許中…",
+      "sendingDeny": "傳送拒絕中…",
+      "rememberNote": "允許並記住：{what}",
+      "title": {
+        "use": "Claude 想要使用 {tool}",
+        "run": "Claude 想要執行 {what}",
+        "write": "Claude 想要寫入 {what}",
+        "edit": "Claude 想要編輯 {what}",
+        "read": "Claude 想要讀取 {what}",
+        "fetch": "Claude 想要擷取 {what}",
+        "search": "Claude 想要搜尋 {what}",
+        "findFiles": "Claude 想要尋找檔案 {what}"
+      },
+      "remember": {
+        "nothing": "沒有需要記住的設定",
+        "all": "允許，並{parts}",
+        "setMode": "把這個 session 切換成 {mode}",
+        "anotherMode": "其他模式",
+        "alwaysAllow": "永遠允許 {rules}{where}",
+        "alwaysDeny": "永遠拒絕 {rules}{where}",
+        "alwaysAsk": "永遠詢問 {rules}{where}",
+        "always": "永遠{behavior} {rules}{where}",
+        "this": "這個",
+        "tool": "工具",
+        "directories": "允許存取 {dirs}{where}",
+        "thisDirectory": "這個目錄",
+        "other": "記住這個設定"
+      },
+      "fade": {
+        "timedOut": "已逾時",
+        "deniedOffice": "已從辦公室拒絕",
+        "allowedOffice": "已從辦公室允許",
+        "terminal": "已在終端機回應"
+      }
+    },
+    "character": {
+      "memoryWipe": "清除記憶",
+      "apiError": "⚠ API 錯誤",
+      "shipping": "🚀 上線中",
+      "waitingForDesk": "等待座位",
+      "unread_other": "{count} 則未讀訊息",
+      "inspect": "檢視 {name}",
+      "effect": "效果"
+    },
+    "signals": {
+      "deployFailed": "部署失敗",
+      "deployFailedOf": "{where} 部署失敗",
+      "buildFailed": "build 失敗",
+      "buildFailedIn": "{where} build 失敗",
+      "testsFailed": "測試失敗",
+      "testsFailedIn": "{where} 測試失敗",
+      "pushFailed": "push 失敗",
+      "pushFailedOf": "push {target} 失敗",
+      "why": "：{why}"
+    }
+  },
+  "chatter": {
+    "default": {
+      "spawn": [
+        "報到！",
+        "上班打卡",
+        "準備出貨",
+        "先喝咖啡再寫程式",
+        "開工吧",
+        "打開 vim 中...",
+        "拉最新的 main"
+      ],
+      "work": [
+        "處理中",
+        "瘋狂打字中",
+        "進入心流",
+        "有進展了",
+        "查文件中",
+        "git blame 時間",
+        "Stack Overflow 救我"
+      ],
+      "done": [
+        "任務完成！",
+        "上線了",
+        "PR 開好了",
+        "搞定收工",
+        "LGTM",
+        "merge 進 main 了",
+        "部署完成"
+      ],
+      "coffee": [
+        "brb，去買咖啡",
+        "需要咖啡因",
+        "去倒一杯",
+        "咖啡補給"
+      ],
+      "water": [
+        "記得喝水",
+        "補水時間",
+        "去裝水",
+        "裝滿水壺",
+        "水分檢查",
+        "快速喝個水"
+      ]
+    },
+    "office": {
+      "bossPraise": [
+        "做得好 {name} 👊",
+        "穩 🔥",
+        "上線吧！",
+        "讚，去拿罐 Red Bull",
+        "神 💯",
+        "幹得好，下一位？",
+        "好快，再來一個？",
+        "乾淨俐落 👌",
+        "謝啦 {name}",
+        "已合併。下一個任務載入中..."
+      ]
+    },
+    "incident": {
+      "spawn": [
+        "收到告警，處理中。",
+        "加入作戰會議，誰是指揮官？",
+        "凌晨 02:14 上工，快送咖啡來",
+        "筆電比眼睛先打開"
+      ],
+      "work": [
+        "在 4f2a1c 和 main 之間 bisect",
+        "不是 DNS 的問題。來查一下 DNS。",
+        "盯著 prod log，每秒 400 個請求的悲傷",
+        "第一次打開 runbook",
+        "補上早該有的 feature flag"
+      ],
+      "done": [
+        "回滾完成，錯誤率 0.1%",
+        "根本原因：一個 null。永遠是 null。",
+        "hotfix 已合併，測試事後補",
+        "狀態頁恢復綠燈"
+      ],
+      "coffee": [
+        "第三杯咖啡了，別評論我",
+        "全公司只剩咖啡機還正常運作",
+        "咖啡不能代替睡眠，但還是試試看"
+      ],
+      "water": [
+        "喝水。然後再來杯咖啡。",
+        "凌晨兩點像個負責任的大人一樣補水",
+        "連飲水機都降級運作了"
+      ],
+      "bossReply": [
+        "警報解除。以後週五誰都不准部署。",
+        "10 點事後檢討，不究責，帶披薩來",
+        "抓得好。記到時間軸上。",
+        "我知道。我知道啦。"
+      ]
+    },
+    "interactions": {
+      "plant1": [
+        "幫龜背芋澆水",
+        "照顧植物時間",
+        "小傢伙要保持綠油油"
+      ],
+      "plant2": [
+        "幫虎尾蘭澆水",
+        "補水站",
+        "這些葉子看起來不錯"
+      ],
+      "plant3": [
+        "幫發財樹澆水",
+        "長大吧，快長大",
+        "辦公室叢林維護"
+      ],
+      "plant4": [
+        "幫植物澆水",
+        "讓辦公室保持綠意"
+      ],
+      "plant5": [
+        "幫龜背芋澆水",
+        "這株長得超好"
+      ],
+      "coffee": [
+        "煮一壺新的",
+        "咖啡時間！",
+        "補充燃料",
+        "還有誰要咖啡？"
+      ],
+      "filing": [
+        "查一下檔案",
+        "那份文件放哪去了...",
+        "突襲檔案櫃",
+        "找 Q4 報告"
+      ],
+      "printer": [
+        "印個東西",
+        "拜託別卡紙...",
+        "老夥伴",
+        "現在到底誰還在印東西"
+      ],
+      "whiteboard": [
+        "更新看板",
+        "把 ticket 移到完成",
+        "貼張便利貼",
+        "sprint 規劃時間"
+      ],
+      "fireExtinguisher": [
+        "檢查滅火器",
+        "安全第一",
+        "還沒過期，很好",
+        "希望永遠用不到"
+      ],
+      "waterCooler": [
+        "裝滿水壺",
+        "水分檢查",
+        "喝水休息",
+        "保持水分"
+      ],
+      "bell": [
+        "叮叮！站會時間",
+        "敲鈴",
+        "大家注意！",
+        "全員集合！"
+      ],
+      "kanban": [
+        "更新看板",
+        "把 ticket 移到完成",
+        "sprint 看起來不錯",
+        "誰把這張 ticket 丟在 review？"
+      ],
+      "shipItPoster": [
+        "上線吧！",
+        "動力滿滿",
+        "這張海報百看不厭",
+        "衝啊～"
+      ],
+      "tvMonitor": [
+        "看一下儀表板",
+        "所有系統綠燈",
+        "監控指標中",
+        "上線時間很穩"
+      ]
+    },
+    "events": {
+      "fireDrill": {
+        "name": "消防演習",
+        "announcement": "🚨 消防演習！大家往出口移動！",
+        "managerLine": "消防演習！快點！",
+        "agentLines": [
+          "又來了...",
+          "我正在心流耶！",
+          "我的咖啡！",
+          "快救程式碼！"
+        ]
+      },
+      "pizza": {
+        "name": "披薩外送",
+        "announcement": "🍕 披薩到了！免費午餐！",
+        "managerLine": "大廳有披薩！",
+        "agentLines": [
+          "披薩！",
+          "總算有好消息",
+          "鳳梨？！",
+          "臘腸口味我先預訂"
+        ]
+      },
+      "standup": {
+        "name": "每日站會",
+        "announcement": "📢 @here 每日站會現在開始",
+        "managerLine": "站會！你們出貨了什麼？",
+        "agentLines": [
+          "做了那個東西",
+          "還在除錯",
+          "卡在 review",
+          "部署到 staging 了",
+          "修了 3 個 bug，生出 5 個"
+        ]
+      },
+      "deploy": {
+        "name": "正式環境部署",
+        "announcement": "🚀 正在部署到正式環境...",
+        "managerLine": "屏住呼吸...",
+        "agentLines": [
+          "糟了",
+          "拜託別壞",
+          "我忘了跑測試",
+          "YOLO",
+          "確認回滾計畫中"
+        ]
+      },
+      "deploySuccess": {
+        "name": "部署成功",
+        "announcement": "✅ 部署成功！所有系統綠燈 🎉",
+        "managerLine": "我們辦到了！",
+        "agentLines": [
+          "衝啊！",
+          "上線！",
+          "大家辛苦了",
+          "該喝啤酒了"
+        ]
+      },
+      "deployFail": {
+        "name": "部署失敗",
+        "announcement": "💥 部署失敗 - 回滾中",
+        "managerLine": "誰 push 的？！",
+        "agentLines": [
+          "不是我",
+          "完了完了完了",
+          "查 log 中",
+          "一定是 DNS",
+          "revert 中..."
+        ]
+      },
+      "powerFlicker": {
+        "name": "電燈閃爍",
+        "announcement": "⚡ 電燈閃了一下 - 快存檔！",
+        "agentLines": [
+          "燈剛剛是不是...",
+          "CTRL+S CTRL+S",
+          "我還沒存的修改！",
+          "馬上 git commit"
+        ]
+      },
+      "birthday": {
+        "name": "生日",
+        "announcement": "🎂 生日快樂！茶水間有蛋糕！",
+        "managerLine": "生日快樂！",
+        "agentLines": [
+          "蛋糕！",
+          "生日快樂！",
+          "🎉🎉🎉",
+          "是無麩質的嗎？",
+          "許個願吧"
+        ]
+      },
+      "whoBrokeBuild": {
+        "name": "Build 壞了",
+        "announcement": "🔴 CI/CD pipeline 紅燈了。誰把 build 弄壞的？",
+        "managerLine": "修好之前誰都不准走。",
+        "agentLines": [
+          "查 git blame 中...",
+          "不是我",
+          "是 merge 的問題嗎？",
+          "可能是不穩定的測試？",
+          "怪實習生"
+        ]
+      },
+      "friday": {
+        "name": "週五氣氛",
+        "announcement": "🎉 星期五了！大家再撐一下！",
+        "managerLine": "週五不部署。",
+        "agentLines": [
+          "TGIF",
+          "去喝一杯？",
+          "再一個 PR 就好...",
+          "五點準時下班",
+          "週末！"
+        ]
+      },
+      "printerJam": {
+        "name": "印表機卡紙",
+        "announcement": "🖨️ 印表機又卡紙了",
+        "agentLines": [
+          "為什麼我們還有印表機",
+          "PC LOAD LETTER？！",
+          "到底誰還在印東西",
+          "都 2026 年了..."
+        ]
+      },
+      "slackDown": {
+        "name": "Slack 掛了",
+        "announcement": "💀 Slack 掛了...等等，那這則是怎麼發出來的",
+        "agentLines": [
+          "好諷刺",
+          "改用 email 吧",
+          "該用飛鴿傳書了",
+          "其實還蠻清靜的"
+        ]
+      },
+      "incident": {
+        "fireDrill": {
+          "name": "作戰室",
+          "announcement": "🚨 大家到門口集合 — 作戰會議開始",
+          "managerLine": "加入作戰會議。誰知道來龍去脈？",
+          "agentLines": [
+            "加入作戰會議",
+            "這是 sev1 嗎？",
+            "先靜音，小孩在睡覺"
+          ]
+        },
+        "pizza": {
+          "name": "事故披薩",
+          "announcement": "🍕 披薩到了（報帳代碼：OUTAGE）",
+          "managerLine": "快吃",
+          "agentLines": [
+            "事故披薩就是特別好吃",
+            "今晚第二個披薩了",
+            "邊吃邊打鍵盤，抱歉"
+          ]
+        },
+        "standup": {
+          "name": "狀態更新",
+          "announcement": "📢 @here 我們知道什麼、正在做什麼、誰被卡住",
+          "managerLine": "大家輪流報告",
+          "agentLines": [
+            "錯誤率 40%，正在下降",
+            "回滾進行到一半",
+            "我需要一個 DBA",
+            "還是不是 DNS。大概是 DNS。"
+          ]
+        },
+        "deploy": {
+          "name": "回滾部署",
+          "announcement": "🚀 回滾中...",
+          "managerLine": "穩住",
+          "agentLines": [
+            "拜託",
+            "盯著圖表",
+            "如果這也失敗，就把回滾再回滾"
+          ]
+        },
+        "deploySuccess": {
+          "name": "回滾完成",
+          "announcement": "✅ 回滾完成 — 錯誤率恢復正常",
+          "managerLine": "開始解除警報倒數",
+          "agentLines": [
+            "終於能呼吸了",
+            "圖表平了",
+            "誰要寫事後檢討文件"
+          ]
+        },
+        "deployFail": {
+          "name": "回滾失敗",
+          "announcement": "💥 回滾失敗 — 正在回滾這次回滾",
+          "managerLine": "好。好。好。",
+          "agentLines": [
+            "果然",
+            "migration 無法還原",
+            "檢查備份中"
+          ]
+        },
+        "powerFlicker": {
+          "name": "機櫃電源閃斷",
+          "announcement": "⚡ UPS 啟動了。又來。",
+          "agentLines": [
+            "是我們害的嗎？",
+            "機房今晚也不好過"
+          ]
+        },
+        "birthday": {
+          "name": "交接班",
+          "announcement": "🕑 歐洲的 on-call 醒了 — 在茶水間交接",
+          "managerLine": "跟他們交代完就去睡",
+          "agentLines": [
+            "交接文件只有 3 行",
+            "祝好運",
+            "他們那邊還是星期二"
+          ]
+        },
+        "whoBrokeBuild": {
+          "name": "Bisect",
+          "announcement": "🔴 正在 bisect main — 好壞之間有 12 個 commit",
+          "managerLine": "不究責。找出 commit，不是找人。",
+          "agentLines": [
+            "4f2a1c 是壞的",
+            "a1b2c3 是好的",
+            "是設定變更造成的",
+            "怪 DNS"
+          ]
+        },
+        "friday": {
+          "name": "週五部署",
+          "announcement": "📅 提醒：這一切都從一次週五部署開始",
+          "managerLine": "下不為例",
+          "agentLines": [
+            "下不為例",
+            "上次也是這樣說",
+            "從今以後週五只讀不寫"
+          ]
+        },
+        "printerJam": {
+          "name": "列印錯誤 Log",
+          "announcement": "🖨️ 有人把 kubectl logs 導到 lp 了",
+          "agentLines": [
+            "整整 400 頁",
+            "PC LOAD STACKTRACE",
+            "拔插頭"
+          ]
+        },
+        "slackDown": {
+          "name": "狀態頁掛了",
+          "announcement": "💀 狀態頁掛了。是狀態頁耶。",
+          "agentLines": [
+            "當然會掛",
+            "發推特吧",
+            "該用飛鴿傳書了"
+          ]
+        }
+      },
+      "drama": {
+        "coffeeMeet": {
+          "lines": [
+            "你看過新的 PR 了嗎？",
+            "那個 2000 行的？看了...",
+            "而且沒有測試",
+            "💀"
+          ]
+        },
+        "whoPushed": {
+          "lines": [
+            "誰直接 push 到 main？",
+            "不是我",
+            "git blame 可不是這麼說的",
+            "..."
+          ]
+        },
+        "tabsVsSpaces": {
+          "lines": [
+            "tab 還是空格？",
+            "當然是空格",
+            "已封鎖並檢舉"
+          ]
+        },
+        "meeting": {
+          "lines": [
+            "這個會議發一則 Slack 訊息就能解決",
+            "這則 Slack 訊息其實可以不用發"
+          ]
+        },
+        "framework": {
+          "lines": [
+            "我們應該用 Rust 重寫",
+            "你每週都這樣說",
+            "而我每週都是對的"
+          ]
+        },
+        "legacy": {
+          "lines": [
+            "找到一個 2019 年的 TODO",
+            "上面寫什麼",
+            "「之後再修」",
+            "之後就是現在",
+            "不。之後就是之後。"
+          ]
+        },
+        "ai": {
+          "lines": [
+            "今天 AI 寫的程式比我好",
+            "老實說門檻不高",
+            "很失禮但沒說錯"
+          ]
+        },
+        "standupExcuse": {
+          "lines": [
+            "你昨天做了什麼？",
+            "調查一個複雜的問題",
+            "你是說你 Google 了 6 個小時",
+            "我比較喜歡稱之為「研究」"
+          ]
+        }
+      }
+    }
+  },
+  "server": {
+    "commands": {
+      "status": "📊 {agents} 個代理人在線，{working} 個工作中，{clients} 個用戶端已連線",
+      "quiet": "🏢 辦公室很安靜 — 沒有代理人在線",
+      "cleared": "🧹 聊天已清除",
+      "incident": "🔴 宣布事故 — 正式環境掛了。大家到作戰室集合。（結束時輸入 /all-clear）",
+      "allClear": "✅ 警報解除 — 事故結束。10 點事後檢討，不究責，帶披薩來。",
+      "help": "📋 指令：{commands}",
+      "desc": {
+        "status": "辦公室統計",
+        "agents": "列出代理人",
+        "recap": "今日到目前為止",
+        "incident": "宣布事故",
+        "allClear": "結束事故",
+        "clear": "清除聊天紀錄（需要 auth token）",
+        "help": "顯示這則訊息"
+      }
+    },
+    "system": {
+      "expired": "⌛ 排給 {name} 的提示已過期，未送達（它的回合一小時內都沒結束）",
+      "expiredUnknown": "⌛ 排給某個 session 的提示已過期，未送達（它的回合一小時內都沒結束）",
+      "pickedUp": "📬 {name} 從聊天室接收了提示",
+      "pickedUpMore": "📬 {name} 從聊天室接收了提示（還有 {count} 則在等待）",
+      "dropped_other": "🗑️ 排給 {name} 的 {count} 則提示已捨棄：{why}",
+      "sessionEnded": "session 已結束",
+      "ambiguous": "🤔 {mention} 符合 {count} 個 session：{names}。請改用 session id。",
+      "notTrusted": "🔒 只有這台 Mac 上的辦公室頁面能替 {name} 排入提示（手機、經過 proxy 的頁面或沒有辦公室連結的頁面都不行）",
+      "noHooks": "🔌 {name} 沒有辦公室 hooks，提示無法送達：請執行 {command} 並重新啟動那個 session",
+      "tooLong": "長度為 {length} 個字元，上限是 {limit}",
+      "full": "已經有 {count} 則提示在等它",
+      "badId": "這個 session id 不是 hook 能認領的",
+      "notQueued": "✋ 未排入 {name}：{why}",
+      "whenBusy": "它會在目前的回合結束時收到",
+      "whenIdle": "它目前沒在工作，所以會在下一個回合結束時收到（辦公室無法自行開始回合：請在它的終端機隨便給個提示）",
+      "queued": "📨 已排給 {name}：{when}",
+      "queuedInLine": "📨 已排給 {name}（排第 #{position} 位）：{when}",
+      "needsToken": "🔒 {command} 需要辦公室 auth token — 請在辦公室專案目錄執行 {script}，它會附上 token（見 README › Chat）"
+    },
+    "agents": {
+      "starting": "開始：{task}",
+      "done": "完成：{result}"
+    },
+    "recap": {
+      "quiet": "📋 回顧：今天到目前為止很平靜 — 還沒有任何紀錄。好好享受吧。",
+      "line": "📋 今日回顧：{parts}。{payroll}{signOff}",
+      "sessions_other": "{count} 個 session",
+      "agents_other": "雇用 {count} 個代理人，{out} 個已下班",
+      "tasks_other": "完成 {count} 項任務",
+      "deploys_other": "上線 {count} 次部署",
+      "pushes_other": "{count} 次 push",
+      "buildsFailed_other": "{count} 次 build 失敗",
+      "testsFailed_other": "{count} 次測試失敗",
+      "incidents_other": "{count} 起事故（我們不提這個）",
+      "noIncidents": "沒有事故",
+      "payroll": "薪資：{amount}。",
+      "signOffIncident": "事後檢討筆記 10 點前放到我桌上。",
+      "signOffDeploys": "出貨順利，大家辛苦了。",
+      "signOff": "做得好，各位。"
+    },
+    "notify": {
+      "title": "Claude 需要你",
+      "message": "{project} · {tool} {phrase}",
+      "bash": "想執行指令",
+      "write": "想寫入檔案",
+      "edit": "想編輯檔案",
+      "notebook": "想編輯筆記本",
+      "read": "想讀取檔案",
+      "fetch": "想擷取網頁",
+      "search": "想搜尋網路",
+      "other": "想取得權限",
+      "aTool": "某個工具",
+      "aSession": "某個 session"
+    },
+    "routing": {
+      "debugger": [
+        "錯誤",
+        "臭蟲",
+        "當機",
+        "當掉",
+        "崩潰",
+        "閃退",
+        "報錯",
+        "壞掉",
+        "壞了",
+        "掛掉",
+        "修正",
+        "修復",
+        "除錯",
+        "例外"
+      ],
+      "codeReviewer": [
+        "審查",
+        "審核",
+        "看一下程式碼",
+        "合併",
+        "核准",
+        "批准",
+        "差異"
+      ],
+      "frontend": [
+        "前端",
+        "使用者介面",
+        "介面設計",
+        "視覺設計",
+        "設計稿",
+        "元件",
+        "樣式",
+        "排版",
+        "版面",
+        "響應式",
+        "動畫",
+        "像素",
+        "主題",
+        "深色模式",
+        "淺色模式",
+        "顏色",
+        "配色",
+        "字型",
+        "字體",
+        "間距"
+      ],
+      "tester": [
+        "測試",
+        "覆蓋率",
+        "單元測試",
+        "端對端",
+        "斷言"
+      ],
+      "security": [
+        "資安",
+        "安全性",
+        "漏洞",
+        "身分驗證",
+        "授權",
+        "注入",
+        "密碼",
+        "加密",
+        "憑證"
+      ],
+      "devops": [
+        "部署",
+        "上線",
+        "持續整合",
+        "管線",
+        "容器",
+        "網域",
+        "主機"
+      ],
+      "performance": [
+        "效能",
+        "很慢",
+        "太慢",
+        "變慢",
+        "卡頓",
+        "優化",
+        "最佳化",
+        "速度",
+        "延遲",
+        "快取",
+        "記憶體洩漏",
+        "渲染",
+        "瓶頸"
+      ],
+      "database": [
+        "資料庫",
+        "查詢",
+        "資料表",
+        "遷移",
+        "索引",
+        "欄位",
+        "資料列",
+        "綱要"
+      ],
+      "typescript": [
+        "型別",
+        "介面",
+        "泛型",
+        "列舉",
+        "聯集",
+        "型別推斷",
+        "驗證"
+      ],
+      "ai": [
+        "人工智慧",
+        "大型語言模型",
+        "提示詞",
+        "模型",
+        "嵌入",
+        "向量",
+        "代理",
+        "上下文"
+      ],
+      "fullstack": [
+        "端點",
+        "路由",
+        "中介軟體",
+        "請求",
+        "後端",
+        "全端"
+      ],
+      "git": [
+        "分支",
+        "提交",
+        "衝突",
+        "遠端"
+      ],
+      "architect": [
+        "重構",
+        "架構",
+        "抽象",
+        "設計模式",
+        "模組",
+        "套件",
+        "整理程式碼"
+      ]
+    }
+  }
+}

@@ -20,6 +20,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import '../styles/room-life.css'
 import type { TvMode } from '../roomLife'
+import { useT } from '../i18n'
 
 // Why: still pictures instead of motion when the viewer asks for less
 const MOVE = !(typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches)
@@ -80,6 +81,7 @@ const LIGHTS: Array<[number, number, number, number]> = Array.from({ length: 44 
 // ---------------------------------------------------------------------------
 
 function TvScreen({ mode }: { mode: TvMode }) {
+  const tr = useT()
   const label = (text: string, colour: string) => (
     // Why textLength: at 12 px monospace "DEPLOYING" ran 9 px past the screen's edge;
     // squeezed to 52 it ends at 96, inside the screen clip
@@ -113,7 +115,7 @@ function TvScreen({ mode }: { mode: TvMode }) {
           <circle cx={22} cy={46} r={12} fill="none" stroke="#38bdf8" strokeWidth={5} strokeDasharray="20 56">
             {MOVE && <animateTransform attributeName="transform" type="rotate" from="0 22 46" to="360 22 46" dur="1s" repeatCount="indefinite" />}
           </circle>
-          {label('DEPLOYING', '#e2e8f0')}
+          {label(tr('ui.rooms.tv.deploying'), '#e2e8f0')}
           <rect x={44} y={66} width={50} height={6} fill="#1e293b" />
           <rect x={44} y={66} width={50} height={6} fill="#38bdf8">
             {MOVE && <animate attributeName="width" values="0;50" dur="6s" repeatCount="indefinite" />}
@@ -124,7 +126,7 @@ function TvScreen({ mode }: { mode: TvMode }) {
         <>
           <rect width={100} height={100} fill="#052e16" />
           <polyline points="10,46 20,58 36,30" fill="none" stroke="#22c55e" strokeWidth={7} strokeLinecap="round" strokeLinejoin="round" />
-          {label('SHIPPED', '#bbf7d0')}
+          {label(tr('ui.rooms.tv.shipped'), '#bbf7d0')}
         </>
       )}
       {mode === 'failed' && (
@@ -134,7 +136,7 @@ function TvScreen({ mode }: { mode: TvMode }) {
             {MOVE && <animate attributeName="fill" values="#450a0a;#7f1d1d" dur="1s" calcMode="discrete" repeatCount="indefinite" />}
           </rect>
           <path d="M 12 32 L 34 58 M 34 32 L 12 58" stroke="#ef4444" strokeWidth={7} strokeLinecap="round" />
-          {label('ROLLBACK', '#fecaca')}
+          {label(tr('ui.rooms.tv.rollback'), '#fecaca')}
         </>
       )}
       </g>

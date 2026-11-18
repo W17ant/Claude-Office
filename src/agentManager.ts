@@ -24,7 +24,7 @@
  *   - dx < 0,  dy >= 0 → rear-left   (fallback — no rear-right walking sprite)
  */
 
-import { Agent, AgentState, Position } from './types'
+import { Agent, AgentState, Position, type EffectKind } from './types'
 import { AgentSpot, Waypoint } from './rooms'
 import { themedSpawn, themedWork, themedDone, themedCoffee, themedWater, getOfficePropForRole } from './theme'
 import { getVariant } from './incident'
@@ -226,6 +226,19 @@ function pickEnergyDrink(agentId: string): string {
  * Map an agent state to the effect sprite path (or null for no effect).
  * Pass statusText/task to detect ultra-think mode.
  */
+/**
+ * The prop an office event shows on the agents it moves, from the event's id
+ * (the same words the English names were matched on).
+ * @param eventId an id from src/events.ts
+ */
+export function eventEffectKind(eventId: string): EffectKind | undefined {
+  if (eventId.includes('pizza')) return 'pizza'
+  if (eventId.includes('birthday')) return 'cake'
+  if (eventId.includes('fire')) return 'fire'
+  if (eventId.includes('deploy') || eventId.includes('friday') || eventId.includes('success')) return 'party'
+  return undefined
+}
+
 export function getEffect(
   state: AgentState,
   idleDurationMs: number = 0,
@@ -234,6 +247,7 @@ export function getEffect(
   task?: string,
   role?: string,
   lastFailed?: boolean,
+  effectKind?: EffectKind,
 ): string | null {
   // Incident mode: an agent whose last tool call failed wears the build-failed bubble
   if (lastFailed && state === 'working' && getVariant() === 'incident') {
@@ -264,6 +278,8 @@ export function getEffect(
     }
     case 'coffee-break': {
       // Boss gets Red Bull (handled above), water breaks get water glass
+      if (effectKind === 'water') return '/sprites/effects/glass-water.png'
+      // English text: the ?sim script and agents from before effectKind
       const breakText = (statusText ?? '').toLowerCase()
       if (breakText.includes('hydrat') || breakText.includes('h2o') || breakText.includes('water') || breakText.includes('refill')) {
         return '/sprites/effects/glass-water.png'
@@ -271,7 +287,14 @@ export function getEffect(
       return '/sprites/effects/need-coffee.png'
     }
     case 'walking-to-desk': {
-      // Event-specific effects while walking to event spots
+      // Event-specific effects while walking to event spots: the event's kind
+      // first (the status text is translated), English text as the fallback
+      switch (effectKind) {
+        case 'pizza': return '/sprites/effects/pizza.png'
+        case 'cake': return '/sprites/effects/cake.png'
+        case 'fire': return '/sprites/effects/fire.png'
+        case 'party': return '/sprites/effects/party.png'
+      }
       const walkText = (statusText ?? '').toLowerCase()
       if (walkText.includes('pizza')) return '/sprites/effects/pizza.png'
       if (walkText.includes('birthday')) return '/sprites/effects/cake.png'
@@ -295,59 +318,12 @@ export function getEffect(
 // Slack message helpers
 // ---------------------------------------------------------------------------
 
-const SPAWN_MESSAGES = [
-  'reporting for duty!',
-  'clocked in',
-  'ready to ship',
-  'coffee first, then code',
-  'let\'s do this',
-  'opening vim...',
-  'pulling latest main',
-]
-
-const WORK_MESSAGES = [
-  'on it',
-  'typing furiously',
-  'in the zone',
-  'making progress',
-  'checking the docs',
-  'git blame time',
-  'stack overflow to the rescue',
-]
-
-const DONE_MESSAGES = [
-  'task complete!',
-  'shipped it',
-  'PR opened',
-  'done and dusted',
-  'LGTM',
-  'merged to main',
-  'deployed',
-]
-
-const COFFEE_MESSAGES = [
-  'brb, coffee',
-  'need caffeine',
-  'grabbing a cup',
-  'coffee run',
-]
-
 function pick<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)]
 }
 
-const WATER_MESSAGES = [
-  'stay hydrated',
-  'h2o break',
-  'water run',
-  'refilling bottle',
-  'hydration check',
-  'quick water break',
-]
-
-// Why: route through theme module so Office mode swaps chatter automatically.
-// Fallback pool kept for reference but theme module carries default strings too.
-void SPAWN_MESSAGES; void WORK_MESSAGES; void DONE_MESSAGES; void COFFEE_MESSAGES; void WATER_MESSAGES
+// Why: the chatter lives in the locale files, read through the theme module
+// (src/theme.ts), so Dunder Mifflin mode and the office's language both apply.
 export function spawnMessage(): string  { return themedSpawn() }
 export function workMessage(): string   { return themedWork() }
 export function doneMessage(): string   { return themedDone() }

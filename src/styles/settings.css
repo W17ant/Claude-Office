@@ -195,6 +195,10 @@
   color-scheme: dark;
 }
 .sp-select:hover { border-color: var(--op-dim); }
+/* Why: a language's name plus "87% translated · work in progress" can be
+   wider than the panel; the select shrinks and the browser clips its text */
+.sp-language { flex-shrink: 1; min-width: 0; max-width: 70%; text-overflow: ellipsis; }
+.sp-select:disabled { cursor: not-allowed; opacity: 0.45; }
 
 .sp-switch {
   display: inline-flex;

@@ -14,6 +14,8 @@
 import type { Agent } from './types'
 import { ROOMS, HUB_ROOM, OFFICE_ROOM, type RoomId } from './rooms'
 import { roomOf } from './roomTransfer'
+import { t } from './i18n'
+import { roomName, roomShort } from './roomText'
 import { isHardNeedsYou, mainId } from './mainState'
 
 /**
@@ -120,8 +122,8 @@ export function switcherModel(agents: readonly Agent[], facts: SwitcherFacts): P
     if (here.some(a => needsYou(a, pending)) || (id === OFFICE_ROOM && strayCard)) mark = 'needs-you'
     return {
       id,
-      name: ROOMS[id].name,
-      short: id === OFFICE_ROOM ? 'Office' : ROOMS[id].name.replace(/ Room$/, ''),
+      name: roomName(id),
+      short: roomShort(id),
       dots,
       more: here.length - dots.length,
       count: here.length,
@@ -150,7 +152,7 @@ export function viewableRoom(wanted: RoomId, open: ReadonlySet<RoomId>): RoomId 
  * @returns e.g. "Meeting Room, 3 people, needs you, in view"
  */
 export function planRoomLabel(room: PlanRoom): string {
-  const people = room.count === 0 ? 'empty' : room.count === 1 ? '1 person' : `${room.count} people`
-  const mark = room.mark === 'needs-you' ? ', needs you' : room.mark === 'trouble' ? ', something went wrong' : ''
-  return `${room.name}, ${people}${mark}${room.current ? ', in view' : ''}`
+  const people = room.count === 0 ? t('ui.rooms.switcher.empty') : t('ui.rooms.switcher.people', { count: room.count })
+  const mark = room.mark === 'needs-you' ? t('ui.rooms.switcher.needsYou') : room.mark === 'trouble' ? t('ui.rooms.switcher.trouble') : ''
+  return t('ui.rooms.switcher.label', { room: room.name, people }) + mark + (room.current ? t('ui.rooms.switcher.inView') : '')
 }

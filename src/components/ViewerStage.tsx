@@ -17,6 +17,7 @@
 
 import React, { useEffect, useRef, useState } from 'react'
 import '../styles/viewer.css'
+import { useT } from '../i18n'
 
 /** The room's width in the desktop window: 1056 px window − 300 px chat column. */
 export const STAGE_W = 756
@@ -53,6 +54,7 @@ interface ViewerStageProps {
 }
 
 export default function ViewerStage({ connected, notice, children }: ViewerStageProps) {
+  const tr = useT()
   const wrapperRef = useRef<HTMLDivElement>(null)
   const [scale, setScale] = useState(() => stageScale(window.innerWidth, window.innerHeight))
 
@@ -72,7 +74,7 @@ export default function ViewerStage({ connected, notice, children }: ViewerStage
     }
   }, [])
 
-  const status = notice ?? (connected ? null : 'connecting to the office…')
+  const status = notice ?? (connected ? null : tr('ui.viewer.connecting'))
   return (
     <div className="viewer-wrapper" ref={wrapperRef}>
       <div className="viewer-stage" style={{ width: STAGE_W * scale, height: STAGE_H * scale }}>

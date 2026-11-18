@@ -68,6 +68,7 @@
  * dozen numbers a day. Nothing here stores a prompt, reply, command line or
  * task subject, so GET /recap can stay open like the other read-only GETs.
  */
+import { t } from './i18n.js'
 
 /** Counter columns of daily_stats, in display order (cost_usd is separate). */
 export const COUNT_COLUMNS = [
@@ -298,10 +299,6 @@ export function createRecap(db, { now = () => Date.now() } = {}) {
 // The /recap chat line
 // ---------------------------------------------------------------------------
 
-/** "1 deploy" / "3 deploys" */
-function count(n, one, many = `${one}s`) {
-  return `${n} ${n === 1 ? one : many}`
-}
 
 /**
  * The office manager's end-of-day line for one day's counts. Deterministic
@@ -312,24 +309,26 @@ function count(n, one, many = `${one}s`) {
 export function recapLine(s) {
   const busy = [s.sessions, s.agentsSpawned, s.agentsCompleted, s.tasksCompleted, s.deploys,
     s.buildsFailed, s.testsFailed, s.pushes, s.incidents, s.costUsd].some(n => n > 0)
-  if (!busy) return '📋 Recap: quiet day so far — nothing on the books yet. Enjoy it while it lasts.'
+  if (!busy) return t('server.recap.quiet')
 
   const parts = [
-    count(s.sessions, 'session'),
-    `${count(s.agentsSpawned, 'agent')} hired, ${s.agentsCompleted} clocked out`,
-    `${count(s.tasksCompleted, 'task')} closed`,
+    t('server.recap.sessions', { count: s.sessions }),
+    t('server.recap.agents', { count: s.agentsSpawned, out: s.agentsCompleted }),
+    t('server.recap.tasks', { count: s.tasksCompleted }),
   ]
   const shipping = []
-  if (s.deploys) shipping.push(count(s.deploys, 'deploy') + ' shipped')
-  if (s.pushes) shipping.push(count(s.pushes, 'push', 'pushes'))
+  if (s.deploys) shipping.push(t('server.recap.deploys', { count: s.deploys }))
+  if (s.pushes) shipping.push(t('server.recap.pushes', { count: s.pushes }))
   if (shipping.length) parts.push(shipping.join(', '))
   const red = []
-  if (s.buildsFailed) red.push(count(s.buildsFailed, 'failed build'))
-  if (s.testsFailed) red.push(count(s.testsFailed, 'failed test run'))
+  if (s.buildsFailed) red.push(t('server.recap.buildsFailed', { count: s.buildsFailed }))
+  if (s.testsFailed) red.push(t('server.recap.testsFailed', { count: s.testsFailed }))
   if (red.length) parts.push(red.join(', '))
-  parts.push(s.incidents ? `${count(s.incidents, 'incident')} (we don't talk about ${s.incidents === 1 ? 'it' : 'them'})` : 'no incidents')
+  parts.push(s.incidents ? t('server.recap.incidents', { count: s.incidents }) : t('server.recap.noIncidents'))
 
-  const payroll = s.costUsd > 0 ? ` Payroll: $${s.costUsd.toFixed(2)}.` : ''
-  const signOff = s.incidents ? 'Postmortem notes on my desk by 10.' : s.deploys ? 'Good shipping, everyone.' : 'Nice work, team.'
-  return `📋 Recap for today: ${parts.join(' · ')}.${payroll} ${signOff}`
+  // Why "$1.23" in every language: costs are billed in dollars and the meters
+  // write them this way too (the owner's call)
+  const payroll = s.costUsd > 0 ? t('server.recap.payroll', { amount: `$${s.costUsd.toFixed(2)}` }) : ''
+  const signOff = s.incidents ? t('server.recap.signOffIncident') : s.deploys ? t('server.recap.signOffDeploys') : t('server.recap.signOff')
+  return t('server.recap.line', { parts: parts.join(' · '), payroll, signOff })
 }

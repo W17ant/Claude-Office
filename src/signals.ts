@@ -9,6 +9,7 @@
  */
 
 import type { SignalEvent, SignalKind } from './types'
+import { t } from './i18n'
 
 export type SignalFamily = 'deploy' | 'build' | 'test' | 'push'
 export type SignalOutcome = 'start' | 'ok' | 'fail'
@@ -50,16 +51,18 @@ export const SCENE_MS = {
  * The failure as a sentence the incident summary and the chat can name:
  * "tests failed in api: 3 failing", "build failed in web: 2 errors",
  * "deploy of api failed: Error: 503". Undefined for anything but a failure.
+ * Built in the office's language when the signal arrives (src/i18n.ts).
  */
 export function signalFailureLabel(s: Pick<SignalEvent, 'kind' | 'target' | 'project' | 'detail' | 'error'>): string | undefined {
   if (!isSignalKind(s.kind) || signalOutcome(s.kind) !== 'fail') return undefined
   const where = signalWhere(s)
   const why = s.detail || s.error
-  const tail = why ? `: ${why}` : ''
+  // Why a key for the tail: the punctuation before the reason differs by language (French ": ")
+  const tail = why ? t('ui.signals.why', { why }) : ''
   switch (signalFamily(s.kind)) {
-    case 'deploy': return `deploy${where ? ` of ${where}` : ''} failed${tail}`
-    case 'build':  return `build failed${where ? ` in ${where}` : ''}${tail}`
-    case 'test':   return `tests failed${where ? ` in ${where}` : ''}${tail}`
-    case 'push':   return `push${s.target ? ` of ${s.target}` : ''} failed${tail}`
+    case 'deploy': return (where ? t('ui.signals.deployFailedOf', { where }) : t('ui.signals.deployFailed')) + tail
+    case 'build':  return (where ? t('ui.signals.buildFailedIn', { where }) : t('ui.signals.buildFailed')) + tail
+    case 'test':   return (where ? t('ui.signals.testsFailedIn', { where }) : t('ui.signals.testsFailed')) + tail
+    case 'push':   return (s.target ? t('ui.signals.pushFailedOf', { target: s.target }) : t('ui.signals.pushFailed')) + tail
   }
 }

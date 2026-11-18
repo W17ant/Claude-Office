@@ -7,6 +7,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { fetchRecap, recapRows, type RecapStats } from '../recap'
 import '../styles/settings.css'
+import { currentLanguage, useT } from '../i18n'
 
 // Why 30 s: the counts move with hook events; a popover left open should not
 // go stale, and GET /recap is one indexed row
@@ -21,13 +22,14 @@ interface TodayPanelProps {
 /** "Mon 9 Nov" for a YYYY-MM-DD local date */
 function dayLabel(date: string): string {
   const [y, m, d] = date.split('-').map(Number)
-  return new Date(y, m - 1, d).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' })
+  return new Date(y, m - 1, d).toLocaleDateString(currentLanguage(), { weekday: 'short', day: 'numeric', month: 'short' })
 }
 
 const TodayPanel: React.FC<TodayPanelProps> = ({ onClose, anchor }) => {
   const [stats, setStats] = useState<RecapStats | null>(null)
   const [failed, setFailed] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  const tr = useT()
 
   useEffect(() => {
     let alive = true
@@ -57,12 +59,12 @@ const TodayPanel: React.FC<TodayPanelProps> = ({ onClose, anchor }) => {
   }, [onClose, anchor])
 
   return (
-    <div className="today-panel office-popover" role="dialog" aria-label="Today in the office" ref={ref} data-testid="today-panel">
+    <div className="today-panel office-popover" role="dialog" aria-label={tr('ui.today.ariaLabel')} ref={ref} data-testid="today-panel">
       <div className="op-head">
-        <span className="op-title">Today{stats ? ` · ${dayLabel(stats.date)}` : ''}</span>
-        <button className="op-close" onClick={onClose} aria-label="Close">×</button>
+        <span className="op-title">{tr('ui.today.title')}{stats ? ` · ${dayLabel(stats.date)}` : ''}</span>
+        <button className="op-close" onClick={onClose} aria-label={tr('ui.today.close')}>×</button>
       </div>
-      {!stats && <div className="op-note">{failed ? 'The office server is not answering.' : 'Counting…'}</div>}
+      {!stats && <div className="op-note">{failed ? tr('ui.today.notAnswering') : tr('ui.today.counting')}</div>}
       {stats && (
         <dl className="today-grid">
           {recapRows(stats).map(row => (
@@ -73,7 +75,7 @@ const TodayPanel: React.FC<TodayPanelProps> = ({ onClose, anchor }) => {
           ))}
         </dl>
       )}
-      <div className="op-foot">Since local midnight · type <code>/recap</code> in the chat for the manager's take</div>
+      <div className="op-foot">{tr('ui.today.footBefore')} <code>/recap</code> {tr('ui.today.footAfter')}</div>
     </div>
   )
 }

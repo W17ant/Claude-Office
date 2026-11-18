@@ -20,12 +20,13 @@ import { isPermissionEvent, reducePermissions, setUiToken, type PermissionAction
 import StatusStrip from './components/StatusStrip'
 import SettingsPanel from './components/SettingsPanel'
 import { readSound, saveVolume, saveMuted, readAmbience, saveAmbience, readDayNightMode, saveDayNightMode, type DayNightMode } from './settings'
+import { t, useT } from './i18n'
 import { Agent, AGENT_CONFIGS } from './types'
 import { getCurrentPhase, getPhaseLabel, type DayPhase } from './daylight'
 import { useAgentSocket } from './hooks/useAgentSocket'
 import { dispatchMeters } from './meters'
 import * as sfx from './sounds'
-import { findWaypointPath } from './agentManager'
+import { eventEffectKind, findWaypointPath } from './agentManager'
 import {
   reduceOffice, stepOffice, initialOfficeState,
   moveAgentsForEvent, returnAgentsFromEvent, pickSingleEventAgent, walkDurationMs, errandWaitMs, checkErrand, bossErrandGate,
@@ -183,8 +184,8 @@ function createBoss(): Agent {
     assignedRoom: 'main-office',
     assignedSpotId: spot.id,
     spriteFacing: spot.spriteFacing,
-    task: 'Running the show',
-    statusText: 'clocked in',
+    task: t('ui.office.runningTheShow'),
+    statusText: t('ui.office.clockedIn'),
     color: cfg.color,
     emoji: cfg.emoji,
     hiredAt: Date.now(),
@@ -214,7 +215,7 @@ function createClaude(): Agent {
     assignedSpotId: spot.id,
     spriteFacing: spot.spriteFacing,
     task: 'Office assistant',
-    statusText: 'clocked in',
+    statusText: t('ui.office.clockedIn'),
     color: cfg.color,
     emoji: cfg.emoji,
     hiredAt: Date.now() + 500, // arrives just after the boss
@@ -368,6 +369,7 @@ const App: React.FC = () => {
   useEffect(() => { saveDayNightMode(dayNightMode) }, [dayNightMode])
   // The Settings panel (the gear in the title bar)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const tr = useT()
   const gearRef = useRef<HTMLButtonElement>(null)
   const closeSettings = useCallback(() => setSettingsOpen(false), [])
 
@@ -468,7 +470,7 @@ const App: React.FC = () => {
             state: 'walking-to-desk' as const,
             targetPosition: { ...a.deskPosition },
             pathQueue: computePath(a.position, a.deskPosition),
-            statusText: 'back to work',
+            statusText: t('ui.office.backToWork'),
           }
         }))
       }
@@ -1264,7 +1266,7 @@ const App: React.FC = () => {
           state: 'walking-to-desk' as const,
           targetPosition: { ...a.deskPosition },
           pathQueue: computePath(a.position, a.deskPosition),
-          statusText: 'back to work',
+          statusText: t('ui.office.backToWork'),
         })))
       }, 5000))
     }, 38000))
@@ -1407,7 +1409,7 @@ const App: React.FC = () => {
       if (event.type === 'all-move') {
         const target = EVENT_TARGETS[event.id] ?? { x: 67.5, y: 48.9 }
 
-        const { agents: moved, movedIds } = moveAgentsForEvent(agentsRef.current, target, event.name, officeEnv())
+        const { agents: moved, movedIds } = moveAgentsForEvent(agentsRef.current, target, event.name, officeEnv(), eventEffectKind(event.id))
         updateAgents(() => moved)
 
         // After duration, send those who went back to their desks
@@ -1425,7 +1427,7 @@ const App: React.FC = () => {
           }
 
           const { agents: moved, movedIds } = moveAgentsForEvent(
-            agentsRef.current.filter(a => a.id === chosen.id), target, event.name, officeEnv())
+            agentsRef.current.filter(a => a.id === chosen.id), target, event.name, officeEnv(), eventEffectKind(event.id))
           updateAgents(prev => prev.map(a => moved.find(m => m.id === a.id) ?? a))
           // Return after duration, fix the printer
           schedule(() => {
@@ -1688,7 +1690,7 @@ const App: React.FC = () => {
             return (
               <ResilientImg
                 src={angela.catSprite}
-                alt="cat"
+                alt={tr('ui.office.catAlt')}
                 className="angela-cat"
                 style={{
                   position: 'absolute',
@@ -1725,7 +1727,7 @@ const App: React.FC = () => {
               >
                 <ResilientImg
                   src={bossEffect}
-                  alt="interaction"
+                  alt={tr('ui.office.interactionAlt')}
                   style={{ height: 32, width: 'auto', imageRendering: 'pixelated' }}
                 />
               </div>
@@ -1798,16 +1800,16 @@ const App: React.FC = () => {
         <div className="title-bar-dot" style={{ background: '#ff5f57' }} />
         <div className="title-bar-dot" style={{ background: '#febc2e' }} />
         <div className="title-bar-dot" style={{ background: '#28c840' }} />
-        <span className="title-bar-text">{titlePrefix}{variant === 'incident' ? '🔥 PROD IS DOWN — AGENT OFFICE' : 'CLAUDE CODE — AGENT OFFICE'}</span>
+        <span className="title-bar-text">{titlePrefix}{variant === 'incident' ? tr('ui.titleBar.incident') : 'CLAUDE CODE — AGENT OFFICE'}</span>
         <SessionStrip sessions={sessions} agents={agents} />
         <button
           className="title-bar-daynight"
           onClick={() => setDayNightMode(prev =>
             prev === 'auto' ? 'day' : prev === 'day' ? 'night' : 'auto'
           )}
-          title={`Mode: ${dayNightMode}`}
+          title={tr('ui.titleBar.mode', { mode: dayNightMode })}
         >
-          {dayNightMode === 'auto' ? 'AUTO' : dayNightMode === 'day' ? 'DAY' : 'NIGHT'}
+          {dayNightMode === 'auto' ? tr('ui.titleBar.auto') : dayNightMode === 'day' ? tr('ui.titleBar.day') : tr('ui.titleBar.night')}
         </button>
         <span className="title-bar-phase">{getPhaseLabel(effectivePhase)}</span>
         <button
@@ -1815,10 +1817,10 @@ const App: React.FC = () => {
           type="button"
           className={`title-bar-gear${settingsOpen ? ' open' : ''}`}
           onClick={() => setSettingsOpen(o => !o)}
-          aria-label="Settings"
+          aria-label={tr('ui.titleBar.settings')}
           aria-expanded={settingsOpen}
           aria-haspopup="dialog"
-          title="Settings: theme, day/night, season, sound, server settings"
+          title={tr('ui.titleBar.settingsTitle')}
           data-testid="settings-gear"
         >
           ⚙

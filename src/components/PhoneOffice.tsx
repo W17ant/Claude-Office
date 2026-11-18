@@ -52,13 +52,22 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { STAGE_H, STAGE_W } from './ViewerStage'
 import TodayPanel from './TodayPanel'
+import { t, useT } from '../i18n'
 import '../styles/phone.css'
 
 /** The tabs under the room, in display order. */
 export const PHONE_TABS = ['chat', 'meters', 'today', 'settings'] as const
 export type PhoneTab = typeof PHONE_TABS[number]
 
-const TAB_LABEL: Record<PhoneTab, string> = { chat: 'Chat', meters: 'Meters', today: 'Today', settings: 'Settings' }
+// Why a function, not a table: built when drawn, so the labels follow the language
+function tabLabel(tab: PhoneTab): string {
+  switch (tab) {
+    case 'chat': return t('ui.phone.tab.chat')
+    case 'meters': return t('ui.phone.tab.meters')
+    case 'today': return t('ui.phone.tab.today')
+    case 'settings': return t('ui.phone.tab.settings')
+  }
+}
 
 // Why half: at 390 px wide the room is 291 px tall. iOS Safari with both bars
 // showing leaves about 620 px under the header, so half of it still lets the
@@ -183,6 +192,7 @@ const NO_ANCHOR: React.RefObject<HTMLElement> = { current: null }
 export default function PhoneOffice({
   connected, hasSecret, title, scene, sessions, permissions, pending, chat, meters, settings, inspector,
 }: PhoneOfficeProps) {
+  const tr = useT()
   const mainRef = useRef<HTMLDivElement>(null)
   const paneRef = useRef<HTMLDivElement>(null)
   const [tab, setTab] = useState<PhoneTab>('chat')
@@ -231,7 +241,7 @@ export default function PhoneOffice({
   const scale = phoneStageScale(box.w, box.h, landscape)
   const wrapperStyle = visible ? { top: visible.top, height: visible.height } : undefined
 
-  const connection = !hasSecret ? 'no key' : connected ? 'online' : 'connecting…'
+  const connection = !hasSecret ? tr('ui.phone.noKey') : connected ? tr('ui.strip.connection.online') : tr('ui.strip.connection.connecting')
   const header = (
     <header className="phone-header">
       <span className={`phone-conn${hasSecret && connected ? ' online' : ''}`} role="status" data-testid="phone-connection">
@@ -239,7 +249,7 @@ export default function PhoneOffice({
         {connection}
       </span>
       <span className="phone-title">{title}</span>
-      {pending > 0 && <span className="phone-pending" data-testid="phone-pending">{pending} waiting</span>}
+      {pending > 0 && <span className="phone-pending" data-testid="phone-pending">{tr('ui.phone.pending', { count: pending })}</span>}
       <div className="phone-sessions">{sessions}</div>
     </header>
   )
@@ -262,10 +272,10 @@ export default function PhoneOffice({
           {room}
           <div className="phone-panel">
             <div className="phone-notice" role="alert" data-testid="phone-no-secret">
-              <strong>This link is missing its key.</strong>
+              <strong>{tr('ui.phone.noSecret.title')}</strong>
               <p>
-                Open the link that <code>npm run lan -- --full</code> printed on the computer, or scan its QR code.
-                It ends in <code>#phone=</code> and 64 characters; this browser remembers it after the first visit.
+                {tr('ui.phone.noSecret.openBefore')} <code>npm run lan -- --full</code> {tr('ui.phone.noSecret.openAfter')}{' '}
+                <code>#phone=</code> {tr('ui.phone.noSecret.endsAfter')}
               </p>
             </div>
           </div>
@@ -282,8 +292,8 @@ export default function PhoneOffice({
         <div className="phone-panel">
           {!connected && (
             <div className="phone-offline" role="status" data-testid="phone-offline">
-              Not connected. The office may be stopped, or this link was replaced:{' '}
-              <code>npm run lan -- --full</code> prints the current one.
+              {tr('ui.phone.offline')}{' '}
+              <code>npm run lan -- --full</code> {tr('ui.phone.offlineAfter')}
             </div>
           )}
           <div className="phone-cards" data-testid="phone-cards">{permissions}</div>
@@ -295,7 +305,7 @@ export default function PhoneOffice({
               <div className="phone-tabpanel phone-tab-meters" role="tabpanel" id="phone-panel-meters" aria-labelledby="phone-tab-meters" hidden={tab !== 'meters'}>
                 {/* Why two elements: Meters renders nothing until a session reports, and :empty on its slot shows the line after it */}
                 <div className="phone-meters-slot">{meters}</div>
-                <p className="phone-empty">No session has reported yet. Payroll, electricity and memory appear here once Claude Code is working.</p>
+                <p className="phone-empty">{tr('ui.phone.metersEmpty')}</p>
               </div>
               {tab === 'today' && (
                 <div className="phone-tabpanel phone-tab-today" role="tabpanel" id="phone-panel-today" aria-labelledby="phone-tab-today">
@@ -308,7 +318,7 @@ export default function PhoneOffice({
                 </div>
               )}
             </div>
-            <nav className="phone-tabs" role="tablist" aria-label="Office panels">
+            <nav className="phone-tabs" role="tablist" aria-label={tr('ui.phone.tabsAria')}>
               {PHONE_TABS.map(name => (
                 <button
                   key={name}
@@ -321,7 +331,7 @@ export default function PhoneOffice({
                   onClick={() => setTab(name)}
                   data-testid={`phone-tab-${name}`}
                 >
-                  {TAB_LABEL[name]}
+                  {tabLabel(name)}
                 </button>
               ))}
             </nav>

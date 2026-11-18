@@ -641,7 +641,26 @@ function trayMenuTemplate(state, actions) {
   ]
 }
 
+/**
+ * Whether a link the page tries to open in a new window goes to the browser.
+ * Only the translation-error report (Settings › Language): the window refuses
+ * every other new window.
+ * @param {string} url
+ * @returns {boolean}
+ */
+function opensInBrowser(url) {
+  try {
+    const u = new URL(url)
+    return u.protocol === 'https:' && u.host === 'github.com'
+      && u.pathname === '/W17ant/Claude-Office/issues/new'
+      && u.searchParams.get('template') === 'translation.yml'
+  } catch {
+    return false
+  }
+}
+
 module.exports = {
+  opensInBrowser,
   APP_NAME,
   DEFAULT_SERVER_PORT,
   VITE_DEV_PORT,

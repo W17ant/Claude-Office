@@ -29,6 +29,7 @@ import {
   teamMembersLine, useTaskBoards, type BoardTask, type TaskBoardInfo, type TaskFx,
 } from '../taskBoard'
 import '../styles/taskboard.css'
+import { useT } from '../i18n'
 
 interface TaskBoardProps {
   /** The sessions the title bar shows: the label names the board's session */
@@ -61,6 +62,7 @@ const Note: React.FC<{
 const TaskBoard: React.FC<TaskBoardProps> = ({ sessions, night, onActivate }) => {
   const state = useTaskBoards()
   const theme = useTheme()
+  const tr = useT()
   const [hovered, setHovered] = useState<string | null>(null)
 
   const board = shownBoard(state)
@@ -76,7 +78,7 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ sessions, night, onActivate }) =>
   const counts = boardCounts(board)
   const hoveredTask = hovered ? board.tasks.find(t => t.id === hovered) : undefined
   const members = teamMembersLine(board)
-  const what = board.team ? `Team ${board.team.name}'s task board${members ? ` (${members})` : ''}` : 'Task board'
+  const what = board.team ? tr('ui.taskBoard.teamBoard', { team: board.team.name }) + (members ? ` (${members})` : '') : tr('ui.taskBoard.board')
 
   const activate = (e: React.SyntheticEvent) => {
     e.stopPropagation()
@@ -97,8 +99,8 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ sessions, night, onActivate }) =>
         }}
         role="button"
         tabIndex={0}
-        aria-label={`${what}, ${label}: ${counts.pending} to do, ${counts.in_progress} in progress, ${counts.completed} done${several ? '. Click for the next board' : ''}`}
-        title={several ? `${what}: click for the next board` : what}
+        aria-label={tr('ui.taskBoard.aria', { what, label, todo: counts.pending, doing: counts.in_progress, done: counts.completed }) + (several ? tr('ui.taskBoard.ariaNext') : '')}
+        title={several ? tr('ui.taskBoard.clickNext', { what }) : what}
         onClick={activate}
         onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') activate(e) }}
       >
@@ -113,7 +115,7 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ sessions, night, onActivate }) =>
                   {view.shown.map(task => (
                     <Note key={task.id} task={task} board={board} fx={fx[task.id]} onHover={id => setHovered(id)} />
                   ))}
-                  {view.more > 0 && <span className="task-more" aria-label={`${view.more} more`}>+{view.more}</span>}
+                  {view.more > 0 && <span className="task-more" aria-label={tr('ui.taskBoard.more', { count: view.more })}>+{view.more}</span>}
                 </div>
               </div>
             )

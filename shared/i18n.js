@@ -1,0 +1,233 @@
+/**
+ * i18n.js - the translator the page and the server share.
+ *
+ * Pure functions over locale catalogs (locales/<code>.json, already parsed):
+ * no file or network access, so the Vite page (which bundles the catalogs)
+ * and the Node server (which reads them from disk) both use it unchanged.
+ *
+ *   t(key, vars)   the string in the current language, else English, else
+ *                  the key itself (a test keeps en.json covering every key
+ *                  the code uses, so that last case never ships)
+ *   list(key)      a chatter list; falls back to English as a whole list
+ *
+ * Placeholders are {name}; plurals are <key>_one / _other (plus whatever
+ * forms Intl.PluralRules gives the language: _zero, _two, _few, _many),
+ * chosen by vars.count.
+ */
+
+/**
+ * Flatten a catalog to dotted keys. Arrays are leaves, never indexed:
+ * a chatter list is one key.
+ * @param {object} node
+ * @param {string} [prefix]
+ * @param {Record<string, string | string[]>} [out]
+ * @returns {Record<string, string | string[]>}
+ */
+export function flatten(node, prefix = '', out = {}) {
+  if (!node || typeof node !== 'object' || Array.isArray(node)) return out
+  for (const [key, value] of Object.entries(node)) {
+    const path = prefix ? `${prefix}.${key}` : key
+    if (typeof value === 'string' || Array.isArray(value)) out[path] = value
+    else if (value && typeof value === 'object') flatten(value, path, out)
+  }
+  return out
+}
+
+/** Read a dotted key from a nested catalog. */
+function lookup(catalog, key) {
+  let node = catalog
+  for (const part of key.split('.')) {
+    if (!node || typeof node !== 'object' || Array.isArray(node)) return undefined
+    node = node[part]
+  }
+  return node
+}
+
+function nonEmptyString(v) {
+  return typeof v === 'string' && v !== '' ? v : undefined
+}
+
+// Why: Chinese is split by script, never by region alone. A Hong Kong reader
+// reads Traditional characters, a Singapore reader Simplified, and handing
+// either the other script is worse than English.
+const CHINESE_TRADITIONAL = new Set(['tw', 'hk', 'mo', 'hant'])
+
+/**
+ * The best available locale for a requested BCP 47 tag.
+ * Exact (case-insensitive) first; Chinese by script; any Portuguese gets
+ * pt-BR; otherwise the language part; otherwise English.
+ * @param {string | null | undefined} requested
+ * @param {string[]} available
+ * @returns {string}
+ */
+export function matchLocale(requested, available) {
+  if (typeof requested !== 'string' || requested.trim() === '') return 'en'
+  const byLower = new Map(available.map(code => [code.toLowerCase(), code]))
+  const req = requested.trim().replace(/_/g, '-').toLowerCase()
+  if (byLower.has(req)) return byLower.get(req)
+  const parts = req.split('-')
+  const lang = parts[0]
+  if (lang === 'zh') {
+    const traditional = parts.slice(1).some(p => CHINESE_TRADITIONAL.has(p))
+    return byLower.get(traditional ? 'zh-tw' : 'zh-cn') ?? 'en'
+  }
+  if (lang === 'pt') return byLower.get('pt-br') ?? byLower.get('pt') ?? 'en'
+  return byLower.get(lang) ?? 'en'
+}
+
+// Why English only: the Dunder Mifflin theme is quotes and in-jokes from an
+// American show; its fans know them in English and translations fall flat
+// (the owner's call). These keys always come from en.json, a translation of
+// them is refused by scripts/i18n-check.mjs and they never count toward
+// completeness. Matched as a key or a key prefix (ending in ".").
+export const ENGLISH_ONLY = [
+  'chatter.office.spawn', 'chatter.office.work', 'chatter.office.done',
+  'chatter.office.coffee', 'chatter.office.water',
+  'ui.office.thatsWhatSheSaid',
+  'chatter.events.fireAlarmStressRelief.', 'chatter.events.cprTraining.', 'chatter.events.goldenTicket.',
+  'chatter.events.jimPrank.', 'chatter.events.parkour.', 'chatter.events.schruteBucks.',
+  'chatter.events.kevinsChili.', 'chatter.events.printerJamDm.', 'chatter.events.dundies.',
+  'chatter.events.pretzelDay.', 'chatter.events.bearsBeets.',
+]
+
+/**
+ * Whether a key always stays English (see ENGLISH_ONLY).
+ * @param {string} key
+ * @returns {boolean}
+ */
+export function isEnglishOnly(key) {
+  return ENGLISH_ONLY.some(p => (p.endsWith('.') ? key.startsWith(p) : key === p || key.startsWith(p + '_')))
+}
+
+/** Replace {name} with vars.name; unknown placeholders stay as written. */
+function fill(text, vars) {
+  if (!vars) return text
+  // Why: a replacer function, never a replacement string, so a value holding
+  // "$&" or "$1" goes in literally
+  return text.replace(/\{(\w+)\}/g, (whole, name) =>
+    Object.prototype.hasOwnProperty.call(vars, name) ? String(vars[name]) : whole)
+}
+
+const pluralRulesCache = new Map()
+function pluralForm(lang, count) {
+  let rules = pluralRulesCache.get(lang)
+  if (!rules) {
+    try { rules = new Intl.PluralRules(lang) } catch { rules = new Intl.PluralRules('en') }
+    pluralRulesCache.set(lang, rules)
+  }
+  return rules.select(count)
+}
+
+/**
+ * A translator for one language over a set of catalogs (keyed by code,
+ * English under "en"). An unknown language is English.
+ * @param {Record<string, object>} catalogs
+ * @param {string} lang
+ */
+export function createTranslator(catalogs, lang) {
+  const code = catalogs[lang] ? lang : 'en'
+  const mine = catalogs[code] ?? {}
+  const en = catalogs.en ?? {}
+  // An English-only key reads English whatever the language
+  const ownFor = key => (isEnglishOnly(key) ? en : mine)
+
+  /**
+   * @param {string} key
+   * @param {Record<string, string | number>} [vars]
+   * @returns {string}
+   */
+  function t(key, vars) {
+    if (vars && typeof vars.count === 'number') {
+      // Order: this language's form, its _other, English's form, English's _other
+      const own = ownFor(key)
+      const candidates = [
+        [own, `${key}_${pluralForm(code, vars.count)}`],
+        [own, `${key}_other`],
+        [en, `${key}_${pluralForm('en', vars.count)}`],
+        [en, `${key}_other`],
+      ]
+      for (const [catalog, k] of candidates) {
+        const hit = nonEmptyString(lookup(catalog, k))
+        if (hit !== undefined) return fill(hit, vars)
+      }
+    }
+    const text = nonEmptyString(lookup(ownFor(key), key)) ?? nonEmptyString(lookup(en, key))
+    return text === undefined ? key : fill(text, vars)
+  }
+
+  /**
+   * @param {string} key
+   * @returns {string[]}
+   */
+  function list(key) {
+    const translated = lookup(ownFor(key), key)
+    if (Array.isArray(translated) && translated.length > 0) return translated
+    const base = lookup(en, key)
+    return Array.isArray(base) ? base : []
+  }
+
+  return { lang: code, t, list }
+}
+
+// Why: demo, sim and promo content stays English (spec), so it never counts
+// against a translation
+const NOT_COUNTED = ['meta.', 'ui.demo.']
+
+/**
+ * How much of English a catalog translates, 0–100 (whole number).
+ * @param {object} catalog
+ * @param {object} en
+ * @returns {number}
+ */
+export function completeness(catalog, en) {
+  const keys = Object.keys(flatten(en)).filter(k => !NOT_COUNTED.some(p => k.startsWith(p)) && !isEnglishOnly(k))
+  if (keys.length === 0) return 100
+  const mine = flatten(catalog)
+  const done = keys.filter(k => isTranslated(mine, k)).length
+  return Math.floor((done / keys.length) * 100)
+}
+
+// Why: English needs _one, but Japanese, Korean, Chinese, Indonesian … pick
+// _other for every count, so a file without _one is not missing anything
+const SINGULAR_FORM = /_(zero|one|two|few|many)$/
+
+/**
+ * Whether a flattened catalog translates one English key. A plural form other
+ * than _other counts as translated when the language has the _other form.
+ * @param {Record<string, string | string[]>} mine  the language, flattened
+ * @param {string} key  an English key
+ * @returns {boolean}
+ */
+export function isTranslated(mine, key) {
+  const v = mine[key]
+  if (Array.isArray(v) ? v.length > 0 : nonEmptyString(v) !== undefined) return true
+  return SINGULAR_FORM.test(key) && nonEmptyString(mine[key.replace(SINGULAR_FORM, '_other')]) !== undefined
+}
+
+function safeLocale(lang) {
+  try { return Intl.getCanonicalLocales(lang)[0] ?? 'en' } catch { return 'en' }
+}
+
+/**
+ * US dollars (what the tools bill in), formatted for the language.
+ * @param {number} usd
+ * @param {string} lang
+ */
+export function formatMoney(usd, lang) {
+  return new Intl.NumberFormat(safeLocale(lang), { style: 'currency', currency: 'USD' }).format(usd)
+}
+
+/** @param {number} n @param {string} lang */
+export function formatNumber(n, lang) {
+  return new Intl.NumberFormat(safeLocale(lang)).format(n)
+}
+
+/** Hour and minute, in the language's clock style. @param {number} ms @param {string} lang */
+export function formatTime(ms, lang) {
+  return new Intl.DateTimeFormat(safeLocale(lang), { hour: 'numeric', minute: '2-digit' }).format(new Date(ms))
+}
+
+/** Day and short month. @param {number} ms @param {string} lang */
+export function formatDate(ms, lang) {
+  return new Intl.DateTimeFormat(safeLocale(lang), { day: 'numeric', month: 'short' }).format(new Date(ms))
+}

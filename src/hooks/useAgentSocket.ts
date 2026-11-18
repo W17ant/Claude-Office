@@ -37,6 +37,9 @@ import { officeHttpBase, officeWsUrl } from '../serverUrl'
 import { getViewerKey, mayCarryOfficeToken, pageWsProtocols } from '../viewerKey'
 import { getPhoneSecret, onPhoneFullPage } from '../phoneSecret'
 import { officeAuthHeaders } from '../officeAuth'
+import { applyLanguage, firstRunLanguage } from '../i18n'
+import { setUiToken } from '../permissions'
+import { noteServerLanguage, setLanguage } from '../serverSettings'
 
 /**
  * The subprotocols for this attempt, read afresh: a phone-full page offers
@@ -108,7 +111,15 @@ interface SnapshotMessage {
   /** Each session's task board, no descriptions (server/tasks.js) */
   taskBoards?: TaskBoardInfo[]
   mcpServers: string[]
+  /** The office's language; null until chosen, absent from a server without translations */
+  language?: string | null
   timestamp: number
+}
+
+/** A change of an office-wide setting every page follows (server/index.js POST /settings). */
+interface SettingsMessage {
+  type: 'settings'
+  language: string | null
 }
 
 /** First message on every connection: what this connection may see (server/index.js). */
@@ -119,7 +130,7 @@ interface AuthMessage {
   phone?: boolean
 }
 
-type ServerMessage = OfficeEvent | SnapshotMessage | AuthMessage
+type ServerMessage = OfficeEvent | SnapshotMessage | AuthMessage | SettingsMessage
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -308,6 +319,13 @@ export function useAgentSocket(options: AgentSocketOptions = {}): AgentSocketRes
       return
     }
 
+    if (msg.type === 'settings') {
+      const language = (msg as SettingsMessage).language
+      noteServerLanguage(language)
+      applyLanguage(language)
+      return
+    }
+
     if (msg.type === 'auth') {
       setTrusted((msg as AuthMessage).trusted === true)
       return
@@ -353,6 +371,17 @@ export function useAgentSocket(options: AgentSocketOptions = {}): AgentSocketRes
         uiToken: snap.uiToken,
         timestamp: snap.timestamp,
       })
+      // The office's language (left alone by a server without translations)
+      if (snap.language !== undefined) {
+        noteServerLanguage(snap.language)
+        applyLanguage(snap.language)
+        const first = firstRunLanguage(snap.language, Boolean(snap.uiToken), typeof navigator === 'undefined' ? [] : navigator.languages ?? [])
+        if (first) {
+          // Why here: the POST needs the UI token now, before App's reducer stores it
+          setUiToken(snap.uiToken)
+          void setLanguage(first)
+        }
+      }
       return
     }
 

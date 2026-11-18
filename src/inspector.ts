@@ -4,11 +4,13 @@
  * office's own record when the server has nothing (?sim, a 404), and the URL
  * it fetches (src/serverUrl.ts knows where the server is). No React, no DOM, no clock — the
  * tests run these in Node. The card itself is src/components/AgentCard.tsx.
+ * Every label comes from locales/en.json through t(), built when asked for.
  */
 
 import type { Agent, NeedsYou, SessionInfo, SessionMain } from './types'
 import { formatElapsed, formatTokensShort, isMainAgent, needsYouLabel, shortModel } from './mainState'
 import { officeHttpBase } from './serverUrl'
+import { t } from './i18n'
 
 /** GET /agents/:id on the office server (wherever src/serverUrl.ts says it is) */
 export function inspectUrl(agentId: string, base: string = officeHttpBase()): string {
@@ -97,33 +99,37 @@ export type InspectSource = 'server' | 'office' | 'loading'
 export function mainStateLabel(main: SessionMain | undefined, waitingOn?: number, needsYou?: NeedsYou): string {
   const state = main?.state
   switch (state) {
-    case 'working':    return 'working'
-    case 'waiting': {
-      const n = main?.waitingOn ?? waitingOn ?? 0
-      return `waiting on ${n} worker${n === 1 ? '' : 's'}`
+    case 'working':    return t('ui.inspector.main.working')
+    case 'waiting':    return t('ui.inspector.main.waiting', { count: main?.waitingOn ?? waitingOn ?? 0 })
+    case 'idle':       return t('ui.inspector.main.idle')
+    // Why \p{L}\p{N}, not \w: \w is ASCII only, so it would strip a whole
+    // translated label written in another script, not just the leading emoji
+    case 'needs-you':  return (main?.needsYou ?? needsYou) ? needsYouLabel((main?.needsYou ?? needsYou)!).replace(/^[^\p{L}\p{N}]*/u, '') : t('ui.inspector.main.needsYou')
+    case 'error': {
+      // The error code and detail are Claude Code's own words: passed through as they are
+      const label = main?.error?.error ? t('ui.inspector.main.errorCode', { error: main.error.error }) : t('ui.inspector.main.error')
+      return main?.error?.detail ? t('ui.inspector.main.errorDetail', { label, detail: main.error.detail }) : label
     }
-    case 'idle':       return 'idle'
-    case 'needs-you':  return (main?.needsYou ?? needsYou) ? needsYouLabel((main?.needsYou ?? needsYou)!).replace(/^[^\w]*/, '') : 'needs you'
-    case 'error':      return `API error${main?.error?.error ? `: ${main.error.error}` : ''}${main?.error?.detail ? ` — ${main.error.detail}` : ''}`
-    case 'compacting': return 'compacting'
-    default:           return 'not heard from yet'
+    case 'compacting': return t('ui.inspector.main.compacting')
+    default:           return t('ui.inspector.main.unknown')
   }
 }
 
 /** A worker's state in words */
 export function workerStateLabel(state: string | undefined): string {
   switch (state) {
-    case 'new-hire':            return 'arriving'
-    case 'walking-to-desk':     return 'walking to the desk'
-    case 'walking-to-manager':  return 'walking over'
-    case 'talking-to-manager':  return 'talking'
-    case 'coffee-break':        return 'on a break'
-    case 'waiting':             return 'waiting for a desk'
-    case 'changing-room':       return 'walking to another room'
-    case 'completed':           return 'finished'
-    case 'working':             return 'working'
-    case 'idle':                return 'idle'
-    default:                    return state ?? 'unknown'
+    case 'new-hire':            return t('ui.inspector.worker.newHire')
+    case 'walking-to-desk':     return t('ui.inspector.worker.walkingToDesk')
+    case 'walking-to-manager':  return t('ui.inspector.worker.walkingToManager')
+    case 'talking-to-manager':  return t('ui.inspector.worker.talking')
+    case 'coffee-break':        return t('ui.inspector.worker.coffeeBreak')
+    case 'waiting':             return t('ui.inspector.worker.waiting')
+    case 'changing-room':       return t('ui.inspector.worker.changingRoom')
+    case 'completed':           return t('ui.inspector.worker.completed')
+    case 'working':             return t('ui.inspector.worker.working')
+    case 'idle':                return t('ui.inspector.worker.idle')
+    // Why the raw state: a state the page does not know yet is better shown than hidden
+    default:                    return state ?? t('ui.inspector.worker.unknown')
   }
 }
 
@@ -166,19 +172,23 @@ export function atItFor(insp: Inspection, now: number): string | null {
 /** "4.2k tok · 1m01s · 3 tools · haiku-5-5" for a finished worker; [] while nothing is known */
 export function finishedStats(stats: InspectStats): string[] {
   const parts: string[] = []
-  if (typeof stats.tokens === 'number') parts.push(`${formatTokensShort(stats.tokens)} tok`)
+  if (typeof stats.tokens === 'number') parts.push(t('ui.inspector.stats.tokens', { tokens: formatTokensShort(stats.tokens) }))
   if (typeof stats.durationMs === 'number') parts.push(formatElapsed(stats.durationMs))
-  if (typeof stats.toolUses === 'number') parts.push(`${stats.toolUses} tool use${stats.toolUses === 1 ? '' : 's'}`)
+  if (typeof stats.toolUses === 'number') parts.push(t('ui.inspector.stats.toolUses', { count: stats.toolUses }))
   const model = shortModel(stats.model)
   if (model) parts.push(model)
   return parts
 }
 
-const DERIVED_LABELS: Record<string, string> = {
-  tokens: 'tokens and model from its transcript',
-  model: 'model from its transcript',
-  durationMs: 'duration from spawn to finish',
-  toolUses: 'tool uses the hook saw',
+// Why a function, not a table: a table built at import would never change language
+function derivedLabel(key: string): string {
+  switch (key) {
+    case 'tokens':     return t('ui.inspector.derived.tokens')
+    case 'model':      return t('ui.inspector.derived.model')
+    case 'durationMs': return t('ui.inspector.derived.durationMs')
+    case 'toolUses':   return t('ui.inspector.derived.toolUses')
+    default:           return key
+  }
 }
 
 /** "worked out by the office: tokens and model from its transcript, duration from spawn to finish" — null when Claude Code reported everything */
@@ -187,7 +197,7 @@ export function derivedNote(stats: Pick<InspectStats, 'derived'>): string | null
   if (!derived.length) return null
   // tokens and model come from the same place: one phrase for both
   const keys = derived.includes('tokens') ? derived.filter(k => k !== 'model') : derived
-  return `worked out by the office: ${keys.map(k => DERIVED_LABELS[k] ?? k).join(', ')}`
+  return t('ui.inspector.derived.note', { list: keys.map(derivedLabel).join(', ') })
 }
 
 /** The marker in front of a history row */
@@ -205,21 +215,22 @@ export function historyMark(kind: HistoryKind): string {
 export function transcriptEmptyText(insp: Pick<Inspection, 'transcriptAvailable' | 'transcriptReason' | 'transcript'>): string | null {
   if (!insp.transcriptAvailable) {
     switch (insp.transcriptReason) {
-      case 'prompts off':               return 'transcript hidden: prompts off'
+      // Why the English cases: transcriptReason is the server's code, not text shown as it is
+      case 'prompts off':               return t('ui.inspector.transcript.promptsOff')
       // The page has no UI token until the WebSocket snapshot arrives
-      case 'needs the office token':    return 'transcript appears once the office is connected'
-      case 'no transcript path yet':    return 'no transcript yet'
-      case 'transcript file not found': return 'transcript file not found'
-      default:                          return 'transcript unavailable'
+      case 'needs the office token':    return t('ui.inspector.transcript.needsToken')
+      case 'no transcript path yet':    return t('ui.inspector.transcript.noPath')
+      case 'transcript file not found': return t('ui.inspector.transcript.notFound')
+      default:                          return t('ui.inspector.transcript.unavailable')
     }
   }
-  return insp.transcript && insp.transcript.length ? null : 'nothing said yet'
+  return insp.transcript && insp.transcript.length ? null : t('ui.inspector.transcript.nothingSaid')
 }
 
 /** One transcript entry as a line: "Bash — ls /etc | wc -l" or the text */
 export function transcriptLine(e: TranscriptEntry): string {
   if (e.kind === 'tool') {
-    const names = e.tools && e.tools.length > 1 ? `${e.tool} +${e.tools.length - 1}` : (e.tool ?? 'tool')
+    const names = e.tools && e.tools.length > 1 ? `${e.tool} +${e.tools.length - 1}` : (e.tool ?? t('ui.inspector.transcript.tool'))
     return `${names}${e.input ? ` — ${e.input}` : ''}${e.text ? `  “${e.text}”` : ''}`
   }
   return e.text ?? ''

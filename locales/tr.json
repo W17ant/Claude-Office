@@ -1,0 +1,1382 @@
+{
+  "meta": {
+    "name": "Türkçe",
+    "englishName": "Turkish",
+    "status": "wip",
+    "translators": []
+  },
+  "ui": {
+    "settings": {
+      "language": {
+        "title": "Dil",
+        "wip": "yapım aşamasında",
+        "complete": "%{percent} çevrildi",
+        "report": "Çeviri hatası bildir",
+        "readOnly": "Dili yalnızca ofisin kendi sayfası değiştirebilir"
+      },
+      "title": "Ayarlar",
+      "close": "Ayarları kapat",
+      "on": "Açık",
+      "off": "Kapalı",
+      "browser": {
+        "title": "Bu tarayıcı",
+        "theme": "Tema",
+        "themeDefault": "Varsayılan",
+        "dayNight": "Gündüz / gece",
+        "dayNightAria": "Gündüz veya gece",
+        "auto": "Otomatik",
+        "day": "Gündüz",
+        "night": "Gece",
+        "season": "Mevsim",
+        "seasonAuto": "Otomatik (tarihe göre)",
+        "holidays": "Özel günler",
+        "seasons": "Mevsimler",
+        "seasonOff": "Kapalı",
+        "urlSeasonBefore": "Adreste şu var:",
+        "urlSeasonAfter": "; bu ayarın önüne geçer.",
+        "appliesOnReload": "Yeniden yüklenince uygulanır.",
+        "reloadNow": "Şimdi yenile",
+        "autoExplained": "Otomatik, tarihe göre seçer: dört mevsim (kuzey yarımküre), üstüne Noel, Cadılar Bayramı, Paskalya ve Sevgililer Günü. Şu an: {look}.",
+        "nowUndrawn": "Şu an: {look}. Henüz çizimi olmayan bir mevsim normal ofis gibi görünür.",
+        "noArtYet": "{season} (henüz çizim yok)",
+        "over": "{top} (altta: {below})",
+        "sound": "Ses",
+        "mute": "Sesi kapat",
+        "unmute": "Sesi aç",
+        "volume": "Ses düzeyi",
+        "muted": "sessiz",
+        "ambience": "Ortam sesi",
+        "ambienceTitle": "Birkaç olay sesinin altında sakin bir ofis ortam sesi; yukarıdaki ses düzeyinde çalar"
+      },
+      "server": {
+        "title": "Ofis sunucusu",
+        "sim": "?sim / ?video altında ofis sunucusu yok — bu ayarlar canlı bir ofise ait.",
+        "readOnly": "Salt okunur sayfa: ofis token'ı yok, bu yüzden sunucu değişikliği reddeder. Bunları değiştirmek için npm run open bağlantısını aç.",
+        "waiting": "Ofis sunucusu henüz yanıt vermedi.",
+        "answer": "İzinleri burada yanıtla",
+        "answerTitle": "Claude beklerken izin pencereleri ofisteki bir karttan yanıtlanabilir",
+        "notify": "İzin beklerken bildir",
+        "notifyTitle": "Claude bir izin beklemeye başlayınca masaüstü bildirimi",
+        "logging": "Prompt kaydı",
+        "logOff": "Kapalı",
+        "logSummary": "Özet",
+        "logFull": "Tam",
+        "hintOff": "Hiçbir prompt veya yanıt metni saklanmaz ya da gösterilmez — yalnızca durumlar.",
+        "hintSummary": "Her prompt ve yanıtın ilk 200 karakteri.",
+        "hintFull": "2000 karaktere kadar prompt ve yanıtlar.",
+        "rowsStay": "chat.db'deki mevcut satırlar",
+        "ai": "AI sohbet izleyici",
+        "aiTitle": "Claude'un #office-general kanalını yanıtlamasını sağlayan sohbet izleyici",
+        "bossSprite": "Patron sprite'ı:",
+        "bossSpriteIn": "anahtarı, dosya:",
+        "bossSpriteWhen": "(sunucu başlarken okunur).",
+        "rowsStayEnd": " komutu çalışana kadar kalır."
+      }
+    },
+    "meters": {
+      "ariaLabel": "Maaş, elektrik ve bellek",
+      "title": "⚡ OFİS SAYAÇLARI",
+      "payroll": "Maaş",
+      "electricity": "Elektrik",
+      "memory": "Bellek",
+      "needsStatusLine": "durum satırı gerekli",
+      "perMin": "{amount}/dk",
+      "tokPerMin": "tok/dk",
+      "rateShort": "5sa %{percent}",
+      "sessions_one": "{count} oturum",
+      "sessions_other": "{count} oturum",
+      "estimateMarker": "tah.",
+      "tip": {
+        "payrollHead_one": "MAAŞ — {count} oturumda {amount} · son 5 dk'da {rate}/dk",
+        "payrollHead_other": "MAAŞ — {count} oturumda {amount} · son 5 dk'da {rate}/dk",
+        "payrollToday": "bugün {amount} · +{added} / -{removed} satır · liste fiyatından tahmini",
+        "needsLine": "{session}: durum satırı gerekli ({command})",
+        "needsLineShort": "{session}: durum satırı gerekli",
+        "payrollRow": "{session}: {amount} · {model} · {duration}",
+        "electricityHead": "ELEKTRİK — son 5 dk'da dakikada {tokens} token işlendi (bağlamın yeniden okunması dahil)",
+        "electricityRow": "{session}: {rate} tok/dk · son çağrı {input} giriş / {output} çıkış",
+        "subagents_one": " · {count} alt ajan {tokens} tok",
+        "subagents_other": " · {count} alt ajan {tokens} tok",
+        "memoryHead": "BELLEK — {session}: bağlam penceresi {percent} dolu",
+        "memorySize": " ({used} / {size} token)",
+        "model": "model {model}",
+        "effort": " · efor {effort}",
+        "over200k": " · 200k üstü",
+        "claudeCode": " · Claude Code {version}",
+        "costLine": "{amount} · {duration} · oturum {id}",
+        "rateHead": "KULLANIM LİMİTLERİ (claude.ai aboneliği)",
+        "rate5h": "5 saatlik pencere: %{percent} kullanıldı",
+        "rate7d": "7 günlük pencere: %{percent} kullanıldı",
+        "resets": " · sıfırlanma {time}",
+        "spendLimit": "harcama limiti: %{percent} kullanıldı"
+      },
+      "clutter": "🗂️ Claude'un masası dağılmaya başladı — {session} bağlamın %{percent} seviyesinde",
+      "clutterEstimated": "🗂️ Claude'un masası dağılmaya başladı — {session} bağlamın %{percent} seviyesinde (tahmini)",
+      "unnamedModel": "adsız bir model",
+      "window": {
+        "oneM": "pencere {size} token: oturum, {model} modelinin [1m] sürümünü çalıştırıyor",
+        "unknown": "pencere {size} token varsayıldı: {model} ofisin model tablosunda yok, bu yüzden değer yaklaşık",
+        "overflow": "pencere {size} token varsayıldı: 200.000'den fazlası kullanımda, yani {model} 1M sürümüyle çalışıyor olmalı (yaklaşık)",
+        "table": "{model} için pencere {size} token (Claude Code'un model tablosu)"
+      },
+      "estimate": {
+        "estSuffix": " · tah.",
+        "compacted": "sıkıştırıldı: pencere az önce boşaltıldı; transkriptteki bir sonraki yanıt sayacı yeniden doldurur",
+        "fromTranscript": "oturum transkriptinden tahmin edildi (son yanıtın kullanımı), çünkü bu oturum için kayıtlı bir durum satırı yok",
+        "needsBoth": "maaş ve elektrik için durum satırı gerekli: {command}"
+      },
+      "needs": {
+        "payrollHead": "MAAŞ için durum satırı gerekli — Claude Code maliyeti yalnızca statusLine komutuna bildirir",
+        "electricityHead": "ELEKTRİK için durum satırı gerekli — Claude Code dakikadaki token sayısını yalnızca statusLine komutuna bildirir",
+        "none_one": "bu oturum için kayıtlı durum satırı yok (plugin kurulumu ya da claude -p); BELLEK transkriptten tahmin ediliyor",
+        "none_other": "bu {count} oturum için kayıtlı durum satırı yok (plugin kurulumu ya da claude -p); BELLEK transkriptten tahmin ediliyor",
+        "register": "şununla kaydet: {command} (Claude-Office checkout'undan)"
+      }
+    },
+    "rooms": {
+      "mainOffice": "Ana Ofis",
+      "corridor": "Koridor",
+      "meetingRoom": "Toplantı Odası",
+      "serverRoom": "Sunucu Odası",
+      "lunchRoom": "Yemekhane",
+      "short": {
+        "mainOffice": "Ofis",
+        "corridor": "Koridor",
+        "meetingRoom": "Toplantı",
+        "serverRoom": "Sunucu",
+        "lunchRoom": "Yemek"
+      },
+      "switcher": {
+        "ariaLabel": "Kat planı: gösterilecek odayı seç",
+        "empty": "boş",
+        "people_one": "{count} kişi",
+        "people_other": "{count} kişi",
+        "label": "{room}, {people}",
+        "needsYou": ", seni bekliyor",
+        "trouble": ", bir sorun çıktı",
+        "inView": ", görünümde"
+      },
+      "furniture": {
+        "coffeeMachine": "Kahve Makinesi",
+        "filingCabinet": "Dosya Dolabı",
+        "printer": "Yazıcı",
+        "fireExtinguisher": "Yangın Söndürücü",
+        "waterCooler": "Su Sebili",
+        "bell": "Zil",
+        "kanbanBoard": "Kanban Panosu",
+        "shipItPoster": "Ship It Posteri",
+        "dashboard": "Dashboard",
+        "clickToInteract": "Etkileşim için tıkla"
+      },
+      "doors": {
+        "mainOffice": "Ofis",
+        "corridor": "Koridor",
+        "meetingRoom": "Toplantı Odası",
+        "serverRoom": "Sunucu Odası",
+        "lunchRoom": "Yemekhane",
+        "goTo": "Git: {room}"
+      },
+      "landmarks": {
+        "frontDoor": "Asansör",
+        "managerDoor": "Müdür"
+      },
+      "placeholder": {
+        "ariaLabel": "{room}: yer tutucu, çizimi henüz yapılmadı",
+        "note": "yer tutucu: bu odanın çizimi henüz yapılmadı",
+        "coffee": "kahve",
+        "water": "su"
+      },
+      "tv": {
+        "deploying": "YAYINLANIYOR",
+        "shipped": "YAYINDA",
+        "rollback": "ROLLBACK"
+      }
+    },
+    "needsYou": {
+      "permission": "✋ seni bekliyor: {what}",
+      "permissionBare": "✋ seni bekliyor — izin",
+      "input": "✋ girdi bekliyor: {what}",
+      "inputBare": "✋ girdi bekliyor",
+      "idle": "💤 boşta bekliyor",
+      "quota": "⏳ token bekleniyor",
+      "registry": "✋ {what}",
+      "registryBare": "✋ terminalde bekliyor",
+      "elicitation": "✋ {server} sana bir şey soruyor",
+      "elicitationBare": "✋ bir MCP sunucusu sana bir şey soruyor",
+      "short": {
+        "permission": "seni bekliyor",
+        "agentInput": "girdi bekliyor",
+        "idle": "boşta",
+        "quota": "token bekleniyor",
+        "registry": "terminalde bekliyor"
+      }
+    },
+    "pill": {
+      "needsYou": "✋ seni bekliyor",
+      "error": "⚠ hata",
+      "compacting": "🧹 temizlik"
+    },
+    "strip": {
+      "sessions_one": "{count} oturum",
+      "sessions_other": "{count} oturum",
+      "notHooked": "{count} bağlı değil",
+      "needYou_one": "{count} seni bekliyor",
+      "needYou_other": "{count} seni bekliyor",
+      "readOnlyHint": "Salt okunur: bu sayfanın ofis token'ı yok (ya da eski), bu yüzden sunucu ofisi\nprompt, yanıt veya komut satırları olmadan gösterir ve izin pencereleri terminalde yanıtlanır.\nSunucunun başlarken yazdırdığı bağlantıyı aç ya da checkout'ta {command} çalıştır:\nofisi token ile açar, bu tarayıcı da onu hatırlar.",
+      "connection": {
+        "connecting": "bağlanıyor…",
+        "online": "çevrimiçi",
+        "reconnecting": "yeniden bağlanıyor…",
+        "offline": "çevrimdışı"
+      },
+      "hooks": {
+        "unknown": "hook'lar: —",
+        "seen": "hook'lar: son {ago}",
+        "waiting": "hook'lar: henüz yok",
+        "missing": "henüz hook olayı yok — {command} çalıştır"
+      },
+      "tip": {
+        "online": "Ofis sunucusu {url}: {time} saatinden beri çevrimiçi",
+        "connecting": "Ofis sunucusu {url}: bağlanıyor…",
+        "reconnecting": "Ofis sunucusu {url}: bağlantı {ago} koptu, yeniden deneniyor",
+        "offline": "Ofis sunucusu {url}: erişilemiyor",
+        "start": "Checkout'tan başlat: {command}  (ya da {alt})",
+        "hooksSeen_one": "Hook'lar: sunucu başladığından beri {count} olay, sonuncusu {ago}",
+        "hooksSeen_other": "Hook'lar: sunucu başladığından beri {count} olay, sonuncusu {ago}",
+        "hooksWaiting": "Hook'lar: henüz bir şey yok — Claude Code bir araç çalıştırınca tetiklenirler",
+        "hooksMissing": "Hook'lar: {span} boyunca hiçbir şey yok. Claude Code araç çağırıyor ama hiçbir şey görünmüyorsa hook'lar kurulu değil: {command}",
+        "counts": "Oturumlar: {sessions} · ajanlar: {agents} · istemciler: {clients}",
+        "notHooked_one": "Bağlı değil: {names} — ne yaptığını görmek için {command} çalıştır",
+        "notHooked_other": "Bağlı değil: {names} — ne yaptıklarını görmek için {command} çalıştır",
+        "waitingOnYou": "Seni bekleyenler:",
+        "server": "Sunucu v{version}, {span} süredir açık · UI: {ui}",
+        "uiBuilt": "derlenmiş (dist/)",
+        "uiDev": "dev sunucusu (dist/ derlenmemiş)",
+        "diagnose": "Teşhis: {command}"
+      },
+      "simTitle": "?{mode}: simüle ajanlar, sunucu yok, hook yok",
+      "ariaLabel": "Pipeline durumu",
+      "readOnly": "salt okunur: şunun bağlantısını aç:",
+      "startIt": "başlat:",
+      "todayTitle": "Bugüne kadar: oturumlar, ajanlar, görevler, deploy'lar, hatalar, olaylar, maaş",
+      "today": "bugün"
+    },
+    "time": {
+      "justNow": "az önce",
+      "secondsAgo": "{count} sn önce",
+      "minutesAgo": "{count} dk önce",
+      "hoursAgo": "{count} sa önce",
+      "daysAgo": "{count} gün önce",
+      "seconds": "{count} sn",
+      "minutes": "{count} dk",
+      "hoursMinutes": "{hours} sa {minutes} dk"
+    },
+    "sessions": {
+      "notHookedHint": "Bağlı değil — ne yaptığını görmek için `npm run install-hooks` (ya da /plugin install agent-office) çalıştır",
+      "notHooked": "bağlı değil",
+      "ariaLabel": "Claude Code oturumları",
+      "workers_one": "{count} çalışan",
+      "workers_other": "{count} çalışan",
+      "tip": {
+        "tool": "araç: {tool}",
+        "project": "proje: {project}",
+        "cwd": "cwd: {cwd}",
+        "model": "model: {model}",
+        "started": "başlangıç: {source}",
+        "registry": "claude: {status} (kayıt)",
+        "claude": "claude: {state}",
+        "pid": "pid {pid}",
+        "workers": "çalışanlar: {count} ({working} çalışıyor)",
+        "ended": "bitti",
+        "endedReason": "bitti ({reason})",
+        "session": "oturum {id}"
+      }
+    },
+    "today": {
+      "ariaLabel": "Bugün ofiste",
+      "title": "Bugün",
+      "close": "Kapat",
+      "notAnswering": "Ofis sunucusu yanıt vermiyor.",
+      "counting": "Sayılıyor…",
+      "footBefore": "Yerel gece yarısından beri · müdürün yorumu için sohbete",
+      "footAfter": "yaz",
+      "sessions": "Oturumlar",
+      "agentsSpawned": "İşe alınan",
+      "agentsCompleted": "Mesaiyi bitiren",
+      "tasksCompleted": "Kapanan görev",
+      "deploys": "Deploy'lar",
+      "pushes": "Push'lar",
+      "buildsFailed": "Hatalı build",
+      "testsFailed": "Hatalı test",
+      "incidents": "Olaylar",
+      "payroll": "Maaş"
+    },
+    "taskBoard": {
+      "untitled": "başlıksız görev",
+      "inProgress": "Sürüyor: {subject}",
+      "done": "Bitti: {subject}",
+      "todo": "Yapılacak: {subject}",
+      "blockedBy": " (engelleyen: {ids})",
+      "teamBoard": "{team} ekibinin görev panosu",
+      "board": "Görev panosu",
+      "aria": "{what}, {label}: {todo} yapılacak, {doing} sürüyor, {done} bitti",
+      "ariaNext": ". Sonraki pano için tıkla",
+      "clickNext": "{what}: sonraki pano için tıkla",
+      "more": "{count} tane daha",
+      "chat": {
+        "todo": "{count} yapılacak",
+        "todoBlocked": "{count} yapılacak ({blocked} engelli)",
+        "inProgress": "{count} sürüyor: {subject}",
+        "progress": "{activity} — {total} görevden {done} bitti",
+        "nextUp": "{todo}, sıradaki: {subject}",
+        "allWaiting": "{todo}, hepsi bir şey bekliyor",
+        "toGo": "{total} görevden {done} bitti, {pending} kaldı",
+        "oneDone": "panodaki tek görev bitti",
+        "allDone": "{count} görevin hepsi bitti"
+      }
+    },
+    "incident": {
+      "badgePinned": "?variant=incident ile sabitlendi — bitirmek için /all-clear",
+      "badgeTitle": "Prod geri gelince /all-clear yaz",
+      "incident": "OLAY",
+      "mini": "MİNİ OLAY",
+      "daysSign": "Son olaydan beri geçen gün",
+      "daysSignTitle": "Son olaydan beri geçen gün: {days}",
+      "daysSignNow": "Son olaydan beri geçen gün: 0 (şu an yaşanıyor)",
+      "beacon": "Olay alarmı",
+      "statusPage": "Durum sayfası: ROLLBACK",
+      "rollbackAlt": "Rollback sürüyor",
+      "rollback": "ROLLBACK",
+      "timeline": "Olay zaman çizelgesi",
+      "pizza": "Olay pizzası"
+    },
+    "seasons": {
+      "christmas": "Noel",
+      "halloween": "Cadılar Bayramı",
+      "easter": "Paskalya",
+      "valentine": "Sevgililer Günü",
+      "spring": "İlkbahar",
+      "summer": "Yaz",
+      "autumn": "Sonbahar",
+      "winter": "Kış"
+    },
+    "titleBar": {
+      "incident": "🔥 PROD ÇÖKTÜ — AGENT OFFICE",
+      "mode": "Mod: {mode}",
+      "auto": "OTO",
+      "day": "GÜNDÜZ",
+      "night": "GECE",
+      "settings": "Ayarlar",
+      "settingsTitle": "Ayarlar: tema, gündüz/gece, mevsim, ses, sunucu ayarları"
+    },
+    "office": {
+      "catAlt": "kedi",
+      "interactionAlt": "etkileşim",
+      "waitingForDesk": "masa bekliyor",
+      "waitingForDeskMsg": "masa bekliyor...",
+      "doneStats": "✅ bitti · {stats}",
+      "done": "bitti",
+      "standingBy": "hazırda bekliyor",
+      "standingDown": "görevden çekiliyor",
+      "working": "⚡ çalışıyor",
+      "workingOnPrompt": "✍ prompt üzerinde çalışıyor",
+      "turnOver": "tur bitti — boşta",
+      "apiError": "⚠ API hatası",
+      "apiErrorWhat": "⚠ API hatası: {error}",
+      "memoryWipe": "🧹 hafıza silme",
+      "memoryWipeTrigger": "🧹 hafıza silme ({trigger})",
+      "waitingOnWorkers_one": "⏳ {count} arka plan çalışanını bekliyor",
+      "waitingOnWorkers_other": "⏳ {count} arka plan çalışanını bekliyor",
+      "waitingOnWorkersBare": "⏳ arka plan çalışanlarını bekliyor",
+      "backToWorkTyping": "✍ işe dönüş",
+      "backToWork": "işe dönüş",
+      "backToMyDesk": "masama dönüyorum",
+      "clockedIn": "mesaiye başladı",
+      "clockedInMsg": "🤖 mesaiye başladı",
+      "clockedInProject": "🤖 mesaiye başladı · {project}",
+      "clockedOut": "mesaiyi bitirdi",
+      "clockedOutMsg": "👋 mesaiyi bitirdi",
+      "clockedOutAway": "biz yokken mesaiyi bitirdi",
+      "sessionEnded": "👋 oturum bitti",
+      "sessionEndedReason": "👋 oturum bitti ({reason})",
+      "talkingTo": "{name} ile konuşuyor",
+      "reportedBack": "📬 {name} rapor verdi",
+      "reportedBackBare": "📬 bir arka plan çalışanı rapor verdi",
+      "toolBatchDone_one": "{count} araçlık grup bitti",
+      "toolBatchDone_other": "{count} araçlık grup bitti",
+      "toolBatchDoneUnknown": "? araçlık grup bitti",
+      "toolRan": "{tool} çalıştı",
+      "permissionAnswered": "✅ izin yanıtlandı — {what}",
+      "handDown": "el indi",
+      "detail": " — {detail}",
+      "grabbingRedBull": "Red Bull alıyor",
+      "foundDesk": "masa buldu",
+      "offTo": {
+        "mainOffice": "ana ofise gidiyor",
+        "corridor": "koridora gidiyor",
+        "meetingRoom": "toplantı odasına gidiyor",
+        "serverRoom": "sunucu odasına gidiyor",
+        "lunchRoom": "yemekhaneye gidiyor"
+      },
+      "exitCode": "çıkış kodu {code}",
+      "shipping": "🚀 yayına alınıyor",
+      "shippingWhere": "🚀 yayına alınıyor: {where}",
+      "deployInterrupted": "⏹ deploy yarıda kesildi",
+      "deployInterruptedWhere": "⏹ deploy yarıda kesildi: {where}",
+      "deployed": "🚀 deploy edildi",
+      "deployedWhere": "🚀 deploy edildi: {where}",
+      "deployFailed": "💥 deploy başarısız",
+      "deployFailedWhere": "💥 deploy başarısız: {where}",
+      "pushedTo": "🎉 push edildi: {branch}",
+      "pushedToWhere": "🎉 push edildi: {branch} · {where}",
+      "testsFailed": "❌ testler başarısız",
+      "testsFailedIn": "❌ testler başarısız: {where}",
+      "buildFailed": "❌ build başarısız",
+      "buildFailedIn": "❌ build başarısız: {where}",
+      "testsGreen": "✅ testler yine yeşil",
+      "testsGreenIn": "✅ testler yine yeşil: {where}",
+      "buildGreen": "✅ build yine yeşil",
+      "buildGreenIn": "✅ build yine yeşil: {where}",
+      "runningTheShow": "Her şeyi yönetiyor"
+    },
+    "phase": {
+      "night": "🌙 Gece vardiyası",
+      "dawn": "🌅 Şafak söküyor",
+      "morning": "☀️ Günaydın",
+      "afternoon": "☀️ Öğleden sonra",
+      "evening": "🌆 Akşam",
+      "dusk": "🌇 Güneş batıyor"
+    },
+    "advent": {
+      "sleeps_one": "Advent takvimi: Noel'e {count} uyku kaldı!",
+      "sleeps_other": "Advent takvimi: Noel'e {count} uyku kaldı",
+      "christmas": "Mutlu Noeller!",
+      "daysTill_one": "{year} yılına {count} gün",
+      "daysTill_other": "{year} yılına {count} gün",
+      "newYear": "Mutlu yıllar, {year}!"
+    },
+    "chat": {
+      "logPrompts": {
+        "hint": "Prompt kaydı: {level} — {what}.",
+        "off": "yalnızca durum — hiçbir prompt veya yanıt metni saklanmaz, yayınlanmaz ya da gösterilmez",
+        "summary": "her prompt ve yanıtın ilk 200 karakteri",
+        "full": "2000 karaktere kadar prompt ve yanıtlar",
+        "unknown": "bilinmeyen seviye",
+        "where": "Bir sunucu ayarı ({file}); Ayarlar'dan (başlık çubuğundaki dişli) ya da ofis token'ı ile değiştir:",
+        "pill": "prompt: {level}"
+      },
+      "aiPausedTitle": "Sohbet izleyici duraklatıldı — devam etmek için tıkla",
+      "aiActiveTitle": "Sohbet izleyici etkin — duraklatmak için tıkla",
+      "aiOff": "AI Kapalı",
+      "aiOn": "AI Açık",
+      "volume": "Ses: %{percent}",
+      "on": "açık",
+      "off": "kapalı",
+      "answerHere": "Burada yanıtla: {state}",
+      "answerOnTitle": "İzin pencereleri ofisten yanıtlanabilir (Claude beklerken bir kart çıkar) — kapatmak için tıkla",
+      "answerOffTitle": "İzin pencereleri yalnızca terminalde yanıtlanır — ofisin yanıtlaması için tıkla",
+      "notify": "Bildir: {state}",
+      "notifyOnTitle": "Claude bir izin beklemeye başlayınca masaüstü bildirimi (yalnızca proje ve araç) — kapatmak için tıkla",
+      "notifyOffTitle": "Claude izin beklerken masaüstü bildirimi yok — açmak için tıkla",
+      "removeReaction": "Kaldırmak için tıkla",
+      "seen": "Görüldü",
+      "seenAlt": "görüldü",
+      "typingAlt": "yazıyor",
+      "typing": "{name} yazıyor",
+      "mentionsAria": "Bir oturum için prompt sıraya koy",
+      "mentionTitle": "{name} için prompt sıraya koy: turu bitince alır",
+      "placeholder": "{channel} kanalına mesaj yaz",
+      "placeholderMentions": "{channel} kanalına mesaj yaz ya da prompt sıraya koymak için @oturum",
+      "themeOn": "🧻 Dunder Mifflin modu: AÇIK. Kimlik hırsızlığı şaka değildir.",
+      "themeOff": "🔁 Ofis teması: KAPALI",
+      "tag": {
+        "prompt": "prompt",
+        "reply": "yanıt"
+      }
+    },
+    "phone": {
+      "tab": {
+        "chat": "Sohbet",
+        "meters": "Sayaçlar",
+        "today": "Bugün",
+        "settings": "Ayarlar"
+      },
+      "noKey": "anahtar yok",
+      "pending": "{count} bekliyor",
+      "noSecret": {
+        "title": "Bu bağlantının anahtarı eksik.",
+        "openBefore": "Bilgisayarda",
+        "openAfter": "komutunun yazdırdığı bağlantıyı aç ya da QR kodunu tara. Bağlantının sonunda şu olur:",
+        "endsAfter": "ve 64 karakter; bu tarayıcı ilk ziyaretten sonra onu hatırlar."
+      },
+      "offline": "Bağlı değil. Ofis durmuş olabilir ya da bu bağlantı değişti:",
+      "offlineAfter": "güncel olanı yazdırır.",
+      "metersEmpty": "Henüz hiçbir oturum veri göndermedi. Claude Code çalışmaya başlayınca maaş, elektrik ve bellek burada görünür.",
+      "tabsAria": "Ofis panelleri"
+    },
+    "viewer": {
+      "connecting": "ofise bağlanıyor…"
+    },
+    "inspector": {
+      "main": {
+        "working": "çalışıyor",
+        "waiting_one": "{count} çalışanı bekliyor",
+        "waiting_other": "{count} çalışanı bekliyor",
+        "idle": "boşta",
+        "needsYou": "seni bekliyor",
+        "error": "API hatası",
+        "errorCode": "API hatası: {error}",
+        "errorDetail": "{label} — {detail}",
+        "compacting": "sıkıştırıyor",
+        "unknown": "henüz haber yok"
+      },
+      "worker": {
+        "newHire": "geliyor",
+        "walkingToDesk": "masaya yürüyor",
+        "walkingToManager": "yanına yürüyor",
+        "talking": "konuşuyor",
+        "coffeeBreak": "molada",
+        "waiting": "masa bekliyor",
+        "changingRoom": "başka odaya yürüyor",
+        "completed": "bitirdi",
+        "working": "çalışıyor",
+        "idle": "boşta",
+        "unknown": "bilinmiyor"
+      },
+      "stats": {
+        "tokens": "{tokens} tok",
+        "toolUses_one": "{count} araç kullanımı",
+        "toolUses_other": "{count} araç kullanımı"
+      },
+      "derived": {
+        "note": "ofisin hesapladıkları: {list}",
+        "tokens": "token ve model, transkriptinden",
+        "model": "model, transkriptinden",
+        "durationMs": "başlangıçtan bitişe süre",
+        "toolUses": "hook'un gördüğü araç kullanımları"
+      },
+      "transcript": {
+        "promptsOff": "transkript gizli: prompt kaydı kapalı",
+        "needsToken": "ofis bağlanınca transkript görünür",
+        "noPath": "henüz transkript yok",
+        "notFound": "transkript dosyası bulunamadı",
+        "unavailable": "transkript kullanılamıyor",
+        "nothingSaid": "henüz bir şey söylenmedi",
+        "tool": "araç"
+      }
+    },
+    "agentCard": {
+      "ariaLabel": "Ajan inceleyici",
+      "ariaNamed": "{name} — inceleyici",
+      "close": "Kapat",
+      "closeTitle": "Kapat (Esc)",
+      "roleMain": "oturumun claude'u",
+      "tookTitle": "ne kadar sürdü",
+      "forTitle": "ne zamandır uğraşıyor",
+      "took": "{elapsed} sürdü",
+      "for": "{elapsed} süredir",
+      "isBoss": "Bu sensin.",
+      "task": "Görev",
+      "noTask": "görev metni yok",
+      "notHooked": "bağlı değil: yalnızca Claude Code'un oturum kaydından biliniyor, bu yüzden henüz gösterilecek tur yok",
+      "lastPrompt": "Son prompt",
+      "lastReply": "Son yanıt",
+      "promptsHidden": "gizli: prompt kaydı kapalı",
+      "nothingYet": "henüz yok",
+      "crons_one": "cron {count}",
+      "crons_other": "cron {count}",
+      "waitingOn": "{count} bekleniyor",
+      "contextTitle": "son mesajın kullanımı: bağlam penceresi ne kadar dolu",
+      "context": "bağlam {tokens} tok",
+      "where": "Konum",
+      "noProject": "proje yok",
+      "session": "oturum {id}",
+      "noSession": "oturum yok",
+      "tools": "Araçlar",
+      "calls_one": "{count} çağrı",
+      "calls_other": "{count} çağrı",
+      "restored": "ofis sunucusu yeniden başladı: o zamandan beri araçlar",
+      "noTools": "henüz araç yok",
+      "historyAria_one": "son {count} kayıt",
+      "historyAria_other": "son {count} kayıt",
+      "finished": "Bitti",
+      "lineage": "Soy ağacı",
+      "noTotals": "toplam bildirilmedi",
+      "soFar": "şimdiye kadar: {stats}",
+      "parent": "üst: {name}",
+      "spawnedBySession": "oturum tarafından başlatıldı",
+      "background": "arka plan",
+      "unread": "{count} okunmamış",
+      "transcript": "Transkript",
+      "foot": {
+        "serverForgot": "sunucu onu bıraktı — son bilinen",
+        "serverUnreachable": "ofis sunucusuna erişilemiyor — son bilinen",
+        "live": "canlı · her {seconds} sn'de yenilenir",
+        "officeUnreachable": "ofis sunucusuna erişilemiyor — ofisin bildikleri gösteriliyor",
+        "notServerAgent": "sunucu ajanı değil — ofisin bildikleri gösteriliyor",
+        "loading": "yükleniyor…"
+      }
+    },
+    "permission": {
+      "ariaLabel": "İzin istekleri",
+      "timeLeft": "terminal devralmadan önce {seconds} sn",
+      "readOnly": "terminalde yanıtla (bu sayfa salt okunur)",
+      "allow": "İzin ver",
+      "allowTitle": "Bu çağrıya izin ver ({key})",
+      "allowRemember": "İzin ver ve hatırla",
+      "deny": "Reddet",
+      "denyTitle": "Bu çağrıyı reddet ({key})",
+      "sendingAllow": "izin gönderiliyor…",
+      "sendingDeny": "ret gönderiliyor…",
+      "rememberNote": "İzin ver ve hatırla: {what}",
+      "title": {
+        "use": "Claude şunu kullanmak istiyor: {tool}",
+        "run": "Claude şunu çalıştırmak istiyor: {what}",
+        "write": "Claude şuraya yazmak istiyor: {what}",
+        "edit": "Claude şunu düzenlemek istiyor: {what}",
+        "read": "Claude şunu okumak istiyor: {what}",
+        "fetch": "Claude şunu getirmek istiyor: {what}",
+        "search": "Claude şunu aramak istiyor: {what}",
+        "findFiles": "Claude dosya bulmak istiyor: {what}"
+      },
+      "remember": {
+        "nothing": "Hatırlanacak bir şey yok",
+        "all": "İzin ver ve {parts}",
+        "setMode": "bu oturumu şu moda geçir: {mode}",
+        "anotherMode": "başka bir mod",
+        "alwaysAllow": "her zaman izin ver: {rules}{where}",
+        "alwaysDeny": "her zaman reddet: {rules}{where}",
+        "alwaysAsk": "her zaman sor: {rules}{where}",
+        "always": "her zaman {behavior}: {rules}{where}",
+        "this": "bunu",
+        "tool": "araç",
+        "directories": "erişime izin ver: {dirs}{where}",
+        "thisDirectory": "bu dizin",
+        "other": "bunu hatırla"
+      },
+      "fade": {
+        "timedOut": "süre doldu",
+        "deniedOffice": "ofisten reddedildi",
+        "allowedOffice": "ofisten izin verildi",
+        "terminal": "terminalde yanıtlandı"
+      }
+    },
+    "character": {
+      "memoryWipe": "hafıza silme",
+      "apiError": "⚠ API hatası",
+      "shipping": "🚀 yayına alınıyor",
+      "waitingForDesk": "masa bekliyor",
+      "unread_one": "{count} okunmamış mesaj",
+      "unread_other": "{count} okunmamış mesaj",
+      "inspect": "İncele: {name}",
+      "effect": "efekt"
+    },
+    "signals": {
+      "deployFailed": "deploy başarısız",
+      "deployFailedOf": "deploy başarısız: {where}",
+      "buildFailed": "build başarısız",
+      "buildFailedIn": "build başarısız: {where}",
+      "testsFailed": "testler başarısız",
+      "testsFailedIn": "testler başarısız: {where}",
+      "pushFailed": "push başarısız",
+      "pushFailedOf": "push başarısız: {target}",
+      "why": ": {why}"
+    }
+  },
+  "chatter": {
+    "default": {
+      "spawn": [
+        "göreve hazırım!",
+        "mesaiye başladım",
+        "yayına almaya hazırım",
+        "önce kahve, sonra kod",
+        "hadi bakalım",
+        "vim açılıyor...",
+        "son main'i çekiyorum"
+      ],
+      "work": [
+        "üzerindeyim",
+        "deli gibi yazıyorum",
+        "akıştayım",
+        "ilerliyorum",
+        "dokümana bakıyorum",
+        "git blame zamanı",
+        "stack overflow imdada yetişti"
+      ],
+      "done": [
+        "görev tamam!",
+        "yayına aldım",
+        "PR açıldı",
+        "bitti gitti",
+        "LGTM",
+        "main'e merge edildi",
+        "deploy edildi"
+      ],
+      "coffee": [
+        "hemen dönüyorum, kahve",
+        "kafeine ihtiyacım var",
+        "bir fincan alıyorum",
+        "kahve turu"
+      ],
+      "water": [
+        "su içmeyi unutma",
+        "h2o molası",
+        "su turu",
+        "şişeyi dolduruyorum",
+        "su kontrolü",
+        "kısa bir su molası"
+      ]
+    },
+    "office": {
+      "bossPraise": [
+        "eline sağlık {name} 👊",
+        "sağlam 🔥",
+        "yayına al!",
+        "harika iş, bir Red Bull kap",
+        "efsane 💯",
+        "iyi iş, sıradaki kim?",
+        "hızlıydı, bir tane daha?",
+        "temiz iş 👌",
+        "sağ ol {name}",
+        "merge edildi. sıradaki görev yükleniyor..."
+      ]
+    },
+    "incident": {
+      "spawn": [
+        "page geldi. üzerindeyim.",
+        "çağrıya katılıyorum, IC kim?",
+        "02:14'te mesaiye başladım, kahve yollayın",
+        "gözlerim açılmadan laptop açıldı"
+      ],
+      "work": [
+        "4f2a1c ile main arasında bisect yapıyorum",
+        "DNS değil. DNS'e bakıyorum.",
+        "prod loglarını izliyorum, saniyede 400 istek hüzün",
+        "runbook'u ilk kez okuyorum",
+        "çoktan olması gereken bir feature flag ekliyorum"
+      ],
+      "done": [
+        "rollback tamam, hata oranı %0,1",
+        "kök neden: bir null. her zaman bir null.",
+        "hotfix merge edildi, testler sonradan eklendi",
+        "durum sayfası yine yeşil"
+      ],
+      "coffee": [
+        "üçüncü kahve, yargılamayın",
+        "çalışan tek şey kahve makinesi",
+        "kahve uykunun yerini tutmaz, yine de deniyorum"
+      ],
+      "water": [
+        "su. sonra daha çok kahve.",
+        "gece 2'de sorumlu bir yetişkin gibi su içiyorum",
+        "su sebili de aksıyor"
+      ],
+      "bossReply": [
+        "her şey yolunda. kimse bir daha cuma deploy etmiyor.",
+        "postmortem saat 10'da, suçlamasız, pizza getirin",
+        "iyi yakaladın. zaman çizelgesine yaz.",
+        "Biliyorum. BİLİYORUM."
+      ]
+    },
+    "interactions": {
+      "plant1": [
+        "monsterayı suluyorum",
+        "bitki bakım zamanı",
+        "yeşil kal ufaklık"
+      ],
+      "plant2": [
+        "paşa kılıcını suluyorum",
+        "sulama istasyonu",
+        "bu yapraklar iyi görünüyor"
+      ],
+      "plant3": [
+        "para ağacını suluyorum",
+        "büyü bebeğim büyü",
+        "ofis ormanı bakımı"
+      ],
+      "plant4": [
+        "bitkileri suluyorum",
+        "ofisi yeşil tutuyorum"
+      ],
+      "plant5": [
+        "monsterayı suluyorum",
+        "bu çok iyi gelişiyor"
+      ],
+      "coffee": [
+        "taze bir demlik yapıyorum",
+        "kahve zamanı!",
+        "yakıt alıyorum",
+        "başka kahve isteyen?"
+      ],
+      "filing": [
+        "dosyalara bakıyorum",
+        "o belgeyi nereye koymuştum...",
+        "dosya dolabı baskını",
+        "4. çeyrek raporunu arıyorum"
+      ],
+      "printer": [
+        "bir şey yazdırıyorum",
+        "lütfen sıkışma...",
+        "emektar yazıcı",
+        "kim hâlâ çıktı alıyor ki"
+      ],
+      "whiteboard": [
+        "panoyu güncelliyorum",
+        "kartları bitti'ye taşıyorum",
+        "bir post-it ekliyorum",
+        "sprint planlama zamanı"
+      ],
+      "fireExtinguisher": [
+        "yangın söndürücüyü kontrol ediyorum",
+        "önce güvenlik",
+        "tarihi geçmemiş, güzel",
+        "umarım hiç lazım olmaz"
+      ],
+      "waterCooler": [
+        "şişeyi dolduruyorum",
+        "su kontrolü",
+        "su molası",
+        "susuz kalmayalım"
+      ],
+      "bell": [
+        "ding ding! standup zamanı",
+        "zili çalıyorum",
+        "herkes dikkat!",
+        "herkes toplansın!"
+      ],
+      "kanban": [
+        "panoyu güncelliyorum",
+        "kartları bitti'ye taşıyorum",
+        "sprint iyi görünüyor",
+        "bu ticket'ı review'da kim bıraktı?"
+      ],
+      "shipItPoster": [
+        "yayına al!",
+        "motivasyon geldi",
+        "o poster hiç eskimiyor",
+        "hadi bakalıııım"
+      ],
+      "tvMonitor": [
+        "dashboard'a bakıyorum",
+        "tüm sistemler yeşil",
+        "metrikleri izliyorum",
+        "uptime sağlam görünüyor"
+      ]
+    },
+    "events": {
+      "fireDrill": {
+        "name": "Yangın Tatbikatı",
+        "announcement": "🚨 YANGIN TATBİKATI! Herkes çıkışa!",
+        "managerLine": "Tatbikat! Hadi hadi!",
+        "agentLines": [
+          "yine mi...",
+          "tam akıştaydım!",
+          "kahvem!",
+          "kod tabanını kurtarın!"
+        ]
+      },
+      "pizza": {
+        "name": "Pizza Geldi",
+        "announcement": "🍕 Pizza geldi! Öğle yemeği bedava!",
+        "managerLine": "Pizza lobide!",
+        "agentLines": [
+          "PİZZA!",
+          "nihayet iyi bir haber",
+          "ananaslı mı?!",
+          "pepperoni benim"
+        ]
+      },
+      "standup": {
+        "name": "Günlük Standup",
+        "announcement": "📢 @here Günlük standup şimdi başlıyor",
+        "managerLine": "Standup! Ne yayına aldınız?",
+        "agentLines": [
+          "o şey üzerinde çalıştım",
+          "hâlâ debug ediyorum",
+          "review'a takıldım",
+          "staging'e deploy ettim",
+          "3 bug düzelttim, 5 tane yarattım"
+        ]
+      },
+      "deploy": {
+        "name": "Production Deploy",
+        "announcement": "🚀 PRODUCTION'A DEPLOY EDİLİYOR...",
+        "managerLine": "Nefesinizi tutun...",
+        "agentLines": [
+          "eyvah",
+          "lütfen bozulma",
+          "testleri çalıştırmayı unuttum",
+          "YOLO",
+          "rollback planına bakıyorum"
+        ]
+      },
+      "deploySuccess": {
+        "name": "Deploy Başarılı",
+        "announcement": "✅ Deploy başarılı! Tüm sistemler yeşil 🎉",
+        "managerLine": "Başardık!",
+        "agentLines": [
+          "hadi be!",
+          "yayına al!",
+          "iyi iş ekip",
+          "bira zamanı"
+        ]
+      },
+      "deployFail": {
+        "name": "Deploy Başarısız",
+        "announcement": "💥 DEPLOY BAŞARISIZ - ROLLBACK YAPILIYOR",
+        "managerLine": "BUNU KİM PUSHLADI?!",
+        "agentLines": [
+          "ben değildim",
+          "eyvah eyvah eyvah",
+          "loglara bakıyorum",
+          "her zaman DNS'tir",
+          "revert ediliyor..."
+        ]
+      },
+      "powerFlicker": {
+        "name": "Elektrik Dalgalanması",
+        "announcement": "⚡ Elektrik gidip geldi - işini kaydet!",
+        "agentLines": [
+          "ışıklar az önce...",
+          "CTRL+S CTRL+S",
+          "kaydedilmemiş değişikliklerim!",
+          "hemen git commit"
+        ]
+      },
+      "birthday": {
+        "name": "Doğum Günü",
+        "announcement": "🎂 İyi ki doğdun! Pasta mola odasında!",
+        "managerLine": "İyi ki doğdun!",
+        "agentLines": [
+          "pasta!",
+          "iyi ki doğdun!",
+          "🎉🎉🎉",
+          "glutensiz mi?",
+          "dilek tut"
+        ]
+      },
+      "whoBrokeBuild": {
+        "name": "Build Bozuk",
+        "announcement": "🔴 CI/CD pipeline KIRMIZI. Build'i kim bozdu?",
+        "managerLine": "Bu düzelene kadar kimse bir yere gitmiyor.",
+        "agentLines": [
+          "git blame'e bakıyorum...",
+          "ben değil",
+          "merge mi bozdu?",
+          "flaky test olabilir mi?",
+          "stajyeri suçluyorum"
+        ]
+      },
+      "friday": {
+        "name": "Cuma Havası",
+        "announcement": "🎉 Bugün cuma! Az kaldı ekip!",
+        "managerLine": "Cuma günü deploy yok.",
+        "agentLines": [
+          "şükür cuma",
+          "bir bira?",
+          "bir PR daha...",
+          "5'te tam çıkıyorum",
+          "hafta sonu!"
+        ]
+      },
+      "printerJam": {
+        "name": "Yazıcı Sıkıştı",
+        "announcement": "🖨️ Yazıcı yine sıkıştı",
+        "agentLines": [
+          "neden hâlâ yazıcımız var",
+          "PC LOAD LETTER?!",
+          "kim çıktı alıyor ki",
+          "2026 olmuş..."
+        ]
+      },
+      "slackDown": {
+        "name": "Slack Çöktü",
+        "announcement": "💀 Slack çöktü... dur, o zaman bunu nasıl yazıyoruz",
+        "agentLines": [
+          "ironiye bak",
+          "e-posta zamanı",
+          "posta güvercini zamanı",
+          "aslında epey huzurlu"
+        ]
+      },
+      "incident": {
+        "fireDrill": {
+          "name": "Kriz Odası",
+          "announcement": "🚨 herkes kapıya — çağrı başlıyor",
+          "managerLine": "çağrıya katılıyorum. bağlamı kim biliyor?",
+          "agentLines": [
+            "çağrıya katılıyorum",
+            "sev1 bu mu?",
+            "mikrofonu kapatıyorum, çocuklar uyuyor"
+          ]
+        },
+        "pizza": {
+          "name": "Olay Pizzası",
+          "announcement": "🍕 pizza geldi (masraf kodu: KESİNTİ)",
+          "managerLine": "hızlı yiyin",
+          "agentLines": [
+            "olay pizzası bir başka oluyor",
+            "gecenin ikinci pizzası",
+            "klavyenin üstünde yiyorum, pardon"
+          ]
+        },
+        "standup": {
+          "name": "Durum Güncellemesi",
+          "announcement": "📢 @here ne biliyoruz, ne yapıyoruz, kim takıldı",
+          "managerLine": "sırayla anlatın",
+          "agentLines": [
+            "hata oranı %40 ve düşüyor",
+            "rollback yarıda",
+            "bir DBA lazım",
+            "hâlâ DNS değil. muhtemelen DNS."
+          ]
+        },
+        "deploy": {
+          "name": "Rollback Deploy'u",
+          "announcement": "🚀 ROLLBACK YAPILIYOR...",
+          "managerLine": "bekleyin",
+          "agentLines": [
+            "lütfen",
+            "grafiği izliyorum",
+            "bu da patlarsa rollback'i rollback yaparız"
+          ]
+        },
+        "deploySuccess": {
+          "name": "Rollback Tamam",
+          "announcement": "✅ rollback tamam — hata oranı normal",
+          "managerLine": "all-clear sayacını başlatıyorum",
+          "agentLines": [
+            "yeniden nefes alıyorum",
+            "grafik dümdüz",
+            "postmortem belgesini kim yazar"
+          ]
+        },
+        "deployFail": {
+          "name": "Rollback Başarısız",
+          "announcement": "💥 rollback başarısız — rollback'i rollback yapıyoruz",
+          "managerLine": "tamam. tamam. tamam.",
+          "agentLines": [
+            "tabii ki",
+            "migration geri alınabilir değildi",
+            "yedeğe bakıyorum"
+          ]
+        },
+        "powerFlicker": {
+          "name": "Rack'te Elektrik Kesintisi",
+          "announcement": "⚡ UPS devreye girdi. yine.",
+          "agentLines": [
+            "bu biz miydik?",
+            "veri merkezi de zor bir gece geçiriyor"
+          ]
+        },
+        "birthday": {
+          "name": "Vardiya Değişimi",
+          "announcement": "🕑 Avrupa nöbetçisi uyandı — devir teslim mola odasında",
+          "managerLine": "onları bilgilendir, sonra uyu",
+          "agentLines": [
+            "devir teslim belgesi 3 satır",
+            "bol şans",
+            "orada salı"
+          ]
+        },
+        "whoBrokeBuild": {
+          "name": "Bisect",
+          "announcement": "🔴 main'de bisect — iyi ile kötü arasında 12 commit",
+          "managerLine": "suçlamak yok. kişiyi değil commit'i bul.",
+          "agentLines": [
+            "4f2a1c kötü",
+            "a1b2c3 iyi",
+            "config değişikliğiymiş",
+            "DNS'i suçluyorum"
+          ]
+        },
+        "friday": {
+          "name": "Cuma Deploy'u",
+          "announcement": "📅 hatırlatma: bu iş bir cuma deploy'u olarak başladı",
+          "managerLine": "bir daha asla",
+          "agentLines": [
+            "bir daha asla",
+            "geçen sefer de öyle demiştik",
+            "bundan sonra cumaları salt okunur"
+          ]
+        },
+        "printerJam": {
+          "name": "Hata Logunu Yazdırmak",
+          "announcement": "🖨️ biri kubectl logs çıktısını lp'ye yönlendirmiş",
+          "agentLines": [
+            "400 sayfa",
+            "PC LOAD STACKTRACE",
+            "fişini çek"
+          ]
+        },
+        "slackDown": {
+          "name": "Durum Sayfası Çöktü",
+          "announcement": "💀 durum sayfası çöktü. durum sayfası.",
+          "agentLines": [
+            "tabii ki çöktü",
+            "tweet at",
+            "posta güvercini zamanı"
+          ]
+        }
+      },
+      "drama": {
+        "coffeeMeet": {
+          "lines": [
+            "yeni PR'ı gördün mü?",
+            "2000 satırlık olan mı? evet...",
+            "test de yok",
+            "💀"
+          ]
+        },
+        "whoPushed": {
+          "lines": [
+            "main'e direkt kim pushladı?",
+            "ben değildim",
+            "git blame başka diyor",
+            "..."
+          ]
+        },
+        "tabsVsSpaces": {
+          "lines": [
+            "tab mı boşluk mu?",
+            "boşluk tabii ki",
+            "engellendin ve şikayet edildin"
+          ]
+        },
+        "meeting": {
+          "lines": [
+            "bu toplantı bir slack mesajı olabilirdi",
+            "bu slack mesajı da sessizlik olabilirdi"
+          ]
+        },
+        "framework": {
+          "lines": [
+            "bunu Rust'la yeniden yazmalıyız",
+            "bunu her hafta söylüyorsun",
+            "ve her hafta haklıyım"
+          ]
+        },
+        "legacy": {
+          "lines": [
+            "2019'dan kalma bir TODO buldum",
+            "ne yazıyor",
+            "\"bunu sonra düzelt\"",
+            "sonra şimdi",
+            "hayır. sonra sonradır."
+          ]
+        },
+        "ai": {
+          "lines": [
+            "bugün AI benden iyi kod yazdı",
+            "çıta zaten düşüktü ama",
+            "kaba ama haklı"
+          ]
+        },
+        "standupExcuse": {
+          "lines": [
+            "dün ne yaptın?",
+            "karmaşık bir sorunu araştırdım",
+            "yani 6 saat Google'ladın",
+            "ben \"araştırma\" demeyi tercih ederim"
+          ]
+        }
+      }
+    }
+  },
+  "server": {
+    "commands": {
+      "status": "📊 {agents} ajan aktif, {working} çalışıyor, {clients} istemci bağlı",
+      "quiet": "🏢 Ofis sessiz — aktif ajan yok",
+      "cleared": "🧹 Sohbet temizlendi",
+      "incident": "🔴 OLAY İLAN EDİLDİ — prod çöktü. Herkes kriz odasına. (bitince /all-clear)",
+      "allClear": "✅ HER ŞEY YOLUNDA — olay bitti. Postmortem saat 10'da, suçlamasız, pizza getirin.",
+      "help": "📋 Komutlar: {commands}",
+      "desc": {
+        "status": "ofis istatistikleri",
+        "agents": "ajanları listele",
+        "recap": "bugünün özeti",
+        "incident": "olay ilan et",
+        "allClear": "olayı bitir",
+        "clear": "sohbet geçmişini sil (auth token gerekir)",
+        "help": "bu mesaj"
+      }
+    },
+    "system": {
+      "expired": "⌛ {name} için sıraya konan bir prompt teslim edilmeden süresi doldu (turu bir saat içinde bitmedi)",
+      "expiredUnknown": "⌛ Bir oturum için sıraya konan bir prompt teslim edilmeden süresi doldu (turu bir saat içinde bitmedi)",
+      "pickedUp": "📬 {name} sohbetteki prompt'u aldı",
+      "pickedUpMore": "📬 {name} sohbetteki prompt'u aldı ({count} tane daha bekliyor)",
+      "dropped_one": "🗑️ {name} için sıraya konan bir prompt düşürüldü: {why}",
+      "dropped_other": "🗑️ {name} için sıraya konan {count} prompt düşürüldü: {why}",
+      "sessionEnded": "oturum bitti",
+      "ambiguous": "🤔 {mention} {count} oturumla eşleşiyor: {names}. Bunun yerine oturum id'sini kullan.",
+      "notTrusted": "🔒 {name} için prompt'u yalnızca bu Mac'teki ofis sayfası sıraya koyabilir (telefon, proxy üzerinden açılan bir sayfa ya da ofis bağlantısı olmayan bir sayfa koyamaz)",
+      "noHooks": "🔌 {name} oturumunda ofis hook'ları yok, prompt'u teslim edecek bir şey yok: {command} çalıştır ve o oturumu yeniden başlat",
+      "tooLong": "{length} karakter, sınır {limit}",
+      "full": "zaten {count} prompt onu bekliyor",
+      "badId": "bu oturum id'sini hook sahiplenemez",
+      "notQueued": "✋ {name} için sıraya konmadı: {why}",
+      "whenBusy": "mevcut turu bitince alır",
+      "whenIdle": "şu an çalışmıyor, bu yüzden bir sonraki turu bitince alır (ofis kendi başına tur başlatamaz: terminaline herhangi bir prompt ver)",
+      "queued": "📨 {name} için sıraya kondu: {when}",
+      "queuedInLine": "📨 {name} için sıraya kondu (sırada #{position}): {when}",
+      "needsToken": "🔒 {command} için ofis auth token'ı gerekir — ofis checkout'undan {script} çalıştır, token'ı o gönderir (bkz. README › Chat)"
+    },
+    "agents": {
+      "starting": "başlıyor: {task}",
+      "done": "bitti: {result}"
+    },
+    "recap": {
+      "quiet": "📋 Özet: bugün şimdiye kadar sakin — kayıtlarda henüz bir şey yok. Tadını çıkarın.",
+      "line": "📋 Bugünün özeti: {parts}.{payroll} {signOff}",
+      "sessions_one": "{count} oturum",
+      "sessions_other": "{count} oturum",
+      "agents_one": "{count} ajan işe alındı, {out} mesaiyi bitirdi",
+      "agents_other": "{count} ajan işe alındı, {out} mesaiyi bitirdi",
+      "tasks_one": "{count} görev kapandı",
+      "tasks_other": "{count} görev kapandı",
+      "deploys_one": "{count} deploy yapıldı",
+      "deploys_other": "{count} deploy yapıldı",
+      "pushes_one": "{count} push",
+      "pushes_other": "{count} push",
+      "buildsFailed_one": "{count} hatalı build",
+      "buildsFailed_other": "{count} hatalı build",
+      "testsFailed_one": "{count} hatalı test koşusu",
+      "testsFailed_other": "{count} hatalı test koşusu",
+      "incidents_one": "{count} olay (konuşmuyoruz)",
+      "incidents_other": "{count} olay (konuşmuyoruz)",
+      "noIncidents": "olay yok",
+      "payroll": " Maaş: {amount}.",
+      "signOffIncident": "Postmortem notları saat 10'a kadar masamda olsun.",
+      "signOffDeploys": "Güzel deploy'lar, ekip.",
+      "signOff": "İyi iş, ekip."
+    },
+    "notify": {
+      "title": "Claude seni bekliyor",
+      "message": "{project} · {tool} {phrase}",
+      "bash": "bir komut çalıştırmak istiyor",
+      "write": "bir dosya yazmak istiyor",
+      "edit": "bir dosyayı düzenlemek istiyor",
+      "notebook": "bir notebook'u düzenlemek istiyor",
+      "read": "bir dosyayı okumak istiyor",
+      "fetch": "bir web sayfasını getirmek istiyor",
+      "search": "web'de arama yapmak istiyor",
+      "other": "izin istiyor",
+      "aTool": "Bir araç",
+      "aSession": "Bir oturum"
+    },
+    "routing": {
+      "debugger": [
+        "hata",
+        "çöktü",
+        "çökme",
+        "çöküyor",
+        "düzelt",
+        "bozuk",
+        "bozuldu",
+        "çalışmıyor",
+        "istisna"
+      ],
+      "codeReviewer": [
+        "inceleme",
+        "incele",
+        "gözden geçir",
+        "onayla",
+        "kod incelemesi"
+      ],
+      "frontend": [
+        "arayüz",
+        "tasarım",
+        "bileşen",
+        "stil",
+        "yerleşim",
+        "duyarlı",
+        "animasyon",
+        "tema",
+        "karanlık mod",
+        "açık mod",
+        "renk",
+        "yazı tipi"
+      ],
+      "tester": [
+        "birim testi",
+        "kapsam",
+        "uçtan uca",
+        "entegrasyon testi"
+      ],
+      "security": [
+        "güvenlik",
+        "kimlik doğrulama",
+        "yetki",
+        "zafiyet",
+        "güvenlik açığı",
+        "şifre",
+        "parola",
+        "şifreleme",
+        "sertifika"
+      ],
+      "devops": [
+        "dağıtım",
+        "yayına al",
+        "altyapı",
+        "alan adı",
+        "konteyner"
+      ],
+      "performance": [
+        "performans",
+        "yavaş",
+        "hızlandır",
+        "gecikme",
+        "önbellek",
+        "bellek sızıntısı",
+        "darboğaz",
+        "kasıyor",
+        "takılıyor"
+      ],
+      "database": [
+        "veritabanı",
+        "sorgu",
+        "şema",
+        "tablo",
+        "sütun",
+        "indeks"
+      ],
+      "typescript": [
+        "tip hatası",
+        "tip tanımı",
+        "tipleri",
+        "jenerik",
+        "doğrulama"
+      ],
+      "ai": [
+        "yapay zeka",
+        "yapay zekâ",
+        "dil modeli",
+        "ajan",
+        "bağlam penceresi",
+        "vektör",
+        "gömme"
+      ],
+      "fullstack": [
+        "uç nokta",
+        "istek",
+        "ara katman",
+        "rota"
+      ],
+      "git": [
+        "çakışma",
+        "uzak depo",
+        "depo"
+      ],
+      "architect": [
+        "yeniden düzenle",
+        "mimari",
+        "temiz kod",
+        "soyutlama",
+        "tasarım deseni",
+        "modül",
+        "paket"
+      ]
+    }
+  }
+}

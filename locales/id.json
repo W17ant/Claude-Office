@@ -1,0 +1,1381 @@
+{
+  "meta": {
+    "name": "Bahasa Indonesia",
+    "englishName": "Indonesian",
+    "status": "wip",
+    "translators": [
+      "Generyodai8"
+    ]
+  },
+  "ui": {
+    "settings": {
+      "language": {
+        "title": "Bahasa",
+        "wip": "masih dikerjakan",
+        "complete": "{percent}% diterjemahkan",
+        "report": "Laporkan kesalahan terjemahan",
+        "readOnly": "Hanya halaman kantor sendiri yang bisa mengganti bahasa"
+      },
+      "title": "Pengaturan",
+      "close": "Tutup pengaturan",
+      "on": "Nyala",
+      "off": "Mati",
+      "browser": {
+        "title": "Browser ini",
+        "theme": "Tema",
+        "themeDefault": "Bawaan",
+        "dayNight": "Siang / malam",
+        "dayNightAria": "Siang atau malam",
+        "auto": "Otomatis",
+        "day": "Siang",
+        "night": "Malam",
+        "season": "Musim",
+        "seasonAuto": "Otomatis (sesuai tanggal)",
+        "holidays": "Hari raya",
+        "seasons": "Musim",
+        "seasonOff": "Mati",
+        "urlSeasonBefore": "Alamatnya memuat",
+        "urlSeasonAfter": ", yang mengalahkan pengaturan ini.",
+        "appliesOnReload": "Berlaku setelah dimuat ulang.",
+        "reloadNow": "Muat ulang",
+        "autoExplained": "Otomatis mengikuti tanggal: empat musim (belahan bumi utara), ditambah Natal, Halloween, Paskah dan Hari Valentine. Sekarang: {look}.",
+        "nowUndrawn": "Sekarang: {look}. Musim yang belum punya gambar terlihat seperti kantor biasa.",
+        "noArtYet": "{season} (belum ada gambar)",
+        "over": "{top} di atas {below}",
+        "sound": "Suara",
+        "mute": "Bisukan",
+        "unmute": "Nyalakan suara",
+        "volume": "Volume",
+        "muted": "dibisukan",
+        "ambience": "Suasana",
+        "ambienceTitle": "Suara latar ruang kantor yang tenang di bawah beberapa efek suara; diputar dengan volume di atas"
+      },
+      "server": {
+        "title": "Server kantor",
+        "sim": "Tidak ada server kantor di ?sim / ?video — pengaturan ini milik kantor yang sedang berjalan.",
+        "readOnly": "Halaman hanya-baca: tidak ada token kantor, jadi server akan menolak perubahan. Buka link dari npm run open untuk mengubahnya.",
+        "waiting": "Server kantor belum menjawab.",
+        "answer": "Jawab izin di sini",
+        "answerTitle": "Dialog izin bisa dijawab dari kartu di kantor selagi Claude menunggu",
+        "notify": "Notifikasi saat menunggu izin",
+        "notifyTitle": "Notifikasi desktop saat Claude mulai menunggu izin",
+        "logging": "Pencatatan prompt",
+        "logOff": "Mati",
+        "logSummary": "Ringkas",
+        "logFull": "Penuh",
+        "hintOff": "Tidak ada teks prompt atau balasan yang disimpan atau ditampilkan — hanya status.",
+        "hintSummary": "200 karakter pertama dari tiap prompt dan balasan.",
+        "hintFull": "Prompt dan balasan hingga 2000 karakter.",
+        "rowsStay": "Baris yang sudah ada di chat.db tetap ada sampai",
+        "ai": "Pemantau chat AI",
+        "aiTitle": "Pemantau chat yang membuat Claude bisa menjawab di #office-general",
+        "bossSprite": "Sprite bos:",
+        "bossSpriteIn": "di",
+        "bossSpriteWhen": "(dibaca saat server mulai).",
+        "rowsStayEnd": "."
+      }
+    },
+    "meters": {
+      "ariaLabel": "Gaji, listrik dan memori",
+      "title": "⚡ METERAN KANTOR",
+      "payroll": "Gaji",
+      "electricity": "Listrik",
+      "memory": "Memori",
+      "needsStatusLine": "butuh status line",
+      "perMin": "{amount}/menit",
+      "tokPerMin": "tok/menit",
+      "rateShort": "5j {percent}%",
+      "sessions_one": "{count} sesi",
+      "sessions_other": "{count} sesi",
+      "estimateMarker": "perk.",
+      "tip": {
+        "payrollHead_one": "GAJI — {amount} dari {count} sesi · {rate}/menit selama 5 menit terakhir",
+        "payrollHead_other": "GAJI — {amount} dari {count} sesi · {rate}/menit selama 5 menit terakhir",
+        "payrollToday": "hari ini {amount} · +{added} / -{removed} baris · perkiraan dengan harga daftar",
+        "needsLine": "{session}: butuh status line ({command})",
+        "needsLineShort": "{session}: butuh status line",
+        "payrollRow": "{session}: {amount} · {model} · {duration}",
+        "electricityHead": "LISTRIK — {tokens} token/menit diproses selama 5 menit terakhir (termasuk baca ulang konteks)",
+        "electricityRow": "{session}: {rate} tok/menit · panggilan terakhir {input} masuk / {output} keluar",
+        "subagents_one": " · {count} subagen {tokens} tok",
+        "subagents_other": " · {count} subagen {tokens} tok",
+        "memoryHead": "MEMORI — {session}: {percent} dari context window",
+        "memorySize": " ({used} / {size} token)",
+        "model": "model {model}",
+        "effort": " · effort {effort}",
+        "over200k": " · di atas 200k",
+        "claudeCode": " · Claude Code {version}",
+        "costLine": "{amount} · {duration} · sesi {id}",
+        "rateHead": "BATAS PEMAKAIAN (langganan claude.ai)",
+        "rate5h": "jendela 5 jam terpakai {percent}%",
+        "rate7d": "jendela 7 hari terpakai {percent}%",
+        "resets": " · reset {time}",
+        "spendLimit": "batas belanja terpakai {percent}%"
+      },
+      "clutter": "🗂️ Meja Claude mulai berantakan — {session} sudah di {percent}% konteks",
+      "clutterEstimated": "🗂️ Meja Claude mulai berantakan — {session} sudah di {percent}% konteks (perkiraan)",
+      "unnamedModel": "model tanpa nama",
+      "window": {
+        "oneM": "window {size} token: sesi ini memakai varian [1m] dari {model}",
+        "unknown": "window {size} token diasumsikan: {model} tidak ada di tabel model kantor, jadi angkanya kira-kira",
+        "overflow": "window {size} token diasumsikan: lebih dari 200.000 terpakai, jadi {model} pasti memakai varian 1M (kira-kira)",
+        "table": "window {size} token untuk {model} (tabel model Claude Code)"
+      },
+      "estimate": {
+        "estSuffix": " · perk.",
+        "compacted": "dipadatkan: window baru saja dikosongkan; balasan berikutnya di transkrip akan mengisi meteran lagi",
+        "fromTranscript": "diperkirakan dari transkrip sesi (pemakaian balasan terakhir) karena tidak ada status line terdaftar untuk sesi ini",
+        "needsBoth": "gaji dan listrik butuh status line: {command}"
+      },
+      "needs": {
+        "payrollHead": "GAJI butuh status line — Claude Code hanya melaporkan biaya ke perintah statusLine-nya",
+        "electricityHead": "LISTRIK butuh status line — Claude Code hanya melaporkan token per menit ke perintah statusLine-nya",
+        "none_one": "tidak ada status line terdaftar untuk sesi ini (instalasi plugin atau claude -p); MEMORI diperkirakan dari transkrip",
+        "none_other": "tidak ada status line terdaftar untuk {count} sesi ini (instalasi plugin atau claude -p); MEMORI diperkirakan dari transkrip",
+        "register": "daftarkan dengan: {command} (dari checkout Claude-Office)"
+      }
+    },
+    "rooms": {
+      "mainOffice": "Kantor Utama",
+      "corridor": "Lorong",
+      "meetingRoom": "Ruang Rapat",
+      "serverRoom": "Ruang Server",
+      "lunchRoom": "Ruang Makan",
+      "short": {
+        "mainOffice": "Kantor",
+        "corridor": "Lorong",
+        "meetingRoom": "Rapat",
+        "serverRoom": "Server",
+        "lunchRoom": "Makan"
+      },
+      "switcher": {
+        "ariaLabel": "Denah lantai: pilih ruangan yang ditampilkan",
+        "empty": "kosong",
+        "people_one": "{count} orang",
+        "people_other": "{count} orang",
+        "label": "{room}, {people}",
+        "needsYou": ", butuh kamu",
+        "trouble": ", ada yang salah",
+        "inView": ", sedang ditampilkan"
+      },
+      "furniture": {
+        "coffeeMachine": "Mesin Kopi",
+        "filingCabinet": "Lemari Arsip",
+        "printer": "Printer",
+        "fireExtinguisher": "Alat Pemadam",
+        "waterCooler": "Dispenser Air",
+        "bell": "Bel",
+        "kanbanBoard": "Papan Kanban",
+        "shipItPoster": "Poster Ship It",
+        "dashboard": "Dashboard",
+        "clickToInteract": "Klik untuk berinteraksi"
+      },
+      "doors": {
+        "mainOffice": "Kantor",
+        "corridor": "Lorong",
+        "meetingRoom": "Ruang Rapat",
+        "serverRoom": "Ruang Server",
+        "lunchRoom": "Ruang Makan",
+        "goTo": "Ke {room}"
+      },
+      "landmarks": {
+        "frontDoor": "Lift",
+        "managerDoor": "Manajer"
+      },
+      "placeholder": {
+        "ariaLabel": "{room}: sementara, gambarnya belum dibuat",
+        "note": "sementara: gambar ruangan ini belum dibuat",
+        "coffee": "kopi",
+        "water": "air"
+      },
+      "tv": {
+        "deploying": "DEPLOY",
+        "shipped": "RILIS",
+        "rollback": "ROLLBACK"
+      }
+    },
+    "needsYou": {
+      "permission": "✋ butuh kamu: {what}",
+      "permissionBare": "✋ butuh kamu — izin",
+      "input": "✋ butuh input: {what}",
+      "inputBare": "✋ butuh input",
+      "idle": "💤 prompt menganggur",
+      "quota": "⏳ menunggu token",
+      "registry": "✋ {what}",
+      "registryBare": "✋ menunggu di terminal",
+      "elicitation": "✋ {server} sedang bertanya padamu",
+      "elicitationBare": "✋ server MCP sedang bertanya padamu",
+      "short": {
+        "permission": "butuh kamu",
+        "agentInput": "butuh input",
+        "idle": "menganggur",
+        "quota": "menunggu token",
+        "registry": "menunggu di terminal"
+      }
+    },
+    "pill": {
+      "needsYou": "✋ butuh kamu",
+      "error": "⚠ error",
+      "compacting": "🧹 bersih"
+    },
+    "strip": {
+      "sessions_one": "{count} sesi",
+      "sessions_other": "{count} sesi",
+      "notHooked": "{count} tanpa hook",
+      "needYou_one": "{count} butuh kamu",
+      "needYou_other": "{count} butuh kamu",
+      "readOnlyHint": "Hanya-baca: halaman ini tidak punya token kantor (atau tokennya lama), jadi server menampilkan kantor\ntanpa prompt, balasan atau baris perintah, dan dialog izin dijawab di terminal.\nBuka link yang dicetak server saat mulai, atau jalankan {command} di checkout:\nperintah itu membuka kantor dengan token, yang lalu diingat oleh browser ini.",
+      "connection": {
+        "connecting": "menyambung…",
+        "online": "online",
+        "reconnecting": "menyambung ulang…",
+        "offline": "offline"
+      },
+      "hooks": {
+        "unknown": "hook: —",
+        "seen": "hook: terakhir {ago}",
+        "waiting": "hook: belum ada",
+        "missing": "belum ada event hook — jalankan {command}"
+      },
+      "tip": {
+        "online": "Server kantor {url}: online sejak {time}",
+        "connecting": "Server kantor {url}: menyambung…",
+        "reconnecting": "Server kantor {url}: koneksi putus {ago}, mencoba lagi",
+        "offline": "Server kantor {url}: tidak terjangkau",
+        "start": "Jalankan dari checkout: {command}  (atau {alt})",
+        "hooksSeen_one": "Hook: {count} event sejak server mulai, terakhir {ago}",
+        "hooksSeen_other": "Hook: {count} event sejak server mulai, terakhir {ago}",
+        "hooksWaiting": "Hook: belum ada — hook berjalan saat Claude Code memakai tool",
+        "hooksMissing": "Hook: tidak ada apa-apa dalam {span}. Kalau Claude Code sedang memanggil tool dan tidak ada yang muncul, hook belum terpasang: {command}",
+        "counts": "Sesi: {sessions} · agen: {agents} · klien: {clients}",
+        "notHooked_one": "Tanpa hook: {names} — jalankan {command} untuk melihat apa yang sedang dikerjakannya",
+        "notHooked_other": "Tanpa hook: {names} — jalankan {command} untuk melihat apa yang sedang mereka kerjakan",
+        "waitingOnYou": "Menunggu kamu:",
+        "server": "Server v{version}, aktif {span} · UI: {ui}",
+        "uiBuilt": "sudah di-build (dist/)",
+        "uiDev": "server dev (dist/ belum di-build)",
+        "diagnose": "Diagnosis: {command}"
+      },
+      "simTitle": "?{mode}: agen simulasi, tanpa server, tanpa hook",
+      "ariaLabel": "Kesehatan pipeline",
+      "readOnly": "hanya-baca: buka link dari",
+      "startIt": "jalankan:",
+      "todayTitle": "Hari ini sejauh ini: sesi, agen, tugas, deploy, kegagalan, insiden, gaji",
+      "today": "hari ini"
+    },
+    "time": {
+      "justNow": "barusan",
+      "secondsAgo": "{count} dtk lalu",
+      "minutesAgo": "{count} mnt lalu",
+      "hoursAgo": "{count} jam lalu",
+      "daysAgo": "{count} hr lalu",
+      "seconds": "{count} dtk",
+      "minutes": "{count} mnt",
+      "hoursMinutes": "{hours} j {minutes} mnt"
+    },
+    "sessions": {
+      "notHookedHint": "Tanpa hook — jalankan `npm run install-hooks` (atau /plugin install agent-office) untuk melihat apa yang sedang dikerjakannya",
+      "notHooked": "tanpa hook",
+      "ariaLabel": "Sesi Claude Code",
+      "workers_one": "{count} pekerja",
+      "workers_other": "{count} pekerja",
+      "tip": {
+        "tool": "tool: {tool}",
+        "project": "proyek: {project}",
+        "cwd": "cwd: {cwd}",
+        "model": "model: {model}",
+        "started": "dimulai: {source}",
+        "registry": "claude: {status} (registry)",
+        "claude": "claude: {state}",
+        "pid": "pid {pid}",
+        "workers": "pekerja: {count} ({working} bekerja)",
+        "ended": "selesai",
+        "endedReason": "selesai ({reason})",
+        "session": "sesi {id}"
+      }
+    },
+    "today": {
+      "ariaLabel": "Hari ini di kantor",
+      "title": "Hari ini",
+      "close": "Tutup",
+      "notAnswering": "Server kantor tidak menjawab.",
+      "counting": "Menghitung…",
+      "footBefore": "Sejak tengah malam waktu setempat · ketik",
+      "footAfter": "di chat untuk pendapat manajer",
+      "sessions": "Sesi",
+      "agentsSpawned": "Agen direkrut",
+      "agentsCompleted": "Sudah pulang",
+      "tasksCompleted": "Tugas selesai",
+      "deploys": "Deploy",
+      "pushes": "Push",
+      "buildsFailed": "Build gagal",
+      "testsFailed": "Tes gagal",
+      "incidents": "Insiden",
+      "payroll": "Gaji"
+    },
+    "taskBoard": {
+      "untitled": "tugas tanpa judul",
+      "inProgress": "Dikerjakan: {subject}",
+      "done": "Selesai: {subject}",
+      "todo": "Belum: {subject}",
+      "blockedBy": " (terhambat oleh {ids})",
+      "teamBoard": "Papan tugas tim {team}",
+      "board": "Papan tugas",
+      "aria": "{what}, {label}: {todo} belum, {doing} dikerjakan, {done} selesai",
+      "ariaNext": ". Klik untuk papan berikutnya",
+      "clickNext": "{what}: klik untuk papan berikutnya",
+      "more": "{count} lagi",
+      "chat": {
+        "todo": "{count} belum dikerjakan",
+        "todoBlocked": "{count} belum dikerjakan ({blocked} terhambat)",
+        "inProgress": "{count} dikerjakan: {subject}",
+        "progress": "{activity} — {done} dari {total} selesai",
+        "nextUp": "{todo}, berikutnya: {subject}",
+        "allWaiting": "{todo}, semuanya menunggu sesuatu",
+        "toGo": "{done} dari {total} selesai, {pending} lagi",
+        "oneDone": "satu-satunya tugas di papan sudah selesai",
+        "allDone": "semua {count} tugas selesai"
+      }
+    },
+    "incident": {
+      "badgePinned": "Dipasang oleh ?variant=incident — /all-clear untuk mengakhiri",
+      "badgeTitle": "Ketik /all-clear saat prod sudah pulih",
+      "incident": "INSIDEN",
+      "mini": "INSIDEN KECIL",
+      "daysSign": "Hari sejak insiden terakhir",
+      "daysSignTitle": "Hari sejak insiden terakhir: {days}",
+      "daysSignNow": "Hari sejak insiden terakhir: 0 (sedang terjadi sekarang)",
+      "beacon": "Lampu insiden",
+      "statusPage": "Halaman status: ROLLBACK",
+      "rollbackAlt": "Rollback sedang berjalan",
+      "rollback": "ROLLBACK",
+      "timeline": "Kronologi insiden",
+      "pizza": "Pizza insiden"
+    },
+    "seasons": {
+      "christmas": "Natal",
+      "halloween": "Halloween",
+      "easter": "Paskah",
+      "valentine": "Hari Valentine",
+      "spring": "Musim semi",
+      "summer": "Musim panas",
+      "autumn": "Musim gugur",
+      "winter": "Musim dingin"
+    },
+    "titleBar": {
+      "incident": "🔥 PROD DOWN — AGENT OFFICE",
+      "mode": "Mode: {mode}",
+      "auto": "OTOMATIS",
+      "day": "SIANG",
+      "night": "MALAM",
+      "settings": "Pengaturan",
+      "settingsTitle": "Pengaturan: tema, siang/malam, musim, suara, pengaturan server"
+    },
+    "office": {
+      "catAlt": "kucing",
+      "interactionAlt": "interaksi",
+      "waitingForDesk": "menunggu meja",
+      "waitingForDeskMsg": "menunggu meja kosong...",
+      "doneStats": "✅ selesai · {stats}",
+      "done": "selesai",
+      "standingBy": "siaga",
+      "standingDown": "bubar",
+      "working": "⚡ bekerja",
+      "workingOnPrompt": "✍ mengerjakan prompt",
+      "turnOver": "giliran selesai — menganggur",
+      "apiError": "⚠ error API",
+      "apiErrorWhat": "⚠ error API: {error}",
+      "memoryWipe": "🧹 hapus memori",
+      "memoryWipeTrigger": "🧹 hapus memori ({trigger})",
+      "waitingOnWorkers_one": "⏳ menunggu {count} pekerja latar",
+      "waitingOnWorkers_other": "⏳ menunggu {count} pekerja latar",
+      "waitingOnWorkersBare": "⏳ menunggu pekerja latar",
+      "backToWorkTyping": "✍ kembali bekerja",
+      "backToWork": "kembali bekerja",
+      "backToMyDesk": "kembali ke mejaku",
+      "clockedIn": "sudah masuk",
+      "clockedInMsg": "🤖 sudah masuk",
+      "clockedInProject": "🤖 sudah masuk · {project}",
+      "clockedOut": "sudah pulang",
+      "clockedOutMsg": "👋 sudah pulang",
+      "clockedOutAway": "pulang selagi kita tidak ada",
+      "sessionEnded": "👋 sesi selesai",
+      "sessionEndedReason": "👋 sesi selesai ({reason})",
+      "talkingTo": "bicara dengan {name}",
+      "reportedBack": "📬 {name} sudah melapor",
+      "reportedBackBare": "📬 pekerja latar sudah melapor",
+      "toolBatchDone_one": "{count} tool selesai",
+      "toolBatchDone_other": "{count} tool selesai",
+      "toolBatchDoneUnknown": "? tool selesai",
+      "toolRan": "{tool} jalan",
+      "permissionAnswered": "✅ izin dijawab — {what}",
+      "handDown": "tangan turun",
+      "detail": " — {detail}",
+      "grabbingRedBull": "ambil Red Bull dulu",
+      "foundDesk": "dapat meja",
+      "offTo": {
+        "mainOffice": "ke kantor utama",
+        "corridor": "ke lorong",
+        "meetingRoom": "ke ruang rapat",
+        "serverRoom": "ke ruang server",
+        "lunchRoom": "ke ruang makan"
+      },
+      "exitCode": "exit code {code}",
+      "shipping": "🚀 merilis",
+      "shippingWhere": "🚀 merilis {where}",
+      "deployInterrupted": "⏹ deploy terhenti",
+      "deployInterruptedWhere": "⏹ deploy {where} terhenti",
+      "deployed": "🚀 sudah ter-deploy",
+      "deployedWhere": "🚀 {where} sudah ter-deploy",
+      "deployFailed": "💥 deploy gagal",
+      "deployFailedWhere": "💥 deploy {where} gagal",
+      "pushedTo": "🎉 push ke {branch}",
+      "pushedToWhere": "🎉 push ke {branch} · {where}",
+      "testsFailed": "❌ tes gagal",
+      "testsFailedIn": "❌ tes gagal di {where}",
+      "buildFailed": "❌ build gagal",
+      "buildFailedIn": "❌ build gagal di {where}",
+      "testsGreen": "✅ tes hijau lagi",
+      "testsGreenIn": "✅ tes hijau lagi di {where}",
+      "buildGreen": "✅ build hijau lagi",
+      "buildGreenIn": "✅ build hijau lagi di {where}",
+      "runningTheShow": "Memimpin kantor"
+    },
+    "phase": {
+      "night": "🌙 Sif malam",
+      "dawn": "🌅 Fajar menyingsing",
+      "morning": "☀️ Selamat pagi",
+      "afternoon": "☀️ Siang",
+      "evening": "🌆 Sore",
+      "dusk": "🌇 Matahari terbenam"
+    },
+    "advent": {
+      "sleeps_one": "Kalender Adven: {count} malam lagi sampai Natal!",
+      "sleeps_other": "Kalender Adven: {count} malam lagi sampai Natal",
+      "christmas": "Selamat Natal!",
+      "daysTill_one": "{count} hari lagi menuju {year}",
+      "daysTill_other": "{count} hari lagi menuju {year}",
+      "newYear": "Selamat Tahun Baru {year}!"
+    },
+    "chat": {
+      "logPrompts": {
+        "hint": "Pencatatan prompt: {level} — {what}.",
+        "off": "hanya status — tidak ada teks prompt atau balasan yang disimpan, disiarkan atau ditampilkan",
+        "summary": "200 karakter pertama dari tiap prompt dan balasan",
+        "full": "prompt dan balasan hingga 2000 karakter",
+        "unknown": "level tidak dikenal",
+        "where": "Pengaturan server ({file}); ubah di Pengaturan (ikon roda gigi di bilah judul), atau dengan token kantor:",
+        "pill": "prompt: {level}"
+      },
+      "aiPausedTitle": "Pemantau chat dijeda — klik untuk melanjutkan",
+      "aiActiveTitle": "Pemantau chat aktif — klik untuk menjeda",
+      "aiOff": "AI Mati",
+      "aiOn": "AI Aktif",
+      "volume": "Volume: {percent}%",
+      "on": "nyala",
+      "off": "mati",
+      "answerHere": "Jawab di sini: {state}",
+      "answerOnTitle": "Dialog izin bisa dijawab dari kantor (kartu muncul selagi Claude menunggu) — klik untuk mematikan",
+      "answerOffTitle": "Dialog izin hanya dijawab di terminal — klik agar kantor bisa menjawabnya",
+      "notify": "Notifikasi: {state}",
+      "notifyOnTitle": "Notifikasi desktop (hanya proyek dan tool) saat Claude mulai menunggu izin — klik untuk mematikan",
+      "notifyOffTitle": "Tidak ada notifikasi desktop saat Claude menunggu izin — klik untuk menyalakan",
+      "removeReaction": "Klik untuk menghapus",
+      "seen": "Dibaca",
+      "seenAlt": "dibaca",
+      "typingAlt": "mengetik",
+      "typing": "{name} sedang mengetik",
+      "mentionsAria": "Antrekan prompt untuk sebuah sesi",
+      "mentionTitle": "Antrekan prompt untuk {name}: diterima saat gilirannya selesai",
+      "placeholder": "Kirim pesan ke {channel}",
+      "placeholderMentions": "Kirim pesan ke {channel}, atau @sesi untuk mengantrekan prompt",
+      "themeOn": "🧻 Mode Dunder Mifflin: NYALA. Pencurian identitas itu bukan lelucon.",
+      "themeOff": "🔁 Tema kantor: MATI",
+      "tag": {
+        "prompt": "prompt",
+        "reply": "balasan"
+      }
+    },
+    "phone": {
+      "tab": {
+        "chat": "Chat",
+        "meters": "Meteran",
+        "today": "Hari ini",
+        "settings": "Atur"
+      },
+      "noKey": "tanpa kunci",
+      "pending": "{count} menunggu",
+      "noSecret": {
+        "title": "Link ini tidak punya kuncinya.",
+        "openBefore": "Buka link yang",
+        "openAfter": "dicetak di komputer, atau pindai kode QR-nya. Link itu diakhiri dengan",
+        "endsAfter": "dan 64 karakter; browser ini mengingatnya setelah kunjungan pertama."
+      },
+      "offline": "Tidak tersambung. Kantornya mungkin berhenti, atau link ini sudah diganti:",
+      "offlineAfter": "mencetak link yang berlaku.",
+      "metersEmpty": "Belum ada sesi yang melapor. Gaji, listrik dan memori muncul di sini begitu Claude Code bekerja.",
+      "tabsAria": "Panel kantor"
+    },
+    "viewer": {
+      "connecting": "menyambung ke kantor…"
+    },
+    "inspector": {
+      "main": {
+        "working": "bekerja",
+        "waiting_one": "menunggu {count} pekerja",
+        "waiting_other": "menunggu {count} pekerja",
+        "idle": "menganggur",
+        "needsYou": "butuh kamu",
+        "error": "error API",
+        "errorCode": "error API: {error}",
+        "errorDetail": "{label} — {detail}",
+        "compacting": "memadatkan",
+        "unknown": "belum ada kabar"
+      },
+      "worker": {
+        "newHire": "baru datang",
+        "walkingToDesk": "berjalan ke meja",
+        "walkingToManager": "berjalan menghampiri",
+        "talking": "bicara",
+        "coffeeBreak": "istirahat",
+        "waiting": "menunggu meja",
+        "changingRoom": "pindah ruangan",
+        "completed": "selesai",
+        "working": "bekerja",
+        "idle": "menganggur",
+        "unknown": "tidak diketahui"
+      },
+      "stats": {
+        "tokens": "{tokens} tok",
+        "toolUses_one": "{count} pemakaian tool",
+        "toolUses_other": "{count} pemakaian tool"
+      },
+      "derived": {
+        "note": "dihitung oleh kantor: {list}",
+        "tokens": "token dan model dari transkripnya",
+        "model": "model dari transkripnya",
+        "durationMs": "durasi dari mulai sampai selesai",
+        "toolUses": "pemakaian tool yang terlihat oleh hook"
+      },
+      "transcript": {
+        "promptsOff": "transkrip disembunyikan: prompt mati",
+        "needsToken": "transkrip muncul setelah kantor tersambung",
+        "noPath": "belum ada transkrip",
+        "notFound": "file transkrip tidak ditemukan",
+        "unavailable": "transkrip tidak tersedia",
+        "nothingSaid": "belum ada yang dikatakan",
+        "tool": "tool"
+      }
+    },
+    "agentCard": {
+      "ariaLabel": "Inspektur agen",
+      "ariaNamed": "{name} — inspektur",
+      "close": "Tutup",
+      "closeTitle": "Tutup (Esc)",
+      "roleMain": "sesi claude",
+      "tookTitle": "berapa lama waktunya",
+      "forTitle": "sudah berapa lama dikerjakan",
+      "took": "butuh {elapsed}",
+      "for": "selama {elapsed}",
+      "isBoss": "Itu kamu.",
+      "task": "Tugas",
+      "noTask": "tidak ada teks tugas",
+      "notHooked": "tanpa hook: hanya diketahui dari registry sesi Claude Code, jadi belum ada giliran untuk ditampilkan",
+      "lastPrompt": "Prompt terakhir",
+      "lastReply": "Balasan terakhir",
+      "promptsHidden": "disembunyikan: prompt mati",
+      "nothingYet": "belum ada",
+      "crons_one": "cron {count}",
+      "crons_other": "cron {count}",
+      "waitingOn": "menunggu {count}",
+      "contextTitle": "pemakaian pesan terakhir: seberapa penuh context window",
+      "context": "konteks {tokens} tok",
+      "where": "Lokasi",
+      "noProject": "tanpa proyek",
+      "session": "sesi {id}",
+      "noSession": "tanpa sesi",
+      "tools": "Tool",
+      "calls_one": "{count} panggilan",
+      "calls_other": "{count} panggilan",
+      "restored": "server kantor dimulai ulang: tool sejak saat itu",
+      "noTools": "belum ada tool",
+      "historyAria_one": "{count} entri terakhir",
+      "historyAria_other": "{count} entri terakhir",
+      "finished": "Selesai",
+      "lineage": "Silsilah",
+      "noTotals": "tidak ada total yang dilaporkan",
+      "soFar": "sejauh ini: {stats}",
+      "parent": "induk {name}",
+      "spawnedBySession": "dibuat oleh sesi",
+      "background": "latar",
+      "unread": "{count} belum dibaca",
+      "transcript": "Transkrip",
+      "foot": {
+        "serverForgot": "server sudah melepasnya — terakhir diketahui",
+        "serverUnreachable": "server kantor tidak terjangkau — terakhir diketahui",
+        "live": "langsung · diperbarui tiap {seconds} dtk",
+        "officeUnreachable": "server kantor tidak terjangkau — menampilkan yang diketahui kantor",
+        "notServerAgent": "bukan agen server — menampilkan yang diketahui kantor",
+        "loading": "memuat…"
+      }
+    },
+    "permission": {
+      "ariaLabel": "Permintaan izin",
+      "timeLeft": "{seconds} dtk sebelum terminal mengambil alih",
+      "readOnly": "jawab di terminal (halaman ini hanya-baca)",
+      "allow": "Izinkan",
+      "allowTitle": "Izinkan panggilan ini ({key})",
+      "allowRemember": "Izinkan & ingat",
+      "deny": "Tolak",
+      "denyTitle": "Tolak panggilan ini ({key})",
+      "sendingAllow": "mengirim izin…",
+      "sendingDeny": "mengirim penolakan…",
+      "rememberNote": "Izinkan & ingat: {what}",
+      "title": {
+        "use": "Claude ingin memakai {tool}",
+        "run": "Claude ingin menjalankan {what}",
+        "write": "Claude ingin menulis {what}",
+        "edit": "Claude ingin mengedit {what}",
+        "read": "Claude ingin membaca {what}",
+        "fetch": "Claude ingin mengambil {what}",
+        "search": "Claude ingin mencari {what}",
+        "findFiles": "Claude ingin mencari file {what}"
+      },
+      "remember": {
+        "nothing": "Tidak ada yang perlu diingat",
+        "all": "Izinkan, dan {parts}",
+        "setMode": "ubah sesi ini ke {mode}",
+        "anotherMode": "mode lain",
+        "alwaysAllow": "selalu izinkan {rules}{where}",
+        "alwaysDeny": "selalu tolak {rules}{where}",
+        "alwaysAsk": "selalu tanya {rules}{where}",
+        "always": "selalu {behavior} {rules}{where}",
+        "this": "ini",
+        "tool": "tool",
+        "directories": "izinkan akses ke {dirs}{where}",
+        "thisDirectory": "direktori ini",
+        "other": "ingat ini"
+      },
+      "fade": {
+        "timedOut": "waktu habis",
+        "deniedOffice": "ditolak dari kantor",
+        "allowedOffice": "diizinkan dari kantor",
+        "terminal": "dijawab di terminal"
+      }
+    },
+    "character": {
+      "memoryWipe": "hapus memori",
+      "apiError": "⚠ error API",
+      "shipping": "🚀 merilis",
+      "waitingForDesk": "menunggu meja",
+      "unread_one": "{count} pesan belum dibaca",
+      "unread_other": "{count} pesan belum dibaca",
+      "inspect": "Periksa {name}",
+      "effect": "efek"
+    },
+    "signals": {
+      "deployFailed": "deploy gagal",
+      "deployFailedOf": "deploy {where} gagal",
+      "buildFailed": "build gagal",
+      "buildFailedIn": "build gagal di {where}",
+      "testsFailed": "tes gagal",
+      "testsFailedIn": "tes gagal di {where}",
+      "pushFailed": "push gagal",
+      "pushFailedOf": "push {target} gagal",
+      "why": ": {why}"
+    }
+  },
+  "chatter": {
+    "default": {
+      "spawn": [
+        "siap bertugas!",
+        "sudah masuk",
+        "siap rilis",
+        "kopi dulu, baru coding",
+        "ayo kita mulai",
+        "membuka vim...",
+        "pull main terbaru"
+      ],
+      "work": [
+        "siap, dikerjakan",
+        "mengetik cepat",
+        "lagi fokus",
+        "ada kemajuan",
+        "cek dokumentasi dulu",
+        "waktunya git blame",
+        "stack overflow, tolong aku"
+      ],
+      "done": [
+        "tugas selesai!",
+        "sudah dirilis",
+        "PR sudah dibuka",
+        "beres tuntas",
+        "LGTM",
+        "sudah merge ke main",
+        "sudah deploy"
+      ],
+      "coffee": [
+        "bentar, ngopi dulu",
+        "butuh kafein",
+        "ambil kopi dulu",
+        "ngopi sebentar"
+      ],
+      "water": [
+        "tetap terhidrasi",
+        "waktunya minum",
+        "isi air minum",
+        "isi ulang botol",
+        "cek hidrasi",
+        "istirahat minum sebentar"
+      ]
+    },
+    "office": {
+      "bossPraise": [
+        "kerja bagus {name} 👊",
+        "mantap 🔥",
+        "rilis!",
+        "keren, ambil Red Bull sana",
+        "legenda 💯",
+        "kerja bagus, siapa berikutnya?",
+        "cepat juga, satu lagi?",
+        "kerjaannya rapi 👌",
+        "makasih {name}",
+        "merged. tugas berikutnya dimuat..."
+      ]
+    },
+    "incident": {
+      "spawn": [
+        "dapat page. meluncur.",
+        "gabung ke bridge, siapa IC-nya?",
+        "masuk jam 02:14, kirim kopi",
+        "laptop sudah terbuka sebelum mata"
+      ],
+      "work": [
+        "bisect antara 4f2a1c dan main",
+        "bukan DNS. cek DNS dulu.",
+        "tail log prod, 400 req/s penuh duka",
+        "baca runbook untuk pertama kalinya",
+        "menambah feature flag yang harusnya sudah ada"
+      ],
+      "done": [
+        "rollback selesai, error rate 0,1%",
+        "akar masalah: null. selalu null.",
+        "hotfix sudah merge, tesnya menyusul",
+        "halaman status kembali hijau"
+      ],
+      "coffee": [
+        "kopi ketiga, jangan menghakimi",
+        "cuma mesin kopi yang masih jalan",
+        "kopi bukan pengganti tidur, tetap dicoba"
+      ],
+      "water": [
+        "air putih. lalu kopi lagi.",
+        "minum air seperti orang dewasa yang bertanggung jawab jam 2 pagi",
+        "dispenser airnya juga lagi degraded"
+      ],
+      "bossReply": [
+        "aman. tidak ada lagi yang deploy hari Jumat.",
+        "postmortem jam 10, tanpa saling menyalahkan, bawa pizza",
+        "tangkapan bagus. catat untuk kronologinya.",
+        "Aku tahu. AKU TAHU."
+      ]
+    },
+    "interactions": {
+      "plant1": [
+        "menyiram monstera",
+        "waktunya merawat tanaman",
+        "tetap hijau ya, kawan kecil"
+      ],
+      "plant2": [
+        "menyiram lidah mertua",
+        "stasiun hidrasi",
+        "daun-daun ini kelihatan segar"
+      ],
+      "plant3": [
+        "menyiram pohon uang",
+        "tumbuh yang subur ya",
+        "rawat hutan kantor"
+      ],
+      "plant4": [
+        "menyiram tanaman",
+        "menjaga kantor tetap hijau"
+      ],
+      "plant5": [
+        "menyiram monstera",
+        "yang ini subur banget"
+      ],
+      "coffee": [
+        "menyeduh kopi baru",
+        "waktunya ngopi!",
+        "isi tenaga dulu",
+        "ada yang mau kopi juga?"
+      ],
+      "filing": [
+        "mengecek berkas",
+        "tadi naruh dokumennya di mana ya...",
+        "obrak-abrik lemari arsip",
+        "mencari laporan Q4"
+      ],
+      "printer": [
+        "lagi nge-print",
+        "jangan macet dong...",
+        "si setia",
+        "siapa sih yang masih nge-print"
+      ],
+      "whiteboard": [
+        "memperbarui papan",
+        "memindahkan tiket ke selesai",
+        "menempel post-it",
+        "waktunya sprint planning"
+      ],
+      "fireExtinguisher": [
+        "mengecek alat pemadam",
+        "utamakan keselamatan",
+        "belum kedaluwarsa, bagus",
+        "semoga tidak pernah terpakai"
+      ],
+      "waterCooler": [
+        "mengisi botol minum",
+        "cek hidrasi",
+        "istirahat minum",
+        "tetap terhidrasi"
+      ],
+      "bell": [
+        "ting ting! waktunya standup",
+        "membunyikan bel",
+        "perhatian semuanya!",
+        "kumpul semua!"
+      ],
+      "kanban": [
+        "memperbarui papan",
+        "memindahkan tiket ke selesai",
+        "sprint kelihatan aman",
+        "siapa yang nelantarin tiket ini di review?"
+      ],
+      "shipItPoster": [
+        "rilis!",
+        "jadi semangat",
+        "poster itu selalu bikin semangat",
+        "ayo gaskeun"
+      ],
+      "tvMonitor": [
+        "mengecek dashboard",
+        "semua sistem hijau",
+        "memantau metrik",
+        "uptime kelihatan mantap"
+      ]
+    },
+    "events": {
+      "fireDrill": {
+        "name": "Latihan Kebakaran",
+        "announcement": "🚨 LATIHAN KEBAKARAN! Semua menuju pintu keluar!",
+        "managerLine": "Latihan kebakaran! Cepat bergerak!",
+        "agentLines": [
+          "yah, lagi...",
+          "padahal lagi fokus!",
+          "kopiku!",
+          "selamatkan codebase-nya!"
+        ]
+      },
+      "pizza": {
+        "name": "Pizza Datang",
+        "announcement": "🍕 Pizza sudah datang! Makan siang gratis!",
+        "managerLine": "Pizza di lobi!",
+        "agentLines": [
+          "PIZZA!",
+          "akhirnya ada kabar baik",
+          "nanas di pizza?!",
+          "aku ambil yang pepperoni"
+        ]
+      },
+      "standup": {
+        "name": "Standup Harian",
+        "announcement": "📢 @here Standup harian dimulai sekarang",
+        "managerLine": "Standup! Apa yang sudah dirilis?",
+        "agentLines": [
+          "ngerjain yang itu",
+          "masih debugging",
+          "nunggu review",
+          "sudah deploy ke staging",
+          "benerin 3 bug, nambah 5"
+        ]
+      },
+      "deploy": {
+        "name": "Deploy ke Produksi",
+        "announcement": "🚀 DEPLOY KE PRODUKSI...",
+        "managerLine": "Tahan napas...",
+        "agentLines": [
+          "waduh",
+          "jangan sampai rusak",
+          "aku lupa jalanin tes",
+          "YOLO",
+          "cek rencana rollback"
+        ]
+      },
+      "deploySuccess": {
+        "name": "Deploy Berhasil",
+        "announcement": "✅ Deploy berhasil! Semua sistem hijau 🎉",
+        "managerLine": "Kita berhasil!",
+        "agentLines": [
+          "ayo!",
+          "rilis!",
+          "kerja bagus tim",
+          "waktunya makan enak"
+        ]
+      },
+      "deployFail": {
+        "name": "Deploy Gagal",
+        "announcement": "💥 DEPLOY GAGAL - ROLLBACK",
+        "managerLine": "SIAPA YANG PUSH ITU?!",
+        "agentLines": [
+          "bukan aku",
+          "waduh waduh waduh",
+          "cek log",
+          "selalu DNS masalahnya",
+          "revert dulu..."
+        ]
+      },
+      "powerFlicker": {
+        "name": "Listrik Berkedip",
+        "announcement": "⚡ Listrik berkedip - simpan pekerjaanmu!",
+        "agentLines": [
+          "lampunya barusan...",
+          "CTRL+S CTRL+S",
+          "perubahanku belum disimpan!",
+          "git commit SEKARANG"
+        ]
+      },
+      "birthday": {
+        "name": "Ulang Tahun",
+        "announcement": "🎂 Selamat ulang tahun! Kue ada di pantry!",
+        "managerLine": "Selamat ulang tahun!",
+        "agentLines": [
+          "kue!",
+          "selamat ulang tahun!",
+          "🎉🎉🎉",
+          "ini bebas gluten nggak?",
+          "ayo make a wish"
+        ]
+      },
+      "whoBrokeBuild": {
+        "name": "Build Rusak",
+        "announcement": "🔴 Pipeline CI/CD MERAH. Siapa yang merusak build?",
+        "managerLine": "Tidak ada yang pulang sebelum ini beres.",
+        "agentLines": [
+          "cek git blame...",
+          "bukan aku",
+          "gara-gara merge-nya?",
+          "mungkin tesnya flaky?",
+          "salahkan anak magang"
+        ]
+      },
+      "friday": {
+        "name": "Suasana Jumat",
+        "announcement": "🎉 Hari Jumat! Sedikit lagi, tim!",
+        "managerLine": "Jangan deploy hari Jumat.",
+        "agentLines": [
+          "TGIF",
+          "nongkrong?",
+          "satu PR lagi...",
+          "pulang tepat jam 5",
+          "akhir pekan!"
+        ]
+      },
+      "printerJam": {
+        "name": "Printer Macet",
+        "announcement": "🖨️ Printernya macet lagi",
+        "agentLines": [
+          "kenapa kita masih punya printer",
+          "PC LOAD LETTER?!",
+          "siapa sih yang masih nge-print",
+          "ini sudah 2026..."
+        ]
+      },
+      "slackDown": {
+        "name": "Slack Down",
+        "announcement": "💀 Slack down... lho, kok kita bisa posting ini",
+        "agentLines": [
+          "ironis banget",
+          "saatnya pakai email",
+          "saatnya merpati pos",
+          "sebenarnya agak tenang"
+        ]
+      },
+      "incident": {
+        "fireDrill": {
+          "name": "Ruang Perang",
+          "announcement": "🚨 semua ke pintu — bridge call dimulai",
+          "managerLine": "gabung ke bridge. siapa yang tahu konteksnya?",
+          "agentLines": [
+            "gabung ke bridge",
+            "ini sev1-nya?",
+            "mute dulu, anak-anak sudah tidur"
+          ]
+        },
+        "pizza": {
+          "name": "Pizza Insiden",
+          "announcement": "🍕 pizza sudah datang (kode biaya: OUTAGE)",
+          "managerLine": "makan cepat",
+          "agentLines": [
+            "pizza insiden rasanya beda",
+            "pizza kedua malam ini",
+            "makan di atas keyboard, maaf"
+          ]
+        },
+        "standup": {
+          "name": "Update Status",
+          "announcement": "📢 @here apa yang kita tahu, apa yang kita kerjakan, siapa yang terhambat",
+          "managerLine": "gantian satu per satu",
+          "agentLines": [
+            "error rate 40% dan turun",
+            "rollback setengah jalan",
+            "aku butuh DBA",
+            "masih bukan DNS. mungkin DNS."
+          ]
+        },
+        "deploy": {
+          "name": "Deploy Rollback",
+          "announcement": "🚀 ROLLBACK...",
+          "managerLine": "tahan",
+          "agentLines": [
+            "please",
+            "memantau grafiknya",
+            "kalau ini gagal, kita rollback rollback-nya"
+          ]
+        },
+        "deploySuccess": {
+          "name": "Rollback Selesai",
+          "announcement": "✅ rollback selesai — error rate normal",
+          "managerLine": "mulai timer all-clear",
+          "agentLines": [
+            "bisa napas lagi",
+            "grafiknya datar",
+            "siapa yang mau pegang dokumen postmortem"
+          ]
+        },
+        "deployFail": {
+          "name": "Rollback Gagal",
+          "announcement": "💥 rollback gagal — rollback rollback-nya",
+          "managerLine": "oke. oke. oke.",
+          "agentLines": [
+            "tentu saja",
+            "migrasinya tidak bisa dibalik",
+            "cek backup"
+          ]
+        },
+        "powerFlicker": {
+          "name": "Listrik Rak Berkedip",
+          "announcement": "⚡ UPS menyala. lagi.",
+          "agentLines": [
+            "itu gara-gara kita?",
+            "DC-nya juga lagi apes malam ini"
+          ]
+        },
+        "birthday": {
+          "name": "Ganti Sif",
+          "announcement": "🕑 on-call EU sudah bangun — serah terima di pantry",
+          "managerLine": "brief mereka, lalu tidur",
+          "agentLines": [
+            "dokumen serah terimanya cuma 3 baris",
+            "semoga beruntung",
+            "di sana masih Selasa"
+          ]
+        },
+        "whoBrokeBuild": {
+          "name": "Bisect",
+          "announcement": "🔴 bisect main — 12 commit antara yang bagus dan yang rusak",
+          "managerLine": "tanpa menyalahkan. cari commit-nya, bukan orangnya.",
+          "agentLines": [
+            "4f2a1c rusak",
+            "a1b2c3 bagus",
+            "gara-gara perubahan config",
+            "salahkan DNS"
+          ]
+        },
+        "friday": {
+          "name": "Deploy Jumat",
+          "announcement": "📅 pengingat: ini berawal dari deploy hari Jumat",
+          "managerLine": "tidak lagi-lagi",
+          "agentLines": [
+            "tidak lagi-lagi",
+            "kita bilang begitu juga terakhir kali",
+            "mulai sekarang Jumat hanya-baca"
+          ]
+        },
+        "printerJam": {
+          "name": "Nge-print Log Error",
+          "announcement": "🖨️ ada yang pipe kubectl logs ke lp",
+          "agentLines": [
+            "400 halaman",
+            "PC LOAD STACKTRACE",
+            "cabut kabelnya"
+          ]
+        },
+        "slackDown": {
+          "name": "Halaman Status Down",
+          "announcement": "💀 halaman status down. halaman statusnya.",
+          "agentLines": [
+            "ya jelas",
+            "tweet saja",
+            "saatnya merpati pos"
+          ]
+        }
+      },
+      "drama": {
+        "coffeeMeet": {
+          "lines": [
+            "sudah lihat PR barunya?",
+            "yang 2000 baris itu? iya...",
+            "tanpa tes juga",
+            "💀"
+          ]
+        },
+        "whoPushed": {
+          "lines": [
+            "siapa yang push langsung ke main?",
+            "bukan aku",
+            "git blame bilang lain",
+            "..."
+          ]
+        },
+        "tabsVsSpaces": {
+          "lines": [
+            "tab atau spasi?",
+            "spasi lah",
+            "diblokir dan dilaporkan"
+          ]
+        },
+        "meeting": {
+          "lines": [
+            "rapat ini harusnya cukup lewat pesan Slack",
+            "pesan Slack ini harusnya cukup diam saja"
+          ]
+        },
+        "framework": {
+          "lines": [
+            "kita harus tulis ulang pakai Rust",
+            "kamu bilang gitu tiap minggu",
+            "dan aku benar tiap minggu"
+          ]
+        },
+        "legacy": {
+          "lines": [
+            "nemu TODO dari 2019",
+            "isinya apa",
+            "\"perbaiki nanti\"",
+            "nanti itu sekarang",
+            "bukan. nanti ya nanti."
+          ]
+        },
+        "ai": {
+          "lines": [
+            "AI nulis kode lebih bagus dari aku hari ini",
+            "standarnya rendah sih",
+            "kasar tapi adil"
+          ]
+        },
+        "standupExcuse": {
+          "lines": [
+            "kemarin ngapain aja?",
+            "menyelidiki masalah yang rumit",
+            "maksudmu googling 6 jam",
+            "aku lebih suka bilang \"riset\""
+          ]
+        }
+      }
+    }
+  },
+  "server": {
+    "commands": {
+      "status": "📊 {agents} agen aktif, {working} sedang bekerja, {clients} klien terhubung",
+      "quiet": "🏢 Kantor sepi — tidak ada agen aktif",
+      "cleared": "🧹 Chat dibersihkan",
+      "incident": "🔴 INSIDEN DIUMUMKAN — prod down. Semua ke ruang perang. (/all-clear kalau sudah beres)",
+      "allClear": "✅ AMAN — insiden selesai. Postmortem jam 10, tanpa saling menyalahkan, bawa pizza.",
+      "help": "📋 Perintah: {commands}",
+      "desc": {
+        "status": "statistik kantor",
+        "agents": "daftar agen",
+        "recap": "hari ini sejauh ini",
+        "incident": "umumkan insiden",
+        "allClear": "akhiri insiden",
+        "clear": "hapus riwayat chat (butuh token auth)",
+        "help": "pesan ini"
+      }
+    },
+    "system": {
+      "expired": "⌛ Prompt yang diantrekan untuk {name} kedaluwarsa tanpa terkirim (gilirannya tidak selesai dalam satu jam)",
+      "expiredUnknown": "⌛ Prompt yang diantrekan untuk sebuah sesi kedaluwarsa tanpa terkirim (gilirannya tidak selesai dalam satu jam)",
+      "pickedUp": "📬 {name} mengambil prompt dari chat",
+      "pickedUpMore": "📬 {name} mengambil prompt dari chat ({count} lagi menunggu)",
+      "dropped_one": "🗑️ Prompt yang diantrekan untuk {name} dibuang: {why}",
+      "dropped_other": "🗑️ {count} prompt yang diantrekan untuk {name} dibuang: {why}",
+      "sessionEnded": "sesinya sudah selesai",
+      "ambiguous": "🤔 {mention} cocok dengan {count} sesi: {names}. Pakai id sesi saja.",
+      "notTrusted": "🔒 Hanya halaman kantor di Mac ini yang bisa mengantrekan prompt untuk {name} (bukan ponsel, halaman lewat proxy, atau halaman tanpa link kantor)",
+      "noHooks": "🔌 {name} tidak punya hook kantor, jadi tidak ada yang akan mengantarkan prompt: jalankan {command} lalu mulai ulang sesi itu",
+      "tooLong": "panjangnya {length} karakter, batasnya {limit}",
+      "full": "sudah ada {count} prompt yang menunggu untuknya",
+      "badId": "id sesi itu tidak bisa diklaim oleh hook",
+      "notQueued": "✋ Tidak diantrekan untuk {name}: {why}",
+      "whenBusy": "diterima saat gilirannya sekarang selesai",
+      "whenIdle": "dia sedang tidak bekerja, jadi diterima saat giliran berikutnya selesai (kantor tidak bisa memulai giliran sendiri: beri prompt apa saja di terminalnya)",
+      "queued": "📨 Diantrekan untuk {name}: {when}",
+      "queuedInLine": "📨 Diantrekan untuk {name} (antrean #{position}): {when}",
+      "needsToken": "🔒 {command} butuh token auth kantor — jalankan {script} dari checkout kantor, yang mengirimkannya (lihat README › Chat)"
+    },
+    "agents": {
+      "starting": "mulai: {task}",
+      "done": "selesai: {result}"
+    },
+    "recap": {
+      "quiet": "📋 Rekap: hari ini masih sepi — belum ada catatan apa-apa. Nikmati selagi bisa.",
+      "line": "📋 Rekap hari ini: {parts}.{payroll} {signOff}",
+      "sessions_one": "{count} sesi",
+      "sessions_other": "{count} sesi",
+      "agents_one": "{count} agen direkrut, {out} sudah pulang",
+      "agents_other": "{count} agen direkrut, {out} sudah pulang",
+      "tasks_one": "{count} tugas selesai",
+      "tasks_other": "{count} tugas selesai",
+      "deploys_one": "{count} deploy dirilis",
+      "deploys_other": "{count} deploy dirilis",
+      "pushes_one": "{count} push",
+      "pushes_other": "{count} push",
+      "buildsFailed_one": "{count} build gagal",
+      "buildsFailed_other": "{count} build gagal",
+      "testsFailed_one": "{count} tes gagal",
+      "testsFailed_other": "{count} tes gagal",
+      "incidents_one": "{count} insiden (kita tidak membahasnya)",
+      "incidents_other": "{count} insiden (kita tidak membahasnya)",
+      "noIncidents": "tanpa insiden",
+      "payroll": " Gaji: {amount}.",
+      "signOffIncident": "Catatan postmortem di mejaku paling lambat jam 10.",
+      "signOffDeploys": "Rilis yang mantap, semuanya.",
+      "signOff": "Kerja bagus, tim."
+    },
+    "notify": {
+      "title": "Claude butuh kamu",
+      "message": "{project} · {tool} {phrase}",
+      "bash": "ingin menjalankan perintah",
+      "write": "ingin menulis file",
+      "edit": "ingin mengedit file",
+      "notebook": "ingin mengedit notebook",
+      "read": "ingin membaca file",
+      "fetch": "ingin mengambil halaman web",
+      "search": "ingin mencari di web",
+      "other": "minta izin",
+      "aTool": "Sebuah tool",
+      "aSession": "Sebuah sesi"
+    },
+    "routing": {
+      "debugger": [
+        "galat",
+        "kesalahan",
+        "eror",
+        "rusak",
+        "macet",
+        "perbaiki",
+        "benerin",
+        "nge-bug",
+        "nggak jalan",
+        "tidak jalan",
+        "gagal"
+      ],
+      "codeReviewer": [
+        "tinjau",
+        "tinjauan",
+        "periksa kode",
+        "cek kode",
+        "setujui"
+      ],
+      "frontend": [
+        "tampilan",
+        "antarmuka",
+        "komponen",
+        "desain",
+        "tata letak",
+        "animasi",
+        "mode gelap",
+        "mode terang",
+        "warna",
+        "huruf",
+        "jarak",
+        "responsif"
+      ],
+      "tester": [
+        "pengujian",
+        "menguji",
+        "diuji",
+        "uji coba",
+        "uji unit",
+        "ngetes",
+        "dites",
+        "cakupan tes"
+      ],
+      "security": [
+        "keamanan",
+        "kerentanan",
+        "celah",
+        "injeksi",
+        "kata sandi",
+        "enkripsi",
+        "sertifikat"
+      ],
+      "devops": [
+        "rilis",
+        "hosting",
+        "kontainer"
+      ],
+      "performance": [
+        "lambat",
+        "lemot",
+        "lelet",
+        "kecepatan",
+        "performa",
+        "kinerja",
+        "optimasi",
+        "optimalkan",
+        "kebocoran memori",
+        "latensi"
+      ],
+      "database": [
+        "basis data",
+        "database",
+        "tabel",
+        "kolom",
+        "kueri",
+        "migrasi",
+        "skema",
+        "indeks"
+      ],
+      "typescript": [
+        "tipe data",
+        "generik",
+        "validasi"
+      ],
+      "ai": [
+        "kecerdasan buatan",
+        "jendela konteks",
+        "agen ai"
+      ],
+      "fullstack": [
+        "rute",
+        "permintaan",
+        "respons"
+      ],
+      "git": [
+        "cabang",
+        "konflik"
+      ],
+      "architect": [
+        "refaktor",
+        "arsitektur",
+        "rapikan kode",
+        "modul",
+        "paket",
+        "pola desain",
+        "struktur kode"
+      ]
+    }
+  }
+}

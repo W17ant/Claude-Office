@@ -7,6 +7,8 @@
  * the New Year, then the New Year until the decorations come down.
  */
 
+import { t } from './i18n'
+
 export type AdventState =
   /** 1-24 December: doors 1..`day` are open, `sleeps` nights until Christmas Day */
   | { kind: 'advent'; day: number; sleeps: number }
@@ -47,9 +49,9 @@ export function adventDate(now: Date, search: string): Date {
 /** What the calendar says when hovered. */
 export function adventLabel(s: AdventState): string {
   switch (s.kind) {
-    case 'advent': return s.sleeps === 1 ? 'Advent calendar: 1 sleep till Christmas!' : `Advent calendar: ${s.sleeps} sleeps till Christmas`
-    case 'christmas': return 'Merry Christmas!'
-    case 'new-year-countdown': return s.days === 1 ? `1 day till ${s.year}` : `${s.days} days till ${s.year}`
-    case 'new-year': return `Happy New Year ${s.year}!`
+    case 'advent': return t('ui.advent.sleeps', { count: s.sleeps })
+    case 'christmas': return t('ui.advent.christmas')
+    case 'new-year-countdown': return t('ui.advent.daysTill', { count: s.days, year: s.year })
+    case 'new-year': return t('ui.advent.newYear', { year: s.year })
   }
 }

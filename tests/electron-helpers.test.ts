@@ -647,3 +647,15 @@ describe('scripts/generate-icons.mjs', () => {
     expect(pixels[width * 8 + width / 2][3]).toBe(255)               // top edge, middle: on the tile
   })
 })
+
+describe('opensInBrowser', () => {
+  // Why: the window refuses every new window; the translation-error report
+  // link (Settings › Language) must still reach GitHub, in the browser
+  it('lets the translation-error report through, nothing else', () => {
+    expect(h.opensInBrowser('https://github.com/W17ant/Claude-Office/issues/new?template=translation.yml&language=de')).toBe(true)
+    expect(h.opensInBrowser('https://github.com/W17ant/Claude-Office/issues/new?template=bug_report.yml')).toBe(false)
+    expect(h.opensInBrowser('https://evil.example/issues/new?template=translation.yml')).toBe(false)
+    expect(h.opensInBrowser('http://github.com/W17ant/Claude-Office/issues/new?template=translation.yml')).toBe(false)
+    expect(h.opensInBrowser('not a url')).toBe(false)
+  })
+})

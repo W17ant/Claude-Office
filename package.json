@@ -18,6 +18,8 @@
   "files": [
     "cli/",
     "server/",
+    "shared/",
+    "locales/",
     "dist/",
     "hooks/",
     "scripts/open-office.mjs",
@@ -97,6 +99,8 @@
       "electron/**",
       "!electron/after-pack.cjs",
       "server/**",
+      "shared/**",
+      "locales/**",
       "scripts/notify.sh"
     ],
     "npmRebuild": false,

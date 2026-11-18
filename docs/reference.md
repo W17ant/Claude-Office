@@ -364,6 +364,7 @@ The ⚙ at the right of the title bar opens one panel for the settings that used
 | Notify on permission waits | server (`POST /settings`, UI token) | Same as the chat header's **Notify** pill: a desktop notification when Claude starts waiting on a permission |
 | Prompt logging — Off / Summary / Full | server (`POST /settings`, UI token) | The header pill shows the level; the panel can change it. Rows already in `chat.db` stay until `/clear` |
 | AI chat monitor | server (`POST /chat/cron-state`) | Same as the header's **AI On / Off** toggle |
+| Language | server (`POST /settings`, UI token) | The whole office's language, every page included (see [Languages](#languages)); *Report a translation error* opens a GitHub issue form with the language filled in |
 
 The chat header's pills stay as they were and show the same state: both read one store (`src/serverSettings.ts`), so a change in either shows in both. The server settings are disabled, with the reason, on a read-only page (no office token, so no UI token — the server would refuse), under `?sim` / `?video` (no server) and until the server has answered. The boss sprite is not in the panel: it is `boss.sprite` in `office.config.json`, read when the server starts. The panel's open animation is off under `prefers-reduced-motion`.
 
@@ -598,8 +599,23 @@ Everything is optional; the defaults are the office as described above. Set thes
 | `logPrompts` | `summary` | read-only `prompts:` pill in the chat | How much of the boss's prompts and Claude's replies is kept: `off`, `summary` (200 characters) or `full` (2000) — see [Security](#security) |
 | `answerPermissions` | `true` | **Answer here** | Whether a permission dialog may be answered from the office — see [Answer permissions from the office](#connect-claude-code) |
 | `notifyPermissions` | `true` | **Notify** | Whether a permission wait the office could answer raises one desktop notification (project and tool only, at most one per session a minute) |
+| `language` | `null` | Settings › Language | The office's language: a code with a file in `locales/`, or `null` (not chosen: English). `GET /settings` also lists `languages` (`code`, `name`, `englishName`, `status`, `completeness`) — see [Languages](#languages) |
 
 `office.config.json` (the boss's name, sprite, colour and emoji) is read by the server at runtime and applied by the page on load, so changing it needs a reload, not a rebuild; `GET /config` shows what the server read. Other knobs (`AGENT_OFFICE_STALE_MINUTES`, `AGENT_OFFICE_A2A_LIMIT`, the `CHAT_AI_*` settings) are described where they apply.
+
+## Languages
+
+The office's words live in `locales/<code>.json`, one file per language, with `locales/en.json` the source every other file is checked against. One office-wide setting, `language`, picks one: the page's labels, tooltips and cards, what the agents say, the server's chat lines (slash-command replies, *queued* / *picked up*, the recap) and the desktop permission notification all follow it, and the AI chat watcher tells `claude -p` to reply in it. The terminal, logs and docs stay English.
+
+- **Choosing it.** Settings › Language (the office page; a read-only page shows it but cannot change it). On first run, with no language saved yet, the office page picks the browser's language once if there is a file for it, else English. Matching: exact, then Chinese by script (`zh-HK` → `zh-TW`; Simplified and Traditional never stand in for each other), any Portuguese → `pt-BR`, then the language part (`es-MX` → `es`).
+- **Every page follows it.** It rides in the WebSocket snapshot (every tier: read-only, phone and LAN pages too) and a change is broadcast as `{ "type": "settings", "language": "<code>" }`. The page remembers the last one in `localStorage` (`agent-office.language`) so it does not flash English before the snapshot.
+- **Fallback.** A key a file lacks shows in English, key by key; a chatter list falls back as a whole list. A file that is not valid JSON is skipped with a warning, and a saved language whose file has gone reads as English.
+- **What stays English.** Slash commands, `@`-mentions, setting values, character names, the chat bot's sender names, the `?sim` / `?video` demo content, and the Dunder Mifflin theme's lines (what the cast says and its own office events: quotes from the show read best as they are; `ENGLISH_ONLY` in `shared/i18n.js`, refused in a translation by the check). Chat history is not re-translated: a line stays in the language it was written in.
+- **Formats.** Dates and times use the language's own format; costs are written "$1.23" in every language, like the meters.
+- **Drafts.** A file with `"status": "wip"` is a draft (most were written by Claude) and shows *work in progress* in the picker, with how complete it is.
+- **Checks.** `node scripts/i18n-check.mjs [code]` (and `npm test`): keys must exist in English, placeholders match, no markup, no characters from a writing system the language does not use. `node scripts/i18n-coverage.mjs [--keys <code>]`: completeness, missing and stale keys.
+
+To add or fix one, see [CONTRIBUTING › Add or fix a language](../CONTRIBUTING.md#add-or-fix-a-language).
 
 ## Security
 

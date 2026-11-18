@@ -1,0 +1,1405 @@
+{
+  "meta": {
+    "name": "Français",
+    "englishName": "French",
+    "status": "wip",
+    "translators": []
+  },
+  "ui": {
+    "settings": {
+      "language": {
+        "title": "Langue",
+        "wip": "en cours de traduction",
+        "complete": "traduit à {percent} %",
+        "report": "Signaler une erreur de traduction",
+        "readOnly": "Seule la page du bureau lui-même peut changer la langue"
+      },
+      "title": "Réglages",
+      "close": "Fermer les réglages",
+      "on": "Oui",
+      "off": "Non",
+      "browser": {
+        "title": "Ce navigateur",
+        "theme": "Thème",
+        "themeDefault": "Par défaut",
+        "dayNight": "Jour / nuit",
+        "dayNightAria": "Jour ou nuit",
+        "auto": "Auto",
+        "day": "Jour",
+        "night": "Nuit",
+        "season": "Saison",
+        "seasonAuto": "Auto (selon la date)",
+        "holidays": "Fêtes",
+        "seasons": "Saisons",
+        "seasonOff": "Non",
+        "urlSeasonBefore": "L'adresse contient",
+        "urlSeasonAfter": ", qui a la priorité sur ce réglage.",
+        "appliesOnReload": "S'applique au rechargement.",
+        "reloadNow": "Recharger",
+        "autoExplained": "Auto suit la date : les quatre saisons (hémisphère nord), avec Noël, Halloween, Pâques et la Saint-Valentin en plus. En ce moment : {look}.",
+        "nowUndrawn": "En ce moment : {look}. Une saison pas encore dessinée ressemble au bureau normal.",
+        "noArtYet": "{season} (pas encore dessiné)",
+        "over": "{top} sur {below}",
+        "sound": "Son",
+        "mute": "Couper le son",
+        "unmute": "Remettre le son",
+        "volume": "Volume",
+        "muted": "muet",
+        "ambience": "Ambiance",
+        "ambienceTitle": "Un léger bruit de fond de bureau sous les quelques sons d'événements ; joue au volume ci-dessus"
+      },
+      "server": {
+        "title": "Serveur du bureau",
+        "sim": "Pas de serveur sous ?sim / ?video : ces réglages concernent un bureau en direct.",
+        "readOnly": "Page en lecture seule : elle n'a pas de token du bureau, donc le serveur refuserait toute modification. Ouvre le lien donné par npm run open pour les changer.",
+        "waiting": "Le serveur du bureau n'a pas encore répondu.",
+        "answer": "Répondre aux permissions ici",
+        "answerTitle": "Les demandes de permission peuvent être réglées depuis une carte dans le bureau pendant que Claude attend",
+        "notify": "Notifier les attentes de permission",
+        "notifyTitle": "Une notification de bureau quand Claude commence à attendre une permission",
+        "logging": "Journal des prompts",
+        "logOff": "Non",
+        "logSummary": "Résumé",
+        "logFull": "Complet",
+        "hintOff": "Aucun texte de prompt ni de réponse n'est stocké ou affiché, seulement les états.",
+        "hintSummary": "Les 200 premiers caractères de chaque prompt et réponse.",
+        "hintFull": "Prompts et réponses jusqu'à 2000 caractères.",
+        "rowsStay": "Les lignes déjà dans chat.db restent jusqu'à",
+        "ai": "Moniteur de chat IA",
+        "aiTitle": "Le guetteur de chat qui permet à Claude de répondre dans #office-general",
+        "bossSprite": "Sprite du boss :",
+        "bossSpriteIn": "dans",
+        "bossSpriteWhen": "(lu au démarrage du serveur).",
+        "rowsStayEnd": "."
+      }
+    },
+    "meters": {
+      "ariaLabel": "Salaires, électricité et mémoire",
+      "title": "⚡ COMPTEURS DU BUREAU",
+      "payroll": "Salaires",
+      "electricity": "Électricité",
+      "memory": "Mémoire",
+      "needsStatusLine": "nécessite la status line",
+      "perMin": "{amount}/min",
+      "tokPerMin": "tok/min",
+      "rateShort": "5 h {percent} %",
+      "sessions_one": "{count} session",
+      "sessions_other": "{count} sessions",
+      "estimateMarker": "est.",
+      "tip": {
+        "payrollHead_one": "SALAIRES : {amount} sur {count} session · {rate}/min sur les 5 dernières min",
+        "payrollHead_other": "SALAIRES : {amount} sur {count} sessions · {rate}/min sur les 5 dernières min",
+        "payrollToday": "aujourd'hui {amount} · +{added} / -{removed} lignes · estimé au prix catalogue",
+        "needsLine": "{session} : nécessite la status line ({command})",
+        "needsLineShort": "{session} : nécessite la status line",
+        "payrollRow": "{session} : {amount} · {model} · {duration}",
+        "electricityHead": "ÉLECTRICITÉ : {tokens} tokens/min traités sur les 5 dernières min (relectures du contexte comprises)",
+        "electricityRow": "{session} : {rate} tok/min · dernier appel {input} en entrée / {output} en sortie",
+        "subagents_one": " · {count} sous-agent {tokens} tok",
+        "subagents_other": " · {count} sous-agents {tokens} tok",
+        "memoryHead": "MÉMOIRE : {session} à {percent} de la fenêtre de contexte",
+        "memorySize": " ({used} / {size} tokens)",
+        "model": "modèle {model}",
+        "effort": " · effort {effort}",
+        "over200k": " · plus de 200k",
+        "claudeCode": " · Claude Code {version}",
+        "costLine": "{amount} · {duration} · session {id}",
+        "rateHead": "LIMITES D'USAGE (abonnement claude.ai)",
+        "rate5h": "fenêtre de 5 heures utilisée à {percent} %",
+        "rate7d": "fenêtre de 7 jours utilisée à {percent} %",
+        "resets": " · remise à zéro {time}",
+        "spendLimit": "plafond de dépenses utilisé à {percent} %"
+      },
+      "clutter": "🗂️ Le bureau de Claude commence à déborder : {session} est à {percent} % de contexte",
+      "clutterEstimated": "🗂️ Le bureau de Claude commence à déborder : {session} est à {percent} % de contexte (estimé)",
+      "unnamedModel": "un modèle sans nom",
+      "window": {
+        "oneM": "fenêtre de {size} tokens : la session utilise la variante [1m] de {model}",
+        "unknown": "fenêtre de {size} tokens supposée : {model} n'est pas dans la table des modèles du bureau, la mesure est donc approximative",
+        "overflow": "fenêtre de {size} tokens supposée : plus de 200 000 sont utilisés, donc {model} tourne forcément en variante 1M (approximatif)",
+        "table": "fenêtre de {size} tokens pour {model} (table des modèles de Claude Code)"
+      },
+      "estimate": {
+        "estSuffix": " · est.",
+        "compacted": "compacté : la fenêtre vient d'être vidée ; la prochaine réponse du transcript remplira le compteur",
+        "fromTranscript": "estimé d'après le transcript de la session (l'usage de la dernière réponse), car aucune status line n'est enregistrée pour cette session",
+        "needsBoth": "salaires et électricité nécessitent la status line : {command}"
+      },
+      "needs": {
+        "payrollHead": "SALAIRES nécessite la status line : Claude Code ne communique le coût qu'à sa commande statusLine",
+        "electricityHead": "ÉLECTRICITÉ nécessite la status line : Claude Code ne communique les tokens par minute qu'à sa commande statusLine",
+        "none_one": "aucune status line n'est enregistrée pour cette session (installation par plugin ou claude -p) ; la MÉMOIRE est estimée d'après le transcript",
+        "none_other": "aucune status line n'est enregistrée pour ces {count} sessions (installation par plugin ou claude -p) ; la MÉMOIRE est estimée d'après le transcript",
+        "register": "enregistre-la avec : {command} (depuis le checkout de Claude-Office)"
+      }
+    },
+    "rooms": {
+      "mainOffice": "Open space",
+      "corridor": "Couloir",
+      "meetingRoom": "Salle de réunion",
+      "serverRoom": "Salle serveurs",
+      "lunchRoom": "Salle de pause",
+      "short": {
+        "mainOffice": "Bureau",
+        "corridor": "Couloir",
+        "meetingRoom": "Réunion",
+        "serverRoom": "Serveurs",
+        "lunchRoom": "Pause"
+      },
+      "switcher": {
+        "ariaLabel": "Plan de l'étage : choisis la pièce à afficher",
+        "empty": "vide",
+        "people_one": "{count} personne",
+        "people_other": "{count} personnes",
+        "label": "{room}, {people}",
+        "needsYou": ", a besoin de toi",
+        "trouble": ", un problème est survenu",
+        "inView": ", affichée"
+      },
+      "furniture": {
+        "coffeeMachine": "Machine à café",
+        "filingCabinet": "Classeur",
+        "printer": "Imprimante",
+        "fireExtinguisher": "Extincteur",
+        "waterCooler": "Fontaine à eau",
+        "bell": "Cloche",
+        "kanbanBoard": "Tableau Kanban",
+        "shipItPoster": "Poster Ship It",
+        "dashboard": "Tableau de bord",
+        "clickToInteract": "Clique pour interagir"
+      },
+      "doors": {
+        "mainOffice": "Bureau",
+        "corridor": "Couloir",
+        "meetingRoom": "Salle de réunion",
+        "serverRoom": "Salle serveurs",
+        "lunchRoom": "Salle de pause",
+        "goTo": "Aller : {room}"
+      },
+      "landmarks": {
+        "frontDoor": "Ascenseur",
+        "managerDoor": "Manager"
+      },
+      "placeholder": {
+        "ariaLabel": "{room} : provisoire, son décor n'est pas encore dessiné",
+        "note": "provisoire : le décor de cette pièce n'est pas encore dessiné",
+        "coffee": "café",
+        "water": "eau"
+      },
+      "tv": {
+        "deploying": "DÉPLOIEMENT",
+        "shipped": "EN PROD",
+        "rollback": "ROLLBACK"
+      }
+    },
+    "needsYou": {
+      "permission": "✋ a besoin de toi : {what}",
+      "permissionBare": "✋ a besoin de toi : permission",
+      "input": "✋ attend une saisie : {what}",
+      "inputBare": "✋ attend une saisie",
+      "idle": "💤 attend au prompt",
+      "quota": "⏳ attend des tokens",
+      "registry": "✋ {what}",
+      "registryBare": "✋ attend dans le terminal",
+      "elicitation": "✋ {server} te pose une question",
+      "elicitationBare": "✋ un serveur MCP te pose une question",
+      "short": {
+        "permission": "a besoin de toi",
+        "agentInput": "attend une saisie",
+        "idle": "attend au prompt",
+        "quota": "attend des tokens",
+        "registry": "attend dans le terminal"
+      }
+    },
+    "pill": {
+      "needsYou": "✋ besoin de toi",
+      "error": "⚠ erreur",
+      "compacting": "🧹 vidage"
+    },
+    "strip": {
+      "sessions_one": "{count} session",
+      "sessions_other": "{count} sessions",
+      "notHooked": "{count} sans hooks",
+      "needYou_one": "{count} a besoin de toi",
+      "needYou_other": "{count} ont besoin de toi",
+      "readOnlyHint": "Lecture seule : cette page n'a pas de token du bureau (ou un ancien), donc le serveur montre le bureau\nsans prompts, réponses ni lignes de commande, et les demandes de permission se règlent dans le terminal.\nOuvre le lien affiché par le serveur au démarrage, ou lance {command} dans le checkout :\nil ouvre le bureau avec le token, que ce navigateur retient ensuite.",
+      "connection": {
+        "connecting": "connexion…",
+        "online": "en ligne",
+        "reconnecting": "reconnexion…",
+        "offline": "hors ligne"
+      },
+      "hooks": {
+        "unknown": "hooks : —",
+        "seen": "hooks : vus {ago}",
+        "waiting": "hooks : aucun pour l'instant",
+        "missing": "aucun événement de hook pour l'instant : lance {command}"
+      },
+      "tip": {
+        "online": "Serveur du bureau {url} : en ligne depuis {time}",
+        "connecting": "Serveur du bureau {url} : connexion…",
+        "reconnecting": "Serveur du bureau {url} : connexion perdue {ago}, nouvelle tentative",
+        "offline": "Serveur du bureau {url} : injoignable",
+        "start": "Lance-le depuis le checkout : {command}  (ou {alt})",
+        "hooksSeen_one": "Hooks : {count} événement depuis le démarrage du serveur, le dernier {ago}",
+        "hooksSeen_other": "Hooks : {count} événements depuis le démarrage du serveur, le dernier {ago}",
+        "hooksWaiting": "Hooks : rien pour l'instant ; ils se déclenchent quand Claude Code lance un outil",
+        "hooksMissing": "Hooks : rien depuis {span}. Si Claude Code lance des outils et que rien n'apparaît, les hooks ne sont pas installés : {command}",
+        "counts": "Sessions : {sessions} · agents : {agents} · clients : {clients}",
+        "notHooked_one": "Sans hooks : {names}. Lance {command} pour voir ce qu'elle fait",
+        "notHooked_other": "Sans hooks : {names}. Lance {command} pour voir ce qu'elles font",
+        "waitingOnYou": "T'attendent :",
+        "server": "Serveur v{version}, actif depuis {span} · UI : {ui}",
+        "uiBuilt": "compilée (dist/)",
+        "uiDev": "serveur de dev (dist/ non compilé)",
+        "diagnose": "Diagnostic : {command}"
+      },
+      "simTitle": "?{mode} : agents simulés, sans serveur ni hooks",
+      "ariaLabel": "État du pipeline",
+      "readOnly": "lecture seule : ouvre le lien de",
+      "startIt": "pour le lancer :",
+      "todayTitle": "Aujourd'hui : sessions, agents, tâches, déploiements, échecs, incidents, salaires",
+      "today": "aujourd'hui"
+    },
+    "time": {
+      "justNow": "à l'instant",
+      "secondsAgo": "il y a {count} s",
+      "minutesAgo": "il y a {count} min",
+      "hoursAgo": "il y a {count} h",
+      "daysAgo": "il y a {count} j",
+      "seconds": "{count} s",
+      "minutes": "{count} min",
+      "hoursMinutes": "{hours} h {minutes} min"
+    },
+    "sessions": {
+      "notHookedHint": "Sans hooks : lance `npm run install-hooks` (ou /plugin install agent-office) pour voir ce qu'elle fait",
+      "notHooked": "sans hooks",
+      "ariaLabel": "Sessions Claude Code",
+      "workers_one": "{count} employé",
+      "workers_other": "{count} employés",
+      "tip": {
+        "tool": "outil : {tool}",
+        "project": "projet : {project}",
+        "cwd": "cwd : {cwd}",
+        "model": "modèle : {model}",
+        "started": "démarrée : {source}",
+        "registry": "claude : {status} (registre)",
+        "claude": "claude : {state}",
+        "pid": "pid {pid}",
+        "workers": "employés : {count} ({working} au travail)",
+        "ended": "terminée",
+        "endedReason": "terminée ({reason})",
+        "session": "session {id}"
+      }
+    },
+    "today": {
+      "ariaLabel": "Aujourd'hui au bureau",
+      "title": "Aujourd'hui",
+      "close": "Fermer",
+      "notAnswering": "Le serveur du bureau ne répond pas.",
+      "counting": "Comptage…",
+      "footBefore": "Depuis minuit (heure locale) · tape",
+      "footAfter": "dans le chat pour l'avis du manager",
+      "sessions": "Sessions",
+      "agentsSpawned": "Agents embauchés",
+      "agentsCompleted": "Partis",
+      "tasksCompleted": "Tâches closes",
+      "deploys": "Déploiements",
+      "pushes": "Pushs",
+      "buildsFailed": "Builds ratés",
+      "testsFailed": "Tests ratés",
+      "incidents": "Incidents",
+      "payroll": "Salaires"
+    },
+    "taskBoard": {
+      "untitled": "tâche sans titre",
+      "inProgress": "En cours : {subject}",
+      "done": "Fait : {subject}",
+      "todo": "À faire : {subject}",
+      "blockedBy": " (bloquée par {ids})",
+      "teamBoard": "Tableau des tâches de l'équipe {team}",
+      "board": "Tableau des tâches",
+      "aria": "{what}, {label} : {todo} à faire, {doing} en cours, {done} faites",
+      "ariaNext": ". Clique pour le tableau suivant",
+      "clickNext": "{what} : clique pour le tableau suivant",
+      "more": "{count} de plus",
+      "chat": {
+        "todo": "{count} à faire",
+        "todoBlocked": "{count} à faire ({blocked} bloquées)",
+        "inProgress": "{count} en cours : {subject}",
+        "progress": "{activity} : {done} sur {total} faites",
+        "nextUp": "{todo}, ensuite : {subject}",
+        "allWaiting": "{todo}, toutes en attente de quelque chose",
+        "toGo": "{done} sur {total} faites, encore {pending}",
+        "oneDone": "la seule tâche du tableau est faite",
+        "allDone": "les {count} tâches sont faites"
+      }
+    },
+    "incident": {
+      "badgePinned": "Épinglé par ?variant=incident : /all-clear pour terminer",
+      "badgeTitle": "Tape /all-clear quand la prod est revenue",
+      "incident": "INCIDENT",
+      "mini": "MINI-INCIDENT",
+      "daysSign": "Jours sans incident",
+      "daysSignTitle": "Jours sans incident : {days}",
+      "daysSignNow": "Jours sans incident : 0 (c'est en cours)",
+      "beacon": "Gyrophare d'incident",
+      "statusPage": "Page de statut : ROLLBACK",
+      "rollbackAlt": "Rollback en cours",
+      "rollback": "ROLLBACK",
+      "timeline": "Chronologie de l'incident",
+      "pizza": "Pizza d'incident"
+    },
+    "seasons": {
+      "christmas": "Noël",
+      "halloween": "Halloween",
+      "easter": "Pâques",
+      "valentine": "Saint-Valentin",
+      "spring": "Printemps",
+      "summer": "Été",
+      "autumn": "Automne",
+      "winter": "Hiver"
+    },
+    "titleBar": {
+      "incident": "🔥 LA PROD EST TOMBÉE : AGENT OFFICE",
+      "mode": "Mode : {mode}",
+      "auto": "AUTO",
+      "day": "JOUR",
+      "night": "NUIT",
+      "settings": "Réglages",
+      "settingsTitle": "Réglages : thème, jour/nuit, saison, son, réglages du serveur"
+    },
+    "office": {
+      "catAlt": "chat",
+      "interactionAlt": "interaction",
+      "waitingForDesk": "attend un bureau",
+      "waitingForDeskMsg": "attend un bureau...",
+      "doneStats": "✅ fini · {stats}",
+      "done": "fini",
+      "standingBy": "en attente",
+      "standingDown": "repos",
+      "working": "⚡ au travail",
+      "workingOnPrompt": "✍ travaille sur un prompt",
+      "turnOver": "tour fini, inactif",
+      "apiError": "⚠ erreur d'API",
+      "apiErrorWhat": "⚠ erreur d'API : {error}",
+      "memoryWipe": "🧹 trou de mémoire",
+      "memoryWipeTrigger": "🧹 trou de mémoire ({trigger})",
+      "waitingOnWorkers_one": "⏳ attend {count} employé en arrière-plan",
+      "waitingOnWorkers_other": "⏳ attend {count} employés en arrière-plan",
+      "waitingOnWorkersBare": "⏳ attend des employés en arrière-plan",
+      "backToWorkTyping": "✍ au boulot",
+      "backToWork": "au boulot",
+      "backToMyDesk": "je retourne à mon bureau",
+      "clockedIn": "a pointé",
+      "clockedInMsg": "🤖 a pointé",
+      "clockedInProject": "🤖 a pointé · {project}",
+      "clockedOut": "a débauché",
+      "clockedOutMsg": "👋 a débauché",
+      "clockedOutAway": "a débauché pendant notre absence",
+      "sessionEnded": "👋 session terminée",
+      "sessionEndedReason": "👋 session terminée ({reason})",
+      "talkingTo": "parle à {name}",
+      "reportedBack": "📬 {name} a fait son rapport",
+      "reportedBackBare": "📬 un employé en arrière-plan a fait son rapport",
+      "toolBatchDone_one": "lot de {count} outil terminé",
+      "toolBatchDone_other": "lot de {count} outils terminé",
+      "toolBatchDoneUnknown": "lot de ? outils terminé",
+      "toolRan": "{tool} exécuté",
+      "permissionAnswered": "✅ permission réglée : {what}",
+      "handDown": "main baissée",
+      "detail": " — {detail}",
+      "grabbingRedBull": "va chercher un Red Bull",
+      "foundDesk": "a trouvé un bureau",
+      "offTo": {
+        "mainOffice": "direction l'open space",
+        "corridor": "direction le couloir",
+        "meetingRoom": "direction la salle de réunion",
+        "serverRoom": "direction la salle serveurs",
+        "lunchRoom": "direction la salle de pause"
+      },
+      "exitCode": "code de sortie {code}",
+      "shipping": "🚀 mise en prod",
+      "shippingWhere": "🚀 mise en prod de {where}",
+      "deployInterrupted": "⏹ déploiement interrompu",
+      "deployInterruptedWhere": "⏹ déploiement de {where} interrompu",
+      "deployed": "🚀 c'est déployé",
+      "deployedWhere": "🚀 {where} déployé",
+      "deployFailed": "💥 échec du déploiement",
+      "deployFailedWhere": "💥 échec du déploiement de {where}",
+      "pushedTo": "🎉 push sur {branch}",
+      "pushedToWhere": "🎉 push sur {branch} · {where}",
+      "testsFailed": "❌ tests en échec",
+      "testsFailedIn": "❌ tests en échec dans {where}",
+      "buildFailed": "❌ build en échec",
+      "buildFailedIn": "❌ build en échec dans {where}",
+      "testsGreen": "✅ tests de nouveau au vert",
+      "testsGreenIn": "✅ tests de nouveau au vert dans {where}",
+      "buildGreen": "✅ build de nouveau au vert",
+      "buildGreenIn": "✅ build de nouveau au vert dans {where}",
+      "runningTheShow": "Aux commandes"
+    },
+    "phase": {
+      "night": "🌙 Équipe de nuit",
+      "dawn": "🌅 Le jour se lève",
+      "morning": "☀️ Bonjour",
+      "afternoon": "☀️ Après-midi",
+      "evening": "🌆 Soirée",
+      "dusk": "🌇 Le soleil se couche"
+    },
+    "advent": {
+      "sleeps_one": "Calendrier de l'Avent : plus que {count} dodo avant Noël !",
+      "sleeps_other": "Calendrier de l'Avent : plus que {count} dodos avant Noël",
+      "christmas": "Joyeux Noël !",
+      "daysTill_one": "{count} jour avant {year}",
+      "daysTill_other": "{count} jours avant {year}",
+      "newYear": "Bonne année {year} !"
+    },
+    "chat": {
+      "logPrompts": {
+        "hint": "Journal des prompts : {level}, {what}.",
+        "off": "états seulement : aucun texte de prompt ni de réponse n'est stocké, diffusé ou affiché",
+        "summary": "les 200 premiers caractères de chaque prompt et réponse",
+        "full": "prompts et réponses jusqu'à 2000 caractères",
+        "unknown": "niveau inconnu",
+        "where": "Un réglage du serveur ({file}) ; change-le dans les Réglages (l'engrenage dans la barre de titre), ou avec le token du bureau :",
+        "pill": "prompts : {level}"
+      },
+      "aiPausedTitle": "Moniteur de chat en pause : clique pour reprendre",
+      "aiActiveTitle": "Moniteur de chat actif : clique pour mettre en pause",
+      "aiOff": "IA off",
+      "aiOn": "IA on",
+      "volume": "Volume : {percent} %",
+      "on": "oui",
+      "off": "non",
+      "answerHere": "Répondre ici : {state}",
+      "answerOnTitle": "Les demandes de permission peuvent être réglées depuis le bureau (une carte apparaît pendant que Claude attend) : clique pour désactiver",
+      "answerOffTitle": "Les demandes de permission se règlent uniquement dans le terminal : clique pour laisser le bureau y répondre",
+      "notify": "Notifier : {state}",
+      "notifyOnTitle": "Une notification de bureau (projet et outil seulement) quand Claude commence à attendre une permission : clique pour désactiver",
+      "notifyOffTitle": "Pas de notification de bureau quand Claude attend une permission : clique pour activer",
+      "removeReaction": "Clique pour retirer",
+      "seen": "Vu",
+      "seenAlt": "vu",
+      "typingAlt": "en train d'écrire",
+      "typing": "{name} écrit",
+      "mentionsAria": "Mettre un prompt en file pour une session",
+      "mentionTitle": "Mettre un prompt en file pour {name} : il le recevra à la fin de son tour",
+      "placeholder": "Écrire dans {channel}",
+      "placeholderMentions": "Écrire dans {channel}, ou @session pour mettre un prompt en file",
+      "themeOn": "🧻 Mode Dunder Mifflin : ACTIVÉ. Le vol d'identité, c'est pas une blague.",
+      "themeOff": "🔁 Thème du bureau : DÉSACTIVÉ",
+      "tag": {
+        "prompt": "prompt",
+        "reply": "réponse"
+      }
+    },
+    "phone": {
+      "tab": {
+        "chat": "Chat",
+        "meters": "Compteurs",
+        "today": "Aujourd'hui",
+        "settings": "Réglages"
+      },
+      "noKey": "pas de clé",
+      "pending": "{count} en attente",
+      "noSecret": {
+        "title": "Il manque la clé à ce lien.",
+        "openBefore": "Ouvre le lien que",
+        "openAfter": "a affiché sur l'ordinateur, ou scanne son QR code. Il se termine par",
+        "endsAfter": "et 64 caractères ; ce navigateur le retient après la première visite."
+      },
+      "offline": "Non connecté. Le bureau est peut-être arrêté, ou ce lien a été remplacé :",
+      "offlineAfter": "affiche le lien actuel.",
+      "metersEmpty": "Aucune session ne s'est encore manifestée. Salaires, électricité et mémoire apparaissent ici dès que Claude Code travaille.",
+      "tabsAria": "Panneaux du bureau"
+    },
+    "viewer": {
+      "connecting": "connexion au bureau…"
+    },
+    "inspector": {
+      "main": {
+        "working": "au travail",
+        "waiting_one": "attend {count} employé",
+        "waiting_other": "attend {count} employés",
+        "idle": "inactif",
+        "needsYou": "a besoin de toi",
+        "error": "erreur d'API",
+        "errorCode": "erreur d'API : {error}",
+        "errorDetail": "{label} — {detail}",
+        "compacting": "compactage",
+        "unknown": "pas encore de nouvelles"
+      },
+      "worker": {
+        "newHire": "arrive",
+        "walkingToDesk": "va à son bureau",
+        "walkingToManager": "s'approche",
+        "talking": "discute",
+        "coffeeBreak": "en pause",
+        "waiting": "attend un bureau",
+        "changingRoom": "change de pièce",
+        "completed": "fini",
+        "working": "au travail",
+        "idle": "inactif",
+        "unknown": "inconnu"
+      },
+      "stats": {
+        "tokens": "{tokens} tok",
+        "toolUses_one": "{count} appel d'outil",
+        "toolUses_other": "{count} appels d'outils"
+      },
+      "derived": {
+        "note": "déduit par le bureau : {list}",
+        "tokens": "tokens et modèle d'après son transcript",
+        "model": "modèle d'après son transcript",
+        "durationMs": "durée de l'arrivée à la fin",
+        "toolUses": "appels d'outils vus par le hook"
+      },
+      "transcript": {
+        "promptsOff": "transcript masqué : prompts désactivés",
+        "needsToken": "le transcript apparaît une fois le bureau connecté",
+        "noPath": "pas encore de transcript",
+        "notFound": "fichier de transcript introuvable",
+        "unavailable": "transcript indisponible",
+        "nothingSaid": "rien de dit pour l'instant",
+        "tool": "outil"
+      }
+    },
+    "agentCard": {
+      "ariaLabel": "Inspecteur d'agent",
+      "ariaNamed": "{name} : inspecteur",
+      "close": "Fermer",
+      "closeTitle": "Fermer (Esc)",
+      "roleMain": "session claude",
+      "tookTitle": "le temps que ça a pris",
+      "forTitle": "depuis combien de temps il est dessus",
+      "took": "a pris {elapsed}",
+      "for": "depuis {elapsed}",
+      "isBoss": "C'est toi.",
+      "task": "Tâche",
+      "noTask": "pas de texte de tâche",
+      "notHooked": "sans hooks : connu seulement par le registre des sessions de Claude Code, il n'y a donc pas encore de tour à afficher",
+      "lastPrompt": "Dernier prompt",
+      "lastReply": "Dernière réponse",
+      "promptsHidden": "masqué : prompts désactivés",
+      "nothingYet": "rien pour l'instant",
+      "crons_one": "cron {count}",
+      "crons_other": "crons {count}",
+      "waitingOn": "attend {count}",
+      "contextTitle": "l'usage du dernier message : le remplissage de la fenêtre de contexte",
+      "context": "contexte {tokens} tok",
+      "where": "Où",
+      "noProject": "pas de projet",
+      "session": "session {id}",
+      "noSession": "pas de session",
+      "tools": "Outils",
+      "calls_one": "{count} appel",
+      "calls_other": "{count} appels",
+      "restored": "le serveur du bureau a redémarré : outils depuis",
+      "noTools": "pas encore d'outils",
+      "historyAria_one": "dernière entrée",
+      "historyAria_other": "{count} dernières entrées",
+      "finished": "Fini",
+      "lineage": "Lignée",
+      "noTotals": "aucun total communiqué",
+      "soFar": "jusqu'ici : {stats}",
+      "parent": "parent {name}",
+      "spawnedBySession": "lancé par la session",
+      "background": "arrière-plan",
+      "unread": "{count} non lus",
+      "transcript": "Transcript",
+      "foot": {
+        "serverForgot": "le serveur l'a oublié : dernier état connu",
+        "serverUnreachable": "serveur du bureau injoignable : dernier état connu",
+        "live": "en direct · actualisé toutes les {seconds} s",
+        "officeUnreachable": "serveur du bureau injoignable : affiche ce que sait le bureau",
+        "notServerAgent": "pas un agent du serveur : affiche ce que sait le bureau",
+        "loading": "chargement…"
+      }
+    },
+    "permission": {
+      "ariaLabel": "Demandes de permission",
+      "timeLeft": "{seconds} s avant que le terminal prenne le relais",
+      "readOnly": "réponds dans le terminal (cette page est en lecture seule)",
+      "allow": "Autoriser",
+      "allowTitle": "Autoriser cet appel ({key})",
+      "allowRemember": "Autoriser et retenir",
+      "deny": "Refuser",
+      "denyTitle": "Refuser cet appel ({key})",
+      "sendingAllow": "envoi de l'autorisation…",
+      "sendingDeny": "envoi du refus…",
+      "rememberNote": "Autoriser et retenir : {what}",
+      "title": {
+        "use": "Claude veut utiliser {tool}",
+        "run": "Claude veut exécuter {what}",
+        "write": "Claude veut écrire {what}",
+        "edit": "Claude veut modifier {what}",
+        "read": "Claude veut lire {what}",
+        "fetch": "Claude veut récupérer {what}",
+        "search": "Claude veut chercher {what}",
+        "findFiles": "Claude veut trouver des fichiers {what}"
+      },
+      "remember": {
+        "nothing": "Rien à retenir",
+        "all": "Autoriser, et {parts}",
+        "setMode": "passer cette session en {mode}",
+        "anotherMode": "un autre mode",
+        "alwaysAllow": "toujours autoriser {rules}{where}",
+        "alwaysDeny": "toujours refuser {rules}{where}",
+        "alwaysAsk": "toujours demander pour {rules}{where}",
+        "always": "toujours {behavior} {rules}{where}",
+        "this": "ceci",
+        "tool": "outil",
+        "directories": "autoriser l'accès à {dirs}{where}",
+        "thisDirectory": "ce dossier",
+        "other": "retenir ceci"
+      },
+      "fade": {
+        "timedOut": "délai dépassé",
+        "deniedOffice": "refusé depuis le bureau",
+        "allowedOffice": "autorisé depuis le bureau",
+        "terminal": "réglé dans le terminal"
+      }
+    },
+    "character": {
+      "memoryWipe": "trou de mémoire",
+      "apiError": "⚠ erreur d'API",
+      "shipping": "🚀 mise en prod",
+      "waitingForDesk": "attend un bureau",
+      "unread_one": "{count} message non lu",
+      "unread_other": "{count} messages non lus",
+      "inspect": "Inspecter {name}",
+      "effect": "effet"
+    },
+    "signals": {
+      "deployFailed": "échec du déploiement",
+      "deployFailedOf": "échec du déploiement de {where}",
+      "buildFailed": "build en échec",
+      "buildFailedIn": "build en échec dans {where}",
+      "testsFailed": "tests en échec",
+      "testsFailedIn": "tests en échec dans {where}",
+      "pushFailed": "échec du push",
+      "pushFailedOf": "échec du push de {target}",
+      "why": " : {why}"
+    }
+  },
+  "chatter": {
+    "default": {
+      "spawn": [
+        "au rapport !",
+        "j'ai pointé",
+        "prêt à livrer",
+        "café d'abord, code ensuite",
+        "c'est parti",
+        "j'ouvre vim...",
+        "je pull le dernier main"
+      ],
+      "work": [
+        "je m'en occupe",
+        "je tape comme un fou",
+        "à fond dedans",
+        "ça avance",
+        "je lis la doc",
+        "l'heure du git blame",
+        "Stack Overflow à la rescousse"
+      ],
+      "done": [
+        "tâche terminée !",
+        "c'est livré",
+        "PR ouverte",
+        "plié, emballé",
+        "LGTM",
+        "mergé dans main",
+        "déployé"
+      ],
+      "coffee": [
+        "je reviens, café",
+        "besoin de caféine",
+        "je vais me chercher une tasse",
+        "tournée de café"
+      ],
+      "water": [
+        "faut s'hydrater",
+        "pause H2O",
+        "je vais chercher de l'eau",
+        "je remplis ma gourde",
+        "contrôle hydratation",
+        "petite pause eau"
+      ]
+    },
+    "office": {
+      "bossPraise": [
+        "beau boulot {name} 👊",
+        "solide 🔥",
+        "on livre !",
+        "super, va te prendre un Red Bull",
+        "une légende 💯",
+        "bien joué, au suivant ?",
+        "c'était rapide, une autre ?",
+        "du travail propre 👌",
+        "merci {name}",
+        "mergé. prochaine tâche en chargement..."
+      ]
+    },
+    "incident": {
+      "spawn": [
+        "bipé. j'arrive.",
+        "je rejoins le bridge, c'est qui l'IC ?",
+        "pointé à 02 h 14, envoyez du café",
+        "laptop ouvert avant les yeux"
+      ],
+      "work": [
+        "bisect entre 4f2a1c et main",
+        "c'est pas le DNS. je vérifie le DNS.",
+        "tail des logs de prod, 400 req/s de tristesse",
+        "je lis le runbook pour la première fois",
+        "j'ajoute le feature flag qu'on aurait dû avoir"
+      ],
+      "done": [
+        "rollback terminé, taux d'erreur 0,1 %",
+        "cause racine : un null. toujours un null.",
+        "hotfix mergé, les tests viendront après",
+        "page de statut de nouveau au vert"
+      ],
+      "coffee": [
+        "troisième café, ne me jugez pas",
+        "la machine est la seule chose qui marche",
+        "le café ne remplace pas le sommeil, j'essaie quand même"
+      ],
+      "water": [
+        "de l'eau. puis encore du café.",
+        "je m'hydrate en adulte responsable à 2 h du mat",
+        "la fontaine à eau est aussi en mode dégradé"
+      ],
+      "bossReply": [
+        "fin d'alerte. plus personne ne déploie un vendredi.",
+        "postmortem à 10 h, sans blâme, apportez des pizzas",
+        "bien vu. note-le pour la chronologie.",
+        "Je sais. JE SAIS."
+      ]
+    },
+    "interactions": {
+      "plant1": [
+        "j'arrose le monstera",
+        "soin des plantes",
+        "reste bien vert, mon petit"
+      ],
+      "plant2": [
+        "j'arrose la langue de belle-mère",
+        "station d'hydratation",
+        "ces feuilles ont fière allure"
+      ],
+      "plant3": [
+        "j'arrose l'arbre à monnaie",
+        "pousse, ma belle, pousse",
+        "entretien de la jungle du bureau"
+      ],
+      "plant4": [
+        "j'arrose les plantes",
+        "on garde le bureau bien vert"
+      ],
+      "plant5": [
+        "j'arrose le monstera",
+        "celle-là est en pleine forme"
+      ],
+      "coffee": [
+        "je fais un café frais",
+        "l'heure du café !",
+        "je fais le plein",
+        "qui d'autre veut un café ?"
+      ],
+      "filing": [
+        "je fouille les dossiers",
+        "où j'ai mis ce doc...",
+        "raid sur le classeur",
+        "je cherche le rapport du T4"
+      ],
+      "printer": [
+        "j'imprime un truc",
+        "pourvu qu'elle se bloque pas...",
+        "la bonne vieille imprimante",
+        "qui imprime encore, sérieux ?"
+      ],
+      "whiteboard": [
+        "je mets le tableau à jour",
+        "je passe des tickets en terminé",
+        "j'ajoute un post-it",
+        "c'est l'heure du sprint planning"
+      ],
+      "fireExtinguisher": [
+        "je vérifie l'extincteur",
+        "la sécurité d'abord",
+        "toujours valide, parfait",
+        "pourvu qu'on n'en ait jamais besoin"
+      ],
+      "waterCooler": [
+        "je remplis ma gourde",
+        "contrôle hydratation",
+        "pause eau",
+        "faut rester hydraté"
+      ],
+      "bell": [
+        "ding ding ! c'est l'heure du standup",
+        "je sonne la cloche",
+        "votre attention à tous !",
+        "tout le monde sur le pont !"
+      ],
+      "kanban": [
+        "je mets le tableau à jour",
+        "je passe des tickets en terminé",
+        "le sprint a l'air bien",
+        "qui a laissé ce ticket en review ?"
+      ],
+      "shipItPoster": [
+        "on livre !",
+        "je me sens motivé",
+        "ce poster ne vieillit pas",
+        "allez let's go"
+      ],
+      "tvMonitor": [
+        "je regarde le tableau de bord",
+        "tout est au vert",
+        "je surveille les métriques",
+        "l'uptime a l'air solide"
+      ]
+    },
+    "events": {
+      "fireDrill": {
+        "name": "Exercice incendie",
+        "announcement": "🚨 EXERCICE INCENDIE ! Tout le monde vers la sortie !",
+        "managerLine": "Exercice incendie ! On se bouge !",
+        "agentLines": [
+          "encore ?...",
+          "j'étais à fond dedans !",
+          "mon café !",
+          "sauvez le code !"
+        ]
+      },
+      "pizza": {
+        "name": "Livraison de pizzas",
+        "announcement": "🍕 Les pizzas sont arrivées ! Déjeuner offert !",
+        "managerLine": "Pizzas dans le hall !",
+        "agentLines": [
+          "PIZZA !",
+          "enfin une bonne nouvelle",
+          "de l'ananas ?!",
+          "je prends la pepperoni"
+        ]
+      },
+      "standup": {
+        "name": "Standup quotidien",
+        "announcement": "📢 @here Le standup quotidien commence maintenant",
+        "managerLine": "Standup ! Vous avez livré quoi ?",
+        "agentLines": [
+          "j'ai bossé sur le truc",
+          "toujours en train de déboguer",
+          "bloqué par la review",
+          "déployé en staging",
+          "corrigé 3 bugs, créé 5"
+        ]
+      },
+      "deploy": {
+        "name": "Mise en prod",
+        "announcement": "🚀 DÉPLOIEMENT EN PRODUCTION...",
+        "managerLine": "Retenez votre souffle...",
+        "agentLines": [
+          "oh non",
+          "pourvu que ça casse pas",
+          "j'ai oublié de lancer les tests",
+          "YOLO",
+          "je relis le plan de rollback"
+        ]
+      },
+      "deploySuccess": {
+        "name": "Déploiement réussi",
+        "announcement": "✅ Déploiement réussi ! Tout est au vert 🎉",
+        "managerLine": "On l'a fait !",
+        "agentLines": [
+          "allez !",
+          "on livre !",
+          "beau boulot l'équipe",
+          "l'heure de la bière"
+        ]
+      },
+      "deployFail": {
+        "name": "Échec du déploiement",
+        "announcement": "💥 ÉCHEC DU DÉPLOIEMENT : ROLLBACK EN COURS",
+        "managerLine": "QUI A PUSHÉ ÇA ?!",
+        "agentLines": [
+          "c'est pas moi",
+          "oh non oh non oh non",
+          "je regarde les logs",
+          "c'est toujours le DNS",
+          "revert en cours..."
+        ]
+      },
+      "powerFlicker": {
+        "name": "Coupure de courant",
+        "announcement": "⚡ Le courant a vacillé : sauvegardez votre travail !",
+        "agentLines": [
+          "les lumières viennent de...",
+          "CTRL+S CTRL+S",
+          "mes modifs pas sauvegardées !",
+          "git commit TOUT DE SUITE"
+        ]
+      },
+      "birthday": {
+        "name": "Anniversaire",
+        "announcement": "🎂 Joyeux anniversaire ! Gâteau en salle de pause !",
+        "managerLine": "Joyeux anniversaire !",
+        "agentLines": [
+          "du gâteau !",
+          "joyeux anniversaire !",
+          "🎉🎉🎉",
+          "il est sans gluten ?",
+          "fais un vœu"
+        ]
+      },
+      "whoBrokeBuild": {
+        "name": "Build cassé",
+        "announcement": "🔴 Le pipeline CI/CD est ROUGE. Qui a cassé le build ?",
+        "managerLine": "Personne ne part tant que ce n'est pas réparé.",
+        "agentLines": [
+          "je regarde le git blame...",
+          "pas moi",
+          "c'est le merge ?",
+          "un test instable peut-être ?",
+          "c'est la faute du stagiaire"
+        ]
+      },
+      "friday": {
+        "name": "Ambiance vendredi",
+        "announcement": "🎉 C'est vendredi ! On y est presque, l'équipe !",
+        "managerLine": "Pas de déploiement le vendredi.",
+        "agentLines": [
+          "enfin vendredi",
+          "apéro ?",
+          "encore une PR...",
+          "je pars à 17 h pile",
+          "le week-end !"
+        ]
+      },
+      "printerJam": {
+        "name": "Bourrage papier",
+        "announcement": "🖨️ L'imprimante est encore bloquée",
+        "agentLines": [
+          "pourquoi on a encore une imprimante",
+          "PC LOAD LETTER ?!",
+          "qui imprime encore des trucs",
+          "on est en 2026..."
+        ]
+      },
+      "slackDown": {
+        "name": "Slack est en panne",
+        "announcement": "💀 Slack est en panne... attends, comment on poste ça",
+        "agentLines": [
+          "l'ironie",
+          "retour aux e-mails",
+          "c'est l'heure du pigeon voyageur",
+          "en fait c'est plutôt reposant"
+        ]
+      },
+      "incident": {
+        "fireDrill": {
+          "name": "Salle de crise",
+          "announcement": "🚨 tout le monde à la porte : le bridge commence",
+          "managerLine": "je rejoins le bridge. qui a le contexte ?",
+          "agentLines": [
+            "je rejoins le bridge",
+            "c'est le sev1 ?",
+            "je coupe mon micro, les enfants dorment"
+          ]
+        },
+        "pizza": {
+          "name": "Pizza d'incident",
+          "announcement": "🍕 les pizzas sont arrivées (code de note de frais : PANNE)",
+          "managerLine": "mangez vite",
+          "agentLines": [
+            "la pizza d'incident a un goût particulier",
+            "deuxième pizza de la nuit",
+            "je mange au-dessus du clavier, désolé"
+          ]
+        },
+        "standup": {
+          "name": "Point de situation",
+          "announcement": "📢 @here on sait quoi, on fait quoi, qui est bloqué",
+          "managerLine": "un tour de table",
+          "agentLines": [
+            "taux d'erreur à 40 % et en baisse",
+            "rollback à mi-chemin",
+            "j'ai besoin d'un DBA",
+            "toujours pas le DNS. sûrement le DNS."
+          ]
+        },
+        "deploy": {
+          "name": "Déploiement du rollback",
+          "announcement": "🚀 ROLLBACK EN COURS...",
+          "managerLine": "on tient",
+          "agentLines": [
+            "pitié",
+            "je surveille la courbe",
+            "si ça rate, on rollback le rollback"
+          ]
+        },
+        "deploySuccess": {
+          "name": "Rollback terminé",
+          "announcement": "✅ rollback terminé : taux d'erreur normal",
+          "managerLine": "je lance le chrono de fin d'alerte",
+          "agentLines": [
+            "je respire à nouveau",
+            "la courbe est plate",
+            "qui veut le doc du postmortem"
+          ]
+        },
+        "deployFail": {
+          "name": "Échec du rollback",
+          "announcement": "💥 échec du rollback : on rollback le rollback",
+          "managerLine": "ok. ok. ok.",
+          "agentLines": [
+            "évidemment",
+            "la migration n'était pas réversible",
+            "je regarde la sauvegarde"
+          ]
+        },
+        "powerFlicker": {
+          "name": "Microcoupure en baie",
+          "announcement": "⚡ l'onduleur a pris le relais. encore.",
+          "agentLines": [
+            "c'était nous ?",
+            "le datacenter passe une sale nuit lui aussi"
+          ]
+        },
+        "birthday": {
+          "name": "Relève",
+          "announcement": "🕑 l'astreinte EU est réveillée : passation en salle de pause",
+          "managerLine": "briefe-les, puis va dormir",
+          "agentLines": [
+            "le doc de passation fait 3 lignes",
+            "bon courage",
+            "chez eux c'est mardi"
+          ]
+        },
+        "whoBrokeBuild": {
+          "name": "Bisect",
+          "announcement": "🔴 bisect de main : 12 commits entre le bon et le mauvais",
+          "managerLine": "sans blâme. trouvez le commit, pas la personne.",
+          "agentLines": [
+            "4f2a1c est mauvais",
+            "a1b2c3 est bon",
+            "c'était le changement de config",
+            "c'est la faute du DNS"
+          ]
+        },
+        "friday": {
+          "name": "Déploiement du vendredi",
+          "announcement": "📅 rappel : tout a commencé par un déploiement du vendredi",
+          "managerLine": "plus jamais",
+          "agentLines": [
+            "plus jamais",
+            "on a dit ça la dernière fois",
+            "vendredi en lecture seule désormais"
+          ]
+        },
+        "printerJam": {
+          "name": "Impression du log d'erreurs",
+          "announcement": "🖨️ quelqu'un a pipé kubectl logs vers lp",
+          "agentLines": [
+            "ça fait 400 pages",
+            "PC LOAD STACKTRACE",
+            "débranchez-la"
+          ]
+        },
+        "slackDown": {
+          "name": "La page de statut est en panne",
+          "announcement": "💀 la page de statut est en panne. la page de statut.",
+          "agentLines": [
+            "évidemment",
+            "tweete-le",
+            "c'est l'heure du pigeon voyageur"
+          ]
+        }
+      },
+      "drama": {
+        "coffeeMeet": {
+          "lines": [
+            "t'as vu la nouvelle PR ?",
+            "celle de 2000 lignes ? ouais...",
+            "et sans tests en plus",
+            "💀"
+          ]
+        },
+        "whoPushed": {
+          "lines": [
+            "qui a pushé directement sur main ?",
+            "c'est pas moi",
+            "git blame dit le contraire",
+            "..."
+          ]
+        },
+        "tabsVsSpaces": {
+          "lines": [
+            "tabulations ou espaces ?",
+            "espaces, évidemment",
+            "bloqué et signalé"
+          ]
+        },
+        "meeting": {
+          "lines": [
+            "cette réunion aurait pu être un message Slack",
+            "ce message Slack aurait pu être un silence"
+          ]
+        },
+        "framework": {
+          "lines": [
+            "on devrait tout réécrire en Rust",
+            "tu dis ça toutes les semaines",
+            "et j'ai raison toutes les semaines"
+          ]
+        },
+        "legacy": {
+          "lines": [
+            "j'ai trouvé un TODO de 2019",
+            "il dit quoi",
+            "« à corriger plus tard »",
+            "plus tard, c'est maintenant",
+            "non. plus tard, c'est plus tard."
+          ]
+        },
+        "ai": {
+          "lines": [
+            "l'IA a mieux codé que moi aujourd'hui",
+            "la barre était basse, faut dire",
+            "méchant mais juste"
+          ]
+        },
+        "standupExcuse": {
+          "lines": [
+            "t'as fait quoi hier ?",
+            "j'ai enquêté sur un problème complexe",
+            "tu veux dire que t'as googlé pendant 6 heures",
+            "je préfère « recherche »"
+          ]
+        }
+      }
+    }
+  },
+  "server": {
+    "commands": {
+      "status": "📊 {agents} agents actifs, {working} au travail, {clients} clients connectés",
+      "quiet": "🏢 Le bureau est calme : aucun agent actif",
+      "cleared": "🧹 Chat effacé",
+      "incident": "🔴 INCIDENT DÉCLARÉ : la prod est tombée. Tout le monde en salle de crise. (/all-clear quand c'est fini)",
+      "allClear": "✅ FIN D'ALERTE : incident terminé. Postmortem à 10 h, sans blâme, apportez des pizzas.",
+      "help": "📋 Commandes : {commands}",
+      "desc": {
+        "status": "stats du bureau",
+        "agents": "liste des agents",
+        "recap": "le bilan du jour",
+        "incident": "déclarer un incident",
+        "allClear": "y mettre fin",
+        "clear": "effacer l'historique du chat (nécessite le token d'authentification)",
+        "help": "ce message"
+      }
+    },
+    "system": {
+      "expired": "⌛ Un prompt en file pour {name} a expiré sans être remis (son tour ne s'est pas terminé dans l'heure)",
+      "expiredUnknown": "⌛ Un prompt en file pour une session a expiré sans être remis (son tour ne s'est pas terminé dans l'heure)",
+      "pickedUp": "📬 {name} a récupéré le prompt depuis le chat",
+      "pickedUpMore": "📬 {name} a récupéré le prompt depuis le chat ({count} autres en attente)",
+      "dropped_one": "🗑️ Un prompt en file pour {name} a été abandonné : {why}",
+      "dropped_other": "🗑️ {count} prompts en file pour {name} ont été abandonnés : {why}",
+      "sessionEnded": "la session s'est terminée",
+      "ambiguous": "🤔 {mention} correspond à {count} sessions : {names}. Utilise plutôt l'id de session.",
+      "notTrusted": "🔒 Seule la page du bureau sur ce Mac peut mettre un prompt en file pour {name} (pas le téléphone, ni une page passant par un proxy, ni une page sans le lien du bureau)",
+      "noHooks": "🔌 {name} n'a pas les hooks du bureau, donc rien ne livrerait le prompt : lance {command} et redémarre cette session",
+      "tooLong": "il fait {length} caractères, la limite est de {limit}",
+      "full": "{count} prompts l'attendent déjà",
+      "badId": "le hook ne peut pas revendiquer cet id de session",
+      "notQueued": "✋ Pas mis en file pour {name} : {why}",
+      "whenBusy": "il le recevra à la fin de son tour en cours",
+      "whenIdle": "il ne travaille pas en ce moment, il le recevra donc à la fin de son prochain tour (le bureau ne peut pas lancer un tour tout seul : donne-lui n'importe quel prompt dans son terminal)",
+      "queued": "📨 En file pour {name} : {when}",
+      "queuedInLine": "📨 En file pour {name} (n° {position} dans la file) : {when}",
+      "needsToken": "🔒 {command} nécessite le token d'authentification du bureau : lance {script} depuis le checkout du bureau, qui l'envoie (voir README › Chat)"
+    },
+    "agents": {
+      "starting": "début : {task}",
+      "done": "fini : {result}"
+    },
+    "recap": {
+      "quiet": "📋 Bilan : journée calme pour l'instant, rien au compteur. Profitez-en tant que ça dure.",
+      "line": "📋 Bilan du jour : {parts}.{payroll} {signOff}",
+      "sessions_one": "{count} session",
+      "sessions_other": "{count} sessions",
+      "agents_one": "{count} agent embauché, {out} parti",
+      "agents_other": "{count} agents embauchés, {out} partis",
+      "tasks_one": "{count} tâche close",
+      "tasks_other": "{count} tâches closes",
+      "deploys_one": "{count} déploiement livré",
+      "deploys_other": "{count} déploiements livrés",
+      "pushes_one": "{count} push",
+      "pushes_other": "{count} pushs",
+      "buildsFailed_one": "{count} build raté",
+      "buildsFailed_other": "{count} builds ratés",
+      "testsFailed_one": "{count} série de tests ratée",
+      "testsFailed_other": "{count} séries de tests ratées",
+      "incidents_one": "{count} incident (on n'en parle pas)",
+      "incidents_other": "{count} incidents (on n'en parle pas)",
+      "noIncidents": "aucun incident",
+      "payroll": " Salaires : {amount}.",
+      "signOffIncident": "Notes de postmortem sur mon bureau avant 10 h.",
+      "signOffDeploys": "Belles livraisons, tout le monde.",
+      "signOff": "Beau boulot, l'équipe."
+    },
+    "notify": {
+      "title": "Claude a besoin de toi",
+      "message": "{project} · {tool} {phrase}",
+      "bash": "veut exécuter une commande",
+      "write": "veut écrire un fichier",
+      "edit": "veut modifier un fichier",
+      "notebook": "veut modifier un notebook",
+      "read": "veut lire un fichier",
+      "fetch": "veut récupérer une page web",
+      "search": "veut chercher sur le web",
+      "other": "demande une permission",
+      "aTool": "Un outil",
+      "aSession": "Une session"
+    },
+    "routing": {
+      "debugger": [
+        "bogue",
+        "erreur",
+        "plantage",
+        "planté",
+        "corriger",
+        "correctif",
+        "cassé",
+        "marche pas",
+        "fonctionne pas",
+        "déboguer",
+        "débogage",
+        "débugger",
+        "pile d'appels"
+      ],
+      "codeReviewer": [
+        "relecture",
+        "relire",
+        "revue",
+        "revue de code",
+        "approuver",
+        "valider",
+        "fusionner",
+        "fusion"
+      ],
+      "frontend": [
+        "interface",
+        "composant",
+        "front",
+        "mise en page",
+        "thème",
+        "mode sombre",
+        "mode clair",
+        "couleur",
+        "police",
+        "espacement",
+        "marge",
+        "affichage",
+        "bouton"
+      ],
+      "tester": [
+        "tests",
+        "couverture",
+        "test unitaire",
+        "tests unitaires",
+        "bouchon",
+        "simulacre"
+      ],
+      "security": [
+        "sécurité",
+        "authentification",
+        "faille",
+        "vulnérabilité",
+        "jeton",
+        "mot de passe",
+        "chiffrement",
+        "chiffrer",
+        "certificat",
+        "piratage"
+      ],
+      "devops": [
+        "déploiement",
+        "déployer",
+        "déploie",
+        "mise en prod",
+        "mettre en prod",
+        "hébergement",
+        "héberger",
+        "conteneur",
+        "nom de domaine",
+        "intégration continue"
+      ],
+      "performance": [
+        "performance",
+        "lenteur",
+        "trop lent",
+        "c'est lent",
+        "ralenti",
+        "optimiser",
+        "optimisation",
+        "vitesse",
+        "latence",
+        "fuite mémoire",
+        "fuite de mémoire",
+        "mise en cache",
+        "temps de chargement",
+        "goulot d'étranglement"
+      ],
+      "database": [
+        "base de données",
+        "bdd",
+        "requête sql",
+        "schéma",
+        "jointure",
+        "colonne",
+        "clé étrangère"
+      ],
+      "typescript": [
+        "typage",
+        "typé",
+        "générique",
+        "inférence",
+        "énumération"
+      ],
+      "ai": [
+        "intelligence artificielle",
+        "l'ia",
+        "d'ia",
+        "modèle de langage",
+        "vecteur",
+        "vectoriel",
+        "fenêtre de contexte"
+      ],
+      "fullstack": [
+        "requête",
+        "point d'accès",
+        "appel api",
+        "intergiciel"
+      ],
+      "git": [
+        "branche",
+        "conflit",
+        "dépôt",
+        "rebaser"
+      ],
+      "architect": [
+        "refacto",
+        "refactorisation",
+        "restructurer",
+        "nettoyage",
+        "abstraction",
+        "patron de conception",
+        "design pattern"
+      ]
+    }
+  }
+}

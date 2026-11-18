@@ -11,6 +11,7 @@
  */
 
 import type { Agent, AgentState, MainState, NeedsYou, NeedsYouKind, SessionInfo } from './types'
+import { t } from './i18n'
 
 /** Agents whose id starts with this are a session's Claude (`main-<sessionId>`) */
 export const MAIN_ID_PREFIX = 'main-'
@@ -53,11 +54,11 @@ export function needsYouBadge(kind: NeedsYouKind): string {
 /** The short label on the session pill and under the sprite */
 export function needsYouShort(kind: NeedsYouKind): string {
   switch (kind) {
-    case 'permission':  return 'needs you'
-    case 'agent-input': return 'needs input'
-    case 'idle':        return 'idle prompt'
-    case 'quota':       return 'waiting for tokens'
-    case 'registry':    return 'waiting in the terminal'
+    case 'permission':  return t('ui.needsYou.short.permission')
+    case 'agent-input': return t('ui.needsYou.short.agentInput')
+    case 'idle':        return t('ui.needsYou.short.idle')
+    case 'quota':       return t('ui.needsYou.short.quota')
+    case 'registry':    return t('ui.needsYou.short.registry')
     case 'elicitation': return 'MCP question'
   }
 }
@@ -68,19 +69,19 @@ export function needsYouLabel(needsYou: NeedsYou): string {
   switch (kind) {
     case 'permission': {
       const what = [toolName, summary].filter(Boolean).join(' · ')
-      return `✋ needs you${what ? `: ${what}` : ' — permission'}`
+      return what ? t('ui.needsYou.permission', { what }) : t('ui.needsYou.permissionBare')
     }
     case 'agent-input':
-      return `✋ needs input${summary ? `: ${summary}` : message ? `: ${message}` : ''}`
+      return summary || message ? t('ui.needsYou.input', { what: summary || message || '' }) : t('ui.needsYou.inputBare')
     case 'idle':
-      return '💤 idle prompt'
+      return t('ui.needsYou.idle')
     case 'quota':
-      return '⏳ waiting for tokens'
+      return t('ui.needsYou.quota')
     case 'registry':
-      return `✋ ${summary ?? 'waiting in the terminal'}`
+      return summary != null ? t('ui.needsYou.registry', { what: summary }) : t('ui.needsYou.registryBare')
     case 'elicitation':
       // Only the server's name: the question itself never reaches the office
-      return `✋ ${summary ?? 'an MCP server'} is asking you something`
+      return summary != null ? t('ui.needsYou.elicitation', { server: summary }) : t('ui.needsYou.elicitationBare')
   }
 }
 
@@ -111,10 +112,10 @@ export function mainTone(mainState: MainState | undefined, needsYou?: NeedsYou):
 /** What the pill says next to the dot, if anything */
 export function mainPillText(mainState: MainState | undefined, needsYou?: NeedsYou, waitingOn?: number): string | null {
   switch (mainState) {
-    case 'needs-you':  return needsYou ? `${needsYouBadge(needsYou.kind)} ${needsYouShort(needsYou.kind)}` : '✋ needs you'
+    case 'needs-you':  return needsYou ? `${needsYouBadge(needsYou.kind)} ${needsYouShort(needsYou.kind)}` : t('ui.pill.needsYou')
     case 'waiting':    return `⏳ ${waitingOn ?? 0}`
-    case 'error':      return '⚠ error'
-    case 'compacting': return '🧹 wipe'
+    case 'error':      return t('ui.pill.error')
+    case 'compacting': return t('ui.pill.compacting')
     default:           return null
   }
 }
@@ -145,9 +146,9 @@ export function stripCounts(sessions: SessionInfo[]): StripCounts {
     sessions: live.length,
     notHooked,
     needYou,
-    sessionsText: `${live.length} session${live.length === 1 ? '' : 's'}`,
-    notHookedText: notHooked.length > 0 ? `${notHooked.length} not hooked` : null,
-    needYouText: needYou.length > 0 ? `${needYou.length} need${needYou.length === 1 ? 's' : ''} you` : null,
+    sessionsText: t('ui.strip.sessions', { count: live.length }),
+    notHookedText: notHooked.length > 0 ? t('ui.strip.notHooked', { count: notHooked.length }) : null,
+    needYouText: needYou.length > 0 ? t('ui.strip.needYou', { count: needYou.length }) : null,
   }
 }
 

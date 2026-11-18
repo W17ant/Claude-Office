@@ -71,3 +71,22 @@ describe('config.yml', () => {
     ]))
   })
 })
+
+describe('translation.yml', () => {
+  const form = load('translation.yml')
+
+  it('is a form labelled translation', () => {
+    expect(form.name).toBe('Translation error')
+    expect(form.labels).toContain('translation')
+  })
+
+  // Why ids matter: the office's "Report a translation error" link fills `language` through ?language=
+  it('asks for the language, where, what it says and what it should say', () => {
+    expect(item(form, 'language')?.type).toBe('input')
+    expect(item(form, 'language').validations?.required).toBe(true)
+    expect(item(form, 'where')?.type).toBe('input')
+    expect(item(form, 'current')?.type).toBe('textarea')
+    expect(item(form, 'suggested')?.type).toBe('textarea')
+    expect(item(form, 'suggested').validations?.required).toBe(true)
+  })
+})

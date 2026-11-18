@@ -29,9 +29,11 @@ import {
   type DayNightMode, type SeasonPreference,
 } from '../settings'
 import {
-  useServerSettings, setAnswerPermissions, setLogPrompts, setAiPaused, setNotifyPermissions,
+  useServerSettings, setAnswerPermissions, setLogPrompts, setAiPaused, setNotifyPermissions, setLanguage,
   LOG_PROMPTS_LEVELS, type LogPromptsLevel,
 } from '../serverSettings'
+import LanguagePicker from './LanguagePicker'
+import { applyLanguage, currentLanguage, languageList, reportUrl, t, useT } from '../i18n'
 import '../styles/settings.css'
 
 interface SettingsPanelProps {
@@ -111,31 +113,53 @@ function Switch({ label, on, onChange, disabled = false, testId }: {
       data-testid={testId}
     >
       <span className="sp-switch-track"><span className="sp-switch-thumb" /></span>
-      <span className="sp-switch-text">{on === null ? '—' : on ? 'On' : 'Off'}</span>
+      <span className="sp-switch-text">{on === null ? '—' : on ? t('ui.settings.on') : t('ui.settings.off')}</span>
     </button>
   )
 }
 
-const THEMES: Choice<ThemeName>[] = [{ value: 'default', label: 'Default' }, { value: 'office', label: 'Dunder Mifflin' }]
-const DAY_NIGHT: Choice<DayNightMode>[] = [{ value: 'auto', label: 'Auto' }, { value: 'day', label: 'Day' }, { value: 'night', label: 'Night' }]
-const SEASON_LABEL: Record<Season, string> = {
-  christmas: 'Christmas', halloween: 'Halloween', easter: 'Easter', valentine: "Valentine's Day",
-  spring: 'Spring', summer: 'Summer', autumn: 'Autumn', winter: 'Winter',
+// Why functions, not constants: the labels follow the office's language, so
+// they are built at render time
+// "Dunder Mifflin" is the theme's name, not a phrase: it stays as it is
+const themes = (): Choice<ThemeName>[] => [{ value: 'default', label: t('ui.settings.browser.themeDefault') }, { value: 'office', label: 'Dunder Mifflin' }]
+const dayNight = (): Choice<DayNightMode>[] => [
+  { value: 'auto', label: t('ui.settings.browser.auto') }, { value: 'day', label: t('ui.settings.browser.day') }, { value: 'night', label: t('ui.settings.browser.night') },
+]
+function seasonLabel(s: Season): string {
+  switch (s) {
+    case 'christmas': return t('ui.seasons.christmas')
+    case 'halloween': return t('ui.seasons.halloween')
+    case 'easter': return t('ui.seasons.easter')
+    case 'valentine': return t('ui.seasons.valentine')
+    case 'spring': return t('ui.seasons.spring')
+    case 'summer': return t('ui.seasons.summer')
+    case 'autumn': return t('ui.seasons.autumn')
+    case 'winter': return t('ui.seasons.winter')
+  }
 }
-const seasonChoices = (names: readonly Season[]): Choice<SeasonPreference>[] => names.map(s => ({ value: s, label: SEASON_LABEL[s] }))
+const seasonChoices = (names: readonly Season[]): Choice<SeasonPreference>[] => names.map(s => ({ value: s, label: seasonLabel(s) }))
 // Why grouped: a holiday and a season behave differently when picked by hand
 // (a holiday keeps the date's season under it, a season shows no holiday)
-const SEASON_GROUPS: { label?: string; choices: Choice<SeasonPreference>[] }[] = [
-  { choices: [{ value: 'auto', label: 'Auto (by date)' }] },
-  { label: 'Holidays', choices: seasonChoices(HOLIDAYS) },
-  { label: 'Seasons', choices: seasonChoices(QUARTERS) },
-  { choices: [{ value: 'off', label: 'Off' }] },
+const seasonGroups = (): { label?: string; choices: Choice<SeasonPreference>[] }[] => [
+  { choices: [{ value: 'auto', label: t('ui.settings.browser.seasonAuto') }] },
+  { label: t('ui.settings.browser.holidays'), choices: seasonChoices(HOLIDAYS) },
+  { label: t('ui.settings.browser.seasons'), choices: seasonChoices(QUARTERS) },
+  { choices: [{ value: 'off', label: t('ui.settings.browser.seasonOff') }] },
 ]
-const LOG_LABEL: Record<LogPromptsLevel, string> = { off: 'Off', summary: 'Summary', full: 'Full' }
-const LOG_HINT: Record<string, string> = {
-  off: 'No prompt or reply text is stored or shown — states only.',
-  summary: 'The first 200 characters of each prompt and reply.',
-  full: 'Prompts and replies up to 2000 characters.',
+function logLabel(level: LogPromptsLevel): string {
+  switch (level) {
+    case 'off': return t('ui.settings.server.logOff')
+    case 'summary': return t('ui.settings.server.logSummary')
+    case 'full': return t('ui.settings.server.logFull')
+  }
+}
+function logHint(level: string): string {
+  switch (level) {
+    case 'off': return t('ui.settings.server.hintOff')
+    case 'summary': return t('ui.settings.server.hintSummary')
+    case 'full': return t('ui.settings.server.hintFull')
+    default: return ''
+  }
 }
 
 // The season this page loaded with, and the URL's say: both fixed for the page's life
@@ -152,7 +176,8 @@ function lookNow(): { text: string; undrawn: boolean } {
   const layers = [currentSeason(), currentQuarter()].filter((s): s is Season => s !== null)
   const undrawn = layers.filter(s => seasonHasArt(s) === false)
   return {
-    text: layers.map(s => SEASON_LABEL[s] + (undrawn.includes(s) ? ' (no art yet)' : '')).join(' over '),
+    text: layers.map(s => (undrawn.includes(s) ? t('ui.settings.browser.noArtYet', { season: seasonLabel(s) }) : seasonLabel(s)))
+      .reduce((top, below) => t('ui.settings.browser.over', { top, below })),
     undrawn: undrawn.length > 0,
   }
 }
@@ -162,6 +187,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
 }) => {
   const theme = useTheme()
   const server = useServerSettings()
+  const tr = useT()
   useSeasonArt() // Why: re-render when a season turns out to have art or not (the "no art yet" note)
   const [seasonPref, setSeasonPref] = React.useState<SeasonPreference>(LOADED_SEASON_PREF)
   const ref = useRef<HTMLDivElement>(null)
@@ -192,11 +218,11 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
   // Why the reason first: a disabled control with no word on why reads as broken
   const serverBlocked = simMode
-    ? 'No office server under ?sim / ?video — these settings belong to a live office.'
+    ? tr('ui.settings.server.sim')
     : readOnly
-      ? 'Read-only page: it has no office token, so the server would refuse a change. Open the link from npm run open to change these.'
+      ? tr('ui.settings.server.readOnly')
       : server.logPrompts === null && server.answerPermissions === null
-        ? 'The office server has not answered yet.'
+        ? tr('ui.settings.server.waiting')
         : null
   const serverDisabled = serverBlocked !== null
 
@@ -209,102 +235,118 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   return (
     <div className="settings-panel office-popover" role="dialog" aria-modal="false" aria-labelledby="sp-title" ref={ref} data-testid="settings-panel">
       <div className="op-head">
-        <span className="op-title" id="sp-title">Settings</span>
-        <button className="op-close" onClick={onClose} aria-label="Close settings">×</button>
+        <span className="op-title" id="sp-title">{tr('ui.settings.title')}</span>
+        <button className="op-close" onClick={onClose} aria-label={tr('ui.settings.close')}>×</button>
       </div>
 
-      <section className="sp-section" aria-label="This browser">
-        <div className="sp-section-title">This browser</div>
+      <section className="sp-section" aria-label={tr('ui.settings.language.title')}>
+        <div className="sp-section-title">{tr('ui.settings.language.title')}</div>
+        {/* Why sim changes it locally: ?sim and ?video have no server, and a
+            translator wants to see their language there */}
+        <LanguagePicker
+          languages={languageList()}
+          value={currentLanguage()}
+          canChange={simMode || !readOnly}
+          onChange={code => (simMode ? applyLanguage(code) : void setLanguage(code))}
+        />
+      </section>
+
+      <section className="sp-section" aria-label={tr('ui.settings.browser.title')}>
+        <div className="sp-section-title">{tr('ui.settings.browser.title')}</div>
 
         <div className="sp-row">
-          <span className="sp-label">Theme</span>
-          <Segmented label="Theme" value={theme} choices={THEMES} onChange={setTheme} testId="sp-theme" />
+          <span className="sp-label">{tr('ui.settings.browser.theme')}</span>
+          <Segmented label={tr('ui.settings.browser.theme')} value={theme} choices={themes()} onChange={setTheme} testId="sp-theme" />
         </div>
 
         <div className="sp-row">
-          <span className="sp-label">Day / night</span>
-          <Segmented label="Day or night" value={dayNightMode} choices={DAY_NIGHT} onChange={onDayNightMode} testId="sp-daynight" />
+          <span className="sp-label">{tr('ui.settings.browser.dayNight')}</span>
+          <Segmented label={tr('ui.settings.browser.dayNightAria')} value={dayNightMode} choices={dayNight()} onChange={onDayNightMode} testId="sp-daynight" />
         </div>
 
         <div className="sp-row">
-          <span className="sp-label">Season</span>
-          <Select label="Season" value={seasonPref} groups={SEASON_GROUPS} onChange={changeSeason} testId="sp-season" />
+          <span className="sp-label">{tr('ui.settings.browser.season')}</span>
+          <Select label={tr('ui.settings.browser.season')} value={seasonPref} groups={seasonGroups()} onChange={changeSeason} testId="sp-season" />
         </div>
         {URL_SEASON && (
-          <div className="sp-note">The address has <code>?season={URL_SEASON === 'off' ? 'none' : URL_SEASON}</code>, which wins over this.</div>
+          <div className="sp-note">{tr('ui.settings.browser.urlSeasonBefore')} <code>?season={URL_SEASON === 'off' ? 'none' : URL_SEASON}</code>{tr('ui.settings.browser.urlSeasonAfter')}</div>
         )}
         {seasonPending && (
           <div className="sp-note">
-            Applies on reload. <button type="button" className="sp-link" onClick={() => location.reload()}>Reload now</button>
+            {tr('ui.settings.browser.appliesOnReload')} <button type="button" className="sp-link" onClick={() => location.reload()}>{tr('ui.settings.browser.reloadNow')}</button>
           </div>
         )}
         {!seasonPending && look && seasonInForce === 'auto' && (
           <div className="sp-note" data-testid="sp-season-now">
-            Auto goes by the date: the four seasons (northern hemisphere), with Christmas, Halloween, Easter and Valentine's Day on top. Now: {look.text}.
+            {tr('ui.settings.browser.autoExplained', { look: look.text })}
           </div>
         )}
         {!seasonPending && look && seasonInForce !== 'auto' && look.undrawn && (
-          <div className="sp-note" data-testid="sp-season-now">Now: {look.text}. A season with no art yet looks like the normal office.</div>
+          <div className="sp-note" data-testid="sp-season-now">{tr('ui.settings.browser.nowUndrawn', { look: look.text })}</div>
         )}
 
         <div className="sp-row">
-          <span className="sp-label">Sound</span>
+          <span className="sp-label">{tr('ui.settings.browser.sound')}</span>
           <div className="sp-sound">
-            <button type="button" className="sp-mute" onClick={onToggleMute} aria-label={muted ? 'Unmute' : 'Mute'} aria-pressed={muted} data-testid="sp-mute">
+            <button type="button" className="sp-mute" onClick={onToggleMute} aria-label={muted ? tr('ui.settings.browser.unmute') : tr('ui.settings.browser.mute')} aria-pressed={muted} data-testid="sp-mute">
               {muted ? '🔇' : volume < 0.4 ? '🔈' : '🔊'}
             </button>
             <input
               type="range" min="0" max="100"
               value={Math.round(volume * 100)}
               onChange={e => onVolumeChange(Number(e.target.value) / 100)}
-              aria-label="Volume"
+              aria-label={tr('ui.settings.browser.volume')}
               className="sp-volume"
               data-testid="sp-volume"
             />
-            <span className="sp-value">{muted ? 'muted' : `${Math.round(volume * 100)}%`}</span>
+            <span className="sp-value">{muted ? tr('ui.settings.browser.muted') : `${Math.round(volume * 100)}%`}</span>
           </div>
         </div>
 
         <div className="sp-row">
-          <span className="sp-label" title="A quiet office room tone under the few event sounds; plays at the volume above">Ambience</span>
-          <Switch label="Ambience" on={ambience} onChange={onAmbienceChange} testId="sp-ambience" />
+          <span className="sp-label" title={tr('ui.settings.browser.ambienceTitle')}>{tr('ui.settings.browser.ambience')}</span>
+          <Switch label={tr('ui.settings.browser.ambience')} on={ambience} onChange={onAmbienceChange} testId="sp-ambience" />
         </div>
       </section>
 
-      <section className="sp-section" aria-label="Office server">
-        <div className="sp-section-title">Office server</div>
+      <section className="sp-section" aria-label={tr('ui.settings.server.title')}>
+        <div className="sp-section-title">{tr('ui.settings.server.title')}</div>
         {serverBlocked && <div className="sp-note sp-blocked" data-testid="sp-server-blocked">{serverBlocked}</div>}
 
         <div className="sp-row">
-          <span className="sp-label" title="Permission dialogs can be answered from a card in the office while Claude waits">Answer permissions here</span>
-          <Switch label="Answer permissions here" on={server.answerPermissions} onChange={v => void setAnswerPermissions(v)} disabled={serverDisabled} testId="sp-answer" />
+          <span className="sp-label" title={tr('ui.settings.server.answerTitle')}>{tr('ui.settings.server.answer')}</span>
+          <Switch label={tr('ui.settings.server.answer')} on={server.answerPermissions} onChange={v => void setAnswerPermissions(v)} disabled={serverDisabled} testId="sp-answer" />
         </div>
 
         <div className="sp-row">
-          <span className="sp-label" title="A desktop notification when Claude starts waiting on a permission">Notify on permission waits</span>
-          <Switch label="Notify on permission waits" on={server.notifyPermissions} onChange={v => void setNotifyPermissions(v)} disabled={serverDisabled} testId="sp-notify" />
+          <span className="sp-label" title={tr('ui.settings.server.notifyTitle')}>{tr('ui.settings.server.notify')}</span>
+          <Switch label={tr('ui.settings.server.notify')} on={server.notifyPermissions} onChange={v => void setNotifyPermissions(v)} disabled={serverDisabled} testId="sp-notify" />
         </div>
 
         <div className="sp-row">
-          <span className="sp-label">Prompt logging</span>
+          <span className="sp-label">{tr('ui.settings.server.logging')}</span>
           <Segmented
-            label="Prompt logging"
+            label={tr('ui.settings.server.logging')}
             value={server.logPrompts as LogPromptsLevel | null}
-            choices={LOG_PROMPTS_LEVELS.map(v => ({ value: v, label: LOG_LABEL[v] }))}
+            choices={LOG_PROMPTS_LEVELS.map(v => ({ value: v, label: logLabel(v) }))}
             onChange={v => void setLogPrompts(v)}
             disabled={serverDisabled || server.logPrompts === null}
             testId="sp-logprompts"
           />
         </div>
-        {server.logPrompts && <div className="sp-note">{LOG_HINT[server.logPrompts] ?? ''} Rows already in chat.db stay until <code>/clear</code>.</div>}
+        {server.logPrompts && <div className="sp-note">{logHint(server.logPrompts)} {tr('ui.settings.server.rowsStay')} <code>/clear</code>{tr('ui.settings.server.rowsStayEnd')}</div>}
 
         <div className="sp-row">
-          <span className="sp-label" title="The chat watcher that lets Claude answer #office-general">AI chat monitor</span>
-          <Switch label="AI chat monitor" on={server.aiPaused === null ? null : !server.aiPaused} onChange={v => void setAiPaused(!v)} disabled={serverDisabled} testId="sp-ai" />
+          <span className="sp-label" title={tr('ui.settings.server.aiTitle')}>{tr('ui.settings.server.ai')}</span>
+          <Switch label={tr('ui.settings.server.ai')} on={server.aiPaused === null ? null : !server.aiPaused} onChange={v => void setAiPaused(!v)} disabled={serverDisabled} testId="sp-ai" />
         </div>
 
-        <div className="sp-note sp-foot">Boss sprite: <code>boss.sprite</code> in <code>office.config.json</code> (read when the server starts).</div>
+        <div className="sp-note sp-foot">{tr('ui.settings.server.bossSprite')} <code>boss.sprite</code> {tr('ui.settings.server.bossSpriteIn')} <code>office.config.json</code> {tr('ui.settings.server.bossSpriteWhen')}</div>
       </section>
+
+      <div className="sp-note sp-foot">
+        <a className="sp-link" href={reportUrl(currentLanguage())} target="_blank" rel="noopener noreferrer">{tr('ui.settings.language.report')}</a>
+      </div>
     </div>
   )
 }

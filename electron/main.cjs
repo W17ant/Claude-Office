@@ -38,6 +38,7 @@ const {
   officeProofMatches,
   healthChallenge,
   writeRedirectPage,
+  opensInBrowser,
 } = require('./helpers.cjs')
 const { createTray } = require('./tray.cjs')
 const { STATE_FILE_NAME: UPDATE_STATE_FILE_NAME, createUpdateChecker, fetchLatestRelease, releasePageUrl } = require('./update-check.cjs')
@@ -708,8 +709,10 @@ async function createWindow() {
     }
   })
 
-  // Prevent opening new windows (links, window.open, etc.)
-  win.webContents.setWindowOpenHandler(() => {
+  // Prevent opening new windows (links, window.open, etc.); the
+  // translation-error report goes to the browser instead (opensInBrowser)
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (opensInBrowser(url)) shell.openExternal(url)
     return { action: 'deny' }
   })
 
