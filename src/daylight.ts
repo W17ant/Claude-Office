@@ -1,6 +1,8 @@
 // Real-time day/night cycle based on system clock
 // Uses solar position approximation for sunrise/sunset
 
+import { t } from './i18n'
+
 export type DayPhase = 'night' | 'dawn' | 'morning' | 'afternoon' | 'evening' | 'dusk'
 
 interface SunTimes {
@@ -64,12 +66,12 @@ export function getCurrentPhase(latitude = 51.5): DayPhase {
  */
 export function getPhaseLabel(phase: DayPhase): string {
   switch (phase) {
-    case 'night':     return '🌙 Night shift'
-    case 'dawn':      return '🌅 Dawn is breaking'
-    case 'morning':   return '☀️ Good morning'
-    case 'afternoon': return '☀️ Afternoon'
-    case 'evening':   return '🌆 Evening'
-    case 'dusk':      return '🌇 Sun is setting'
+    case 'night':     return t('ui.phase.night')
+    case 'dawn':      return t('ui.phase.dawn')
+    case 'morning':   return t('ui.phase.morning')
+    case 'afternoon': return t('ui.phase.afternoon')
+    case 'evening':   return t('ui.phase.evening')
+    case 'dusk':      return t('ui.phase.dusk')
   }
 }
 

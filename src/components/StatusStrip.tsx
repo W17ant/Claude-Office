@@ -31,6 +31,7 @@ import type { SessionInfo } from '../types'
 import { pillLabel } from './SessionStrip'
 import { officeHttpBase } from '../serverUrl'
 import TodayPanel from './TodayPanel'
+import { currentLanguage, t, useT } from '../i18n'
 import '../styles/strip.css'
 
 const params = new URLSearchParams(window.location.search)
@@ -43,18 +44,15 @@ const START_ALT   = 'bash scripts/start-office.sh'
 const INSTALL_CMD = 'npm run install-hooks'
 const DOCTOR_CMD  = 'npm run doctor'
 const OPEN_CMD    = 'npm run open'
-const READ_ONLY_HINT = [
-  'Read-only: this page has no office token (or an old one), so the server shows the office',
-  'without prompts, replies or command lines, and permission dialogs are answered in the terminal.',
-  `Open the link the server printed when it started, or run ${OPEN_CMD} in the checkout:`,
-  'it opens the office with the token, which this browser then remembers.',
-].join('\n')
+const readOnlyHint = () => t('ui.strip.readOnlyHint', { command: OPEN_CMD })
 
-const CONNECTION_LABEL: Record<ConnectionPhase, string> = {
-  connecting:   'connecting…',
-  online:       'online',
-  reconnecting: 'reconnecting…',
-  offline:      'offline',
+function connectionLabel(phase: ConnectionPhase): string {
+  switch (phase) {
+    case 'connecting':   return t('ui.strip.connection.connecting')
+    case 'online':       return t('ui.strip.connection.online')
+    case 'reconnecting': return t('ui.strip.connection.reconnecting')
+    case 'offline':      return t('ui.strip.connection.offline')
+  }
 }
 
 interface StatusStripProps {
@@ -69,36 +67,36 @@ interface StatusStripProps {
 /** "just now", "12 s ago", "3 min ago", "2 h ago" */
 export function formatAgo(ms: number): string {
   const s = Math.floor(ms / 1000)
-  if (s < 2) return 'just now'
-  if (s < 60) return `${s} s ago`
+  if (s < 2) return t('ui.time.justNow')
+  if (s < 60) return t('ui.time.secondsAgo', { count: s })
   const m = Math.floor(s / 60)
-  if (m < 60) return `${m} min ago`
+  if (m < 60) return t('ui.time.minutesAgo', { count: m })
   const h = Math.floor(m / 60)
-  if (h < 48) return `${h} h ago`
-  return `${Math.floor(h / 24)} d ago`
+  if (h < 48) return t('ui.time.hoursAgo', { count: h })
+  return t('ui.time.daysAgo', { count: Math.floor(h / 24) })
 }
 
 /** "45 s", "3 min", "2 h 05 min" */
 export function formatSpan(ms: number): string {
   const s = Math.floor(ms / 1000)
-  if (s < 60) return `${s} s`
+  if (s < 60) return t('ui.time.seconds', { count: s })
   const m = Math.floor(s / 60)
-  if (m < 60) return `${m} min`
+  if (m < 60) return t('ui.time.minutes', { count: m })
   const h = Math.floor(m / 60)
-  return `${h} h ${String(m % 60).padStart(2, '0')} min`
+  return t('ui.time.hoursMinutes', { hours: h, minutes: String(m % 60).padStart(2, '0') })
 }
 
 function clock(t: number): string {
-  return new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  return new Date(t).toLocaleTimeString(currentLanguage(), { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 }
 
 /** The hooks pill: text and tone */
 function hooksPill(v: HookVerdict): { text: string; tone: 'ok' | 'warn' | 'dim' } {
   switch (v.kind) {
-    case 'unknown': return { text: 'hooks: —', tone: 'dim' }
-    case 'seen':    return { text: `hooks: last seen ${formatAgo(v.agoMs)}`, tone: v.agoMs < 10 * 60_000 ? 'ok' : 'dim' }
-    case 'waiting': return { text: 'hooks: none yet', tone: 'dim' }
-    case 'missing': return { text: `no hook events yet — run ${INSTALL_CMD}`, tone: 'warn' }
+    case 'unknown': return { text: t('ui.strip.hooks.unknown'), tone: 'dim' }
+    case 'seen':    return { text: t('ui.strip.hooks.seen', { ago: formatAgo(v.agoMs) }), tone: v.agoMs < 10 * 60_000 ? 'ok' : 'dim' }
+    case 'waiting': return { text: t('ui.strip.hooks.waiting'), tone: 'dim' }
+    case 'missing': return { text: t('ui.strip.hooks.missing', { command: INSTALL_CMD }), tone: 'warn' }
   }
 }
 
@@ -107,38 +105,39 @@ function describe(h: HealthState, v: HookVerdict, now: number, c: StripCounts): 
   const s = h.server
   const lines: Array<string | null> = []
   switch (h.connection) {
-    case 'online':       lines.push(`Office server ${SERVER_URL}: online since ${clock(h.connectionSince)}`); break
-    case 'connecting':   lines.push(`Office server ${SERVER_URL}: connecting…`); break
-    case 'reconnecting': lines.push(`Office server ${SERVER_URL}: connection lost ${formatAgo(now - h.connectionSince)}, retrying`); break
-    case 'offline':      lines.push(`Office server ${SERVER_URL}: not reachable`); break
+    case 'online':       lines.push(t('ui.strip.tip.online', { url: SERVER_URL, time: clock(h.connectionSince) })); break
+    case 'connecting':   lines.push(t('ui.strip.tip.connecting', { url: SERVER_URL })); break
+    case 'reconnecting': lines.push(t('ui.strip.tip.reconnecting', { url: SERVER_URL, ago: formatAgo(now - h.connectionSince) })); break
+    case 'offline':      lines.push(t('ui.strip.tip.offline', { url: SERVER_URL })); break
   }
   if (h.connection === 'offline' || h.connection === 'reconnecting') {
-    lines.push(`Start it from the checkout: ${START_CMD}  (or ${START_ALT})`)
+    lines.push(t('ui.strip.tip.start', { command: START_CMD, alt: START_ALT }))
   }
   switch (v.kind) {
-    case 'seen':    lines.push(`Hooks: ${v.count} event${v.count === 1 ? '' : 's'} since the server started, last ${formatAgo(v.agoMs)}`); break
-    case 'waiting': lines.push('Hooks: nothing yet — they fire when Claude Code runs a tool'); break
-    case 'missing': lines.push(`Hooks: nothing in ${formatSpan(v.forMs)}. If Claude Code is running tool calls and nothing appears, the hooks are not installed: ${INSTALL_CMD}`); break
+    case 'seen':    lines.push(t('ui.strip.tip.hooksSeen', { count: v.count, ago: formatAgo(v.agoMs) })); break
+    case 'waiting': lines.push(t('ui.strip.tip.hooksWaiting')); break
+    case 'missing': lines.push(t('ui.strip.tip.hooksMissing', { span: formatSpan(v.forMs), command: INSTALL_CMD })); break
     case 'unknown': break
   }
   if (s) {
-    lines.push(`Sessions: ${s.sessions} · agents: ${s.agents} · clients: ${s.clients}`)
+    lines.push(t('ui.strip.tip.counts', { sessions: s.sessions, agents: s.agents, clients: s.clients }))
     if (c.notHooked.length > 0) {
-      lines.push(`Not hooked: ${c.notHooked.map(pillLabel).join(', ')} — run ${INSTALL_CMD} to see what ${c.notHooked.length === 1 ? 'it is' : 'they are'} doing`)
+      lines.push(t('ui.strip.tip.notHooked', { count: c.notHooked.length, names: c.notHooked.map(pillLabel).join(', '), command: INSTALL_CMD }))
     }
     if (c.needYou.length > 0) {
-      lines.push('Waiting on you:')
+      lines.push(t('ui.strip.tip.waitingOnYou'))
       for (const session of c.needYou) {
         if (session.main?.needsYou) lines.push(`  ${pillLabel(session)} — ${needsYouLabel(session.main.needsYou)}`)
       }
     }
-    lines.push(`Server v${s.version}, up ${formatSpan(s.uptimeMs + Math.max(0, now - (h.reportedAt ?? now)))} · UI: ${s.uiAvailable ? 'built (dist/)' : 'dev server (dist/ not built)'}`)
+    lines.push(t('ui.strip.tip.server', { version: s.version, span: formatSpan(s.uptimeMs + Math.max(0, now - (h.reportedAt ?? now))), ui: s.uiAvailable ? t('ui.strip.tip.uiBuilt') : t('ui.strip.tip.uiDev') }))
   }
-  lines.push(`Diagnose: ${DOCTOR_CMD}`)
+  lines.push(t('ui.strip.tip.diagnose', { command: DOCTOR_CMD }))
   return lines.filter(Boolean).join('\n')
 }
 
 const StatusStrip: React.FC<StatusStripProps> = ({ office, sessions = [], readOnly = false }) => {
+  const tr = useT()
   // Sample the reducer's health once a second (also ticks the "ago" labels)
   const [view, setView] = useState(() => ({ health: office.current?.health ?? null, now: Date.now() }))
   const [todayOpen, setTodayOpen] = useState(false)
@@ -153,7 +152,7 @@ const StatusStrip: React.FC<StatusStripProps> = ({ office, sessions = [], readOn
 
   if (MODE !== 'live') {
     return (
-      <div className="status-badge sim" title={`?${MODE}: simulated agents, no server, no hooks`} data-mode={MODE}>
+      <div className="status-badge sim" title={t('ui.strip.simTitle', { mode: MODE })} data-mode={MODE}>
         SIM
       </div>
     )
@@ -171,20 +170,20 @@ const StatusStrip: React.FC<StatusStripProps> = ({ office, sessions = [], readOn
     <div
       className="status-strip"
       role="status"
-      aria-label="Pipeline health"
+      aria-label={tr('ui.strip.ariaLabel')}
       title={describe(h, v, view.now, c)}
       data-connection={h.connection}
       data-hooks={v.kind}
     >
       <span className="strip-item strip-conn">
         <span className="strip-dot" />
-        {CONNECTION_LABEL[h.connection]}
+        {connectionLabel(h.connection)}
       </span>
       {readOnly && (
         <>
           <span className="strip-sep" />
-          <span className="strip-item strip-readonly" title={READ_ONLY_HINT} data-testid="strip-read-only">
-            read-only: open the link from <code>{OPEN_CMD}</code>
+          <span className="strip-item strip-readonly" title={readOnlyHint()} data-testid="strip-read-only">
+            {tr('ui.strip.readOnly')} <code>{OPEN_CMD}</code>
           </span>
         </>
       )}
@@ -201,7 +200,7 @@ const StatusStrip: React.FC<StatusStripProps> = ({ office, sessions = [], readOn
         </>
       )}
       <span className="strip-spacer" />
-      {down && <span className="strip-item strip-hint">start it: <code>{START_CMD}</code></span>}
+      {down && <span className="strip-item strip-hint">{tr('ui.strip.startIt')} <code>{START_CMD}</code></span>}
       {!down && v.kind === 'missing' && <span className="strip-item strip-hint"><code>{DOCTOR_CMD}</code></span>}
       <button
         ref={todayRef}
@@ -209,10 +208,10 @@ const StatusStrip: React.FC<StatusStripProps> = ({ office, sessions = [], readOn
         className={`strip-item strip-today${todayOpen ? ' open' : ''}`}
         onClick={() => setTodayOpen(o => !o)}
         aria-expanded={todayOpen}
-        title="Today so far: sessions, agents, tasks, deploys, failures, incidents, payroll"
+        title={tr('ui.strip.todayTitle')}
         data-testid="strip-today"
       >
-        today
+        {tr('ui.strip.today')}
       </button>
       {s && <span className="strip-item strip-version">v{s.version}</span>}
     </div>

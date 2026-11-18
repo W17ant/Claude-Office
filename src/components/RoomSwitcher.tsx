@@ -16,6 +16,7 @@
 import React, { useRef } from 'react'
 import type { RoomId } from '../rooms'
 import { planRoomLabel, type PlanRoom } from '../roomSwitcher'
+import { useT } from '../i18n'
 import '../styles/room-switcher.css'
 
 interface RoomSwitcherProps {
@@ -54,6 +55,7 @@ const RoomButton: React.FC<{ room: PlanRoom; onSelect: (room: RoomId) => void }>
  */
 export default function RoomSwitcher({ rooms, theme, onSelect }: RoomSwitcherProps) {
   const ref = useRef<HTMLDivElement>(null)
+  const tr = useT()
   if (rooms.length === 0) return null
   const boxes = rooms.filter(r => r.place === 'room')
   const hub = rooms.find(r => r.place === 'hub')
@@ -82,7 +84,7 @@ export default function RoomSwitcher({ rooms, theme, onSelect }: RoomSwitcherPro
       ref={ref}
       className={`room-switcher theme-${theme}`}
       role="group"
-      aria-label="Floor plan: choose the room to show"
+      aria-label={tr('ui.rooms.switcher.ariaLabel')}
       data-testid="room-switcher"
       onKeyDown={onKeyDown}
     >

@@ -5,6 +5,7 @@
 
 import { officeHttpBase } from './serverUrl'
 import { officeAuthHeaders } from './officeAuth'
+import { t } from './i18n'
 
 /** One day's counts, as GET /recap answers (see server/recap.js for each definition). */
 export interface RecapStats {
@@ -67,15 +68,15 @@ export function recapRows(s: RecapStats): RecapRow[] {
     return { key, label, value: String(v), tone: v === 0 ? 'dim' : tone }
   }
   return [
-    n('sessions', 'Sessions'),
-    n('agentsSpawned', 'Agents hired'),
-    n('agentsCompleted', 'Clocked out'),
-    n('tasksCompleted', 'Tasks closed', 'good'),
-    n('deploys', 'Deploys', 'good'),
-    n('pushes', 'Pushes'),
-    n('buildsFailed', 'Failed builds', 'bad'),
-    n('testsFailed', 'Failed test runs', 'bad'),
-    n('incidents', 'Incidents', 'bad'),
-    { key: 'costUsd', label: 'Payroll', value: formatUsd(s.costUsd), tone: s.costUsd > 0 ? 'plain' : 'dim' },
+    n('sessions', t('ui.today.sessions')),
+    n('agentsSpawned', t('ui.today.agentsSpawned')),
+    n('agentsCompleted', t('ui.today.agentsCompleted')),
+    n('tasksCompleted', t('ui.today.tasksCompleted'), 'good'),
+    n('deploys', t('ui.today.deploys'), 'good'),
+    n('pushes', t('ui.today.pushes')),
+    n('buildsFailed', t('ui.today.buildsFailed'), 'bad'),
+    n('testsFailed', t('ui.today.testsFailed'), 'bad'),
+    n('incidents', t('ui.today.incidents'), 'bad'),
+    { key: 'costUsd', label: t('ui.today.payroll'), value: formatUsd(s.costUsd), tone: s.costUsd > 0 ? 'plain' : 'dim' },
   ]
 }
