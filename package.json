@@ -18,6 +18,8 @@
   "files": [
     "cli/",
     "server/",
+    "shared/",
+    "locales/",
     "dist/",
     "hooks/",
     "scripts/open-office.mjs",
